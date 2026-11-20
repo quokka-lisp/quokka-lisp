@@ -262,9 +262,10 @@ Still to come, and deliberately so:
 - **The rest of the language.** Nineteen of Common Lisp's twenty-five special
   operators exist; the six that do not are `macrolet`,
   `multiple-value-call`, `multiple-value-prog1`, `progv`, `load-time-value`
-  and `symbol-macrolet`. Vectors, strings, hash tables, `defstruct` and a
-  condition system are all absent, and those are what the compiler needs
-  before it can be interpreted.
+  and `symbol-macrolet`. Macros, lambda lists, keywords, vectors, strings,
+  hash tables and `setf` are all built. What is left before the compiler can
+  be interpreted is a **condition system** — `error` and `handler-case` — and
+  **`defstruct`**.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.

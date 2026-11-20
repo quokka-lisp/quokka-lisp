@@ -9,18 +9,26 @@ compiler needs before the interpreter can run it.
 Where that stands: **19 of Common Lisp's 25 special operators** (missing
 `macrolet`, `multiple-value-call`, `multiple-value-prog1`, and — outside tier 0
 by design — `progv`, `load-time-value`, `symbol-macrolet`), plus `lambda` and
-`defmacro`, which CL makes macros and Quokka has not. Macros, backquote,
-`gensym`, keywords, and lambda lists with defaults, supplied-p, `&key` and
-`&aux` all work. There is a **prelude** (`lisp/prelude.lisp`, compiled in with
-`include_str!` and interpreted at boot) where `defun`, `when`, `unless`, `cond`,
-`and`, `or` and the list functions live — Lisp, not Rust.
+`defmacro`, which CL makes macros and Quokka has not.
 
-Still missing for tier 0: destructuring macro lambda lists; vectors, strings and
-hash tables; `defstruct`; `error` and `handler-case`. Also wanted and not
-blocking: `macroexpand`.
+Done: macros with backquote, `gensym`, `macroexpand` and destructuring lambda
+lists; `&optional`/`&key` with default forms and supplied-p; keywords; vectors
+and strings as sequences; hash tables keyed by content; and `setf`, pulled
+forward from tier 1 because without it mutation could not be tested against
+SBCL at all.
 
-Ten differential files agree with SBCL. The Rust core is around 9,000 lines of
-the 15,000 budget.
+There is a **prelude** (`lisp/prelude.lisp`, compiled into the binary with
+`include_str!` and interpreted at boot) holding `defun`, `when`, `unless`,
+`cond`, `and`, `or`, `setf`, `macroexpand`, the list and sequence functions and
+the hash-table wrappers — Lisp, not Rust.
+
+Still missing for tier 0: **`error` and `handler-case`** (group E, and the
+thing most worth doing next — three other pieces are waiting on something to
+signal), **`defstruct`** (group F, which also wants an extensible `setf`), and
+the three operators above.
+
+184 tests; 14 differential files agree with SBCL. The Rust core is about 10,400
+lines of the 15,000 budget.
 
 ## Who this is for, and how to work with me
 

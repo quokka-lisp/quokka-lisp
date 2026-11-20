@@ -64,20 +64,24 @@ natively, Quokka under WebAssembly, and SBCL.
 | **Macros** | `defmacro`, expansion in the evaluator, backquote in the reader, `gensym` |
 | **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux` |
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
+| **Vectors and strings** | `#(1 2 3)`, `aref`, `length` and `elt` over lists, vectors and strings alike |
+| **Hash tables** | keyed by content rather than address, because the collector moves things |
+| **`setf`** | `(setf (aref v i) x)`, `(setf (gethash k h) v)` — pulled forward from tier 1 so that mutation could be tested against SBCL |
+| **`macroexpand`** | a macro's output as an ordinary value, so expansions can be read |
 | **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or` and the list functions are **Lisp**, compiled into the binary and interpreted at boot |
 | **REPL** | native terminal, and a browser dev console on the WASM build |
 
-165 tests, green on native, under wasmtime, and with the GC torture mode on.
-Ten Common Lisp files produce byte-identical output on Quokka and SBCL.
+184 tests, green on native, under wasmtime, and with the GC torture mode on.
+Fourteen Common Lisp files produce byte-identical output on Quokka and SBCL.
 
 ### What does not exist yet
 
 Six special operators: `macrolet`, `multiple-value-call`,
 `multiple-value-prog1`, and — outside tier 0 by design — `progv`,
-`load-time-value` and `symbol-macrolet`. No destructuring macro lambda lists,
-so `(defmacro m ((a b) &body c) ...)` is still a syntax error. No vectors,
-strings-as-sequences, hash tables, `defstruct`, `error` or `handler-case`;
-those, with the operators above, are what
+`load-time-value` and `symbol-macrolet`. **No condition system**: no `error`,
+no `handler-case`, so three things that want to report a problem currently
+expand into a call to an undefined function instead. No `defstruct`. No
+multiple values. Those, with the operators above, are what
 [#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracks, and what
 the compiler needs before the interpreter can run it.
 
@@ -92,7 +96,7 @@ in [`docs/design.md`](docs/design.md).
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Eighteen chapters so far, assuming no prior knowledge of language
+afterwards. Nineteen chapters so far, assuming no prior knowledge of language
 implementation — including what a garbage collector is, what `car` and `cdr`
 are, and why a program would want to rewrite itself.
 

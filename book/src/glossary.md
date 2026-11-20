@@ -6,6 +6,11 @@ with the chapter that explains it properly.
 ---
 
 
+**Hash table.** A collection that finds a value from a key in roughly one
+step rather than by searching. Quokka's hashes the key's *contents*, never its
+address, because the collector moves objects and an address-based hash would
+be correct until the next collection and silently wrong afterwards. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+
 **Header.** The first word of a heap object, saying what kind it is and how many
 slots follow. Cons cells have none.
 ([5](part-1-substrate/05-objects-in-the-heap.md))
@@ -327,6 +332,11 @@ many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 **Special operator.** A form that decides for itself whether, when, or in what environment its arguments are evaluated — or whose arguments are not expressions at all. `if` must be one, or both branches would run before it could choose. Common Lisp has exactly 25, they are a *basis* rather than a feature list, and everything else is macros over them. ([9](part-2-reading-and-running/09-what-a-form-means.md), [13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Static area.** The first words of the heap, which the collector copies verbatim and never relocates. A reference into it is therefore a compile-time constant, which is how `nil` can be an ordinary symbol *and* `Value::NIL` a Rust constant. `t` lives there too; the keyword package will. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
+
+**String.** A heap object whose slots hold character codes rather than
+[values](#value), which is why it sits on the raw side of the collector's line
+(see [raw slots](#raw-slots)). Common Lisp counts it as a vector, so `length`
+and [aref](#aref) work on one. ([8](part-2-reading-and-running/08-text-becomes-structure.md), [19](part-2-reading-and-running/19-things-with-an-index.md))
 
 **Symbol.** A named thing — `car`, `+`, `my-variable`. Lisp symbols are objects
 in their own right, not just text, and carry a value and a function.
