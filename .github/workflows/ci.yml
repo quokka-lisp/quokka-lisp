@@ -23,6 +23,16 @@ jobs:
       - run: cargo build --workspace
       - run: cargo test --workspace
 
+  docs:
+    name: Rustdoc (no broken links)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
   gc-torture:
     name: GC torture (collect on every allocation)
     runs-on: ubuntu-latest

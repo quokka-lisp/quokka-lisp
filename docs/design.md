@@ -74,6 +74,12 @@ The substrate is a small Rust program that plays the role of Lisp machine hardwa
 
 **Reified frames.** Stack frames are inspectable and resumable objects. The debugger, restarts and fix-and-retry all depend on this, so it is a VM design constraint from day one.
 
+**Slices.** The VM never runs to completion on its own: it executes a bounded number of steps and returns to its caller, so the browser's event loop keeps turning. This is the same constraint as reified frames arrived at from the other side — an evaluator that can stop and resume cannot keep its state on the Rust call stack, so it is an explicit state machine (SICP §5.4's explicit-control evaluator) whose frames are objects in our heap. Saving an image mid-computation, green threads and an interruptible REPL all fall out of this.
+
+*Who ends a slice:* the caller passes a step budget — `run_slice(budget)` — rather than the VM polling the host or watching a wall clock. Timing stays outside the VM, in the host, where it cannot affect what is computed. Slicing is therefore semantically invisible: the same program takes the same path however it is cut up, which makes runs replayable and lets the phase 3 scheduler be seeded rather than raced. The browser recovers a deadline's responsiveness by adjusting the next budget from how long the last slice took. The native host passes `u64::MAX` and ignores the whole question.
+
+*What it costs:* a budget only bounds time if one step is short, so every primitive must be fast or itself chunked. Two invariants keep slicing invisible: collect on allocation rather than on slice boundaries, and never let Lisp observe the remaining budget.
+
 **Processes.** Lightweight green threads scheduled by the VM, like Genera's processes, on one OS thread to start with.
 
 **Primitives.** A single table of Rust primitives (arithmetic, allocation, I/O, graphics calls) is the only door from Lisp into the host. Its size is part of the comprehensibility budget.
@@ -239,6 +245,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 - [x] **Bootstrap host:** bootstrap by interpretation — the Rust interpreter runs the CL compiler to build the first image.
 - [x] **Subset boundary:** three tiers matched to phases (see The CL subset boundary).
 - [x] **Source of truth:** files on any file host are the truth; the image is a live cache of them.
+- [x] **Yielding:** the caller passes a step budget (`run_slice(budget)`); no clock and no yield callback in the VM. Chosen over a host-set wall-clock deadline for determinism and replayability. See Substrate: the Rust VM.
 - [x] **Browser target:** WASM is first-class from phase 0. The VM runs client-side in the browser, yields to the browser's event loop, and keeps images in browser storage.
 - [x] **Rendering stack:** browser-first hybrid renderer (DOM for text, canvas or SVG for drawing) behind a display protocol; native builds in a Tauri shell.
 - [x] **Licence:** MIT for everything, including the remote file service. Borrowed components must have compatible licences.

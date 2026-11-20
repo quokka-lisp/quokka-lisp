@@ -28,6 +28,9 @@ say "native build and test"
 cargo build --workspace
 cargo test --workspace
 
+say "rustdoc"
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
 say "GC torture"
 cargo test -p quokka-vm --features gc-torture
 

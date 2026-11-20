@@ -44,11 +44,12 @@ This changes how to work on the repo:
 1. **Rust below the primitive table, Lisp above it.** Rust provides only the VM: tagged words, heap, GC, image save/load, the bootstrap interpreter, bytecode execution, and host glue. Anything a user could want to change belongs in Lisp. If you are about to add a feature in Rust, check whether it belongs above the line.
 2. **WASM on every commit.** Every change must build and pass tests for both native and `wasm32`. The core VM crate has no host dependencies: no `std::fs`, no threads, no wall clock, no networking. Host services are reached through a host interface implemented separately for native and WASM.
 3. **Heap references are offsets, never raw pointers.** Store references relative to the heap base so images relocate and the same code runs on 64-bit native and wasm32. Follow the tagged-word scheme in `docs/design.md` (low 3 bits: `xx0` fixnum, `001` cons, `011` heap object, `101` immediate, `111` GC forwarding).
-4. **The VM must be able to yield.** The interpreter runs in slices and returns control to its caller (the browser event loop). No unbounded blocking loops in the core.
+4. **The VM must be able to yield.** The interpreter runs in slices and returns control to its caller (the browser event loop). No unbounded blocking loops in the core. Execution state therefore lives in our heap as explicit frames, never on the Rust call stack — no recursive `eval`. The caller decides when a slice ends by passing a step budget to `run_slice`; the VM has no clock and no yield callback. Slicing must stay semantically invisible: collect on allocation rather than on slice boundaries, and never expose the remaining budget to Lisp. See `crates/quokka-vm/src/slice.rs`.
 5. **The tier 0 rule.** Lisp sources for the compiler and core library use only tier 0 of the CL subset: no `loop`, no CLOS, only basic `format`, no `progv`, `load-time-value` or `symbol-macrolet`. The phase 0 interpreter only needs to support tier 0.
 6. **Common Lisp semantics.** Quokka is a CL subset (a Lisp-2), not a new dialect. Where Quokka implements a CL feature, behaviour must match SBCL. Quokka-specific extensions go in their own packages, never in `COMMON-LISP`.
 7. **Stay comprehensible.** Budget: the Rust core stays under 15k lines. Prefer clear code over clever code, keep dependencies few and permissively licensed, and justify every `unsafe` block with a comment explaining why it is sound.
 8. **Licence.** MIT. Do not add dependencies or copied code with incompatible (e.g. copyleft) licences.
+9. **Primitives are bounded.** A step budget only bounds time if a single step is short, and once control is inside a Rust primitive nothing can interrupt it. Every primitive must either complete quickly or be chunked so it can be resumed across slices. A primitive whose cost grows with the size of its argument — sorting, searching, big-number arithmetic, hashing a large string — needs a plan for this before it is added.
 
 ## Testing
 
@@ -88,6 +89,7 @@ the cheapest way to honour rule 2.
 | Dev console bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |
 | Serve the dev console | `python3 -m http.server -d crates/quokka-wasm/www 8080` |
 | Format and lint | `cargo fmt --all` · `cargo clippy --workspace --all-targets -- -D warnings` |
+| Docs | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --open` |
 
 `quokka-repl` is a native host and is deliberately **not** built for wasm32.
 

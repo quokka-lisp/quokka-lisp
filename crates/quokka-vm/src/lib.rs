@@ -8,12 +8,17 @@
 //! networking. Everything the VM needs from the outside world arrives through
 //! [`host::Host`], which the native and WASM hosts implement separately.
 //!
+//! The VM never runs to completion on its own: it runs in slices and hands
+//! control back to whoever called it, so the browser's event loop keeps
+//! turning. See [`mod@slice`] for what that costs and why it is worth it.
+//!
 //! See `docs/design.md` for the design and `CLAUDE.md` for the rules.
 
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
 pub mod host;
+pub mod slice;
 
 /// The Quokka version string, as reported by the REPL banner and the dev console.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -49,34 +49,14 @@ pub trait Host {
     /// browser it is a file bundled into the page.
     fn read_source(&mut self, name: &str) -> Result<String, HostError>;
 
-    // ----------------------------------------------------------------------
-    // TODO(carsten): yielding.
+    // Note: there is deliberately no `should_yield` or clock method here.
     //
-    // Rule 4 says the VM must be able to yield to the browser event loop, and
-    // the interpreter runs in slices. That means something has to decide *when*
-    // a slice ends, and only the host knows: natively "never, just run", in the
-    // browser "when this frame's budget is spent".
-    //
-    // Three shapes, with different costs:
-    //
-    //   a) `fn should_yield(&mut self) -> bool` — the interpreter polls it every
-    //      N reductions. Simple, no host timer in the core, but the poll
-    //      interval becomes a tuning knob and the host cannot pre-empt.
-    //
-    //   b) `fn deadline_passed(&self) -> bool` backed by a host-set deadline —
-    //      more accurate, but puts a notion of time into the host trait, which
-    //      the native host has to fake or ignore.
-    //
-    //   c) No host method at all: the *caller* passes a step budget into
-    //      `run_slice(budget)` and the VM returns when it is spent. Keeps the
-    //      trait smaller and makes tests deterministic, but the browser has to
-    //      guess a budget rather than measure one.
-    //
-    // (c) is the most testable and (b) the most responsive. Pick one and add
-    // the method (or deliberately leave the trait alone) here. This shapes the
-    // interpreter's main loop, so it is worth deciding before phase 0 code
-    // lands rather than after.
-    // ----------------------------------------------------------------------
+    // Rule 4 says the VM must be able to yield, and something has to decide when
+    // a slice ends. Three shapes were considered: the VM polling the host, the
+    // host setting a wall-clock deadline the VM watches, or the caller passing a
+    // step budget. The budget won — see the module docs on `crate::slice` for
+    // the reasoning. It needs nothing from the host, which is why this trait
+    // stays as small as it is.
 }
 
 /// A host that discards output and has no files. Useful in unit tests.
