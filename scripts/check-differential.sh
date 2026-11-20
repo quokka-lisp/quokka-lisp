@@ -27,6 +27,18 @@ for baseline in tests/lisp/*.expected; do
     echo "orphan: $baseline has no .lisp beside it" >&2
     status=1
   fi
+  # `#<...>` is Common Lisp's mark for "this cannot be read back", and every
+  # implementation renders it differently — SBCL puts an address in it. A
+  # baseline containing one can never match the oracle.
+  #
+  # The README said not to print a function. functions.lisp did it anyway, on
+  # the first run, and only SBCL noticed. A rule in prose is a hope; this is
+  # the same rule where it can fail the build.
+  if grep -n '#<' "$baseline" >/dev/null 2>&1; then
+    echo "unprintable: $baseline contains #<...>, which no two implementations render alike:" >&2
+    grep -n '#<' "$baseline" | sed 's/^/    /' >&2
+    status=1
+  fi
 done
 
 if [ "$status" -eq 0 ]; then

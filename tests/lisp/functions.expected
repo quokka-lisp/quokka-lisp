@@ -14,7 +14,7 @@
 => OUTER
 => ADDER
 => 42
-=> #<function>
+=> BOUND
 => 6
 => 100
 => THING

@@ -27,7 +27,11 @@ x
 ;; returned.
 (defun adder (n) (lambda (x) (+ x n)))
 (funcall (adder 5) 37)
-(setq add5 (adder 5))
+;; Wrapped so the closure is not the value of a top-level form: SBCL prints a
+;; function with its address, and no output would match. The README says so,
+;; and this file broke the rule on its first run — which is why
+;; check-differential.sh now enforces it instead of asking politely.
+(progn (setq add5 (adder 5)) 'bound)
 (funcall add5 1)
 (funcall add5 95)
 
