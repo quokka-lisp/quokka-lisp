@@ -140,8 +140,8 @@ pub(crate) const SUBTAG_PRIMITIVE: u64 = 2 << SUBTAG_SHIFT;
 /// The layout above the subtag is [`crate::heap`]'s business.
 pub(crate) const SUBTAG_HEADER: u64 = 31 << SUBTAG_SHIFT;
 
-const SINGLETON_NIL: u64 = 0;
-const SINGLETON_T: u64 = 1;
+// `nil` and `t` were singletons until they became static symbols; only the
+// unbound marker is left, and it is not a Lisp object at all.
 const SINGLETON_UNBOUND: u64 = 2;
 
 const fn singleton<'h>(which: u64) -> Value<'h> {
@@ -200,11 +200,25 @@ pub enum Kind {
 pub struct Value<'h>(u64, Invariant<'h>);
 
 impl<'h> Value<'h> {
-    /// The empty list and false.
-    pub const NIL: Value<'h> = singleton(SINGLETON_NIL);
+    /// The empty list, false, and the symbol named `"NIL"`.
+    ///
+    /// A reference to a **real symbol**, not an immediate — one living at a
+    /// fixed index in the heap's static area, which the collector never moves.
+    /// That is what lets this be a compile-time constant while `nil` still has
+    /// a name, a value cell and a property list, as Common Lisp requires.
+    ///
+    /// It took four special cases elsewhere to learn that an immediate was the
+    /// wrong answer. See `crate::heap::statics`.
+    pub const NIL: Value<'h> = Value(
+        ((crate::heap::statics::NIL_INDEX as u64) << TAG_BITS) | TAG_OBJECT,
+        PhantomData,
+    );
 
-    /// Canonical true.
-    pub const T: Value<'h> = singleton(SINGLETON_T);
+    /// Canonical true, and the symbol named `"T"`. Also a static symbol.
+    pub const T: Value<'h> = Value(
+        ((crate::heap::statics::T_INDEX as u64) << TAG_BITS) | TAG_OBJECT,
+        PhantomData,
+    );
 
     /// Marks a variable or slot that has no value.
     ///
@@ -482,14 +496,17 @@ impl fmt::Debug for Value<'_> {
         match self.kind() {
             Kind::Fixnum => write!(f, "{}", (self.0 as i64) >> 1),
             Kind::Cons => write!(f, "#<cons @{}>", self.0 >> TAG_BITS),
+            // `nil` and `t` are heap objects now, and this impl has no heap to
+            // look their names up in — but it does not need one, because their
+            // indices are constants. A developer convenience, not the Lisp
+            // printer: `crate::printer` goes through `symbol-name` like any
+            // other symbol, which is the whole point of the change.
+            Kind::Object if *self == Value::NIL => write!(f, "nil"),
+            Kind::Object if *self == Value::T => write!(f, "t"),
             Kind::Object => write!(f, "#<object @{}>", self.0 >> TAG_BITS),
             Kind::Forwarding => write!(f, "#<forwarded to {}>", self.0 >> TAG_BITS),
             Kind::Immediate => {
-                if self.is_nil() {
-                    write!(f, "nil")
-                } else if *self == Value::T {
-                    write!(f, "t")
-                } else if *self == Value::UNBOUND {
+                if *self == Value::UNBOUND {
                     write!(f, "#<unbound>")
                 } else if let Some(c) = self.as_character() {
                     write!(f, "#\\{c}")
@@ -649,13 +666,13 @@ mod tests {
     }
 
     #[test]
-    fn singletons_are_distinct_immediates() {
-        for v in [Value::NIL, Value::T, Value::UNBOUND] {
-            assert!(v.is_immediate());
+    fn nil_and_t_are_static_objects_and_unbound_is_not() {
+        for v in [Value::NIL, Value::T] {
+            assert!(v.is_object(), "{v:?} should be a heap object");
             assert!(!v.is_fixnum());
-            assert!(!v.is_heap_ref());
-            assert!(!v.is_character());
+            assert!(!v.is_immediate());
         }
+        assert!(Value::UNBOUND.is_immediate());
         assert_ne!(Value::NIL, Value::T);
         assert_ne!(Value::T, Value::UNBOUND);
         assert!(Value::NIL.is_nil());
@@ -709,8 +726,11 @@ mod tests {
     /// bump, not an accident.
     #[test]
     fn the_encoding_is_stable() {
-        assert_eq!(Value::NIL.bits(), 0b101);
-        assert_eq!(Value::T.bits(), (1 << 8) | 0b101);
+        // nil and t are object references into the static area now, not
+        // immediates. This is an image format change, which is exactly the
+        // kind of thing this test exists to make deliberate.
+        assert_eq!(Value::NIL.bits(), 0b011);
+        assert_eq!(Value::T.bits(), (6 << 3) | 0b011);
         assert_eq!(Value::UNBOUND.bits(), (2 << 8) | 0b101);
         assert_eq!(Value::character('A').bits(), (65 << 8) | (1 << 3) | 0b101);
         assert_eq!(Value::fixnum(1).unwrap().bits(), 2);

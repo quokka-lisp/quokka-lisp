@@ -48,11 +48,9 @@ fn write_value<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
 }
 
 fn write_immediate(out: &mut String, v: Value<'_>) {
-    if v.is_nil() {
-        out.push_str("NIL");
-    } else if v == Value::T {
-        out.push('T');
-    } else if v == Value::UNBOUND {
+    // nil and t are not here any more: they are symbols, printed by name like
+    // any other. Only the unbound marker is left, and it is not a Lisp object.
+    if v == Value::UNBOUND {
         out.push_str("#<unbound>");
     } else if let Some(index) = v.as_primitive() {
         // Common Lisp prints a function unreadably, since no text reads back as

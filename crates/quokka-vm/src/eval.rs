@@ -741,20 +741,6 @@ impl<'a, 'h> Machine<'a, 'h> {
     // Once a target is found all three do the same thing: put it in the Unwind
     // register, put the value in Value, and switch to Unwind mode.
 
-    /// Is this something `block` can be named?
-    ///
-    /// A symbol — or `nil`, which **is** a symbol in Common Lisp and is not one
-    /// here. `(block nil ...)` is not an edge case: it is what `loop`, `do` and
-    /// `dolist` all expand into, and what a bare `return` targets.
-    ///
-    /// So this is the fourth place `nil` being an immediate costs a special
-    /// case, after two in `intern` and one in the printer. See issue #7, which
-    /// has been open since chapter 1 of the book and predicted this exact
-    /// moment.
-    fn is_block_name(&self, v: Value<'h>) -> bool {
-        self.mc.is_symbol(v) || v.is_nil()
-    }
-
     /// A fresh object, equal to nothing but itself.
     ///
     /// `block` and `tagbody` each need an identity that no other entry to the
@@ -766,7 +752,7 @@ impl<'a, 'h> Machine<'a, 'h> {
 
     fn eval_block(&mut self, form: Value<'h>) -> Transition {
         let rest = self.mc.cdr(form);
-        if !rest.is_cons() || !self.is_block_name(self.mc.car(rest)) {
+        if !rest.is_cons() || !self.mc.is_symbol(self.mc.car(rest)) {
             return self.fail(EvalError::BadSyntax {
                 operator: "block",
                 detail: "wants a name and a body",
@@ -785,7 +771,7 @@ impl<'a, 'h> Machine<'a, 'h> {
 
     fn eval_return_from(&mut self, form: Value<'h>) -> Transition {
         let rest = self.mc.cdr(form);
-        if !rest.is_cons() || !self.is_block_name(self.mc.car(rest)) {
+        if !rest.is_cons() || !self.mc.is_symbol(self.mc.car(rest)) {
             return self.fail(EvalError::BadSyntax {
                 operator: "return-from",
                 detail: "wants a block name",
@@ -2278,6 +2264,88 @@ mod tests {
         ));
     }
 
+    // ---- nil is a symbol -------------------------------------------------
+
+    /// The point of the static area, and the thing four special cases were
+    /// paying for. `nil` and `t` are symbols, as Common Lisp requires.
+    #[test]
+    fn nil_and_t_are_symbols() {
+        program_gives("(symbolp nil)", "T");
+        program_gives("(symbolp t)", "T");
+        program_gives("(symbolp '())", "T");
+        program_gives("(symbolp 'anything)", "T");
+        program_gives("(symbolp 1)", "NIL");
+        program_gives("(symbolp \"text\")", "NIL");
+        program_gives("(symbolp '(1))", "NIL");
+    }
+
+    /// And everything `nil` did before still works, which is the part a
+    /// representation change could quietly break.
+    #[test]
+    fn nil_is_still_false_and_the_empty_list() {
+        program_gives("(null nil)", "T");
+        program_gives("(null '())", "T");
+        program_gives("(eq nil '())", "T");
+        program_gives("(if nil 'yes 'no)", "NO");
+        program_gives("(cdr '(1))", "NIL");
+        program_gives("(cons 1 nil)", "(1)");
+        program_gives("nil", "NIL");
+        program_gives("t", "T");
+        program_gives("(eq 'nil nil)", "T");
+    }
+
+    /// `(block nil ...)` needed a special case when `nil` was an immediate.
+    /// It needs none now, which is what "fixed" means here.
+    #[test]
+    fn block_nil_needs_no_special_case() {
+        program_gives("(block nil (return-from nil 'works))", "WORKS");
+        program_gives("(block nil 1 2 3)", "3");
+    }
+
+    /// Reading `nil` must find the static symbol rather than making a new one.
+    #[test]
+    fn nil_is_interned_like_any_symbol() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            assert_eq!(mc.intern("NIL"), Value::NIL);
+            assert_eq!(mc.intern("T"), Value::T);
+            assert_eq!(mc.symbol_name(Value::NIL), "NIL");
+            assert_eq!(mc.symbol_name(Value::T), "T");
+            assert!(mc.is_symbol(Value::NIL));
+        });
+    }
+
+    /// The static area must survive collection without moving, or every
+    /// `Value::NIL` in the system would name something else.
+    #[test]
+    fn nil_does_not_move_when_everything_else_does() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let mut list = Value::NIL;
+            for n in 0..100 {
+                list = mc.cons(Value::fixnum(n).unwrap(), list);
+            }
+            mc.set_root(list);
+        });
+        for _ in 0..5 {
+            heap.collect();
+            heap.verify().unwrap();
+        }
+        heap.mutate(|mc| {
+            assert!(mc.is_symbol(Value::NIL), "nil stopped being a symbol");
+            assert_eq!(mc.symbol_name(Value::NIL), "NIL");
+            assert_eq!(mc.intern("NIL"), Value::NIL, "a second nil appeared");
+            // And the list that was moved five times is still terminated by it.
+            let mut cursor = mc.root();
+            let mut count = 0;
+            while !cursor.is_nil() {
+                count += 1;
+                cursor = mc.cdr(cursor);
+            }
+            assert_eq!(count, 100);
+        });
+    }
+
     // ---- group B: non-local exits ----------------------------------------
 
     #[test]
@@ -2708,7 +2776,12 @@ pub mod env {
         name: Value<'h>,
     ) -> Option<(Value<'h>, usize)> {
         let mut scope = env;
-        while scope.is_object() {
+        // Terminating on `is_object` was right until `nil` became one. The
+        // chain ends at `nil`, which is a *symbol* in the static area — so the
+        // loop asks what kind of object it is rather than whether it is one.
+        // That is also total: anything unexpected ends the walk rather than
+        // being read as a scope.
+        while scope.is_object() && mc.header(scope).object_type == ObjectType::Environment {
             if mc.slot(scope, NAMESPACE).as_fixnum() == Some(namespace) {
                 let slots = mc.header(scope).slots;
                 let mut i = FIRST_PAIR;

@@ -86,11 +86,18 @@ const POISON: u64 = 0xDEAD_BEEF_DEAD_BEEF;
 /// the same object finds the copy instead of making another. That is what keeps
 /// shared structure shared and stops cycles looping forever — and it is safe to
 /// scribble on from-space precisely because it is about to be abandoned.
-fn forward(from: &mut [u64], to: &mut Vec<u64>, word: u64) -> u64 {
+fn forward(from: &mut [u64], to: &mut Vec<u64>, static_end: usize, word: u64) -> u64 {
     let value = Value::from_bits(word);
     let Some(at) = value.word_index() else {
-        return word; // a fixnum, a character, nil: refers to nothing
+        return word; // a fixnum or a character: refers to nothing
     };
+
+    // The static area does not move, so a reference into it is already correct
+    // and must not be forwarded. This is the four lines that let `Value::NIL`
+    // be a compile-time constant while `nil` is a real symbol.
+    if at < static_end {
+        return word;
+    }
 
     // Already copied? Then from[at] is where it went.
     let first = Value::from_bits(from[at]);
@@ -156,6 +163,34 @@ pub mod symbol {
     pub const SPECIAL: usize = 4;
     /// How many slots a symbol has.
     pub const SLOTS: usize = 5;
+}
+
+/// The static area: objects the collector never moves.
+///
+/// `nil` and `t` must be symbols — Common Lisp says so, and `(symbolp nil)` is
+/// true in every conforming implementation. They must also be *constants* in
+/// Rust, because `Value::NIL` appears at eighty-odd sites and `is_nil` at
+/// twenty, none of which can afford to consult the heap.
+///
+/// Those two requirements look incompatible: a heap object moves when the
+/// collector runs, so its index cannot be a constant. The way out is to have a
+/// region that does not move. SBCL does this with a static space at a fixed
+/// address; here it is simply the first words of the heap, which `collect`
+/// copies verbatim and never relocates.
+///
+/// The static objects' *contents* are still traced — a property list set on
+/// `nil` may point into the collected area — so they are roots, not islands.
+///
+/// **These indices are part of the image format.** A VM loading an image must
+/// agree about where `nil` lives. Appending is a format addition; reordering
+/// is a break. Same rule as the primitive table.
+pub mod statics {
+    use super::{symbol, HEADER_WORDS};
+
+    /// Where the symbol `nil` lives. First, so the constant is zero.
+    pub const NIL_INDEX: usize = 0;
+    /// Where the symbol `t` lives: immediately after `nil`.
+    pub const T_INDEX: usize = NIL_INDEX + HEADER_WORDS + symbol::SLOTS;
 }
 
 /// Default soft limit: 1 MiB of heap before a collection is wanted.
@@ -416,14 +451,19 @@ struct Storage {
     /// How many collections have happened. Torture mode uses it to vary the
     /// padding, so no object can land where it was.
     collections: u64,
-    /// Where the first object begins. Non-zero only under torture padding.
-    heap_start: usize,
+    /// Where the static area ends. Objects below this are never moved.
+    static_end: usize,
+    /// Where collected objects begin: `static_end`, plus torture padding.
+    dynamic_start: usize,
 }
 
 impl Storage {
     fn alloc(&mut self, words: usize) -> usize {
         let at = self.words.len();
-        if at + words > self.hard_limit {
+        // Measured against the collected part: the static area is permanent,
+        // so counting it toward a limit that only collection can relieve would
+        // make a small limit unreachable from the start.
+        if at + words - self.dynamic_start > self.hard_limit {
             // The allocation still happens. Refusing it would mean every
             // allocator returning a Result, and every caller handling a case
             // that cannot be recovered from locally. Instead the flag is set
@@ -609,17 +649,9 @@ impl<'h> Mutation<'h> {
     /// A hash table belongs here eventually; a list is correct, obvious, and
     /// replaceable without anything outside noticing.
     ///
-    /// `nil` and `t` are not symbols in this implementation — they are
-    /// immediates — so they are returned directly. See the open question about
-    /// whether that was the right call.
+    /// `nil` and `t` need no special case: they are ordinary symbols living in
+    /// the static area, interned at bootstrap like any other.
     pub fn intern(&mut self, name: &str) -> Value<'h> {
-        if name.eq_ignore_ascii_case("nil") {
-            return Value::NIL;
-        }
-        if name.eq_ignore_ascii_case("t") {
-            return Value::T;
-        }
-
         let mut cursor = Value::from_bits(self.storage.obarray);
         while !cursor.is_nil() {
             let symbol = self.car(cursor);
@@ -641,8 +673,8 @@ impl<'h> Mutation<'h> {
 
     /// Is this a symbol object?
     ///
-    /// Note that `nil` and `t` answer **no**, which is wrong by Common Lisp and
-    /// is the open question about how `nil` is represented.
+    /// `nil` and `t` answer yes, as Common Lisp requires, because they are
+    /// symbols — the header says so, and nothing here has to know their names.
     pub fn is_symbol(&self, v: Value<'h>) -> bool {
         v.is_object() && self.header(v).object_type == ObjectType::Symbol
     }
@@ -701,6 +733,11 @@ impl<'h> Mutation<'h> {
         Value::from_bits(self.storage.obarray)
     }
 
+    /// Replace the obarray. For bootstrap; `intern` manages it afterwards.
+    pub fn set_obarray(&mut self, v: Value<'h>) {
+        self.storage.obarray = v.bits();
+    }
+
     /// The persistent root.
     pub fn root(&self) -> Value<'h> {
         Value::from_bits(self.storage.root)
@@ -711,9 +748,12 @@ impl<'h> Mutation<'h> {
         self.storage.root = v.bits();
     }
 
-    /// How many words are in use.
+    /// How many words the collected part of the heap occupies.
+    ///
+    /// Excludes the static area and any torture padding, so the number means
+    /// the same thing however the heap was built.
     pub fn used_words(&self) -> usize {
-        self.storage.words.len()
+        self.storage.words.len() - self.storage.dynamic_start
     }
 
     /// Has an allocation passed the hard limit? See [`Heap::is_exhausted`].
@@ -753,9 +793,17 @@ impl<'h> Mutation<'h> {
 /// The heap.
 ///
 /// Work on it through [`Heap::mutate`]; collect between mutations.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Heap {
     storage: Storage,
+}
+
+impl Default for Heap {
+    /// Not derived: a heap without its static area has no `nil`, and every
+    /// constant in `crate::value` would name an object that is not there.
+    fn default() -> Heap {
+        Heap::new()
+    }
 }
 
 impl Heap {
@@ -766,7 +814,7 @@ impl Heap {
 
     /// A new heap that would like to be collected once it passes `words`.
     pub fn with_soft_limit(words: usize) -> Heap {
-        Heap {
+        let mut heap = Heap {
             storage: Storage {
                 words: Vec::new(),
                 spare: Vec::new(),
@@ -782,9 +830,54 @@ impl Heap {
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
                 collections: 0,
-                heap_start: 0,
+                static_end: 0,
+                dynamic_start: 0,
             },
-        }
+        };
+        heap.build_static_area();
+        heap
+    }
+
+    /// Lay out `nil` and `t` as real symbols, before anything else exists.
+    ///
+    /// Order matters and is asserted rather than assumed: `Value::NIL` and
+    /// `Value::T` are compile-time constants naming indices, so if these land
+    /// anywhere else every `nil` in the system is a different object.
+    fn build_static_area(&mut self) {
+        self.mutate(|mc| {
+            let nil = mc.alloc(ObjectType::Symbol, symbol::SLOTS);
+            assert_eq!(nil, Value::NIL, "nil must be the first static object");
+            let t = mc.alloc(ObjectType::Symbol, symbol::SLOTS);
+            assert_eq!(t, Value::T, "t must follow nil in the static area");
+
+            // The names live in the static area too, so nothing here needs to
+            // point into collected space on an empty heap.
+            let nil_name = mc.alloc_string("NIL");
+            let t_name = mc.alloc_string("T");
+
+            for (s, name) in [(nil, nil_name), (t, t_name)] {
+                mc.set_slot(s, symbol::NAME, name);
+                mc.set_slot(s, symbol::FUNCTION, Value::UNBOUND);
+                mc.set_slot(s, symbol::PLIST, Value::NIL);
+                mc.set_slot(s, symbol::SPECIAL, Value::NIL);
+            }
+            // Both are constants that evaluate to themselves.
+            mc.set_slot(nil, symbol::VALUE, Value::NIL);
+            mc.set_slot(t, symbol::VALUE, Value::T);
+        });
+        // Interned before the boundary is fixed, so the obarray's first two
+        // cells are static as well. They are permanent either way, and this
+        // keeps a fresh heap at zero used words.
+        self.mutate(|mc| {
+            for s in [Value::NIL, Value::T] {
+                let obarray = mc.obarray();
+                let entry = mc.cons(s, obarray);
+                mc.set_obarray(entry);
+            }
+        });
+
+        self.storage.static_end = self.storage.words.len();
+        self.storage.dynamic_start = self.storage.static_end;
     }
 
     /// Has an allocation passed the hard limit?
@@ -811,6 +904,14 @@ impl Heap {
         self.storage.hard_limit
     }
 
+    /// Is the static area laid out?
+    ///
+    /// False only while `build_static_area` is running. Nothing but the
+    /// torture collection needs to ask.
+    fn is_bootstrapped(&self) -> bool {
+        self.storage.static_end > 0
+    }
+
     /// Has the heap grown past its soft limit?
     ///
     /// The driver checks this **between** mutations and collects if it says
@@ -823,7 +924,7 @@ impl Heap {
     /// In the browser the ceiling is real: wasm32 linear memory stops at 4 GiB,
     /// and less in practice.
     pub fn wants_collection(&self) -> bool {
-        self.storage.words.len() > self.storage.soft_limit
+        self.used_words() > self.storage.soft_limit
     }
 
     /// The soft limit this heap was built with.
@@ -889,7 +990,11 @@ impl Heap {
         // and whether anyone checks the result. So: collect at every mutation
         // boundary, which is the finest granularity that exists, pad to-space
         // so nothing can land where it was, and verify afterwards.
-        if TORTURE {
+        // Not during bootstrap. The static area is being laid out, its end is
+        // not yet known, and a collection would pad the front and move `nil`
+        // away from the index `Value::NIL` names — after the assertion that
+        // checks it has already passed.
+        if TORTURE && self.is_bootstrapped() {
             self.collect();
         }
         result
@@ -930,31 +1035,47 @@ impl Heap {
         let mut to = core::mem::take(&mut self.storage.spare);
         to.clear();
 
-        // Torture mode pads the front of to-space by a varying amount, so that
-        // no object can land on the index it already had. See `TORTURE`.
+        // The static area is copied verbatim and keeps its indices, so every
+        // reference into it stays valid without being touched.
+        //
+        // The padding goes in *now*, before anything is forwarded. Resizing
+        // after the scan truncates whatever the scan copied — which is exactly
+        // what went wrong the first time, and showed up as a root pointing one
+        // word past the end of the heap.
+        let static_end = self.storage.static_end;
         let pad = self.torture_padding();
-        to.resize(pad, POISON);
+        to.extend_from_slice(&self.storage.words[..static_end]);
+        to.resize(static_end + pad, POISON);
 
         let from = &mut self.storage.words;
 
-        // Roots. Just the one for now; the evaluator's registers, the obarray
-        // and the process list join it as they arrive, and each one that is
-        // forgotten is a live object silently reclaimed.
-        self.storage.root = forward(from, &mut to, self.storage.root);
-        self.storage.obarray = forward(from, &mut to, self.storage.obarray);
+        // Roots. The registers, the obarray, the image root — and each one
+        // that is forgotten is a live object silently reclaimed.
+        self.storage.root = forward(from, &mut to, static_end, self.storage.root);
+        self.storage.obarray = forward(from, &mut to, static_end, self.storage.obarray);
         // Every register is a root. Forgetting one reclaims the computation
         // in progress, which is a bug with no symptom until much later.
-        self.storage.control = forward(from, &mut to, self.storage.control);
-        self.storage.env = forward(from, &mut to, self.storage.env);
-        self.storage.value = forward(from, &mut to, self.storage.value);
-        self.storage.stack = forward(from, &mut to, self.storage.stack);
-        self.storage.unwind = forward(from, &mut to, self.storage.unwind);
+        self.storage.control = forward(from, &mut to, static_end, self.storage.control);
+        self.storage.env = forward(from, &mut to, static_end, self.storage.env);
+        self.storage.value = forward(from, &mut to, static_end, self.storage.value);
+        self.storage.stack = forward(from, &mut to, static_end, self.storage.stack);
+        self.storage.unwind = forward(from, &mut to, static_end, self.storage.unwind);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has
         // been copied and had its own references updated.
-        let mut scan = pad;
+        // One scan over both regions. The static objects are not copied — they
+        // are already here at their own indices — but their slots are still
+        // forwarded, because a property list set on `nil` can point into
+        // collected space. They are roots that happen not to move.
+        let mut scan = 0;
         while scan < to.len() {
+            if scan == static_end {
+                scan = static_end + pad;
+                if scan >= to.len() {
+                    break;
+                }
+            }
             let (size, slots) = match Header::decode(to[scan]) {
                 Some(header) => {
                     let size = HEADER_WORDS + header.slots;
@@ -976,7 +1097,7 @@ impl Heap {
                 // the three cannot share a borrow. Indices stay valid across
                 // the push because they are indices, not pointers.
                 let word = to[at];
-                let updated = forward(from, &mut to, word);
+                let updated = forward(from, &mut to, static_end, word);
                 to[at] = updated;
             }
             scan += size;
@@ -986,7 +1107,7 @@ impl Heap {
         let abandoned = core::mem::replace(&mut self.storage.words, to);
         self.storage.spare = abandoned;
         self.storage.collections += 1;
-        self.storage.heap_start = pad;
+        self.storage.dynamic_start = static_end + pad;
 
         if TORTURE {
             self.verify()
@@ -1015,8 +1136,16 @@ impl Heap {
         let words = &self.storage.words;
         let mut starts = vec![false; words.len()];
 
-        let mut at = self.storage.heap_start;
+        // Two regions: the static area from zero, then collected objects after
+        // any torture padding.
+        let mut at = 0usize;
         while at < words.len() {
+            if at == self.storage.static_end {
+                at = self.storage.dynamic_start;
+                if at >= words.len() {
+                    break;
+                }
+            }
             starts[at] = true;
             let size = match Header::decode(words[at]) {
                 Some(header) => HEADER_WORDS + header.slots,
@@ -1053,8 +1182,14 @@ impl Heap {
         check(self.storage.stack, usize::MAX)?;
         check(self.storage.unwind, usize::MAX)?;
 
-        let mut at = self.storage.heap_start;
+        let mut at = 0usize;
         while at < words.len() {
+            if at == self.storage.static_end {
+                at = self.storage.dynamic_start;
+                if at >= words.len() {
+                    break;
+                }
+            }
             match Header::decode(words[at]) {
                 Some(header) => {
                     if header.object_type.slots_are_values() {
@@ -1088,7 +1223,7 @@ impl Heap {
     /// Excludes the torture padding, so the number means the same thing with
     /// the feature on or off.
     pub fn used_words(&self) -> usize {
-        self.storage.words.len() - self.storage.heap_start
+        self.storage.words.len() - self.storage.dynamic_start
     }
 
     /// The header at `word_index`, or `None` if a cons cell starts there.
@@ -1099,7 +1234,7 @@ impl Heap {
     /// Where the first object begins. Non-zero only under torture padding.
     #[cfg(test)]
     pub(crate) fn first_object_for_test(&self) -> usize {
-        self.storage.heap_start
+        self.storage.dynamic_start
     }
 
     /// Corrupt a word, so [`Heap::verify`] can be shown to catch things.
@@ -1109,7 +1244,7 @@ impl Heap {
     /// not shift what a test is aiming at.
     #[cfg(test)]
     pub(crate) fn poke_for_test(&mut self, offset: usize, word: u64) {
-        let at = self.storage.heap_start + offset;
+        let at = self.storage.dynamic_start + offset;
         self.storage.words[at] = word;
     }
 

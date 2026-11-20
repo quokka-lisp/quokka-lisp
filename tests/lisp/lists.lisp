@@ -37,3 +37,29 @@
 ;; Nested structure survives printing and reading back.
 '((1 2) (3 4))
 '(1 "two" #\3)
+
+;; nil and t are symbols. This could not be asked until they were: nil was an
+;; immediate, (symbolp nil) answered false where every conforming Common Lisp
+;; says true, and the test that would have caught it was deliberately not
+;; written. See issue #7.
+(symbolp nil)
+(symbolp t)
+(symbolp '())
+(symbolp 'ordinary)
+(symbolp 1)
+(symbolp "text")
+(symbolp '(1))
+
+;; nil is the empty list and false as well, all at once.
+(null nil)
+(null '())
+(eq nil '())
+(if nil 'yes 'no)
+(cdr '(1))
+
+;; And it evaluates to itself, like any constant.
+nil
+t
+'nil
+(eq 'nil nil)
+(eq 't t)
