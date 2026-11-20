@@ -186,6 +186,18 @@ slot, and the next collection traces whatever words happened to be lying in
 those slots. One `resize` is cheaper than that class of bug, which would look
 like memory corruption and be nothing of the sort.
 
+## A region that never moves
+
+One part of the heap is exempt from everything in this chapter. The first words
+hold the **static area**: objects the collector copies verbatim and never
+relocates, so a reference into it is a constant.
+
+It exists because `nil` has to be a symbol *and* a Rust compile-time constant,
+which looks impossible for a heap object and is not. The reasoning is
+[The trouble with nil](../part-2-reading-and-running/11-the-trouble-with-nil.md);
+what matters here is that the heap has two regions and the collector knows
+where the boundary is.
+
 ## Growth, and a bill arriving from chapter 4
 
 Chapter 4 chose lifetime branding, and noted a cost: collection can only happen

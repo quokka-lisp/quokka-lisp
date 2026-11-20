@@ -1,9 +1,13 @@
 # The trouble with nil
 
-> **Where this fits.** A short chapter about one value, because it has turned up
-> in four previous ones and is still undecided. `nil` is the most overloaded
-> object in Lisp, and the places it strains are a good lesson in what a
-> long-lived design decision feels like from the inside.
+> **Where this fits.** A short chapter about one value, because it turned up in
+> four others before anyone got it right. `nil` is the most overloaded object in
+> Lisp, and the places it strains are a good lesson in what a long-lived design
+> decision feels like from the inside — including what it feels like to be
+> wrong about one for four chapters.
+>
+> **Status: decided and implemented.** The argument is left as it stood, because
+> the reasoning that lost is most of what makes the answer meaningful.
 
 ## One value, three jobs
 
@@ -55,8 +59,9 @@ An implementation has to make `nil` fast. Testing for the end of a list is
 possibly the single most common operation in a Lisp program, so `null` wants to
 be one machine instruction.
 
-Quokka's tagged words (chapter 1) make that easy. `nil` is an **immediate** — a
-fixed bit pattern, `0b101`, that refers to nothing:
+Quokka's tagged words (chapter 1) make that easy, and the first answer was to
+make `nil` an **immediate** — a fixed bit pattern, `0b101`, referring to
+nothing:
 
 ```rust
 pub const NIL: Value<'h> = singleton(SINGLETON_NIL);
@@ -71,7 +76,7 @@ property list — and Common Lisp says `nil` has all three.
 
 ## The special cases, counted
 
-They accumulate quietly. Here is the tally so far.
+They accumulated quietly. Here is the tally that eventually settled it.
 
 **Two in the reader** (chapter 8), in the one function that should need none:
 
@@ -113,40 +118,117 @@ convenience for the VM's own code rather than a property of the language. That
 is a much weaker argument than "it is faster", which is what it looked like at
 first glance.
 
-## Why it is still undecided
+## The apparent dilemma
 
-Because it does not need deciding, and the cost of waiting is almost nothing.
+By this point the case for changing it was strong, and one objection kept it
+open: a heap object **moves**.
 
-Every test for `nil` goes through `Value::is_nil`, and every mention through
-`Value::NIL`. Those two functions are the only code that knows how `nil` is
-represented. Changing it means changing them and the bootstrap — not hunting
-through the system.
+The collector copies live objects to fresh space, so an object's index changes.
+If `nil` were a heap object, `is_nil` would need the heap to find out where it
+is — and `Value::NIL`, which appears at eighty-odd sites, could not be a Rust
+constant at all. Two properties that the whole system leans on, apparently
+traded away for conformance.
 
-That is the general move, and it is more useful than this particular question:
+That is what kept this open. It is also wrong, and the mistake is instructive:
+**both horns assume that everything in the heap moves.**
 
-> When you cannot yet make a decision well, make it **reversible** and write
-> down why.
+## The way out: a region that does not move
 
-The reversibility is not luck. It took a few minutes of routing every
-`nil` test through one function instead of comparing bit patterns at each site,
-and that small discipline is what keeps the option open.
+SBCL puts `NIL` at a fixed address in **static space**, which the collector
+never touches. The same idea works over offsets.
 
-## What will settle it
+```text
+ index   0 ....... static_end ................................ used
+       ┌──────────────┬────────────────────────────────────────┐
+       │ NIL  T  ...  │ everything else, copied and compacted  │
+       └──────────────┴────────────────────────────────────────┘
+         never moves    collected normally
+```
 
-Not argument — a count. The special cases go one way as the system grows, and
-the places that will add to them are known:
+The collector's change is four lines: a reference below `static_end` is returned
+unchanged rather than forwarded.
 
-- **Packages.** `nil`'s home package is `COMMON-LISP`, and an immediate has no
-  home.
-- **`symbol-plist`.** Common Lisp lets you set `nil`'s property list. There is
-  nowhere to put it.
-- **`symbol-name`.** Printing and `string` conversion both want it.
+```rust
+if at < static_end {
+    return word;
+}
+```
 
-Any one of those turns the tally from three special cases into five or six, at
-which point the argument is over and the change is still cheap. The honest
-current state is that the alternative is *probably* better and the evidence is
-*not yet* decisive — which is a perfectly respectable place for a design
-decision to sit, provided it is written down.
+And everything follows. `nil` is a real symbol with a name, a value cell and a
+property list. `Value::NIL` is a compile-time constant naming index zero.
+`is_nil` is one comparison. `intern` finds `NIL` in the obarray like any symbol;
+the printer prints it through `symbol-name`; `block` needs no special case;
+`is_symbol` answers yes because the header says `Symbol`.
 
-It is [issue #7](https://github.com/quokka-lisp/quokka-lisp/issues/7), and it
-has been open since chapter 1.
+**None of the hundred-odd call sites changed.**
+
+The static objects are still *scanned* — a property list set on `nil` can point
+into collected space — so they are roots that happen not to move. And the
+mechanism is not about `nil`: `t` came with it, and the keyword package and the
+standard readtable will use it later. A decision that looked like special
+pleading for one value turned out to be a missing *category*.
+
+## Four things broke, and none was in the new code
+
+Worth recording, because this is characteristic of representation changes.
+
+**A loop terminated on the wrong question.** Environment lookup walked
+`while scope.is_object()`, which was right until `nil` became one. It walked
+into `nil`'s name slot and tried to read a string as a scope. It asks what
+*kind* of object now, which is also total — anything unexpected ends the walk
+rather than being misread.
+
+**Padding was applied after the static scan**, truncating everything the scan
+had just copied and leaving a root pointing one word past the end of the heap.
+
+**The limits counted the static area**, so a heap with a soft limit of eight
+words was already over it before anything was allocated.
+
+**And the nastiest.** The torture mode collects after every mutation —
+including the mutations that *build* the static area, before its end is known.
+So the padding moved `nil` away from the index `Value::NIL` names, **after the
+assertion that checks it had already passed**.
+
+An assertion that holds and is then invalidated by something running later is a
+shape worth remembering for any bootstrap sequence. The check was in the right
+place and still proved nothing.
+
+None of the four was in the new code. That is the lesson: the risk in a
+representation change is not what you write, it is what already quietly depended
+on what you replaced.
+
+## What the deferral bought
+
+This was open for four chapters. Was waiting worth it?
+
+The argument available at chapter 1 was *the fast null test is available either
+way* — true, and thin. It would have been a judgement call made on a hunch.
+
+The argument available at the end was **four special cases in places nobody
+predicted**, including `block` names, which was not among the three costs this
+chapter forecast. That is not the same kind of claim. It is evidence, and it
+also said something the enumeration had missed: the places a representation
+costs you are more numerous than listing them suggests.
+
+> Deferring a decision only pays if the waiting produces information. Here it
+> did — and what made the wait affordable was bought deliberately in chapter 1,
+> by routing every test through one function so that nothing else knew.
+
+Not every decision can be made reversible. For the ones that can, it converts a
+guess into a measurement, which is worth a few minutes of indirection.
+
+## And one thing that is gone for good
+
+```
+quokka> (symbolp nil)
+T
+```
+
+It had been `NIL` — a violation of the project's own rule 6, sitting in the code
+with a comment on it, and **invisible to the differential tests because the test
+that would have failed was deliberately not written**.
+
+That is the worst of the states this could have been in: a known-wrong
+behaviour, hidden from the machinery built to find wrong behaviour. Being able
+to ask the oracle a question you have been avoiding is most of what fixing it
+was for.

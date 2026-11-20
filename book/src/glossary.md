@@ -142,7 +142,7 @@ be invariant or the guarantee evaporates while everything still compiles.
 [collection](#collection) can happen inside one, which is what makes holding a
 value safe. ([4](part-1-substrate/04-rooting.md))
 
-**nil.** The empty list, false, and the symbol named "NIL" — one value doing three jobs, which is both the convenience and the problem. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
+**nil.** The empty list, false, and the symbol named "NIL" — one value doing three jobs, which is both the convenience and the problem. A real [symbol](#symbol) in the [static area](#static-area), not an immediate; it took four chapters and four special cases to get that right. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
 
 **Non-local exit.** Leaving a computation from the middle of it — `return-from`, `throw`. All of them are one mechanism differing only in how the target is found, and it is the same machinery a condition system needs. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
@@ -200,6 +200,8 @@ whoever called it, so a browser can repaint and respond. The caller says how
 many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
 **Special operator.** A form that decides for itself whether, when, or in what environment its arguments are evaluated — or whose arguments are not expressions at all. `if` must be one, or both branches would run before it could choose. Common Lisp has exactly 25, they are a *basis* rather than a feature list, and everything else is macros over them. ([9](part-2-reading-and-running/09-what-a-form-means.md), [13](part-2-reading-and-running/13-the-special-operators.md))
+
+**Static area.** The first words of the heap, which the collector copies verbatim and never relocates. A reference into it is therefore a compile-time constant, which is how `nil` can be an ordinary symbol *and* `Value::NIL` a Rust constant. `t` lives there too; the keyword package will. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
 
 **Symbol.** A named thing — `car`, `+`, `my-variable`. Lisp symbols are objects
 in their own right, not just text, and carry a value and a function.

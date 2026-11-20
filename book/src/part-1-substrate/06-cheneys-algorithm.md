@@ -17,6 +17,11 @@ the contract around it is what costs. Here is the thing itself.
 Two semispaces. One is live and holds everything; the other is empty. To
 collect, copy the survivors from the live space into the empty one, then swap.
 
+(Almost everything. The **static area** at the front of the heap is copied
+verbatim and keeps its indices, so references into it need no updating. It holds
+`nil` and `t`, for reasons that are
+[chapter 11's](../part-2-reading-and-running/11-the-trouble-with-nil.md).)
+
 ```text
 before                                   after
 ┌──────────────────────────────┐         ┌──────────────┐

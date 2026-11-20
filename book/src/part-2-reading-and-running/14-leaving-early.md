@@ -280,16 +280,16 @@ fn is_block_name(&self, v: Value<'h>) -> bool {
 }
 ```
 
-That is the fourth, after two in `intern` and one in the printer.
+That was the fourth, after two in `intern` and one in the printer — and it was
+the last. It is also not one of the three sources chapter 11 listed: packages,
+`symbol-plist` and `symbol-name` were the predicted costs, and block names were
+not on the list.
 
-What is interesting is that it is not one of the three sources chapter 11
-listed. Packages, `symbol-plist` and `symbol-name` were the predicted costs;
-block names were not on the list. **The places this decision costs something are
-more numerous than enumerating them suggested** — which is itself the strongest
-argument yet, and a general lesson about estimating the cost of a design choice
-by listing its consequences.
-
-Still not decided. Still cheap to change.
+**The places a decision costs something are more numerous than enumerating them
+suggests.** That was the argument that finally settled it, and
+[The trouble with nil](11-the-trouble-with-nil.md) is the ending: `nil` is a real symbol now, living
+in a region of the heap the collector never moves, and the special case shown
+above has been deleted.
 
 ## A tooling lesson worth more than the operators
 

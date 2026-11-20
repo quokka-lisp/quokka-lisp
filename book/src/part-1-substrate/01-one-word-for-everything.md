@@ -115,24 +115,32 @@ either. [Saving a world](07-saving-a-world.md) is about what that buys.
 `nil` is the empty list, and also false, and it turns up constantly — at the end
 of every list, in every conditional. It needs the cheapest possible test.
 
-So it gets a fixed bit pattern (`0b101`) and testing for it is one comparison.
-The same tag holds `t`, characters, and a marker for "this variable has no
-value", distinguished by a few more bits above the tag.
+The first answer was to give it a fixed bit pattern in this tag — an
+**immediate**, a value referring to nothing — so that testing for it was one
+comparison and `Value::NIL` was a Rust compile-time constant.
 
-There is a problem with this, which the design document records and the code has
-not yet had to face. In Common Lisp, `nil` **is a symbol**. `(symbolp nil)` is
-true. It has a name, a home package, a value cell holding itself, and a property
-list you are allowed to modify. An immediate has nowhere to keep any of that.
+That answer was wrong, and it took four chapters to find out. In Common Lisp,
+`nil` **is a symbol**. `(symbolp nil)` is true. It has a name, a home package, a
+value cell holding itself, and a property list you are allowed to modify. An
+immediate has nowhere to keep any of that.
 
-SBCL's answer is to make `nil` a real symbol at a fixed, known position in the
-heap — which keeps the test to a single comparison against a constant *and*
-removes every special case. That may well be the better answer. It is
-[issue #7](https://github.com/quokka-lisp/quokka-lisp/issues/7), left open
-deliberately, and the code routes every mention of `nil` through two functions so
-that changing it later is cheap.
+So `nil` is a symbol here too, living at a fixed index in a region of the heap
+the collector never moves. The test is still one comparison, because the index
+is a constant. [The trouble with nil](../part-2-reading-and-running/11-the-trouble-with-nil.md)
+is the whole story, including why the obvious objection — that a heap object's
+index cannot be a constant — turned out not to hold.
 
-That is a pattern worth noticing early. The useful thing to do with a decision
-you cannot yet make well is to make it *reversible* and write down why.
+What made the correction cheap is worth noticing here, where the decision was
+made. Every test for `nil` went through one function and every mention through
+one constant, deliberately, so that nothing else in the system knew how it was
+represented. When the answer changed, **none of the hundred-odd places that use
+`nil` changed with it**.
+
+> The useful thing to do with a decision you cannot yet make well is to make it
+> *reversible*, and write down why.
+
+The same tag still holds characters and the marker for "this variable has no
+value", which is not a Lisp object and so has nothing to be a symbol for.
 
 ## Why does the fixnum tag look wrong?
 
