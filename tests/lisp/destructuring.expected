@@ -43,3 +43,14 @@
 => (1 2 DFLT KEYED)
 => (1 2 THREE KEYED)
 => (1 2 THREE FOUR)
+=> EXACTLY-TWO
+=> (1 2)
+!! error
+!! error
+!! error
+=> OPT
+=> (1 NIL)
+=> (1 2)
+=> RES
+=> (1 NIL)
+=> (1 (2 3))

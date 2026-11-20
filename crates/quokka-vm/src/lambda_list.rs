@@ -352,11 +352,12 @@ pub fn rewrite<'h>(
 /// keeps the whole thing to one list of bindings. Nested patterns recurse,
 /// taking a fresh cursor of their own.
 ///
-/// **Arity is not checked.** `(with-thing (h) ...)` against the pattern
-/// `(var name)` binds `name` to nil rather than complaining, where a real
-/// Common Lisp signals. Checking would mean emitting a test per position;
-/// worth doing, and worth doing *after* there is a condition system to signal
-/// into (group E of #18).
+/// **Arity is checked**, which it was not at first: a required position
+/// emits `(if (consp c) (car c) (%destructuring-too-short))` rather than a
+/// bare `(car c)`, and a pattern that ends emits a check that nothing is
+/// left. Both were deliberately missing until there was a condition system
+/// to signal into — emitting a check with nothing to signal would have meant
+/// inventing an error mechanism to throw away.
 fn destructure<'h>(
     mc: &mut Mutation<'h>,
     pattern: Value<'h>,
@@ -366,7 +367,10 @@ fn destructure<'h>(
     let car = mc.intern("CAR");
     let cdr = mc.intern("CDR");
     let null = mc.intern("NULL");
+    let consp = mc.intern("CONSP");
     let if_ = mc.intern("IF");
+    // A prelude function, called only when a call does not fit its pattern.
+    let too_short = mc.intern("%DESTRUCTURING-TOO-SHORT");
 
     let cursor = mc.gensym();
     let b = list2(mc, cursor, source);
@@ -390,7 +394,8 @@ fn destructure<'h>(
                 let name = mc.car(item);
                 item = mc.cdr(item);
                 bind_here(mc, name, cursor, bindings)?;
-                return finish(mc, item, cursor, bindings);
+                // `&rest` swallows whatever is left, so nothing is too long.
+                return finish(mc, item, cursor, bindings, false);
             }
             if mc.symbol_is(entry, "&KEY") || mc.symbol_is(entry, "&AUX") {
                 // Keyword and aux parameters inside a *nested* pattern would
@@ -423,15 +428,22 @@ fn destructure<'h>(
             continue;
         }
 
-        // A required position: take the head, then move on.
+        // A required position: take the head, then move on. The `consp`
+        // test is the arity check — a pattern of two against a call of one
+        // signals rather than binding nil.
+        let have = list2(mc, consp, cursor);
+        let short = mc.cons(too_short, Value::NIL);
         let take = list2(mc, car, cursor);
+        let take = list_of(mc, &[if_, have, take, short]);
         bind_here(mc, entry, take, bindings)?;
         let step = list2(mc, cdr, cursor);
         let b = list2(mc, cursor, step);
         bindings.push(b);
     }
 
-    finish(mc, item, cursor, bindings)
+    // Anything still in the cursor is an argument the pattern did not ask
+    // for, unless an `&optional` or `&rest` already took the tail.
+    finish(mc, item, cursor, bindings, !optional)
 }
 
 /// Bind one pattern element — a name, or a nested pattern — to an expression.
@@ -460,8 +472,20 @@ fn finish<'h>(
     tail: Value<'h>,
     cursor: Value<'h>,
     bindings: &mut Vec<Value<'h>>,
+    check_exhausted: bool,
 ) -> Result<(), EvalError> {
     if tail.is_nil() {
+        if check_exhausted {
+            let null = mc.intern("NULL");
+            let if_ = mc.intern("IF");
+            let too_long = mc.intern("%DESTRUCTURING-TOO-LONG");
+            let empty = list2(mc, null, cursor);
+            let complain = mc.cons(too_long, Value::NIL);
+            let check = list_of(mc, &[if_, empty, Value::NIL, complain]);
+            let ignored = mc.gensym();
+            let b = list2(mc, ignored, check);
+            bindings.push(b);
+        }
         return Ok(());
     }
     if mc.is_symbol(tail) {
@@ -656,8 +680,12 @@ mod tests {
         assert!(out.contains("LET*"), "{out}");
         assert!(out.contains("(CAR "), "{out}");
         assert!(out.contains("(CDR "), "{out}");
-        assert!(out.contains("(VAR (CAR "), "{out}");
-        assert!(out.contains("(NAME (CAR "), "{out}");
+        assert!(out.contains("(VAR (IF (CONSP "), "{out}");
+        assert!(out.contains("(NAME (IF (CONSP "), "{out}");
+        // The arity check: a position that is missing signals rather than
+        // binding nil, and anything left over signals too.
+        assert!(out.contains("%DESTRUCTURING-TOO-SHORT"), "{out}");
+        assert!(out.contains("%DESTRUCTURING-TOO-LONG"), "{out}");
         // &body is still a plain parameter, not part of the pattern.
         assert!(
             out.contains("&REST BODY") || out.contains("&BODY BODY"),

@@ -5,10 +5,9 @@
 ;;; `(with-open-file (stream "x") ...)` possible, and it is the reason macros
 ;;; are worth having beyond clever control flow.
 ;;;
-;;; Every call below supplies exactly the shape the pattern describes. Quokka
-;;; does not yet check pattern arity, so a mis-shaped call would disagree with
-;;; SBCL rather than signalling — noted in chapter 18 and deliberately not
-;;; exercised here.
+;;; Pattern arity is checked now, so a mis-shaped call signals rather than
+;;; quietly binding nil — which it did until there was a condition system to
+;;; signal into. Both the well-shaped and the mis-shaped cases are here.
 
 ;; The simplest pattern, and the one chapter 17 is built around.
 (defmacro with-thing ((var name) &body body)
@@ -92,3 +91,23 @@ closed
 (combo (1 2))
 (combo (1 2) three)
 (combo (1 2) three :d four)
+
+;; A call that does not fit its pattern signals, rather than binding nil for
+;; what is missing or ignoring what is left over. Written as top-level forms
+;; because the failure happens while the call is being *expanded*, and an
+;; implementation is free to expand it before a handler around it is in
+;; force — so `!! error` from both is the portable thing to compare.
+(defmacro exactly-two ((a b)) (list 'quote (list a b)))
+(exactly-two (1 2))
+(exactly-two (1))
+(exactly-two (1 2 3))
+(exactly-two ())
+
+;; &optional and &rest still accept what they are meant to, and &rest makes
+;; a long call legal again.
+(defmacro opt ((a &optional b)) (list 'quote (list a b)))
+(opt (1))
+(opt (1 2))
+(defmacro res ((a &rest r)) (list 'quote (list a r)))
+(res (1))
+(res (1 2 3))

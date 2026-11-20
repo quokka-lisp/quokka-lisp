@@ -29,6 +29,7 @@
 - [What a parameter list can say](part-2-reading-and-running/18-lambda-lists.md)
 - [Things with an index](part-2-reading-and-running/19-things-with-an-index.md)
 - [Errors you can catch](part-2-reading-and-running/20-errors-you-can-catch.md)
+- [Records, and a macro that writes ten functions](part-2-reading-and-running/21-records.md)
 
 ---
 

@@ -395,6 +395,15 @@
 ;; knows a fixed list of places, which is enough for tier 0 and will have to
 ;; grow a proper expander before `defstruct` does anything useful.
 
+;; Reader name -> writer name, for places the prelude does not know about.
+;; `defstruct` fills it in. A hash table rather than an alist because a
+;; program may define a great many structures and `setf` consults this on
+;; every expansion.
+(setq %setf-setters (make-hash-table))
+
+(defun %define-setf-writer (reader writer)
+  (setf (gethash reader %setf-setters) writer))
+
 ;; Called while a `setf` form is being expanded, so an unknown place is
 ;; reported then rather than at run time.
 (defun %setf-place (place value)
@@ -417,12 +426,24 @@
          ((eq head 'cdr) (%setf-through 'rplacd (car args) value))
          ((eq head 'first) (%setf-through 'rplaca (car args) value))
          ((eq head 'rest) (%setf-through 'rplacd (car args) value))
-         ;; Deliberately an undefined function rather than a quiet wrong
-         ;; expansion. It fires during macroexpansion, which is when a bad
-         ;; place should be noticed. It becomes a real `error` call when
-         ;; group E of #18 gives us something to signal.
-         (t (%setf-does-not-know-this-place)))))
-    (t (%setf-does-not-know-this-place))))
+         ;; Anything else: ask the table. `defstruct` registers its
+         ;; accessors there, which is how `(setf (point-x p) 1)` works on a
+         ;; structure the prelude has never heard of.
+         ;;
+         ;; Common Lisp does this with `define-setf-expander`, which hands
+         ;; the *macro* five values describing how to read and write the
+         ;; place, so a place can evaluate its subforms exactly once even
+         ;; when something like `incf` reads and writes it. This table maps a
+         ;; reader's name to a writer's name and nothing more. It is enough
+         ;; for `defstruct` and is not enough for `incf`.
+         (t (let ((setter (gethash head %setf-setters)))
+              (if setter
+                  (cons setter (append args (list value)))
+                  (%setf-unknown-place place)))))))
+    (t (%setf-unknown-place place))))
+
+(defun %setf-unknown-place (place)
+  (error "SETF does not know how to set this place" place))
 
 (defun %setf-through (setter cons-form value)
   (let ((once (gensym)))
@@ -436,7 +457,8 @@
 (defmacro setf (&rest pairs)
   (labels ((expand (rest)
              (cond ((null rest) nil)
-                   ((null (cdr rest)) (%setf-wants-pairs))
+                   ((null (cdr rest))
+                    (error "SETF wants place and value in pairs" (car rest)))
                    (t (cons (%setf-place (car rest) (car (cdr rest)))
                             (expand (cdr (cdr rest))))))))
     (let ((forms (expand pairs)))
@@ -471,4 +493,122 @@
 ;; which is the same gap `macroexpand` and `gethash` have.
 (defmacro ignore-errors (&rest forms)
   `(handler-case (progn ,@forms) (error () nil)))
+
+;; Called from the code `lambda_list::destructure` generates, when a macro
+;; call does not fit the shape its parameter list described. These were
+;; missing entirely until there was something to signal into.
+(defun %destructuring-too-short ()
+  (error "a macro call is missing arguments its parameter list asked for"))
+
+(defun %destructuring-too-long ()
+  (error "a macro call has more arguments than its parameter list asked for"))
+
+;;; ------------------------------------------------------------------
+;;; defstruct
+;;; ------------------------------------------------------------------
+
+;; `(defstruct point x y)` defines a record type: a constructor, a predicate,
+;; an accessor per slot, each settable with `setf`, and a copier.
+;;
+;; This is the macro that justifies the rest. It writes **nine or ten
+;; definitions** from one line, each of them a `defun` the user could have
+;; typed, and it needs almost everything the last few chapters built: `&key`
+;; lambda lists for the constructor, vectors to store the slots in, `gensym`
+;; so its generated code cannot capture a caller's names, a hash table so
+;; `setf` can find the writers, and `error` to complain about a malformed
+;; slot. A compiler will represent nearly everything it works with this way.
+;;
+;; **The representation is a vector with the type name in slot 0.** Common
+;; Lisp's `defstruct` defines a genuine type — `typep` knows it, the printer
+;; shows `#S(POINT :X 1 :Y 2)`, and `:include` gives it single inheritance.
+;; Quokka has no class system until phase 3, so a structure here *is* a
+;; vector and prints as one. `point-p` is therefore slightly generous: a
+;; vector someone else built with the symbol `point` in slot 0 would pass it.
+;;
+;; Not supported: the option list `(defstruct (point (:constructor ...)) ...)`,
+;; `:include`, `:print-function`, and slot types. The simple form is what a
+;; tier 0 compiler needs.
+
+(defun %slot-name (slot)
+  (cond ((symbolp slot) slot)
+        ((consp slot) (car slot))
+        (t (error "a defstruct slot wants a name or (name default)" slot))))
+
+(defun %slot-default (slot)
+  (if (consp slot) (car (cdr slot)) nil))
+
+;; `point` and `x` become the symbol `POINT-X`. Symbols are interned by name,
+;; so building a name out of two others is building a string and interning
+;; it — which is `intern`, and which Quokka does not expose yet, so the
+;; primitive does the work.
+(defun %symbol-concat (a b)
+  (%intern (%string-append (symbol-name a) (symbol-name b))))
+
+(defmacro defstruct (name &rest slots)
+  (if (not (symbolp name))
+      (error "defstruct wants a symbol for a name" name))
+  (let ((names (%map-slot-names slots)))
+    (cons 'progn
+          (append
+           (list (%defstruct-constructor name slots))
+           (list (%defstruct-predicate name))
+           (list (%defstruct-copier name))
+           (%defstruct-accessors name names 1)
+           (list (list 'quote name))))))
+
+(defun %map-slot-names (slots)
+  (labels ((walk (rest acc)
+             (if (endp rest)
+                 (reverse acc)
+                 (walk (cdr rest) (cons (%slot-name (car rest)) acc)))))
+    (walk slots nil)))
+
+(defun %defstruct-constructor (name slots)
+  ;; (defun make-point (&key (x nil) (y nil)) (vector 'point x y))
+  (let ((parameters
+          (labels ((walk (rest acc)
+                     (if (endp rest)
+                         (reverse acc)
+                         (walk (cdr rest)
+                               (cons (list (%slot-name (car rest))
+                                           (%slot-default (car rest)))
+                                     acc)))))
+            (walk slots nil))))
+    (list 'defun
+          (%symbol-concat 'make- name)
+          (cons '&key parameters)
+          (cons 'vector (cons (list 'quote name) (%map-slot-names slots))))))
+
+(defun %defstruct-predicate (name)
+  ;; A vector whose first element is this type's name. Generous, as the
+  ;; comment above says, and exact enough until there are real types.
+  (let ((x (gensym)))
+    (list 'defun (%symbol-concat name '-p) (list x)
+          (list 'and
+                (list 'vectorp x)
+                (list '> (list 'length x) 0)
+                (list 'eq (list 'aref x 0) (list 'quote name))))))
+
+(defun %defstruct-copier (name)
+  (let ((x (gensym)))
+    (list 'defun (%symbol-concat 'copy- name) (list x)
+          (list 'apply (list 'function 'vector) (list '%vector-to-list x)))))
+
+;; One accessor and one writer per slot, and the writer registered so `setf`
+;; can find it. The index is computed here, at macroexpansion time, and
+;; appears in the generated code as a literal.
+(defun %defstruct-accessors (name names index)
+  (if (endp names)
+      nil
+      (let ((reader (%symbol-concat name (%symbol-concat '- (car names))))
+            (x (gensym))
+            (v (gensym)))
+        (let ((writer (%symbol-concat '%set- reader)))
+          (cons (list 'defun reader (list x) (list 'aref x index))
+                (cons (list 'defun writer (list x v)
+                            (list 'setf (list 'aref x index) v))
+                      (cons (list '%define-setf-writer
+                                  (list 'quote reader)
+                                  (list 'quote writer))
+                            (%defstruct-accessors name (cdr names) (+ index 1)))))))))
 

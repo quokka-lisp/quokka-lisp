@@ -292,6 +292,25 @@ const TABLE: &[Primitive] = &[
         name: "%CONDITIONP",
         arity: Arity::Exactly(1),
     },
+    // ---- building names --------------------------------------------------
+    //
+    // `defstruct` makes `POINT-X` out of `POINT` and `X`, which means making
+    // a string and interning it. Common Lisp spells these `intern`,
+    // `concatenate` and `coerce`; each of those takes arguments Quokka has no
+    // way to express yet (a package, a sequence type), so these are the
+    // narrow versions under `%` names until the real ones can exist.
+    Primitive {
+        name: "%INTERN",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "%STRING-APPEND",
+        arity: Arity::Exactly(2),
+    },
+    Primitive {
+        name: "%VECTOR-TO-LIST",
+        arity: Arity::Exactly(1),
+    },
 ];
 
 /// Where `ERROR` sits in the table, which `crate::eval` intercepts.
@@ -472,6 +491,43 @@ pub fn call<'h>(
             operator: "ERROR",
             detail: "is intercepted by the evaluator and should never be called here",
         }),
+        "%INTERN" => {
+            if !(args[0].is_object() && mc.header(args[0]).object_type == ObjectType::String) {
+                return Err(EvalError::WrongType {
+                    name: "%INTERN",
+                    wanted: "a string",
+                });
+            }
+            let text = mc.string_to_rust(args[0]);
+            Ok(mc.intern(&text))
+        }
+        "%STRING-APPEND" => {
+            let mut text = String::new();
+            for arg in args.iter().take(2) {
+                if !(arg.is_object() && mc.header(*arg).object_type == ObjectType::String) {
+                    return Err(EvalError::WrongType {
+                        name: "%STRING-APPEND",
+                        wanted: "two strings",
+                    });
+                }
+                text.push_str(&mc.string_to_rust(*arg));
+            }
+            Ok(mc.alloc_string(&text))
+        }
+        "%VECTOR-TO-LIST" => {
+            if !(args[0].is_object() && mc.header(args[0]).object_type == ObjectType::Vector) {
+                return Err(EvalError::WrongType {
+                    name: "%VECTOR-TO-LIST",
+                    wanted: "a vector",
+                });
+            }
+            let mut out = Value::NIL;
+            for i in (0..mc.header(args[0]).slots).rev() {
+                let item = mc.slot(args[0], i);
+                out = mc.cons(item, out);
+            }
+            Ok(out)
+        }
         "%CONDITIONP" => Ok(if crate::condition::is_condition(mc, args[0]) {
             Value::T
         } else {
@@ -798,7 +854,10 @@ mod tests {
                 "ERROR",
                 "%CONDITION-TYPE",
                 "%CONDITION-MESSAGE",
-                "%CONDITIONP"
+                "%CONDITIONP",
+                "%INTERN",
+                "%STRING-APPEND",
+                "%VECTOR-TO-LIST"
             ]
         );
     }

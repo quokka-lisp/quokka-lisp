@@ -98,6 +98,12 @@ it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 
 **defun.** Makes a function and puts it in a [symbol](#symbol)'s *function* cell. In Common Lisp it is a macro over `setf symbol-function`; Quokka made it a special operator before it had [macros](#macro), and moving it up is now possible. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
+**defstruct.** Defines a record type from one line: a constructor, a
+predicate, an accessor per slot that `setf` can write, and a copier. A macro
+that writes ten functions, and the clearest demonstration of what macros are
+for. Quokka's structures are vectors with the type name in the first slot,
+since real types need a class system. ([21](part-2-reading-and-running/21-records.md))
+
 **Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file natively, under WebAssembly and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
 **Dotted pair.** A [cons cell](#cons-cell) whose [cdr](#cdr) is not a list, written `(a . b)`. A list is the common case of a cons cell, not the only one; the dot is how you write the general case. Also called an *improper list*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
@@ -332,6 +338,13 @@ x)`, `(setf (gethash k h) v)`, `(setf x 1)`. A macro that turns a *reader* —
 `aref`, `gethash` — into the corresponding writer, so a program names what it
 wants to change in the same words it would use to read it. Quokka's knows a
 fixed list of places; the real one can be taught new ones. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+
+**setf expander.** How `setf` is taught a place it has never seen.
+Quokka's is a table from a reader's name to a writer's name, which is what
+`defstruct` needs. Common Lisp's `define-setf-expander` hands back five
+values instead, so that a place's subforms can be evaluated exactly once even
+when something reads *and* writes it — which is why Quokka has no `incf`.
+([21](part-2-reading-and-running/21-records.md))
 
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.

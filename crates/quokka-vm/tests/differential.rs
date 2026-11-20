@@ -72,6 +72,7 @@ differential_cases! {
     vectors => "vectors",
     hash_tables => "hash-tables",
     conditions => "conditions",
+    structures => "structures",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.
