@@ -116,6 +116,15 @@ const IMM_PAYLOAD_SHIFT: u32 = 8;
 const SUBTAG_SINGLETON: u64 = 0 << SUBTAG_SHIFT;
 const SUBTAG_CHARACTER: u64 = 1 << SUBTAG_SHIFT;
 
+/// A primitive: an operation the VM performs in Rust rather than in Lisp.
+///
+/// The payload is an index into the primitive table, not a heap reference, so a
+/// primitive is an immediate and costs no allocation. That index is part of the
+/// VM, like bytecode will be: an image carries primitive references, so the VM
+/// that loads it must have the same table. Adding primitives is therefore an
+/// image-format change, and reordering them is a breaking one.
+pub(crate) const SUBTAG_PRIMITIVE: u64 = 2 << SUBTAG_SHIFT;
+
 /// Reserved: marks an object header, which is **not a value**.
 ///
 /// The collector scans to-space linearly, so at every position it must know how
@@ -366,6 +375,23 @@ impl<'h> Value<'h> {
     /// Is this anything other than `nil`? Lisp's notion of truth.
     pub const fn is_true(self) -> bool {
         self.0 != Value::NIL.0
+    }
+
+    /// Make a primitive referring to entry `index` of the primitive table.
+    pub(crate) const fn primitive(index: u32) -> Value<'h> {
+        Value(
+            ((index as u64) << IMM_PAYLOAD_SHIFT) | SUBTAG_PRIMITIVE | TAG_IMMEDIATE,
+            PhantomData,
+        )
+    }
+
+    /// Which primitive this is, or `None` if it is not one.
+    pub fn as_primitive(self) -> Option<u32> {
+        if self.is_immediate() && (self.0 & SUBTAG_MASK) == SUBTAG_PRIMITIVE {
+            Some((self.0 >> IMM_PAYLOAD_SHIFT) as u32)
+        } else {
+            None
+        }
     }
 
     /// Is this word an object header rather than a value?

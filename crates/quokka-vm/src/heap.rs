@@ -195,6 +195,12 @@ pub enum ObjectType {
     Instance = 4,
     /// Buckets and metadata.
     HashTable = 5,
+    /// One pending step of the evaluator: what to do once a value arrives.
+    ///
+    /// Slot 0 is which kind, as a fixnum; the rest depend on it. One object
+    /// type rather than one per kind, so adding a special operator does not
+    /// mean adding a variant here. See `crate::eval`.
+    Frame = 6,
     /// Characters, packed. **Not traced.**
     String = 64,
     /// Bytecode. **Not traced.**
@@ -222,6 +228,7 @@ impl ObjectType {
             3 => Closure,
             4 => Instance,
             5 => HashTable,
+            6 => Frame,
             64 => String,
             65 => Code,
             66 => Bignum,
@@ -290,6 +297,22 @@ impl fmt::Display for Inconsistency {
     }
 }
 
+/// Which of the evaluator's four registers.
+///
+/// Named rather than numbered because every one of them is a root, and a
+/// mistyped index would be a silent corruption rather than a compile error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Register {
+    /// The form being worked on.
+    Control,
+    /// Where names are looked up.
+    Env,
+    /// The result the last step produced.
+    Value,
+    /// Frames: what to do once that result arrives.
+    Stack,
+}
+
 /// An object header word, as stored in the heap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
@@ -334,6 +357,21 @@ struct Storage {
     /// Every interned symbol, as a list. A second root, and the collector must
     /// forward it — a root nobody forwards is a live object silently reclaimed.
     obarray: u64,
+    /// The evaluator's registers. Roots, all four.
+    ///
+    /// They live here rather than in a Rust struct for two reasons: the
+    /// collector has to forward them, and an image has to be able to save a
+    /// computation half-finished. See `crate::eval`.
+    control: u64,
+    env: u64,
+    value: u64,
+    stack: u64,
+    /// Which half of the evaluator's cycle it is in. Not a `Value` — it is VM
+    /// state rather than Lisp data, so the collector does not touch it.
+    ///
+    /// It does need to be here rather than in a Rust local, so that a slice can
+    /// end between any two steps and resume correctly.
+    mode: u8,
     /// Above this, the heap would like to be collected. Not a hard limit —
     /// see [`Heap::wants_collection`].
     soft_limit: usize,
@@ -572,6 +610,37 @@ impl<'h> Mutation<'h> {
         self.string_to_rust(self.slot(v, symbol::NAME))
     }
 
+    /// Read an evaluator register.
+    pub fn register(&self, which: Register) -> Value<'h> {
+        Value::from_bits(match which {
+            Register::Control => self.storage.control,
+            Register::Env => self.storage.env,
+            Register::Value => self.storage.value,
+            Register::Stack => self.storage.stack,
+        })
+    }
+
+    /// Write an evaluator register.
+    pub fn set_register(&mut self, which: Register, v: Value<'h>) {
+        let slot = match which {
+            Register::Control => &mut self.storage.control,
+            Register::Env => &mut self.storage.env,
+            Register::Value => &mut self.storage.value,
+            Register::Stack => &mut self.storage.stack,
+        };
+        *slot = v.bits();
+    }
+
+    /// The evaluator's half-cycle marker. Meaning is `crate::eval`'s business.
+    pub fn mode(&self) -> u8 {
+        self.storage.mode
+    }
+
+    /// Set the half-cycle marker.
+    pub fn set_mode(&mut self, mode: u8) {
+        self.storage.mode = mode;
+    }
+
     /// Every interned symbol, as a list. A root.
     pub fn obarray(&self) -> Value<'h> {
         Value::from_bits(self.storage.obarray)
@@ -643,6 +712,11 @@ impl Heap {
                 spare: Vec::new(),
                 root: Value::NIL.bits(),
                 obarray: Value::NIL.bits(),
+                control: Value::NIL.bits(),
+                env: Value::NIL.bits(),
+                value: Value::NIL.bits(),
+                stack: Value::NIL.bits(),
+                mode: 0,
                 soft_limit: words,
                 collections: 0,
                 heap_start: 0,
@@ -781,6 +855,12 @@ impl Heap {
         // forgotten is a live object silently reclaimed.
         self.storage.root = forward(from, &mut to, self.storage.root);
         self.storage.obarray = forward(from, &mut to, self.storage.obarray);
+        // Every register is a root. Forgetting one reclaims the computation
+        // in progress, which is a bug with no symptom until much later.
+        self.storage.control = forward(from, &mut to, self.storage.control);
+        self.storage.env = forward(from, &mut to, self.storage.env);
+        self.storage.value = forward(from, &mut to, self.storage.value);
+        self.storage.stack = forward(from, &mut to, self.storage.stack);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has
@@ -879,6 +959,10 @@ impl Heap {
 
         check(self.storage.root, usize::MAX)?;
         check(self.storage.obarray, usize::MAX)?;
+        check(self.storage.control, usize::MAX)?;
+        check(self.storage.env, usize::MAX)?;
+        check(self.storage.value, usize::MAX)?;
+        check(self.storage.stack, usize::MAX)?;
 
         let mut at = self.storage.heap_start;
         while at < words.len() {

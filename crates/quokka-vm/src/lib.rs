@@ -20,8 +20,10 @@
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
+pub mod eval;
 pub mod heap;
 pub mod host;
+pub mod primitives;
 pub mod printer;
 pub mod reader;
 pub mod slice;

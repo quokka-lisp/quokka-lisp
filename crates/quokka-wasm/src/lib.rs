@@ -4,8 +4,10 @@
 //! [`quokka_vm::host::Host`] over the page and exposes a small surface to
 //! JavaScript for the dev console in `www/`.
 
+use quokka_vm::eval::eval_now;
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{Host, HostError};
+use quokka_vm::primitives;
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
 use quokka_vm::{PHASE, VERSION};
@@ -52,7 +54,11 @@ impl Quokka {
     pub fn new() -> Self {
         Self {
             host: BrowserHost::default(),
-            heap: Heap::new(),
+            heap: {
+                let mut heap = Heap::new();
+                heap.mutate(primitives::install);
+                heap
+            },
         }
     }
 
@@ -61,10 +67,7 @@ impl Quokka {
         format!("Quokka {VERSION} — phase {PHASE} (wasm)")
     }
 
-    /// Read every form on the line and print each one back.
-    ///
-    /// Not evaluation — there is no evaluator yet. The reader and printer are
-    /// enough to prove the browser build does real work.
+    /// Read, evaluate and print every form on the line.
     pub fn eval(&mut self, input: &str) -> String {
         self.host.output.clear();
         let chars = Reader::chars_of(input);
@@ -74,10 +77,13 @@ impl Quokka {
             loop {
                 match reader.read(mc) {
                     Ok(None) => break,
-                    Ok(Some(form)) => {
-                        out.push_str(&print(mc, form));
-                        out.push('\n');
-                    }
+                    Ok(Some(form)) => match eval_now(mc, form, 50_000_000) {
+                        Ok(value) => {
+                            out.push_str(&print(mc, value));
+                            out.push('\n');
+                        }
+                        Err(e) => out.push_str(&format!("; {e}\n")),
+                    },
                     Err(e) => {
                         out.push_str(&format!("; {e}\n"));
                         break;
@@ -113,8 +119,8 @@ mod tests {
     #[test]
     fn eval_reads_and_prints() {
         let mut q = Quokka::new();
-        assert_eq!(q.eval("(fact 20)"), "(FACT 20)\n");
-        assert_eq!(q.eval("'(1 2 . 3)"), "(QUOTE (1 2 . 3))\n");
+        assert_eq!(q.eval("(+ 1 (* 2 3))"), "7\n");
+        assert_eq!(q.eval("'(1 2 . 3)"), "(1 2 . 3)\n");
         assert!(q.eval("(oops").starts_with("; input ended"));
         assert!(q.heap_words() > 0);
     }
