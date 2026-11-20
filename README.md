@@ -10,7 +10,10 @@
 Quokka is one live Lisp world — VM, language, editor, UI and tools in a single
 image — small enough for one person to understand completely. It takes its soul
 from the Lisp machines, its malleability from Smalltalk and its discipline of
-smallness from Oberon.
+smallness from [Oberon](https://people.inf.ethz.ch/wirth/ProjectOberon/index.html),
+whose revised edition — operating system, compiler, editor and the Verilog for
+the CPU it runs on — is free and is the standing proof that a whole system can
+be small enough to read.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 

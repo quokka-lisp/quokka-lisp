@@ -31,7 +31,7 @@ Each tradition is strongest where the others are weak, so we take three ideas fr
 | --- | --- | --- |
 | Lisp machines (Genera, Interlisp-D) | Tagged objects in one image; presentations (live output); conditions and restarts | Sheer size |
 | Smalltalk (Squeak, Pharo, Glamorous Toolkit) | Direct manipulation; browsers over live code; moldable inspectors | Image-only code |
-| Oberon (Project Oberon, Acme) | Smallness as a goal; text as executable commands; tiled viewers, no overlaps | Static modules |
+| Oberon ([Project Oberon](https://people.inf.ethz.ch/wirth/ProjectOberon/index.html), Acme) | Smallness as a goal; text as executable commands; tiled viewers, no overlaps | Static modules |
 
 The combination that none of the three had on its own: Oberon's executable text becomes Lisp S-expressions, and their results come back as live presentations inside the same text.
 

@@ -152,12 +152,49 @@ Named here because they come up repeatedly, with the chapters that use them.
 | Steele, *Common Lisp the Language*, 2nd edition (1990) | predates the standard and is wrong in places, but explains *why* where the standard only says *what* — especially its chapter 29 on conditions |
 | Pitman, "Exceptional Situations in Lisp" (1990) | why conditions are not exceptions — chapter 20 |
 
-## The implementations
+## Systems worth reading
 
-- **[SBCL](https://www.sbcl.org/)** — the oracle (chapter 12). Reading its
-  source is also instructive: the `%` convention in chapter 22 is
-  `sb-impl::` there, with a package system behind it.
-- **[Project Oberon](https://people.inf.ethz.ch/wirth/ProjectOberon/)** —
-  Wirth and Gutknecht's whole system, documented end to end. Not a Lisp, and
-  the direct ancestor of what Quokka wants to be when it grows up
-  (`docs/design.md`, and issue #21 on tiling).
+### [SBCL](https://www.sbcl.org/)
+
+The oracle (chapter 12). Reading its source is also instructive: the `%`
+convention from chapter 22 is `sb-impl::` there, with a package system behind
+it rather than a naming convention.
+### [Project Oberon](https://people.inf.ethz.ch/wirth/ProjectOberon/index.html)
+
+Not a Lisp, and the closest thing this project has to a precedent. The
+**complete revised edition (2013)** is free on Wirth's own site, and it is
+worth being precise about what "complete" means:
+
+| | |
+| --- | --- |
+| [The System](https://people.inf.ethz.ch/wirth/ProjectOberon/PO.System.pdf) | chapters 1–9: the operating system |
+| [Applications](https://people.inf.ethz.ch/wirth/ProjectOberon/PO.Applications.pdf) | chapters 10–15: editor, graphics, networking |
+| [The Computer](https://people.inf.ethz.ch/wirth/ProjectOberon/PO.Computer.pdf) | chapters 16–17: the RISC5 **processor** |
+| Sources | every module of the system, as plain text |
+| Verilog | the CPU itself — `RISC5.v`, `Divider.v`, `FPAdder.v`, `VID.v` |
+
+There is no layer of that system which is not in the book. The compiler is in
+there, the file system is in there, the window manager is in there, and so is
+the gate-level design of the processor it all runs on. You can read the whole
+thing, and then build it on an FPGA.
+
+That is the claim Quokka's second principle makes — *the whole system should
+be readable by one person* — and Oberon is the existence proof. It is also a
+standing rebuke: Wirth got an operating system, a compiler, an editor and a
+CPU into something a person can read, and this project has a 15,000-line
+budget for a Lisp interpreter alone.
+
+**The licence is ISC-style** — use, copy, modify and distribute, with the
+notice preserved. Compatible with rule 8, which makes it unusual among the
+references on this page: the HyperSpec can only be cited, but Oberon's actual
+code could be adapted with attribution if it were ever the right thing to do.
+
+Four modules are worth reading before the corresponding part of Quokka gets
+built:
+
+| | |
+| --- | --- |
+| `Viewers.Mod`, `MenuViewers.Mod` | the tiled viewer system — the direct source of issue #21 |
+| `TextFrames.Mod` | text as the interface, which is what "live text" means in `docs/design.md` |
+| `ORS`, `ORB`, `ORG`, `ORP.Mod` | a complete compiler in four modules: scanner, symbol table, code generator, parser. Phase 1's shape, by somebody who had done it before |
+| `Kernel.Mod` | memory, allocation and the heap, in about a page |
