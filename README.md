@@ -156,22 +156,31 @@ reading — it is the specification the differential tests check against, and
 when SBCL and Quokka disagree the first question is always what the standard
 actually says.
 
+- **[common-lisp.net/documentation](https://common-lisp.net/documentation)** —
+  the hub: books, the standard, the libraries, and which rendering of the
+  standard to read. Start here if you want one link.
+- **[The Common Lisp Metaspec](https://metaspec.dev/)** — the draft standard
+  (X3J13/94-101R) rendered from its original TeX sources, with errata,
+  addenda and the X3J13 cleanup issues. It is also published **as
+  s-expressions**, in a `(node-type plist children*)` format
+  ([source](https://codeberg.org/dlowe/metaspectre)) — which makes the
+  specification something a Lisp program can read, not only a person.
+  Alternatives: [Community Spec](https://cl-community-spec.github.io/pages/index.html)
+  and [Novaspec](https://novaspec.org/).
 - **[The Common Lisp Documentation Project](https://lisp-docs.github.io/)** —
-  an open-source, **MIT-licensed** effort to put the standard, a technical
-  reference, a tutorial and how-to guides in one place. It also hosts the
-  original **dpANS3R+** draft, which is the text ANSI Common Lisp was made
-  from, freely available. The licence matters here: it is compatible with
-  rule 8, where the HyperSpec's is not.
-  - [Technical reference](https://lisp-docs.github.io/cl-language-reference/)
-    — the standard with community-written explanations and examples
-  - [Tutorial](https://lisp-docs.github.io/docs/tutorial) ·
+  open-source and **MIT-licensed**: the standard with community-written
+  explanations and examples, plus a tutorial and how-to guides.
+  - [Technical reference](https://lisp-docs.github.io/cl-language-reference/) ·
+    [Tutorial](https://lisp-docs.github.io/docs/tutorial) ·
     [How-to guides](https://lisp-docs.github.io/docs/howto)
-- **[The Common Lisp HyperSpec](https://www.lispworks.com/documentation/HyperSpec/Front/)**
-  — the authoritative wording, derived from the published standard with
-  permission. Cited throughout the book as *CLHS*, and the thing to check when
-  a question turns on exact phrasing.
-- **ANSI INCITS 226-1994** is the standard itself, and is neither free nor
-  online.
+- **[The Common Lisp HyperSpec](http://www.lispworks.com/documentation/HyperSpec/Front/index.htm)**
+  — the hyperlinked edition most books and tools point to, and what *CLHS* in
+  this repository means. **Not free**: LispWorks permits only complete,
+  unmodified, non-commercial copies and no derivative works, so it can be
+  linked and cited here but not quoted into the book or the tests.
+- **ANSI INCITS 226-1994** is the published standard, and is neither free nor
+  online. The final draft is, which is what every rendering above is made
+  from.
 
 ## Licence
 

@@ -14,10 +14,34 @@ question is never "which looks right" but "what does the standard say", and
 several times in this book the answer has been *neither of you is wrong, that
 is unspecified*.
 
+### [common-lisp.net/documentation](https://common-lisp.net/documentation)
+
+The hub. Books, the standard, the libraries, and — usefully — an opinion
+about *which* rendering of the standard to read. If you want one link, this
+is it.
+
+### [The Common Lisp Metaspec](https://metaspec.dev/)
+
+The draft standard (X3J13/94-101R) rendered from its **original TeX sources**,
+with the errata, addenda and X3J13 cleanup issues included and the editors'
+margin notes kept.
+
+It is also published **as s-expressions** — a document format of
+`(node-type property-plist children*)` nodes, with the provenance of the
+original text preserved and every mechanical deviation recorded as an erratum
+([source](https://codeberg.org/dlowe/metaspectre)). Which means the
+specification is not only a document: it is **data a Lisp program can read**.
+That is a fact worth filing away; it comes back below.
+
+Two other free renderings of the same draft, if you prefer their presentation:
+the [Common Lisp Community Spec](https://cl-community-spec.github.io/pages/index.html)
+and [Novaspec](https://novaspec.org/).
+
 ### [The Common Lisp Documentation Project](https://lisp-docs.github.io/)
 
 An open-source, **MIT-licensed** effort to gather the standard, a technical
-reference, a tutorial and how-to guides in one place. Start here.
+reference, a tutorial and how-to guides in one place. The friendliest of
+these if you are learning the language rather than implementing it.
 
 | | |
 | --- | --- |
@@ -40,15 +64,21 @@ and it frequently says something precise that is hard to picture. A worked
 example beside it is often the difference between reading a paragraph and
 understanding it.
 
-### [The Common Lisp HyperSpec](https://www.lispworks.com/documentation/HyperSpec/Front/)
+### [The Common Lisp HyperSpec](http://www.lispworks.com/documentation/HyperSpec/Front/index.htm)
 
-The authoritative wording, derived from the published standard with
-permission, hosted by LispWorks. Cited throughout this book as **CLHS** with a
-section number — `CLHS 3.4.1` for ordinary lambda lists, `CLHS 9` for
-conditions — and it is what to check when a question turns on exact phrasing.
+The hyperlinked edition that most books, posts and tools point to, hosted by
+LispWorks. Cited throughout this book as **CLHS** with a section number —
+`CLHS 3.4.1` for ordinary lambda lists, `CLHS 9` for conditions.
 
-The standard itself is **ANSI INCITS 226-1994**, which is neither free nor
-online.
+It is **not free**. LispWorks permits only complete, unmodified,
+non-commercial copies and no derivative works, which means it can be linked
+and cited here, as this book does constantly, but not quoted into the book or
+into the tests. That restriction is the practical reason the free renderings
+above matter: they are the ones whose text could be *used* rather than only
+pointed at.
+
+The published standard is **ANSI INCITS 226-1994**, which is neither free nor
+online. Its final draft is, and is what every rendering above is made from.
 
 ## On using documentation as test cases
 
@@ -85,6 +115,29 @@ What the documentation **is** used for, constantly, is deciding what a test
 should expect — which is the harder half. Writing `(handler-case (car 5)
 (type-error () 'caught))` requires knowing that `car` of a non-list signals a
 `type-error` specifically, and that is a fact to look up rather than guess.
+
+### The one that might change this
+
+Everything above argues against *copying prose*. The Metaspec's s-expression
+form is a different proposition, because it is not prose: it is the
+specification as a tree a program can walk, with every defined name, its
+section, its argument list and its description in known positions.
+
+That makes some things possible that hand-written tests cannot do at all:
+
+- **Coverage, mechanically.** Walk the dictionary entries for, say, the Conses
+  chapter and list which defined names Quokka has and which it does not. Today
+  that list lives in issue comments and in somebody's memory, and chapter 22
+  found dead code precisely because an inventory had to be written down.
+- **Finding the corners.** The parts of the standard that mark behaviour as
+  *undefined* or *implementation-dependent* are exactly what
+  `tests/lisp/README.md` says must never be tested. Those markers are in the
+  text, and therefore in the tree.
+
+Neither is a small afternoon, and neither is on the roadmap. But "the
+specification is available as data" is the kind of fact that is worth knowing
+some time before you need it, which is why it is written down here rather than
+rediscovered later.
 
 ## Books this one leans on
 
