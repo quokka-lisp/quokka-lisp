@@ -1637,8 +1637,14 @@ mod tests {
     #[test]
     fn flet_and_let_bind_in_different_namespaces() {
         // The same name as a variable and as a function at once.
-        program_gives("(let ((f 5)) (flet ((f (x) (* x 2))) (list f (f 10))))", "(5 20)");
-        program_gives("(flet ((f (x) (* x 2))) (let ((f 5)) (list f (f 10))))", "(5 20)");
+        program_gives(
+            "(let ((f 5)) (flet ((f (x) (* x 2))) (list f (f 10))))",
+            "(5 20)",
+        );
+        program_gives(
+            "(flet ((f (x) (* x 2))) (let ((f 5)) (list f (f 10))))",
+            "(5 20)",
+        );
         // And the sharpest demonstration: inside an flet, the name as a
         // *variable* is still unbound. The namespaces do not leak into each
         // other even when one of them has a binding.

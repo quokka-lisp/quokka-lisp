@@ -132,6 +132,15 @@ scripts/check.sh      everything CI runs, in one command
 `./scripts/check.sh` runs everything CI runs. Use it before every commit — it is
 the cheapest way to honour rule 2.
 
+**Honour its exit code.** Piping it through `grep` for the success line hides a
+failure, because `grep | tail` exits 0 whether or not `grep` matched, and an
+`&&` chain then carries on to the commit. That exact mistake pushed a
+formatting failure to CI. Run it as:
+
+```bash
+if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/check.log; fi
+```
+
 | What | Command |
 | --- | --- |
 | Everything CI runs | `./scripts/check.sh` |
