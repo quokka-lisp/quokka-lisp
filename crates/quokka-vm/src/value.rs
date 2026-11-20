@@ -58,6 +58,20 @@
 //! can move. Bignum promotion, type dispatch and everything else live above.
 
 use core::fmt;
+use core::marker::PhantomData;
+
+/// The lifetime brand that keeps values inside a mutation.
+///
+/// **Invariant in `'h`, and that is the whole point.** The obvious spelling,
+/// `PhantomData<&'h ()>`, is *covariant*: it would let a long brand be shortened
+/// to a short one, which is exactly the escape the scheme is meant to prevent.
+/// The guarantee would silently evaporate and everything would still compile.
+///
+/// `fn(&'h ()) -> &'h ()` puts `'h` in both argument and return position, which
+/// forces invariance. The doctests on [`Value`] prove it: one asserts that
+/// shortening the brand does not compile, and the matching test in
+/// `crate::heap` asserts that the *covariant* spelling would.
+pub type Invariant<'h> = PhantomData<fn(&'h ()) -> &'h ()>;
 
 /// Number of tag bits in the low end of a word.
 pub const TAG_BITS: u32 = 3;
@@ -106,8 +120,11 @@ const SINGLETON_NIL: u64 = 0;
 const SINGLETON_T: u64 = 1;
 const SINGLETON_UNBOUND: u64 = 2;
 
-const fn singleton(which: u64) -> Value {
-    Value((which << IMM_PAYLOAD_SHIFT) | SUBTAG_SINGLETON | TAG_IMMEDIATE)
+const fn singleton<'h>(which: u64) -> Value<'h> {
+    Value(
+        (which << IMM_PAYLOAD_SHIFT) | SUBTAG_SINGLETON | TAG_IMMEDIATE,
+        PhantomData,
+    )
 }
 
 /// What kind of thing a word is.
@@ -134,21 +151,42 @@ pub enum Kind {
 /// `Value` is `Copy` and comparing two with `==` is Common Lisp's `eq` — it
 /// compares the words, so two fixnums with the same value are `eq`, and two
 /// distinct cons cells holding equal contents are not.
+///
+/// # The brand
+///
+/// `'h` ties a value to one mutation of one heap. It refers to nothing — it is
+/// a [`PhantomData`] marker — and exists only so the compiler can refuse to let
+/// a value outlive the mutation that produced it. See [`crate::heap`].
+///
+/// The brand must be **invariant**, and this doctest is the proof. If `'h` were
+/// covariant a long brand could be shortened at will, which is exactly the
+/// escape the scheme prevents, and everything would still compile:
+///
+/// ```compile_fail
+/// # use quokka_vm::value::Value;
+/// fn shorten<'long: 'short, 'short>(v: Value<'long>) -> Value<'short> {
+///     v
+/// }
+/// ```
+///
+/// A test in `crate::heap` asserts that the covariant spelling *would* compile,
+/// so the above is really testing variance rather than failing for some
+/// unrelated reason.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Value(u64);
+pub struct Value<'h>(u64, Invariant<'h>);
 
-impl Value {
+impl<'h> Value<'h> {
     /// The empty list and false.
-    pub const NIL: Value = singleton(SINGLETON_NIL);
+    pub const NIL: Value<'h> = singleton(SINGLETON_NIL);
 
     /// Canonical true.
-    pub const T: Value = singleton(SINGLETON_T);
+    pub const T: Value<'h> = singleton(SINGLETON_T);
 
     /// Marks a variable or slot that has no value.
     ///
     /// Never visible to Lisp code: reading an unbound variable signals rather
     /// than returning this.
-    pub const UNBOUND: Value = singleton(SINGLETON_UNBOUND);
+    pub const UNBOUND: Value<'h> = singleton(SINGLETON_UNBOUND);
 
     /// Reinterpret a raw word as a value.
     ///
@@ -156,8 +194,8 @@ impl Value {
     /// out of storage. Not every `u64` is a meaningful value — an immediate with
     /// an unassigned subtag, for instance — so an image loader should check what
     /// it reads rather than trusting the file.
-    pub const fn from_bits(bits: u64) -> Value {
-        Value(bits)
+    pub const fn from_bits(bits: u64) -> Value<'h> {
+        Value(bits, PhantomData)
     }
 
     /// The raw word, for storing into the heap or an image.
@@ -188,11 +226,11 @@ impl Value {
     /// Make a fixnum, or `None` if `n` is out of range.
     ///
     /// `None` means "this needs a bignum", which is a job for the layer above.
-    pub const fn fixnum(n: i64) -> Option<Value> {
+    pub const fn fixnum(n: i64) -> Option<Value<'h>> {
         if n < MIN_FIXNUM || n > MAX_FIXNUM {
             None
         } else {
-            Some(Value((n << 1) as u64))
+            Some(Value((n << 1) as u64, PhantomData))
         }
     }
 
@@ -230,25 +268,46 @@ impl Value {
     }
 
     /// Refer to the cons cell at `word_index`.
-    pub const fn cons(word_index: usize) -> Option<Value> {
+    ///
+    /// `pub(crate)`: only [`crate::heap::Mutation`] may hand out a reference
+    /// into the heap. If anyone could construct one at an arbitrary brand the
+    /// lifetime guarantee would be worthless — it stops a value escaping a
+    /// mutation, not being invented outside one.
+    pub(crate) const fn cons(word_index: usize) -> Option<Value<'h>> {
         Value::heap_ref(word_index, TAG_CONS)
     }
 
     /// Refer to the heap object at `word_index`.
-    pub const fn object(word_index: usize) -> Option<Value> {
+    ///
+    /// `pub(crate)`: only [`crate::heap::Mutation`] may hand out a reference
+    /// into the heap. If anyone could construct one at an arbitrary brand the
+    /// lifetime guarantee would be worthless — it stops a value escaping a
+    /// mutation, not being invented outside one.
+    // Not called from the library yet: #2 gives heap objects their headers. The tests below do
+    // exercise it, but test-only use does not satisfy dead-code analysis.
+    #[allow(dead_code)]
+    pub(crate) const fn object(word_index: usize) -> Option<Value<'h>> {
         Value::heap_ref(word_index, TAG_OBJECT)
     }
 
     /// A forwarding pointer to `word_index`. For the collector only.
-    pub const fn forwarding(word_index: usize) -> Option<Value> {
+    ///
+    /// `pub(crate)`: only [`crate::heap::Mutation`] may hand out a reference
+    /// into the heap. If anyone could construct one at an arbitrary brand the
+    /// lifetime guarantee would be worthless — it stops a value escaping a
+    /// mutation, not being invented outside one.
+    // Not called from the library yet: #3 writes the collector. The tests below do
+    // exercise it, but test-only use does not satisfy dead-code analysis.
+    #[allow(dead_code)]
+    pub(crate) const fn forwarding(word_index: usize) -> Option<Value<'h>> {
         Value::heap_ref(word_index, TAG_FORWARDING)
     }
 
-    const fn heap_ref(word_index: usize, tag: u64) -> Option<Value> {
+    const fn heap_ref(word_index: usize, tag: u64) -> Option<Value<'h>> {
         if word_index as u64 > MAX_WORD_INDEX {
             None
         } else {
-            Some(Value(((word_index as u64) << TAG_BITS) | tag))
+            Some(Value(((word_index as u64) << TAG_BITS) | tag, PhantomData))
         }
     }
 
@@ -300,8 +359,11 @@ impl Value {
     }
 
     /// Make a character.
-    pub const fn character(c: char) -> Value {
-        Value(((c as u64) << IMM_PAYLOAD_SHIFT) | SUBTAG_CHARACTER | TAG_IMMEDIATE)
+    pub const fn character(c: char) -> Value<'h> {
+        Value(
+            ((c as u64) << IMM_PAYLOAD_SHIFT) | SUBTAG_CHARACTER | TAG_IMMEDIATE,
+            PhantomData,
+        )
     }
 
     /// The character in this value, or `None` if it is not one.
@@ -324,21 +386,21 @@ impl Value {
     /// No untagging: the tagged words are added directly, because doubling
     /// distributes over addition. `checked_add` catches exactly the cases that
     /// leave fixnum range.
-    pub fn checked_add(self, other: Value) -> Option<Value> {
+    pub fn checked_add(self, other: Value<'h>) -> Option<Value<'h>> {
         if !self.is_fixnum() || !other.is_fixnum() {
             return None;
         }
         let sum = (self.0 as i64).checked_add(other.0 as i64)?;
-        Some(Value(sum as u64))
+        Some(Value(sum as u64, PhantomData))
     }
 
     /// Subtract two fixnums. `None` if either is not a fixnum, or on overflow.
-    pub fn checked_sub(self, other: Value) -> Option<Value> {
+    pub fn checked_sub(self, other: Value<'h>) -> Option<Value<'h>> {
         if !self.is_fixnum() || !other.is_fixnum() {
             return None;
         }
         let diff = (self.0 as i64).checked_sub(other.0 as i64)?;
-        Some(Value(diff as u64))
+        Some(Value(diff as u64, PhantomData))
     }
 
     /// Multiply two fixnums. `None` if either is not a fixnum, or on overflow.
@@ -346,27 +408,27 @@ impl Value {
     /// Multiplication is the one case that needs a half-untag: `2a * 2b` is
     /// `4ab`, twice what it should be, so exactly one operand is shifted down
     /// first.
-    pub fn checked_mul(self, other: Value) -> Option<Value> {
+    pub fn checked_mul(self, other: Value<'h>) -> Option<Value<'h>> {
         let a = self.as_fixnum()?;
         if !other.is_fixnum() {
             return None;
         }
         let product = (other.0 as i64).checked_mul(a)?;
-        Some(Value(product as u64))
+        Some(Value(product as u64, PhantomData))
     }
 
     /// Negate a fixnum. `None` if not a fixnum, or if the result is out of range
     /// (which happens only for [`MIN_FIXNUM`]).
-    pub fn checked_neg(self) -> Option<Value> {
+    pub fn checked_neg(self) -> Option<Value<'h>> {
         if !self.is_fixnum() {
             return None;
         }
         let negated = (self.0 as i64).checked_neg()?;
-        Some(Value(negated as u64))
+        Some(Value(negated as u64, PhantomData))
     }
 }
 
-impl fmt::Debug for Value {
+impl fmt::Debug for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
             Kind::Fixnum => write!(f, "{}", (self.0 as i64) >> 1),
@@ -496,7 +558,7 @@ mod tests {
     fn heap_references_round_trip() {
         for index in [0usize, 1, 2, 8, 1_000, 1 << 20] {
             for make in [
-                Value::cons as fn(usize) -> Option<Value>,
+                Value::cons as fn(usize) -> Option<Value<'static>>,
                 Value::object,
                 Value::forwarding,
             ] {

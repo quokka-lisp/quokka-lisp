@@ -20,6 +20,7 @@
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
+pub mod heap;
 pub mod host;
 pub mod slice;
 pub mod value;
