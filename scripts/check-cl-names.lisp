@@ -28,28 +28,50 @@
 (defun note (symbol context)
   (pushnew (list symbol context) *offences* :test #'equal))
 
+(defun proper-list-p (x)
+  (loop (cond ((null x) (return t))
+              ((consp x) (setf x (cdr x)))
+              (t (return nil)))))
+
 (defun check-bindings (bindings context)
   "BINDINGS is a let/flet-style list; each element binds its first symbol."
-  (when (listp bindings)
+  (when (proper-list-p bindings)
     (dolist (b bindings)
       (let ((name (if (consp b) (car b) b)))
         (when (cl-symbol-p name) (note name context))))))
 
-(defun walk (form)
-  (when (consp form)
-    (let ((head (car form)))
+(defun check-head (form)
+  "Look at FORM itself, without descending."
+  (let ((head (car form)))
+    (when (symbolp head)
       (case head
         ((setq setf)
-         (loop for (name nil) on (cdr form) by #'cddr
-               when (cl-symbol-p name) do (note name "assigned")))
+         (when (proper-list-p (cdr form))
+           (loop for rest on (cdr form) by #'cddr
+                 for name = (car rest)
+                 when (cl-symbol-p name) do (note name "assigned"))))
         ((defun defmacro block return-from)
-         (let ((name (second form)))
+         (let ((name (and (consp (cdr form)) (second form))))
            (when (cl-symbol-p name) (note name (string-downcase (string head))))))
         ((let let* flet labels macrolet)
-         (check-bindings (second form) (string-downcase (string head))))
-        (t nil)))
-    (mapc #'walk (remove-if-not #'consp form))
-    (dolist (sub form) (when (consp sub) (walk sub)))))
+         (when (consp (cdr form))
+           (check-bindings (second form) (string-downcase (string head)))))
+        (t nil)))))
+
+(defun walk (form)
+  "Walk every cons, including improper ones. Total by construction.
+
+An earlier version used REMOVE-IF-NOT and DOLIST, which need proper lists, and
+died on the literal (1 . 2) in lists.lisp — a checker that crashes on valid
+input is worse than no checker, because its failure looks like the thing it was
+meant to detect."
+  (when (consp form)
+    ;; Quoted data cannot contain a binding, and walking into it would report
+    ;; '(setq log 1) written as data.
+    (unless (and (symbolp (car form)) (member (car form) '(quote function)))
+      (check-head form)
+      (walk (car form))
+      (walk (cdr form)))))
 
 (defun check-file (path)
   (let ((*offences* nil)
@@ -68,4 +90,6 @@
 (let ((bad nil))
   (dolist (path (directory "tests/lisp/*.lisp"))
     (when (check-file path) (setf bad t)))
+  (unless bad
+    (format t "names: no COMMON-LISP symbols bound in any test file~%"))
   (sb-ext:exit :code (if bad 1 0)))
