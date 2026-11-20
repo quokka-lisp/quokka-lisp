@@ -253,6 +253,7 @@ Common Lisp. Each chapter answers one question.
 | 19 | [Things with an index](part-2-reading-and-running/19-things-with-an-index.md) | How do you store a run of things, and how does the collector know which words are references? |
 | 20 | [Errors you can catch](part-2-reading-and-running/20-errors-you-can-catch.md) | How does an error stop being the end of the computation and become an object? |
 | 21 | [Records, and a macro that writes ten functions](part-2-reading-and-running/21-records.md) | How does one line define a type, and how does `setf` learn a place it has never seen? |
+| 22 | [The names with a percent sign](part-2-reading-and-running/22-the-percent-names.md) | What are all those `%` names in the prelude, and what is missing that they stand in for? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

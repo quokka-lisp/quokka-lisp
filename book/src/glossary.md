@@ -280,6 +280,13 @@ about which names are visible where. Quokka does not have them — tier 1, phase
 the core VM has no filesystem, and interpreted at boot. `defun`, `when`,
 `cond`, `and` and `or` live there rather than in Rust. ([16](part-2-reading-and-running/16-the-prelude.md))
 
+**Percent name.** A name beginning with `%` — `%set-aref`, `%macro-function`
+— marking something as Quokka's own rather than Common Lisp's, and not to be
+written in a program. It says nothing about *what* the thing is: most are
+ordinary functions, some written in Rust and some in Lisp, and exactly one is
+a special operator. The convention stands in for a [package](#package), which
+is phase 2, and is enforced by nothing until then. ([22](part-2-reading-and-running/22-the-percent-names.md))
+
 **Primitive.** An operation the [VM](#vm) provides directly in Rust rather than
 in Lisp — arithmetic, allocation, input and output. The *primitive table* is the
 only door between the two languages.

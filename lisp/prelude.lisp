@@ -351,11 +351,6 @@
 (defun gethash (key table &optional default)
   (%gethash key table default))
 
-;; `(setf (gethash k table) v)` is how Common Lisp writes this, and `setf` is
-;; tier 1. Until then the writer has a name of its own.
-(defun %set-gethash-fn (key table value)
-  (%set-gethash key table value))
-
 ;; Iteration. The primitive hands back the entries as a list of (key . value)
 ;; cells, because calling the function is the evaluator's job rather than a
 ;; primitive's — the same division as `macroexpand` and for the same reason.
