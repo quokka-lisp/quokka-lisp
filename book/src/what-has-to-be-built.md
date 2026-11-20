@@ -212,8 +212,11 @@ three other things — which is a recurring shape worth watching for.
 
 ## The map
 
-Part I builds the substrate: everything underneath the evaluator. Part II starts
-turning text into behaviour. Each chapter answers one question.
+Part I builds the substrate: everything underneath the evaluator. Part II turns
+text into behaviour, and ends by asking whether any of it is correct. Together
+they are **phase 0**, which is finished: `(fact 20)` runs, the collector
+survives being run at every opportunity, and a hundred forms agree with a real
+Common Lisp. Each chapter answers one question.
 
 | | Chapter | The question it answers |
 | --- | --- | --- |
@@ -228,6 +231,7 @@ turning text into behaviour. Each chapter answers one question.
 | 9 | [What a form means](part-2-reading-and-running/09-what-a-form-means.md) | How does a list become an answer, and why must some forms be special? |
 | 10 | [Functions and scope](part-2-reading-and-running/10-functions-and-scope.md) | How do you define a function, where do its variables live, and why can it call itself forever? |
 | 11 | [The trouble with nil](part-2-reading-and-running/11-the-trouble-with-nil.md) | What happens when one value does three jobs? |
+| 12 | [Agreeing with something else](part-2-reading-and-running/12-agreeing-with-something-else.md) | How do you find out whether any of this is *right*? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -240,7 +244,8 @@ Still to come, and deliberately so:
   `&rest` parameters, and **macros**, which are what let a program extend its
   own language.
 - **A compiler** — translating Lisp into **bytecode**, a compact instruction set
-  the VM runs faster than it can walk a structure.
+  the VM runs faster than it can walk a structure. This is phase 1, and chapter
+  12 is what makes it safe to attempt.
 - **Self-hosting** — the moment the compiler, written in Lisp, can compile
   itself. The system stops needing anything outside it to be rebuilt.
 - **The environment** — editor, debugger, windows, all of them Lisp objects

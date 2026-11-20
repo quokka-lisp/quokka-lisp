@@ -2,7 +2,10 @@
 
 Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Common Lisp subset, browser-first via WASM, with a live, presentation-based UI. The full design is in `docs/design.md` — read it before making structural changes.
 
-Current phase: **0 · Spike** (tagged heap, reader and interpreter in Rust; native and WASM builds; terminal REPL).
+Current phase: **0 · Spike — complete.** `(fact 20)` runs, the GC survives
+torture mode, and a hundred Lisp forms agree with SBCL on native and wasm32.
+Next is phase 1 (bytecode and image), though tier 0 is unfinished: 6 of 25
+special operators, no `let`/`cond`/`labels`, no `&rest`, no macros.
 
 ## Who this is for, and how to work with me
 

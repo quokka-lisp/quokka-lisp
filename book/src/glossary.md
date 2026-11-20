@@ -60,9 +60,7 @@ it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 
 **defun.** Makes a function and puts it in a [symbol](#symbol)'s *function* cell. In Common Lisp it is a macro over `setf symbol-function`; Quokka has no macros yet, so it is a special operator with a note saying it should not be. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
-**Differential testing.** Running the same test on several implementations and
-requiring them to agree. Quokka runs its Lisp tests natively, under WebAssembly
-and on SBCL, which acts as the *oracle* — the reference answer.
+**Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file natively, under WebAssembly and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
 **Dotted pair.** A [cons cell](#cons-cell) whose [cdr](#cdr) is not a list, written `(a . b)`. A list is the common case of a cons cell, not the only one; the dot is how you write the general case. Also called an *improper list*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
@@ -174,9 +172,9 @@ Garbage collection starts its search from these. A root is a *place*; a
 code and data. `(* 6 7)` is a list of three things, not special syntax.
 ([Preface](what-has-to-be-built.md))
 
-**SBCL.** Steel Bank Common Lisp, a mature Common Lisp implementation. Quokka
-uses it as a reference to check its own answers against, not as something it
-depends on to build.
+**Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
+
+**SBCL.** Steel Bank Common Lisp, a mature Common Lisp implementation, and Quokka's [oracle](#oracle). A reference to check answers against, never something Quokka needs in order to build. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.

@@ -19,6 +19,7 @@
 - [What a form means](part-2-reading-and-running/09-what-a-form-means.md)
 - [Functions and scope](part-2-reading-and-running/10-functions-and-scope.md)
 - [The trouble with nil](part-2-reading-and-running/11-the-trouble-with-nil.md)
+- [Agreeing with something else](part-2-reading-and-running/12-agreeing-with-something-else.md)
 
 ---
 
