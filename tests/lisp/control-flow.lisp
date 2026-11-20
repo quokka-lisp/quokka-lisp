@@ -46,31 +46,36 @@ out
 total
 
 ;; unwind-protect runs its cleanup however the body ends.
-(setq log nil)
-(unwind-protect 'body (setq log 'cleaned))
-log
+;;
+;; The accumulator is called `events` and not `log`, because CL:LOG is the
+;; logarithm — a Common Lisp symbol, which SBCL's package lock refuses to let a
+;; test bind. It does not look like one, which is why scripts/check-cl-names.lisp
+;; now checks rather than trusting anyone to remember.
+(setq events nil)
+(unwind-protect 'body (setq events 'cleaned))
+events
 
-(setq log nil)
-(block b (unwind-protect (return-from b 'left) (setq log 'cleaned)))
-log
+(setq events nil)
+(block b (unwind-protect (return-from b 'left) (setq events 'cleaned)))
+events
 
-(setq log nil)
-(catch 'x (unwind-protect (throw 'x 'thrown) (setq log 'cleaned)))
-log
+(setq events nil)
+(catch 'x (unwind-protect (throw 'x 'thrown) (setq events 'cleaned)))
+events
 
 ;; The cleanup runs while the unwind passes through, and the unwind carries on
 ;; afterwards to a catch further out.
-(setq log nil)
-(catch 'outer (unwind-protect (catch 'inner (throw 'outer 'past-both)) (setq log 'ran)))
-log
+(setq events nil)
+(catch 'outer (unwind-protect (catch 'inner (throw 'outer 'past-both)) (setq events 'ran)))
+events
 
 ;; Cleanups nest, innermost first.
-(setq log nil)
+(setq events nil)
 (catch 'x
   (unwind-protect
-      (unwind-protect (throw 'x 'done) (setq log (cons 'inner log)))
-    (setq log (cons 'outer log))))
-log
+      (unwind-protect (throw 'x 'done) (setq events (cons 'inner events)))
+    (setq events (cons 'outer events))))
+events
 
 ;; The body's value survives the cleanup, and the cleanup's value is discarded.
 (unwind-protect 'kept 'discarded)

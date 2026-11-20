@@ -15,6 +15,13 @@ if ! command -v sbcl >/dev/null 2>&1; then
   exit 0
 fi
 
+# A test that binds a COMMON-LISP symbol will disagree for a reason that is the
+# test's fault. Catch it first, with a message that names the symbol.
+if ! sbcl --script scripts/check-cl-names.lisp; then
+  echo "oracle: fix the names above before comparing" >&2
+  exit 1
+fi
+
 status=0
 checked=0
 for file in tests/lisp/*.lisp; do
