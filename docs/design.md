@@ -268,7 +268,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 - [x] **Browser target:** WASM is first-class from phase 0. The VM runs client-side in the browser, yields to the browser's event loop, and keeps images in browser storage.
 - [x] **Rendering stack:** browser-first hybrid renderer (DOM for text, canvas or SVG for drawing) behind a display protocol; native builds in a Tauri shell.
 - [x] **Licence:** MIT for everything, including the remote file service. Borrowed components must have compatible licences.
-- [x] **Name:** Quokka (quokka-lisp.org). The mascot's tail is a quote mark: `'quokka`.
+- [x] **Name and mascot:** Quokka (quokka-lisp.org). The mascot is a quokka holding a laptop showing `(λ)`, in brown and teal; assets and palette are in [`assets/`](../assets/README.md). An earlier note here said the tail was a quote mark (`'quokka`) — a good joke, since a quote is how Lisp marks something as data rather than code, but the artwork does not do it and the artwork is what exists. Recorded in case someone wonders where the pun went.
 
 **Still open** (none blocks phase 0)
 

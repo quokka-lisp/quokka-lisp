@@ -63,6 +63,6 @@ Companion choices, not sampled spot colours.
 - **The cover and splash copy is provisional.** "A friendly playground for
   exploring language concepts" is the designer's placeholder, not a decided
   tagline.
-- `docs/design.md` says the mascot's tail is a quote mark (`'quokka`). In the
-  artwork as delivered it is a plain curl. Worth deciding whether the design note
-  or the artwork is the one to change.
+- An early note in `docs/design.md` had the mascot's tail as a quote mark
+  (`'quokka`). The artwork is the authority, so that note was corrected rather
+  than the drawing. The lambda on the laptop carries the Lisp reference instead.
