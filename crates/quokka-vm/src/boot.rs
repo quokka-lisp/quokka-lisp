@@ -292,12 +292,13 @@ mod tests {
         );
     }
 
-    /// Vector mutation, which `tests/lisp/vectors.lisp` cannot cover.
+    /// Vector mutation through the primitive itself.
     ///
-    /// Writing an element is `(setf (aref v i) x)` in Common Lisp, and `setf`
-    /// is tier 1. Until then the only way is `%set-aref`, which SBCL has no
-    /// name for — so the oracle cannot check it and these tests stand in.
-    /// Every `%` primitive costs exactly this.
+    /// `tests/lisp/vectors.lisp` now covers this against SBCL, through
+    /// `setf` — which is why `setf` was pulled forward. These stay because
+    /// they exercise `%set-aref` directly rather than through a macro, so a
+    /// `setf` expansion that was wrong in some compensating way would not
+    /// make both pass.
     #[test]
     fn vectors_can_be_written() {
         assert_eq!(
@@ -373,10 +374,11 @@ mod tests {
         assert_eq!(out, "(200 39601)");
     }
 
-    /// Hash tables, which like vector mutation are almost entirely invisible
-    /// to the oracle: writing an entry is `(setf (gethash k h) v)` in Common
-    /// Lisp and `setf` is tier 1, so `%set-gethash` has no counterpart for
-    /// SBCL to disagree with. These tests are the substitute.
+    /// Hash tables through the primitives directly.
+    ///
+    /// `tests/lisp/hash-tables.lisp` covers the same ground against SBCL now
+    /// that `setf` exists; these exercise `%set-gethash` without a macro in
+    /// between.
     #[test]
     fn hash_tables_store_and_find() {
         assert_eq!(

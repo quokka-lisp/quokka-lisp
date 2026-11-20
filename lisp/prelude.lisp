@@ -373,3 +373,74 @@
 ;; not to do, and the differential tests noticed within a minute of a test
 ;; file calling them. `maphash` is the standard way, and is enough.
 
+;;; ------------------------------------------------------------------
+;;; setf
+;;; ------------------------------------------------------------------
+
+;; `docs/design.md` puts `setf` in tier 1, and this is tier 0. It was pulled
+;; forward for a reason that has nothing to do with convenience.
+;;
+;; Writing a vector element or a hash-table entry has no name in Common Lisp
+;; other than `(setf (aref v i) x)` and `(setf (gethash k h) v)`. Without
+;; `setf`, the only way to write either was `%set-aref` and `%set-gethash` —
+;; Quokka-only names that SBCL has no counterpart for. So those behaviours
+;; were not *different* from the oracle's, they were **inexpressible to it**,
+;; and two of the three things group C added were unverifiable against the
+;; standard (#18). That is a hole in the main defence against implementing
+;; Lisp wrong (chapter 12), and twenty lines closes it.
+;;
+;; **This is not Common Lisp's `setf`.** The real one is extensible:
+;; `define-setf-expander` and `defsetf` let any program teach it a new place,
+;; and `defstruct` relies on that to make its accessors settable. This one
+;; knows a fixed list of places, which is enough for tier 0 and will have to
+;; grow a proper expander before `defstruct` does anything useful.
+
+;; Called while a `setf` form is being expanded, so an unknown place is
+;; reported then rather than at run time.
+(defun %setf-place (place value)
+  (cond
+    ;; A plain variable is just setq.
+    ((symbolp place) (list 'setq place value))
+    ((consp place)
+     (let ((head (car place))
+           (args (cdr place)))
+       (cond
+         ((eq head 'aref) (list '%set-aref (car args) (car (cdr args)) value))
+         ((eq head 'svref) (list '%set-aref (car args) (car (cdr args)) value))
+         ((eq head 'gethash) (list '%set-gethash (car args) (car (cdr args)) value))
+         ((eq head 'symbol-function) (list '%set-symbol-function (car args) value))
+         ;; `rplaca` returns the cons and `setf` must return the value, so the
+         ;; value is bound once and handed back. A gensym, because the place
+         ;; and the value are the caller's code and may use any name they like
+         ;; (chapter 15).
+         ((eq head 'car) (%setf-through 'rplaca (car args) value))
+         ((eq head 'cdr) (%setf-through 'rplacd (car args) value))
+         ((eq head 'first) (%setf-through 'rplaca (car args) value))
+         ((eq head 'rest) (%setf-through 'rplacd (car args) value))
+         ;; Deliberately an undefined function rather than a quiet wrong
+         ;; expansion. It fires during macroexpansion, which is when a bad
+         ;; place should be noticed. It becomes a real `error` call when
+         ;; group E of #18 gives us something to signal.
+         (t (%setf-does-not-know-this-place)))))
+    (t (%setf-does-not-know-this-place))))
+
+(defun %setf-through (setter cons-form value)
+  (let ((once (gensym)))
+    (list 'let (list (list once value))
+          (list setter cons-form once)
+          once)))
+
+;; `(setf place value place value ...)`, left to right, yielding the last
+;; value — which is what CLHS says, and why an odd number of forms is an
+;; error rather than a place with nothing to put in it.
+(defmacro setf (&rest pairs)
+  (labels ((expand (rest)
+             (cond ((null rest) nil)
+                   ((null (cdr rest)) (%setf-wants-pairs))
+                   (t (cons (%setf-place (car rest) (car (cdr rest)))
+                            (expand (cdr (cdr rest))))))))
+    (let ((forms (expand pairs)))
+      (cond ((null forms) nil)
+            ((null (cdr forms)) (car forms))
+            (t (cons 'progn forms))))))
+

@@ -310,6 +310,12 @@ code and data. `(* 6 7)` is a list of three things, not special syntax.
 lists, vectors and strings. The functions over them dispatch on which kind
 they were given. ([19](part-2-reading-and-running/19-things-with-an-index.md))
 
+**setf.** The general way to write a place in Common Lisp: `(setf (aref v i)
+x)`, `(setf (gethash k h) v)`, `(setf x 1)`. A macro that turns a *reader* —
+`aref`, `gethash` — into the corresponding writer, so a program names what it
+wants to change in the same words it would use to read it. Quokka's knows a
+fixed list of places; the real one can be taught new ones. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.
 ([6](part-1-substrate/06-cheneys-algorithm.md))

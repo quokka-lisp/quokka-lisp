@@ -289,6 +289,12 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 
   What this costs, stated plainly: keys may be fixnums, characters and symbols in an `eql` table, and additionally strings in an `equal` one. Any other key — a cons, a vector — is **refused with an error** rather than quietly hashed by something unreliable. `(make-hash-table :test #'eq)` therefore exists but cannot take the keys a real Common Lisp would allow, which is a divergence from SBCL under rule 6 and is why it signals loudly instead of guessing. Identity hashing comes back on the table when there is a concrete use for it, most likely alongside phase 1's image work, which touches the same code. See [#22](https://github.com/quokka-lisp/quokka-lisp/issues/22).
 
+- [x] **`setf` was pulled forward from tier 1 into tier 0.** The tier table puts `setf` expanders in tier 1, and that is still right for the *extensible* mechanism — `define-setf-expander`, `defsetf`, and the machinery `defstruct` needs to make its accessors settable. What moved is a fixed-place `setf`: variables, `aref`, `svref`, `gethash`, `symbol-function`, `car` and `cdr`.
+
+  The reason is testing, not convenience. Writing a vector element or a hash-table entry has no name in Common Lisp other than `(setf (aref v i) x)` and `(setf (gethash k h) v)`. Without `setf`, the only way to write either was `%set-aref` and `%set-gethash` — Quokka-only names SBCL has no counterpart for, so those behaviours were not *different* from the oracle's but **inexpressible to it**. Two of the three things tier 0's group C added were therefore unverifiable against the standard, which is a hole in the main defence against implementing Lisp wrong. Twenty lines of prelude closed it, and the mutation tests moved from Rust assertions back into `tests/lisp/`.
+
+  What is still tier 1 is the extensibility. A program cannot teach this `setf` a new place; it knows a fixed list. `defstruct` will need the real expander.
+
 
 **Still open** (none blocks phase 0)
 

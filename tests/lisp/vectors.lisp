@@ -57,14 +57,59 @@
 (listp '(1))
 (listp #(1))
 
-;; Mutation is NOT tested here. Common Lisp spells it `(setf (aref v i) x)`
-;; and Quokka has no `setf` until tier 1, so the only way to write a vector
-;; element is `%set-aref` — a name SBCL does not have, which makes the whole
-;; expression untestable against the oracle rather than merely different.
-;;
-;; That is worth knowing about the `%` primitives generally: each one is a
-;; piece of behaviour the oracle cannot check. `crates/quokka-vm/src/boot.rs`
-;; covers mutation with ordinary Rust tests instead.
+;; Mutation, through `setf` — which is why `setf` was pulled forward from
+;; tier 1. Until it existed the only way to write an element was `%set-aref`,
+;; a name SBCL does not have, so this whole section was inexpressible to the
+;; oracle rather than merely different from it.
+(let ((v (vector 1 2 3)))
+  (setf (aref v 0) 'changed)
+  v)
+(let ((v (make-array 3 :initial-element 0)))
+  (setf (aref v 1) 'middle)
+  (list (aref v 0) (aref v 1) (aref v 2)))
+(let ((v (vector 1 2 3)))
+  (setf (aref v 0) 'a (aref v 2) 'c)
+  v)
+(let ((v (vector 1 2 3)))
+  (setf (svref v 1) 'sv)
+  v)
+
+;; setf yields the value stored, not the place and not the container.
+(let ((v (vector 1 2 3))) (setf (aref v 0) 'yielded))
+
+;; Writing the same element twice keeps the second.
+(let ((v (vector 0)))
+  (setf (aref v 0) 'first)
+  (setf (aref v 0) 'second)
+  (aref v 0))
+
+;; Built one element at a time, which is how a compiler will use them.
+(defun build-squares (n)
+  (let ((v (make-array n :initial-element 0)))
+    (labels ((fill-from (i)
+               (if (= i n)
+                   v
+                   (progn (setf (aref v i) (* i i))
+                          (fill-from (+ i 1))))))
+      (fill-from 0))))
+(build-squares 0)
+(build-squares 5)
+(length (build-squares 20))
+(aref (build-squares 20) 19)
+
+;; setf on a cons, and on a plain variable.
+(let ((c (cons 1 2))) (setf (car c) 'a) c)
+(let ((c (cons 1 2))) (setf (cdr c) 'd) c)
+(let ((c (cons 1 2))) (setf (car c) 'a (cdr c) 'd) c)
+(let ((c (cons 1 2))) (setf (car c) 'value))
+(let ((x 1)) (setf x 2) x)
+(let ((x 1) (y 2)) (setf x 10 y 20) (list x y))
+(setf)
+
+;; A string element is a character, and only a character.
+(let ((s (vector #\a #\b)))
+  (setf (aref s 0) #\z)
+  s)
 
 ;; Two vectors with the same contents are not the same object.
 (eq (vector 1 2) (vector 1 2))

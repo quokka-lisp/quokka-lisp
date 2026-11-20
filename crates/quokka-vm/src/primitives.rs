@@ -258,6 +258,17 @@ const TABLE: &[Primitive] = &[
         name: "%HASH-TABLE-ENTRIES",
         arity: Arity::Exactly(1),
     },
+    // The two destructive list operations, which `setf` of `car` and `cdr`
+    // expand into. They return the cons, as Common Lisp says — `setf` returns
+    // the value, which is why its expansion wraps them.
+    Primitive {
+        name: "RPLACA",
+        arity: Arity::Exactly(2),
+    },
+    Primitive {
+        name: "RPLACD",
+        arity: Arity::Exactly(2),
+    },
 ];
 
 /// Where `APPLY` sits in the table, which `crate::eval` intercepts.
@@ -430,6 +441,26 @@ pub fn call<'h>(
             }
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
+        }
+        "RPLACA" => {
+            if !args[0].is_cons() {
+                return Err(EvalError::WrongType {
+                    name: "RPLACA",
+                    wanted: "a cons",
+                });
+            }
+            mc.set_car(args[0], args[1]);
+            Ok(args[0])
+        }
+        "RPLACD" => {
+            if !args[0].is_cons() {
+                return Err(EvalError::WrongType {
+                    name: "RPLACD",
+                    wanted: "a cons",
+                });
+            }
+            mc.set_cdr(args[0], args[1]);
+            Ok(args[0])
         }
         "%MAKE-HASH-TABLE" => crate::hash::make(mc, args[0]),
         "%GETHASH" => crate::hash::get(mc, args[1], args[0], args[2]),
@@ -707,7 +738,9 @@ mod tests {
                 "REMHASH",
                 "HASH-TABLE-COUNT",
                 "HASH-TABLE-P",
-                "%HASH-TABLE-ENTRIES"
+                "%HASH-TABLE-ENTRIES",
+                "RPLACA",
+                "RPLACD"
             ]
         );
     }

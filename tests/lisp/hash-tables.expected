@@ -12,3 +12,14 @@
 => FALLBACK
 => NIL
 => NIL
+=> (1 2 NIL 2)
+=> (2 1)
+=> YIELDED
+=> (1 2)
+=> ONE
+=> CHAR
+=> (KEYWORD SYMBOL)
+=> (FOUND NO)
+=> (T NIL 0)
+=> (200 0 49 39601 ABSENT)
+=> 6
