@@ -61,6 +61,7 @@ differential_cases! {
     lists => "lists",
     control => "control",
     functions => "functions",
+    scopes => "scopes",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

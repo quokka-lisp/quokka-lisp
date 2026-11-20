@@ -54,6 +54,16 @@ fn write_immediate(out: &mut String, v: Value<'_>) {
         out.push('T');
     } else if v == Value::UNBOUND {
         out.push_str("#<unbound>");
+    } else if let Some(index) = v.as_primitive() {
+        // Common Lisp prints a function unreadably, since no text reads back as
+        // one. The name is for a person reading a REPL, and is why nothing
+        // containing `#<` may appear in a differential test.
+        match crate::primitives::name_of(index) {
+            Some(name) => {
+                let _ = write!(out, "#<function {name}>");
+            }
+            None => out.push_str("#<function>"),
+        }
     } else if let Some(ch) = v.as_character() {
         out.push_str("#\\");
         out.push_str(&match ch {

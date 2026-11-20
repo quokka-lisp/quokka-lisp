@@ -305,6 +305,15 @@ impl<'t> Reader<'t> {
                 self.at += 1;
                 self.read_character()
             }
+            // `#'f` reads as `(function f)`, exactly as `'x` reads as
+            // `(quote x)`. The reader does not know what either means.
+            Some('\'') => {
+                self.at += 1;
+                let named = self.read_form(mc, 1)?;
+                let function = mc.intern("FUNCTION");
+                let tail = mc.cons(named, Value::NIL);
+                Ok(mc.cons(function, tail))
+            }
             Some('|') => {
                 self.at += 1;
                 self.skip_block_comment()?;

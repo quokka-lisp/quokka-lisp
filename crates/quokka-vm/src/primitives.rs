@@ -99,6 +99,14 @@ const TABLE: &[Primitive] = &[
         name: "FUNCALL",
         arity: Arity::AtLeast(1),
     },
+    // Allocates one cons per argument, so its cost grows with the *call*
+    // rather than with the data. Rule 9 is satisfied because a written call has
+    // a bounded number of arguments — but `apply` would break that, and when
+    // `apply` arrives this needs looking at again.
+    Primitive {
+        name: "LIST",
+        arity: Arity::AtLeast(0),
+    },
 ];
 
 /// Where `FUNCALL` sits in the table, which `crate::eval` intercepts.
@@ -107,6 +115,11 @@ const TABLE: &[Primitive] = &[
 /// table order is part of the image format, and a silent drift here would make
 /// every `funcall` call some other primitive.
 pub const FUNCALL: u32 = 13;
+
+/// What primitive `index` is called, for printing.
+pub fn name_of(index: u32) -> Option<&'static str> {
+    TABLE.get(index as usize).map(|p| p.name)
+}
 
 /// Put every primitive in its symbol's function cell, so `(+ 1 2)` can find it.
 ///
@@ -179,6 +192,13 @@ pub fn call<'h>(
         "NULL" => Ok(truth(args[0].is_nil())),
         "CONSP" => Ok(truth(args[0].is_cons())),
         "SYMBOLP" => Ok(truth(mc.is_symbol(args[0]))),
+        "LIST" => {
+            let mut out = Value::NIL;
+            for v in args.iter().rev() {
+                out = mc.cons(*v, out);
+            }
+            Ok(out)
+        }
         _ => Err(EvalError::NotAFunction(String::from(p.name))),
     }
 }
@@ -278,7 +298,7 @@ mod tests {
             names,
             [
                 "+", "-", "*", "=", "<", ">", "CONS", "CAR", "CDR", "EQ", "NULL", "CONSP",
-                "SYMBOLP", "FUNCALL"
+                "SYMBOLP", "FUNCALL", "LIST"
             ]
         );
     }

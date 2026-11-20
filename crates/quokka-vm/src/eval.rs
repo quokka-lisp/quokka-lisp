@@ -272,6 +272,32 @@ impl<'a, 'h> Machine<'a, 'h> {
                     special::PROGN => self.eval_progn(control),
                     special::SETQ => self.eval_setq(control),
                     special::DEFUN => self.eval_defun(control),
+                    special::LET => self.eval_let(control),
+                    special::LET_STAR => self.eval_let_star(control),
+                    special::FLET => self.eval_flet(control, false),
+                    special::LABELS => self.eval_flet(control, true),
+                    special::FUNCTION => self.eval_function(control),
+                    // `the` declares a type the interpreter does not check, and
+                    // `locally` carries declarations there are none of yet.
+                    // Both reduce to their body.
+                    special::THE => {
+                        let rest = self.mc.cdr(control);
+                        if !rest.is_cons() {
+                            return self.fail(EvalError::BadSyntax {
+                                operator: "the",
+                                detail: "wants a type and a form",
+                            });
+                        }
+                        let form = self.mc.cdr(rest);
+                        let env = self.mc.register(Register::Env);
+                        self.begin(form, env)
+                    }
+                    special::LOCALLY => {
+                        let body = self.mc.cdr(control);
+                        let env = self.mc.register(Register::Env);
+                        self.begin(body, env)
+                    }
+                    special::EVAL_WHEN => self.eval_eval_when(control),
                     _ => self.fail(EvalError::BadSyntax {
                         operator: "a special operator",
                         detail: "is not implemented",
@@ -423,6 +449,320 @@ impl<'a, 'h> Machine<'a, 'h> {
         Transition::Continue
     }
 
+    /// `(let ((v init) ...) body...)`.
+    ///
+    /// Every init is evaluated in the *outer* scope, and only then are the
+    /// bindings made. That is the whole difference from `let*`, and it is why
+    /// `(let ((x 1)) (let ((x 2) (y x)) y))` gives 1 rather than 2.
+    fn eval_let(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "let",
+                detail: "wants a binding list",
+            });
+        }
+        let bindings = self.mc.car(rest);
+        let body = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+
+        // A binding list is a list. `(let 1 ...)` is malformed, not empty —
+        // treating a non-list as "no bindings" would quietly accept nonsense.
+        if !bindings.is_cons() {
+            if !bindings.is_nil() {
+                return self.fail(EvalError::BadSyntax {
+                    operator: "let",
+                    detail: "wants a list of bindings",
+                });
+            }
+            return self.begin(body, env);
+        }
+        let Some(first) = self.binding_init(bindings) else {
+            return self.fail(EvalError::BadSyntax {
+                operator: "let",
+                detail: "wants (name init), (name) or name",
+            });
+        };
+        let f = frame::make_let(self.mc, bindings, bindings, Value::NIL, body, env);
+        self.push(f);
+        self.mc.set_register(Register::Control, first);
+        Transition::Continue
+    }
+
+    fn return_to_let(&mut self, f: Value<'h>) -> Transition {
+        let bindings = self.mc.slot(f, frame::LET_BINDINGS);
+        let remaining = self.mc.slot(f, frame::LET_REMAINING);
+        let done = self.mc.slot(f, frame::LET_DONE);
+        let body = self.mc.slot(f, frame::LET_BODY);
+        let env = self.mc.slot(f, frame::LET_ENV);
+
+        let done = self.mc.cons(self.mc.register(Register::Value), done);
+        let remaining = self.mc.cdr(remaining);
+
+        if remaining.is_cons() {
+            let Some(next) = self.binding_init(remaining) else {
+                return self.fail(EvalError::BadSyntax {
+                    operator: "let",
+                    detail: "wants (name init), (name) or name",
+                });
+            };
+            let f = frame::make_let(self.mc, bindings, remaining, done, body, env);
+            self.push(f);
+            self.mc.set_register(Register::Env, env);
+            self.mc.set_register(Register::Control, next);
+            self.mc.set_mode(Mode::Eval.as_u8());
+            return Transition::Continue;
+        }
+
+        let names = self.binding_names(bindings);
+        let in_order = self.reverse(done);
+        let values = self.list_to_vec(in_order);
+        let scope = env::make(self.mc, env, env::VARIABLE, &names, &values);
+        self.begin(body, scope)
+    }
+
+    /// `(let* ((v init) ...) body...)`.
+    ///
+    /// One scope per binding, each nested in the last, so an init sees every
+    /// binding before it. More objects than `let` for the same code, which is
+    /// the honest cost of the semantics rather than an oversight.
+    fn eval_let_star(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "let*",
+                detail: "wants a binding list",
+            });
+        }
+        let bindings = self.mc.car(rest);
+        let body = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+        if !bindings.is_cons() && !bindings.is_nil() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "let*",
+                detail: "wants a list of bindings",
+            });
+        }
+        self.let_star_next(bindings, body, env)
+    }
+
+    fn let_star_next(
+        &mut self,
+        remaining: Value<'h>,
+        body: Value<'h>,
+        env: Value<'h>,
+    ) -> Transition {
+        if !remaining.is_cons() {
+            return self.begin(body, env);
+        }
+        let Some(init) = self.binding_init(remaining) else {
+            return self.fail(EvalError::BadSyntax {
+                operator: "let*",
+                detail: "wants (name init), (name) or name",
+            });
+        };
+        let f = frame::make_let_star(self.mc, remaining, body, env);
+        self.push(f);
+        self.mc.set_register(Register::Env, env);
+        self.mc.set_register(Register::Control, init);
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    fn return_to_let_star(&mut self, f: Value<'h>) -> Transition {
+        let remaining = self.mc.slot(f, frame::LETSTAR_REMAINING);
+        let body = self.mc.slot(f, frame::LETSTAR_BODY);
+        let env = self.mc.slot(f, frame::LETSTAR_ENV);
+        let value = self.mc.register(Register::Value);
+
+        let Some(name) = self.binding_name(self.mc.car(remaining)) else {
+            return self.fail(EvalError::BadSyntax {
+                operator: "let*",
+                detail: "wants a symbol to bind",
+            });
+        };
+        let scope = env::make(self.mc, env, env::VARIABLE, &[name], &[value]);
+        self.let_star_next(self.mc.cdr(remaining), body, scope)
+    }
+
+    /// `(flet ((f (params) body...) ...) body...)` and `labels`.
+    ///
+    /// The only difference is which scope the closures capture. Under `flet`
+    /// they capture the *outer* one, so they cannot see each other; under
+    /// `labels` they capture the new one, so they can — which is what makes
+    /// mutual recursion possible. That means the scope has to exist before the
+    /// closures that go in it, so it is built empty and filled.
+    fn eval_flet(&mut self, form: Value<'h>, recursive: bool) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "flet",
+                detail: "wants a function binding list",
+            });
+        }
+        let bindings = self.mc.car(rest);
+        let body = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+        if !bindings.is_cons() && !bindings.is_nil() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "flet",
+                detail: "wants a list of function bindings",
+            });
+        }
+
+        let mut names = Vec::new();
+        let mut shapes = Vec::new();
+        let mut cursor = bindings;
+        while cursor.is_cons() {
+            let binding = self.mc.car(cursor);
+            if !binding.is_cons() || !self.mc.cdr(binding).is_cons() {
+                return self.fail(EvalError::BadSyntax {
+                    operator: "flet",
+                    detail: "wants (name (params) body...)",
+                });
+            }
+            let name = self.mc.car(binding);
+            if !self.mc.is_symbol(name) {
+                return self.fail(EvalError::BadSyntax {
+                    operator: "flet",
+                    detail: "wants a symbol for a name",
+                });
+            }
+            let after = self.mc.cdr(binding);
+            names.push(name);
+            shapes.push((self.mc.car(after), self.mc.cdr(after)));
+            cursor = self.mc.cdr(cursor);
+        }
+
+        // Built with placeholders so the scope exists first; `labels` closures
+        // then capture it and are written into it.
+        let placeholders = vec![Value::NIL; names.len()];
+        let scope = env::make(self.mc, env, env::FUNCTION, &names, &placeholders);
+        let captured = if recursive { scope } else { env };
+        for (i, (params, fn_body)) in shapes.into_iter().enumerate() {
+            let c = closure::make(self.mc, params, fn_body, captured);
+            self.mc.set_slot(scope, env::FIRST_PAIR + 1 + i * 2, c);
+        }
+        self.begin(body, scope)
+    }
+
+    /// `(function f)`, which `#'f` reads as.
+    fn eval_function(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() || !self.mc.cdr(rest).is_nil() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "function",
+                detail: "wants exactly one name or lambda",
+            });
+        }
+        let what = self.mc.car(rest);
+        let env = self.mc.register(Register::Env);
+
+        if self.mc.is_symbol(what) {
+            return match env::lookup_function(self.mc, env, what) {
+                Some(f) => self.deliver(f),
+                None => {
+                    let name = self.mc.symbol_name(what);
+                    self.fail(EvalError::UndefinedFunction(name))
+                }
+            };
+        }
+        // `#'(lambda ...)`, which is the same as the lambda itself.
+        if what.is_cons() && self.mc.symbol_is(self.mc.car(what), "LAMBDA") {
+            return self.eval_lambda(what);
+        }
+        self.fail(EvalError::BadSyntax {
+            operator: "function",
+            detail: "wants a symbol or a lambda",
+        })
+    }
+
+    /// `(eval-when (situations...) body...)`.
+    ///
+    /// An interpreter only ever has one situation: it is executing. So the
+    /// body runs if `:execute` or `eval` is listed, and otherwise yields nil.
+    /// The compile-time situations matter in phase 1 and mean nothing here.
+    fn eval_eval_when(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "eval-when",
+                detail: "wants a situation list",
+            });
+        }
+        let situations = self.mc.car(rest);
+        let body = self.mc.cdr(rest);
+        let mut cursor = situations;
+        while cursor.is_cons() {
+            let s = self.mc.car(cursor);
+            // `:execute` is a keyword, which means a symbol in the KEYWORD
+            // package — and there are no packages yet, so the reader leaves the
+            // colon in the name. Both spellings are accepted until there are.
+            if self.mc.symbol_is(s, "EXECUTE")
+                || self.mc.symbol_is(s, ":EXECUTE")
+                || self.mc.symbol_is(s, "EVAL")
+            {
+                let env = self.mc.register(Register::Env);
+                return self.begin(body, env);
+            }
+            cursor = self.mc.cdr(cursor);
+        }
+        self.deliver(Value::NIL)
+    }
+
+    // ---- binding shapes --------------------------------------------------
+    //
+    // A binding may be written `(name init)`, `(name)` or bare `name`. The last
+    // two bind nil.
+
+    fn binding_init(&mut self, remaining: Value<'h>) -> Option<Value<'h>> {
+        let binding = self.mc.car(remaining);
+        if self.mc.is_symbol(binding) {
+            return Some(Value::NIL);
+        }
+        if !binding.is_cons() || !self.mc.is_symbol(self.mc.car(binding)) {
+            return None;
+        }
+        let after = self.mc.cdr(binding);
+        Some(if after.is_cons() {
+            self.mc.car(after)
+        } else {
+            Value::NIL
+        })
+    }
+
+    fn binding_name(&mut self, binding: Value<'h>) -> Option<Value<'h>> {
+        if self.mc.is_symbol(binding) {
+            return Some(binding);
+        }
+        if binding.is_cons() && self.mc.is_symbol(self.mc.car(binding)) {
+            return Some(self.mc.car(binding));
+        }
+        None
+    }
+
+    fn binding_names(&mut self, bindings: Value<'h>) -> Vec<Value<'h>> {
+        let mut names = Vec::new();
+        let mut cursor = bindings;
+        while cursor.is_cons() {
+            if let Some(name) = self.binding_name(self.mc.car(cursor)) {
+                names.push(name);
+            }
+            cursor = self.mc.cdr(cursor);
+        }
+        names
+    }
+
+    fn list_to_vec(&mut self, list: Value<'h>) -> Vec<Value<'h>> {
+        let mut out = Vec::new();
+        let mut cursor = list;
+        while cursor.is_cons() {
+            out.push(self.mc.car(cursor));
+            cursor = self.mc.cdr(cursor);
+        }
+        out
+    }
+
     fn eval_call(&mut self, form: Value<'h>) -> Transition {
         let head = self.mc.car(form);
         let argument_forms = self.mc.cdr(form);
@@ -437,12 +777,15 @@ impl<'a, 'h> Machine<'a, 'h> {
         // is what Scheme does, and what this code did until a test asked for
         // `(cons 1 2)` and got "the variable CONS is unbound".
         let function = if self.mc.is_symbol(head) {
-            let f = self.mc.slot(head, symbol::FUNCTION);
-            if f == Value::UNBOUND {
-                let name = self.mc.symbol_name(head);
-                return self.fail(EvalError::UndefinedFunction(name));
+            // A lexical binding from `flet` or `labels` shadows the symbol's
+            // own function cell, which is what makes them lexical.
+            match env::lookup_function(self.mc, env, head) {
+                Some(f) => f,
+                None => {
+                    let name = self.mc.symbol_name(head);
+                    return self.fail(EvalError::UndefinedFunction(name));
+                }
             }
-            f
         } else {
             // `((lambda (x) x) 1)`. The head is evaluated like any other form,
             // which is the one place the Lisp-2 rule bends — and it has to,
@@ -490,6 +833,8 @@ impl<'a, 'h> Machine<'a, 'h> {
                 self.begin(rest, env)
             }
             frame::SETQ => self.return_to_setq(f),
+            frame::LET => self.return_to_let(f),
+            frame::LETSTAR => self.return_to_let_star(f),
             _ => self.fail(EvalError::BadSyntax {
                 operator: "a frame",
                 detail: "has an unknown kind",
@@ -624,7 +969,7 @@ impl<'a, 'h> Machine<'a, 'h> {
             });
         }
 
-        let scope = env::make(self.mc, captured, &names, &values);
+        let scope = env::make(self.mc, captured, env::VARIABLE, &names, &values);
         self.begin(body, scope)
     }
 
@@ -695,6 +1040,24 @@ pub mod special {
     pub const SETQ: i64 = 5;
     /// `(defun name (params) body...)` — define a function.
     pub const DEFUN: i64 = 6;
+    /// `(let ((v init)...) body...)` — bind variables, all at once.
+    pub const LET: i64 = 7;
+    /// `(let* ((v init)...) body...)` — bind variables in order.
+    pub const LET_STAR: i64 = 8;
+    /// `(flet ((f (params) body)...) body...)` — bind functions, not visible
+    /// to each other.
+    pub const FLET: i64 = 9;
+    /// `(labels ((f (params) body)...) body...)` — bind functions that can see
+    /// themselves and each other.
+    pub const LABELS: i64 = 10;
+    /// `(function f)`, written `#'f` — the function a name denotes.
+    pub const FUNCTION: i64 = 11;
+    /// `(the type form)` — a declaration the interpreter may ignore.
+    pub const THE: i64 = 12;
+    /// `(locally decls... body...)` — a body with declarations.
+    pub const LOCALLY: i64 = 13;
+    /// `(eval-when (situations...) body...)` — when this is for.
+    pub const EVAL_WHEN: i64 = 14;
 
     /// Every special operator, by name.
     pub const ALL: &[(&str, i64)] = &[
@@ -704,6 +1067,14 @@ pub mod special {
         ("PROGN", PROGN),
         ("SETQ", SETQ),
         ("DEFUN", DEFUN),
+        ("LET", LET),
+        ("LET*", LET_STAR),
+        ("FLET", FLET),
+        ("LABELS", LABELS),
+        ("FUNCTION", FUNCTION),
+        ("THE", THE),
+        ("LOCALLY", LOCALLY),
+        ("EVAL-WHEN", EVAL_WHEN),
     ];
 }
 
@@ -723,6 +1094,10 @@ pub mod frame {
     pub const PROGN: i64 = 3;
     /// Waiting on the value of a `setq`.
     pub const SETQ: i64 = 4;
+    /// Evaluating a `let`'s init forms, all in the outer scope.
+    pub const LET: i64 = 5;
+    /// Evaluating a `let*`'s next init, in the scope built so far.
+    pub const LETSTAR: i64 = 6;
 
     /// Slot 0 of every frame: which kind.
     pub const KIND: usize = 0;
@@ -746,6 +1121,22 @@ pub mod frame {
     pub const SETQ_REST: usize = 2;
     /// The environment the assignment happens in.
     pub const SETQ_ENV: usize = 3;
+    /// All of a `let`'s bindings, kept for their names.
+    pub const LET_BINDINGS: usize = 1;
+    /// Bindings whose inits are still to evaluate.
+    pub const LET_REMAINING: usize = 2;
+    /// Values so far, in reverse.
+    pub const LET_DONE: usize = 3;
+    /// The body, once the bindings are made.
+    pub const LET_BODY: usize = 4;
+    /// The outer scope, which every init is evaluated in.
+    pub const LET_ENV: usize = 5;
+    /// A `let*`'s bindings still to make, the first in flight.
+    pub const LETSTAR_REMAINING: usize = 1;
+    /// The body.
+    pub const LETSTAR_BODY: usize = 2;
+    /// The scope built so far.
+    pub const LETSTAR_ENV: usize = 3;
 
     /// Which kind of frame this is.
     pub fn kind<'h>(mc: &Mutation<'h>, f: Value<'h>) -> i64 {
@@ -782,6 +1173,41 @@ pub mod frame {
         mc.set_slot(f, SETQ_NAME, name);
         mc.set_slot(f, SETQ_REST, rest);
         mc.set_slot(f, SETQ_ENV, env);
+        f
+    }
+
+    /// A frame part-way through a `let`'s init forms.
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_let<'h>(
+        mc: &mut Mutation<'h>,
+        bindings: Value<'h>,
+        remaining: Value<'h>,
+        done: Value<'h>,
+        body: Value<'h>,
+        env: Value<'h>,
+    ) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 6);
+        mc.set_slot(f, KIND, Value::fixnum(LET).expect("small"));
+        mc.set_slot(f, LET_BINDINGS, bindings);
+        mc.set_slot(f, LET_REMAINING, remaining);
+        mc.set_slot(f, LET_DONE, done);
+        mc.set_slot(f, LET_BODY, body);
+        mc.set_slot(f, LET_ENV, env);
+        f
+    }
+
+    /// A frame waiting on a `let*`'s next init.
+    pub fn make_let_star<'h>(
+        mc: &mut Mutation<'h>,
+        remaining: Value<'h>,
+        body: Value<'h>,
+        env: Value<'h>,
+    ) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 4);
+        mc.set_slot(f, KIND, Value::fixnum(LETSTAR).expect("small"));
+        mc.set_slot(f, LETSTAR_REMAINING, remaining);
+        mc.set_slot(f, LETSTAR_BODY, body);
+        mc.set_slot(f, LETSTAR_ENV, env);
         f
     }
 
@@ -1175,6 +1601,134 @@ mod tests {
         );
     }
 
+    // ---- group A: scopes and near-no-ops ---------------------------------
+
+    #[test]
+    fn let_binds_all_at_once() {
+        program_gives("(let ((x 1) (y 2)) (+ x y))", "3");
+        program_gives("(let () 1)", "1");
+        program_gives("(let ((x)) x)", "NIL");
+        program_gives("(let (x) x)", "NIL");
+        // Every init is evaluated in the OUTER scope, which is the whole
+        // difference from let*.
+        program_gives("(let ((x 1)) (let ((x 2) (y x)) y))", "1");
+    }
+
+    #[test]
+    fn let_star_binds_in_order() {
+        program_gives("(let* ((x 1) (y (+ x 1))) (* x y))", "2");
+        program_gives("(let* ((x 1) (x (+ x 1))) x)", "2");
+        program_gives("(let ((x 1)) (let* ((x 2) (y x)) y))", "2");
+    }
+
+    #[test]
+    fn a_binding_is_undone_on_the_way_out() {
+        program_gives("(setq g 'global) (let ((g 'inner)) g) g", "GLOBAL");
+        // setq inside touches the binding, not the global.
+        program_gives(
+            "(setq h 'outer) (let ((h 'in)) (setq h 'changed)) h",
+            "OUTER",
+        );
+    }
+
+    /// A Lisp-2 keeps the namespaces apart in *lexical* scopes too, not only on
+    /// symbols. A local function named CAR must not disturb the variable, and a
+    /// local variable named CAR must not disturb the function.
+    #[test]
+    fn flet_and_let_bind_in_different_namespaces() {
+        program_gives("(flet ((car (x) 'shadowed)) (car '(1 2)))", "SHADOWED");
+        program_gives("(let ((car 5)) car)", "5");
+        program_gives("(let ((car 5)) (car '(1 2)))", "1");
+        // And the sharpest demonstration: inside that flet, `car` as a
+        // *variable* is still unbound. The namespaces do not leak into each
+        // other even when one of them has a binding.
+        assert!(matches!(
+            eval_all("(flet ((car (x) 'shadowed)) car)"),
+            Err(EvalError::UnboundVariable(_))
+        ));
+    }
+
+    /// The only difference between them: which scope the closures capture.
+    #[test]
+    fn labels_sees_itself_and_flet_does_not() {
+        program_gives(
+            "(labels ((e (n) (if (= n 0) t (o (- n 1))))
+                      (o (n) (if (= n 0) nil (e (- n 1)))))
+               (list (e 10) (o 10)))",
+            "(T NIL)",
+        );
+        // An flet binding referring to a sibling must not find it.
+        assert!(matches!(
+            eval_all("(flet ((a () (b)) (b () 1)) (a))"),
+            Err(EvalError::UndefinedFunction(_))
+        ));
+    }
+
+    /// Tail calls must still work through a lexical function binding.
+    #[test]
+    fn labels_recursion_is_still_tail_recursive() {
+        program_gives(
+            // Five thousand rather than fifty: PLENTY is a step budget, and
+            // each iteration costs a dozen steps. Constant *space* is what is
+            // being shown here, and `a_tail_call_does_not_grow_the_stack`
+            // measures the depth directly.
+            "(labels ((down (n) (if (= n 0) 'done (down (- n 1))))) (down 5000))",
+            "DONE",
+        );
+    }
+
+    #[test]
+    fn function_finds_what_a_name_denotes() {
+        program_gives("(funcall #'car '(1 2))", "1");
+        program_gives("(funcall (function cdr) '(1 2))", "(2)");
+        program_gives("(funcall #'(lambda (x) (* x 3)) 14)", "42");
+        // A lexical binding shadows the symbol's own function cell.
+        program_gives("(flet ((car (x) 'local)) (funcall #'car 1))", "LOCAL");
+    }
+
+    #[test]
+    fn the_and_locally_reduce_to_their_body() {
+        program_gives("(the integer 42)", "42");
+        program_gives("(the t (+ 1 1))", "2");
+        program_gives("(locally 1 2)", "2");
+        program_gives("(locally)", "NIL");
+    }
+
+    /// An interpreter has one situation: it is executing.
+    #[test]
+    fn eval_when_runs_only_for_execute() {
+        program_gives("(eval-when (:execute) 'ran)", "RAN");
+        program_gives("(eval-when (eval) 'ran)", "RAN");
+        program_gives("(eval-when (:compile-toplevel) 'no)", "NIL");
+        program_gives("(eval-when () 'no)", "NIL");
+    }
+
+    /// A binding list is a list. Treating a non-list as "no bindings" would
+    /// quietly accept nonsense, which a test found before SBCL did.
+    #[test]
+    fn malformed_binding_lists_signal() {
+        for source in [
+            "(let)",
+            "(let 1 2)",
+            "(let* 1)",
+            "(flet 1)",
+            "(flet ((f)) 1)",
+        ] {
+            assert!(
+                matches!(eval_all(source), Err(EvalError::BadSyntax { .. })),
+                "{source} should be malformed"
+            );
+        }
+        assert!(matches!(
+            eval_all("(function)"),
+            Err(EvalError::BadSyntax { .. })
+        ));
+        assert!(matches!(
+            eval_all("(function nosuchthing)"),
+            Err(EvalError::UndefinedFunction(_))
+        ));
+    }
+
     // ---- not finishing ---------------------------------------------------
 
     /// A recursion with no base case must stop, and stop *cheaply*.
@@ -1386,35 +1940,63 @@ pub mod env {
 
     /// Slot 0: the enclosing scope, or `nil`.
     pub const PARENT: usize = 0;
+    /// Slot 1: which namespace this scope binds in.
+    pub const NAMESPACE: usize = 1;
+    /// Name/value pairs begin here.
+    pub const FIRST_PAIR: usize = 2;
+
+    /// Variables — what `let` binds and a symbol evaluates to.
+    pub const VARIABLE: i64 = 0;
+    /// Functions — what `flet` and `labels` bind, and what the operator
+    /// position of a call looks up.
+    ///
+    /// Two namespaces rather than one is what makes this a Lisp-2, and the
+    /// separation has to reach into lexical scopes as well as symbols: `(flet
+    /// ((list (x) x)) (list 1))` must call the local function while `list` the
+    /// variable is untouched.
+    pub const FUNCTION: i64 = 1;
 
     /// A scope binding `names` to `values` inside `parent`.
     pub fn make<'h>(
         mc: &mut Mutation<'h>,
         parent: Value<'h>,
+        namespace: i64,
         names: &[Value<'h>],
         values: &[Value<'h>],
     ) -> Value<'h> {
         debug_assert_eq!(names.len(), values.len());
-        let scope = mc.alloc(ObjectType::Environment, 1 + names.len() * 2);
+        let scope = mc.alloc(ObjectType::Environment, FIRST_PAIR + names.len() * 2);
         mc.set_slot(scope, PARENT, parent);
+        mc.set_slot(scope, NAMESPACE, Value::fixnum(namespace).expect("small"));
         for (i, (name, value)) in names.iter().zip(values).enumerate() {
-            mc.set_slot(scope, 1 + i * 2, *name);
-            mc.set_slot(scope, 2 + i * 2, *value);
+            mc.set_slot(scope, FIRST_PAIR + i * 2, *name);
+            mc.set_slot(scope, FIRST_PAIR + 1 + i * 2, *value);
         }
         scope
     }
 
-    /// Where `name` is bound: the scope and the slot holding its value.
-    fn find<'h>(mc: &Mutation<'h>, env: Value<'h>, name: Value<'h>) -> Option<(Value<'h>, usize)> {
+    /// Where `name` is bound in `namespace`: the scope and the slot holding it.
+    ///
+    /// Scopes of the other namespace are stepped over rather than searched,
+    /// which is how a local function and a local variable of the same name stay
+    /// apart.
+    fn find<'h>(
+        mc: &Mutation<'h>,
+        env: Value<'h>,
+        namespace: i64,
+        name: Value<'h>,
+    ) -> Option<(Value<'h>, usize)> {
         let mut scope = env;
         while scope.is_object() {
-            let slots = mc.header(scope).slots;
-            let mut i = 1;
-            while i < slots {
-                if mc.slot(scope, i) == name {
-                    return Some((scope, i + 1));
+            if mc.slot(scope, NAMESPACE).as_fixnum() == Some(namespace) {
+                let slots = mc.header(scope).slots;
+                let mut i = FIRST_PAIR;
+                while i < slots {
+                    if mc.slot(scope, i) == name {
+                        return Some((scope, i + 1));
+                    }
+                    i += 2;
                 }
-                i += 2;
             }
             scope = mc.slot(scope, PARENT);
         }
@@ -1423,7 +2005,7 @@ pub mod env {
 
     /// The value of `name`, or `None` if it is unbound everywhere.
     pub fn lookup<'h>(mc: &Mutation<'h>, env: Value<'h>, name: Value<'h>) -> Option<Value<'h>> {
-        if let Some((scope, slot)) = find(mc, env, name) {
+        if let Some((scope, slot)) = find(mc, env, VARIABLE, name) {
             return Some(mc.slot(scope, slot));
         }
         // Globals live in the symbol's own value cell, which #4 already gave us.
@@ -1435,9 +2017,27 @@ pub mod env {
         }
     }
 
+    /// The function `name` denotes: a lexical binding from `flet` or `labels`
+    /// first, then the symbol's own function cell.
+    pub fn lookup_function<'h>(
+        mc: &Mutation<'h>,
+        env: Value<'h>,
+        name: Value<'h>,
+    ) -> Option<Value<'h>> {
+        if let Some((scope, slot)) = find(mc, env, FUNCTION, name) {
+            return Some(mc.slot(scope, slot));
+        }
+        let global = mc.slot(name, symbol::FUNCTION);
+        if global == Value::UNBOUND {
+            None
+        } else {
+            Some(global)
+        }
+    }
+
     /// Assign to `name`, creating a global if it is bound nowhere.
     pub fn assign<'h>(mc: &mut Mutation<'h>, env: Value<'h>, name: Value<'h>, value: Value<'h>) {
-        if let Some((scope, slot)) = find(mc, env, name) {
+        if let Some((scope, slot)) = find(mc, env, VARIABLE, name) {
             mc.set_slot(scope, slot, value);
         } else {
             mc.set_slot(name, symbol::VALUE, value);
