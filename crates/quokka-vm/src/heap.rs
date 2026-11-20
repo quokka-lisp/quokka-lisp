@@ -69,7 +69,62 @@
 //! promptly, so one step per mutation gives fine-grained collection for free.
 
 use crate::value::{Invariant, Value, SUBTAG_HEADER};
+use core::fmt;
 use core::marker::PhantomData;
+
+/// Is the torture mode on? See [`Heap::collect`] and [`Heap::verify`].
+pub const TORTURE: bool = cfg!(feature = "gc-torture");
+
+/// Fills space that must never be read. Not a valid anything.
+const POISON: u64 = 0xDEAD_BEEF_DEAD_BEEF;
+
+/// Copy one word's referent into to-space if it has not been copied already,
+/// and return the word updated to point at the copy.
+///
+/// Leaves a **forwarding pointer** behind in from-space: the object's first
+/// word is overwritten with a reference tagged `111`, so a second reference to
+/// the same object finds the copy instead of making another. That is what keeps
+/// shared structure shared and stops cycles looping forever — and it is safe to
+/// scribble on from-space precisely because it is about to be abandoned.
+fn forward(from: &mut [u64], to: &mut Vec<u64>, word: u64) -> u64 {
+    let value = Value::from_bits(word);
+    let Some(at) = value.word_index() else {
+        return word; // a fixnum, a character, nil: refers to nothing
+    };
+
+    // Already copied? Then from[at] is where it went.
+    let first = Value::from_bits(from[at]);
+    if first.is_forwarding() {
+        return retag(value, first.word_index().expect("forwarding pointer"));
+    }
+
+    // Not yet. Work out how big it is, the same way the scan does.
+    let size = match Header::decode(from[at]) {
+        Some(header) => HEADER_WORDS + header.slots,
+        None => CONS_WORDS,
+    };
+
+    let moved_to = to.len();
+    to.extend_from_slice(&from[at..at + size]);
+    from[at] = Value::forwarding(moved_to)
+        .expect("heap index exceeds the 61-bit encoding")
+        .bits();
+
+    retag(value, moved_to)
+}
+
+/// Rebuild a reference at a new index, keeping whether it was a cons or an
+/// object. The forwarding pointer records where, not what.
+fn retag(original: Value<'_>, index: usize) -> u64 {
+    let moved = if original.is_cons() {
+        Value::cons(index)
+    } else {
+        Value::object(index)
+    };
+    moved
+        .expect("heap index exceeds the 61-bit encoding")
+        .bits()
+}
 
 /// How many words a cons cell occupies.
 pub const CONS_WORDS: usize = 2;
@@ -156,6 +211,66 @@ impl ObjectType {
     }
 }
 
+/// Something the collector got wrong, as found by [`Heap::verify`].
+///
+/// `from` is the word index of the object holding the bad reference, or
+/// `usize::MAX` for the root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Inconsistency {
+    /// An object claims to extend past the end of the heap. Its header's length
+    /// is wrong, or a linear walk lost the object boundaries.
+    ObjectOverrunsHeap {
+        /// Where the object begins.
+        at: usize,
+        /// How many words its header claims.
+        size: usize,
+    },
+    /// A reference points outside the heap.
+    ReferenceOutOfBounds {
+        /// The object holding it.
+        from: usize,
+        /// Where it points.
+        target: usize,
+    },
+    /// A reference points inside the heap but not at the start of an object —
+    /// typically a slot the collector failed to update, now read against the
+    /// new layout.
+    ReferenceIntoNowhere {
+        /// The object holding it.
+        from: usize,
+        /// Where it points.
+        target: usize,
+    },
+    /// A forwarding pointer survived into the live heap. They belong only in
+    /// the abandoned semispace, during a collection.
+    ForwardingPointerLeft {
+        /// The object holding it.
+        from: usize,
+    },
+}
+
+impl fmt::Display for Inconsistency {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Inconsistency::ObjectOverrunsHeap { at, size } => {
+                write!(f, "object at {at} claims {size} words and runs off the end")
+            }
+            Inconsistency::ReferenceOutOfBounds { from, target } => {
+                write!(f, "object at {from} refers to {target}, outside the heap")
+            }
+            Inconsistency::ReferenceIntoNowhere { from, target } => {
+                write!(
+                    f,
+                    "object at {from} refers to {target}, not an object start"
+                )
+            }
+            Inconsistency::ForwardingPointerLeft { from } => {
+                write!(f, "object at {from} still holds a forwarding pointer")
+            }
+        }
+    }
+}
+
 /// An object header word, as stored in the heap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Header {
@@ -190,12 +305,21 @@ impl Header {
 /// without borrowing the collection machinery.
 #[derive(Debug, Default)]
 struct Storage {
+    /// The live semispace. Every `Value`'s word index points in here.
     words: Vec<u64>,
+    /// The other semispace, empty between collections. Kept rather than
+    /// reallocated so a collection does not also mean a large allocation.
+    spare: Vec<u64>,
     /// The one persistent root: everything that must survive hangs off it.
     root: u64,
     /// Above this, the heap would like to be collected. Not a hard limit —
     /// see [`Heap::wants_collection`].
     soft_limit: usize,
+    /// How many collections have happened. Torture mode uses it to vary the
+    /// padding, so no object can land where it was.
+    collections: u64,
+    /// Where the first object begins. Non-zero only under torture padding.
+    heap_start: usize,
 }
 
 impl Storage {
@@ -384,8 +508,11 @@ impl Heap {
         Heap {
             storage: Storage {
                 words: Vec::new(),
+                spare: Vec::new(),
                 root: Value::NIL.bits(),
                 soft_limit: words,
+                collections: 0,
+                heap_start: 0,
             },
         }
     }
@@ -452,7 +579,31 @@ impl Heap {
             storage: &mut self.storage,
             _brand: PhantomData,
         };
-        f(&mut mutation)
+        let result = f(&mut mutation);
+
+        // Torture mode: collect at every opportunity there is.
+        //
+        // The classical torture mode collects on every *allocation*. That is
+        // impossible here, and for a good reason — collection cannot happen
+        // inside a mutation, and allocation only happens inside one. The bug
+        // that trick hunts, a value lost across an allocation, is the bug the
+        // branding in this module made unrepresentable.
+        //
+        // What is left to hunt is the collector's own mistakes: a mis-sized
+        // header, a slot nobody traced, a root nobody forwarded. Those do not
+        // care how often you allocate, but they do care how often you collect
+        // and whether anyone checks the result. So: collect at every mutation
+        // boundary, which is the finest granularity that exists, pad to-space
+        // so nothing can land where it was, and verify afterwards.
+        if TORTURE {
+            self.collect();
+        }
+        result
+    }
+
+    /// How many collections have happened.
+    pub fn collections(&self) -> u64 {
+        self.storage.collections
     }
 
     /// Collect garbage.
@@ -466,15 +617,170 @@ impl Heap {
     /// heap.mutate(|_mc| heap.collect());
     /// ```
     ///
-    /// Not implemented yet — see the Cheney collector issue. The signature is
-    /// here because it is what makes the rule above true.
+    /// # The algorithm
+    ///
+    /// Cheney's. Two semispaces; survivors are copied from the live one into
+    /// the spare, which then becomes live. Everything not reached is gone, and
+    /// reclaiming it costs nothing — the space is simply abandoned, which is
+    /// why allocation can be a bump.
+    ///
+    /// Its trick is that it needs **no auxiliary stack**. The naive copying
+    /// collector recurses to trace references; Cheney uses to-space itself as
+    /// the work queue. `scan` trails `free` through the objects already copied,
+    /// and copying an object pushes its own references onto the queue by
+    /// placing them ahead of `scan`. A loop, not a recursion, so it cannot
+    /// overflow however deep or tangled the object graph is. That matters here
+    /// more than usual: the wasm32 stack is about a megabyte and fixed at link
+    /// time.
     pub fn collect(&mut self) {
-        // Cheney's algorithm goes here. Tracing starts at `self.storage.root`.
+        let mut to = core::mem::take(&mut self.storage.spare);
+        to.clear();
+
+        // Torture mode pads the front of to-space by a varying amount, so that
+        // no object can land on the index it already had. See `TORTURE`.
+        let pad = self.torture_padding();
+        to.resize(pad, POISON);
+
+        let from = &mut self.storage.words;
+
+        // Roots. Just the one for now; the evaluator's registers, the obarray
+        // and the process list join it as they arrive, and each one that is
+        // forgotten is a live object silently reclaimed.
+        self.storage.root = forward(from, &mut to, self.storage.root);
+
+        // The queue. `scan` trails the end of `to`, which grows as references
+        // are forwarded ahead of it. When they meet, everything reachable has
+        // been copied and had its own references updated.
+        let mut scan = pad;
+        while scan < to.len() {
+            let (size, slots) = match Header::decode(to[scan]) {
+                Some(header) => {
+                    let size = HEADER_WORDS + header.slots;
+                    // A string's characters and a code object's bytecode are
+                    // not references. Tracing them would follow numbers.
+                    let slots = if header.object_type.slots_are_values() {
+                        scan + HEADER_WORDS..scan + size
+                    } else {
+                        scan..scan
+                    };
+                    (size, slots)
+                }
+                // No header means a cons cell: the tag is its type.
+                None => (CONS_WORDS, scan..scan + CONS_WORDS),
+            };
+
+            for at in slots {
+                // Read, forward, then write: forwarding pushes onto `to`, so
+                // the three cannot share a borrow. Indices stay valid across
+                // the push because they are indices, not pointers.
+                let word = to[at];
+                let updated = forward(from, &mut to, word);
+                to[at] = updated;
+            }
+            scan += size;
+        }
+
+        // Flip. The old live space becomes the spare, keeping its allocation.
+        let abandoned = core::mem::replace(&mut self.storage.words, to);
+        self.storage.spare = abandoned;
+        self.storage.collections += 1;
+        self.storage.heap_start = pad;
+
+        if TORTURE {
+            self.verify()
+                .expect("the heap is inconsistent after a collection");
+        }
     }
 
-    /// How many words are in use.
+    /// Check that the heap is internally consistent.
+    ///
+    /// Two passes. The first walks the heap linearly, the way the collector
+    /// does, recording where each object begins; an object whose header lies
+    /// about its size makes this overrun. The second checks that every
+    /// reference — in a cons, in an object's value slots, and the root —
+    /// points at one of those recorded boundaries.
+    ///
+    /// Between them these catch what the branding in [`Heap::mutate`] cannot:
+    /// a slot the collector failed to update, a header whose length is wrong,
+    /// a type traced when it should not have been, a root nobody forwarded.
+    /// Those are bugs *in* the collector, and they produce wrong answers rather
+    /// than crashes, so something has to go looking.
+    ///
+    /// Torture mode runs this after every collection. It is linear in the size
+    /// of the heap and allocates a bitmap, so it is not something to do in
+    /// ordinary operation.
+    pub fn verify(&self) -> Result<(), Inconsistency> {
+        let words = &self.storage.words;
+        let mut starts = vec![false; words.len()];
+
+        let mut at = self.storage.heap_start;
+        while at < words.len() {
+            starts[at] = true;
+            let size = match Header::decode(words[at]) {
+                Some(header) => HEADER_WORDS + header.slots,
+                None => CONS_WORDS,
+            };
+            if at + size > words.len() {
+                return Err(Inconsistency::ObjectOverrunsHeap { at, size });
+            }
+            at += size;
+        }
+
+        let check = |word: u64, from: usize| -> Result<(), Inconsistency> {
+            let value = Value::from_bits(word);
+            if value.is_forwarding() {
+                return Err(Inconsistency::ForwardingPointerLeft { from });
+            }
+            let Some(target) = value.word_index() else {
+                return Ok(()); // refers to nothing
+            };
+            if target >= words.len() {
+                return Err(Inconsistency::ReferenceOutOfBounds { from, target });
+            }
+            if !starts[target] {
+                return Err(Inconsistency::ReferenceIntoNowhere { from, target });
+            }
+            Ok(())
+        };
+
+        check(self.storage.root, usize::MAX)?;
+
+        let mut at = self.storage.heap_start;
+        while at < words.len() {
+            match Header::decode(words[at]) {
+                Some(header) => {
+                    if header.object_type.slots_are_values() {
+                        for slot in 0..header.slots {
+                            check(words[at + HEADER_WORDS + slot], at)?;
+                        }
+                    }
+                    at += HEADER_WORDS + header.slots;
+                }
+                None => {
+                    check(words[at], at)?;
+                    check(words[at + 1], at)?;
+                    at += CONS_WORDS;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    const fn torture_padding(&self) -> usize {
+        if TORTURE {
+            // Varying, so a stale index cannot accidentally still be right.
+            (self.storage.collections % 7) as usize + 1
+        } else {
+            0
+        }
+    }
+
+    /// How many words the heap's objects occupy.
+    ///
+    /// Excludes the torture padding, so the number means the same thing with
+    /// the feature on or off.
     pub fn used_words(&self) -> usize {
-        self.storage.words.len()
+        self.storage.words.len() - self.storage.heap_start
     }
 
     /// The header at `word_index`, or `None` if a cons cell starts there.
@@ -482,8 +788,24 @@ impl Heap {
     /// This is how a linear scan of the heap steps from one object to the next,
     /// and therefore how the collector will walk to-space. It is the reason
     /// headers are encoded so that no value can be mistaken for one.
-    // Not called from the library yet: #3 writes the collector that walks with
-    // it. The scan test below does exercise it.
+    /// Where the first object begins. Non-zero only under torture padding.
+    #[cfg(test)]
+    pub(crate) fn first_object_for_test(&self) -> usize {
+        self.storage.heap_start
+    }
+
+    /// Corrupt a word, so [`Heap::verify`] can be shown to catch things.
+    ///
+    /// A verifier nobody has seen fail is not known to work.
+    /// `offset` is counted from the first object, so the torture padding does
+    /// not shift what a test is aiming at.
+    #[cfg(test)]
+    pub(crate) fn poke_for_test(&mut self, offset: usize, word: u64) {
+        let at = self.storage.heap_start + offset;
+        self.storage.words[at] = word;
+    }
+
+    // Not called from the library yet; the scan test below exercises it.
     #[allow(dead_code)]
     pub(crate) fn header_at(&self, word_index: usize) -> Option<Header> {
         Header::decode(self.storage.words[word_index])
@@ -521,6 +843,7 @@ mod tests {
                 sum += mc.car(cursor).as_fixnum().unwrap();
                 cursor = mc.cdr(cursor);
             }
+            mc.set_root(list); // or torture mode collects it the moment we leave
             sum
         });
         assert_eq!(total, 6);
@@ -689,21 +1012,29 @@ mod tests {
     fn a_linear_scan_can_walk_a_mixed_heap() {
         let mut heap = Heap::new();
         heap.mutate(|mc| {
-            mc.cons(Value::fixnum(1).unwrap(), Value::NIL);
-            mc.alloc(ObjectType::Vector, 3);
+            // Everything must be reachable, or torture mode collects it before
+            // the scan runs. A vector holds the lot.
+            let all = mc.alloc(ObjectType::Vector, 4);
+            let plain = mc.cons(Value::fixnum(1).unwrap(), Value::NIL);
+            mc.set_slot(all, 0, plain);
+            let inner = mc.alloc(ObjectType::Vector, 3);
+            mc.set_slot(all, 1, inner);
             // A cons whose car is a character and whose cdr is a big fixnum:
             // the words most likely to be mistaken for a header.
-            mc.cons(
+            let awkward = mc.cons(
                 Value::character('q'),
                 Value::fixnum(i32::MAX as i64).unwrap(),
             );
-            mc.alloc(ObjectType::String, 2);
-            mc.cons(Value::NIL, Value::NIL);
+            mc.set_slot(all, 2, awkward);
+            let text = mc.alloc(ObjectType::String, 2);
+            mc.set_slot(all, 3, text);
+            mc.set_root(all);
         });
 
+        let start = heap.first_object_for_test();
         let mut found = Vec::new();
-        let mut at = 0;
-        while at < heap.used_words() {
+        let mut at = start;
+        while at < start + heap.used_words() {
             match heap.header_at(at) {
                 Some(h) => {
                     found.push(format!("{:?}/{}", h.object_type, h.slots));
@@ -715,12 +1046,15 @@ mod tests {
                 }
             }
         }
+        // Collection reorders objects, so compare the multiset rather than the
+        // sequence. What is tested is that boundaries are recovered exactly.
+        found.sort();
         assert_eq!(
             found,
-            ["cons", "Vector/3", "cons", "String/2", "cons"],
+            ["String/2", "Vector/3", "Vector/4", "cons", "cons"],
             "the scan lost track of object boundaries"
         );
-        assert_eq!(at, heap.used_words(), "the scan overran the heap");
+        assert_eq!(at, start + heap.used_words(), "the scan overran the heap");
     }
 
     // ---- growth -----------------------------------------------------------
@@ -729,14 +1063,19 @@ mod tests {
     fn the_heap_asks_to_be_collected_once_past_its_soft_limit() {
         let mut heap = Heap::with_soft_limit(8);
         assert!(!heap.wants_collection());
+        // Rooted as it grows, so the measurement means the same thing whether
+        // or not torture mode collects between the two mutations.
         heap.mutate(|mc| {
-            mc.cons(Value::NIL, Value::NIL);
+            let cell = mc.cons(Value::NIL, Value::NIL);
+            mc.set_root(cell);
         });
         assert!(!heap.wants_collection(), "2 words is under the limit of 8");
         heap.mutate(|mc| {
+            let mut list = mc.root();
             for _ in 0..4 {
-                mc.cons(Value::NIL, Value::NIL);
+                list = mc.cons(Value::NIL, list);
             }
+            mc.set_root(list);
         });
         assert!(heap.wants_collection(), "10 words is over the limit of 8");
     }
@@ -747,13 +1086,302 @@ mod tests {
     #[test]
     fn a_mutation_can_overshoot_the_soft_limit() {
         let mut heap = Heap::with_soft_limit(4);
+        let limit = heap.soft_limit();
+        // Asserted inside the mutation: that is where the overshoot must be
+        // allowed, and the only point torture mode has not yet collected.
         heap.mutate(|mc| {
             for n in 0..100 {
                 mc.alloc(ObjectType::Vector, n % 5);
             }
+            assert!(
+                mc.used_words() > limit,
+                "allocation inside a mutation must never fail for want of space"
+            );
         });
-        assert!(heap.used_words() > heap.soft_limit());
-        assert!(heap.wants_collection());
+    }
+
+    // ---- collection ------------------------------------------------------
+
+    /// Build a list of `n` fixnums and make it the root.
+    fn list_of(heap: &mut Heap, n: i64) {
+        heap.mutate(|mc| {
+            let mut list = Value::NIL;
+            for value in (1..=n).rev() {
+                list = mc.cons(Value::fixnum(value).unwrap(), list);
+            }
+            mc.set_root(list);
+        });
+    }
+
+    /// Read the root back as a list of fixnums.
+    fn root_list(heap: &mut Heap) -> Vec<i64> {
+        heap.mutate(|mc| {
+            let mut out = Vec::new();
+            let mut cursor = mc.root();
+            while !cursor.is_nil() {
+                out.push(mc.car(cursor).as_fixnum().unwrap());
+                cursor = mc.cdr(cursor);
+            }
+            out
+        })
+    }
+
+    #[test]
+    fn what_is_reachable_survives_and_what_is_not_does_not() {
+        let mut heap = Heap::new();
+        let before = heap.mutate(|mc| {
+            // Reachable: a three-element list hung off the root.
+            let mut list = Value::NIL;
+            for value in [3i64, 2, 1] {
+                list = mc.cons(Value::fixnum(value).unwrap(), list);
+            }
+            mc.set_root(list);
+            // Garbage: a vector and a long list nothing refers to.
+            mc.alloc(ObjectType::Vector, 10);
+            let mut waste = Value::NIL;
+            for _ in 0..50 {
+                waste = mc.cons(Value::NIL, waste);
+            }
+            mc.used_words()
+        });
+
+        heap.collect();
+
+        assert_eq!(root_list(&mut heap), [1, 2, 3], "live data did not survive");
+        assert_eq!(
+            heap.used_words(),
+            3 * CONS_WORDS,
+            "only the three live conses should remain"
+        );
+        assert!(heap.used_words() < before);
+        heap.verify().unwrap();
+    }
+
+    #[test]
+    fn collecting_an_empty_heap_is_fine() {
+        let mut heap = Heap::new();
+        heap.collect();
+        assert_eq!(heap.used_words(), 0);
+        assert!(heap.mutate(|mc| mc.root().is_nil()));
+        heap.verify().unwrap();
+    }
+
+    #[test]
+    fn repeated_collection_is_idempotent() {
+        let mut heap = Heap::new();
+        list_of(&mut heap, 5);
+        heap.collect();
+        let settled = heap.used_words();
+        for _ in 0..10 {
+            heap.collect();
+            assert_eq!(heap.used_words(), settled, "a collection changed live size");
+            assert_eq!(root_list(&mut heap), [1, 2, 3, 4, 5]);
+        }
+        heap.verify().unwrap();
+    }
+
+    /// Two references to one object must still be two references to *one*
+    /// object afterwards. This is what the forwarding pointer is for: without
+    /// it the object would be copied twice and the sharing silently lost.
+    #[test]
+    fn shared_structure_stays_shared() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let shared = mc.cons(Value::fixnum(99).unwrap(), Value::NIL);
+            let pair = mc.cons(shared, shared);
+            mc.set_root(pair);
+        });
+        heap.collect();
+        heap.mutate(|mc| {
+            let pair = mc.root();
+            assert_eq!(mc.car(pair), mc.cdr(pair), "sharing was lost");
+            assert_eq!(mc.car(mc.car(pair)).as_fixnum(), Some(99));
+        });
+        assert_eq!(
+            heap.used_words(),
+            2 * CONS_WORDS,
+            "the shared cell was copied twice"
+        );
+        heap.verify().unwrap();
+    }
+
+    /// A cycle must terminate. The forwarding pointer is what stops the trace
+    /// going round forever.
+    #[test]
+    fn a_cycle_does_not_loop_forever() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let cell = mc.cons(Value::fixnum(1).unwrap(), Value::NIL);
+            mc.set_cdr(cell, cell); // (1 . itself)
+            mc.set_root(cell);
+        });
+        heap.collect();
+        heap.mutate(|mc| {
+            let cell = mc.root();
+            assert_eq!(mc.car(cell).as_fixnum(), Some(1));
+            assert_eq!(mc.cdr(cell), cell, "the cycle was not preserved");
+        });
+        heap.verify().unwrap();
+    }
+
+    /// Raw-slot objects must be copied verbatim and never traced. A string
+    /// full of words that look like references is the case that would break.
+    #[test]
+    fn raw_slots_are_copied_but_not_followed() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let s = mc.alloc(ObjectType::String, 3);
+            // Bit patterns that would be a cons at index 0, an object far out
+            // of bounds, and a forwarding pointer, if anyone traced them.
+            mc.set_raw_slot(s, 0, 0b001);
+            mc.set_raw_slot(s, 1, (999_999u64 << 3) | 0b011);
+            mc.set_raw_slot(s, 2, 0b111);
+            mc.set_root(s);
+        });
+        heap.collect();
+        heap.mutate(|mc| {
+            let s = mc.root();
+            assert_eq!(mc.header(s).object_type, ObjectType::String);
+            assert_eq!(mc.raw_slot(s, 0), 0b001);
+            assert_eq!(mc.raw_slot(s, 1), (999_999u64 << 3) | 0b011);
+            assert_eq!(mc.raw_slot(s, 2), 0b111);
+        });
+        heap.verify().unwrap();
+    }
+
+    #[test]
+    fn objects_and_conses_survive_together() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let vector = mc.alloc(ObjectType::Vector, 2);
+            let cell = mc.cons(Value::fixnum(7).unwrap(), vector);
+            mc.set_slot(vector, 0, cell); // back-reference: a cycle through an object
+            mc.set_slot(vector, 1, Value::T);
+            mc.set_root(cell);
+        });
+        heap.collect();
+        heap.mutate(|mc| {
+            let cell = mc.root();
+            assert_eq!(mc.car(cell).as_fixnum(), Some(7));
+            let vector = mc.cdr(cell);
+            assert_eq!(mc.header(vector).slots, 2);
+            assert_eq!(mc.slot(vector, 0), cell, "the back-reference broke");
+            assert_eq!(mc.slot(vector, 1), Value::T);
+        });
+        heap.verify().unwrap();
+    }
+
+    /// Deep structure must not overflow the Rust stack. Cheney uses to-space
+    /// as its work queue rather than recursing, so depth costs nothing — the
+    /// property that matters most on wasm32, where the stack is about a
+    /// megabyte and fixed at link time.
+    #[test]
+    fn a_very_deep_list_does_not_overflow_the_stack() {
+        let mut heap = Heap::new();
+        list_of(&mut heap, 100_000);
+        heap.collect();
+        assert_eq!(heap.used_words(), 100_000 * CONS_WORDS);
+        assert_eq!(root_list(&mut heap).len(), 100_000);
+        heap.verify().unwrap();
+    }
+
+    #[test]
+    fn collecting_clears_the_wish_to_be_collected() {
+        let mut heap = Heap::with_soft_limit(8);
+        let before = heap.collections();
+        heap.mutate(|mc| {
+            for _ in 0..20 {
+                mc.cons(Value::NIL, Value::NIL);
+            }
+            assert!(mc.used_words() > 8);
+        });
+        heap.collect();
+        assert!(!heap.wants_collection(), "all of it was garbage");
+        assert!(heap.collections() > before);
+    }
+
+    // ---- verify catches what branding cannot ------------------------------
+
+    #[test]
+    fn verify_passes_on_a_healthy_heap() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let vector = mc.alloc(ObjectType::Vector, 2);
+            let cell = mc.cons(Value::fixnum(1).unwrap(), vector);
+            mc.set_slot(vector, 0, cell);
+            mc.set_root(cell);
+            mc.alloc(ObjectType::String, 2);
+        });
+        heap.verify().unwrap();
+        heap.collect();
+        heap.verify().unwrap();
+    }
+
+    /// The failure a collector bug actually produces: a slot left pointing at
+    /// the old layout. Simulated by corrupting a slot, since the collector is
+    /// not currently wrong.
+    #[test]
+    fn verify_catches_a_reference_that_is_not_an_object_start() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let cell = mc.cons(Value::fixnum(1).unwrap(), Value::NIL);
+            mc.set_root(cell);
+        });
+        // Point the cdr at its own second word: inside the heap, inside an
+        // object, but not at an object start — what an untraced slot looks
+        // like once everything has moved.
+        let interior = heap.first_object_for_test() + 1;
+        heap.poke_for_test(1, Value::cons(interior).unwrap().bits());
+        assert!(matches!(
+            heap.verify(),
+            Err(Inconsistency::ReferenceIntoNowhere { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_catches_a_reference_off_the_end() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let cell = mc.cons(Value::NIL, Value::NIL);
+            mc.set_root(cell);
+        });
+        heap.poke_for_test(0, Value::cons(9_999).unwrap().bits());
+        assert!(matches!(
+            heap.verify(),
+            Err(Inconsistency::ReferenceOutOfBounds { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_catches_a_header_that_lies_about_its_length() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let v = mc.alloc(ObjectType::Vector, 1);
+            mc.set_root(v);
+        });
+        let lying = Header {
+            object_type: ObjectType::Vector,
+            slots: 500,
+        };
+        heap.poke_for_test(0, lying.encode());
+        assert!(matches!(
+            heap.verify(),
+            Err(Inconsistency::ObjectOverrunsHeap { .. })
+        ));
+    }
+
+    #[test]
+    fn verify_catches_a_stray_forwarding_pointer() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let cell = mc.cons(Value::NIL, Value::NIL);
+            mc.set_root(cell);
+        });
+        heap.poke_for_test(0, Value::forwarding(0).unwrap().bits());
+        assert!(matches!(
+            heap.verify(),
+            Err(Inconsistency::ForwardingPointerLeft { .. })
+        ));
     }
 
     /// The variance claim the whole scheme rests on, from the other side.
