@@ -12,6 +12,9 @@
 //! control back to whoever called it, so the browser's event loop keeps
 //! turning. See [`mod@slice`] for what that costs and why it is worth it.
 //!
+//! Every Lisp object is one tagged 64-bit word; see [`value`] for the encoding
+//! and why it is shaped the way it is.
+//!
 //! See `docs/design.md` for the design and `CLAUDE.md` for the rules.
 
 #![deny(rust_2018_idioms)]
@@ -19,6 +22,7 @@
 
 pub mod host;
 pub mod slice;
+pub mod value;
 
 /// The Quokka version string, as reported by the REPL banner and the dev console.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

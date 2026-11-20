@@ -253,6 +253,8 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 
 **Still open** (none blocks phase 0)
 
+- [ ] **Is `nil` an immediate or a symbol?** The tagged-word table above makes `nil` an immediate, which gives the cheapest possible `null` test and a compile-time constant for the Rust code. But Common Lisp says `nil` *is* a symbol: `(symbolp nil)` is true, it has a name, a home package, a value cell holding itself, and a settable property list. An immediate has nowhere to keep any of that, so every symbol operation needs a special case, or `nil` needs a shadow heap object anyway. The alternative is SBCL's: `nil` is a real symbol at a fixed, known heap position, which keeps the `null` test to a single word comparison and makes the special cases disappear. Phase 0 follows the table as written; every test for `nil` goes through `Value::is_nil` and every mention through `Value::NIL`, so switching later touches two functions plus the bootstrap. Decide when symbols are built.
+
 - [ ] **Concurrency:** green threads on one OS thread for good, or plan for real parallelism later?
 - [ ] **Remote protocol:** WebDAV, an S3-compatible API, or our own protocol over HTTPS?
 - [ ] **Git in the browser:** through a Git hosting API, or a Git implementation compiled to WASM?
