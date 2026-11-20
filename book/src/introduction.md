@@ -84,3 +84,10 @@ expected to already know.
 Code is real code from the repository, not pseudocode, though it is sometimes
 shortened. Where a chapter describes something not yet built or not yet decided,
 it says so.
+
+Each chapter ends with references to what it leans on.
+[Further reading](further-reading.md) collects the few sources worth keeping
+open throughout — chiefly [the Common Lisp Documentation
+Project](https://lisp-docs.github.io/), which is where to read the standard
+this system is measured against, and which is MIT-licensed as this project is.
+

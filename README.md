@@ -148,6 +148,31 @@ code, with the reasoning in the comments.
 `decision` issue closes when the reasoning is recorded in the design and the
 book, not when the code lands.
 
+## What Quokka is measured against
+
+Quokka is a Common Lisp subset, and rule 6 says that where it implements a CL
+feature the behaviour must match. That means the standard is not background
+reading — it is the specification the differential tests check against, and
+when SBCL and Quokka disagree the first question is always what the standard
+actually says.
+
+- **[The Common Lisp Documentation Project](https://lisp-docs.github.io/)** —
+  an open-source, **MIT-licensed** effort to put the standard, a technical
+  reference, a tutorial and how-to guides in one place. It also hosts the
+  original **dpANS3R+** draft, which is the text ANSI Common Lisp was made
+  from, freely available. The licence matters here: it is compatible with
+  rule 8, where the HyperSpec's is not.
+  - [Technical reference](https://lisp-docs.github.io/cl-language-reference/)
+    — the standard with community-written explanations and examples
+  - [Tutorial](https://lisp-docs.github.io/docs/tutorial) ·
+    [How-to guides](https://lisp-docs.github.io/docs/howto)
+- **[The Common Lisp HyperSpec](https://www.lispworks.com/documentation/HyperSpec/Front/)**
+  — the authoritative wording, derived from the published standard with
+  permission. Cited throughout the book as *CLHS*, and the thing to check when
+  a question turns on exact phrasing.
+- **ANSI INCITS 226-1994** is the standard itself, and is neither free nor
+  online.
+
 ## Licence
 
 MIT. See [`LICENSE`](LICENSE). The brand assets in `assets/` are covered by the
