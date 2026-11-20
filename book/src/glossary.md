@@ -102,6 +102,11 @@ contrast [bignum](#bignum).
 
 **Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. ([The bootstrap](the-bootstrap.md))
 
+**Flow analysis.** Working out, before a program runs, what it can possibly
+do — which variables escape, which code is unreachable, whether a `block` is
+ever returned from. A compiler's job; Quokka's interpreter does none of it,
+which is why a `defun` that uses `return-from` loses its tail calls. ([16](part-2-reading-and-running/16-the-prelude.md))
+
 **Forwarding pointer.** A note left behind in the abandoned space during a
 [collection](#collection), saying where an object was moved to. It is what stops
 a shared object being copied twice and a circular structure looping forever.

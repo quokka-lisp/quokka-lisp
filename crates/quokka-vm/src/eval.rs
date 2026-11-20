@@ -2166,37 +2166,19 @@ mod tests {
 
     /// A tail call must not grow the stack.
     ///
-    /// Measured rather than asserted: the machine is stepped and the depth of
-    /// the frame stack sampled. Without the property this grows by one frame
-    /// per iteration, and a million iterations would exhaust the heap.
+    /// The threshold allows a few dozen frames because `deepest_stack`
+    /// measures every form in the source, and expanding the `defun` is itself
+    /// a few frames deep. What matters is that the number does not move with
+    /// `n`: twenty thousand iterations cost the same as two.
     #[test]
     fn a_tail_call_does_not_grow_the_stack() {
-        let source = "(defun down (n) (if (= n 0) 'done (down (- n 1)))) (down 20000)";
-        let chars = Reader::chars_of(source);
-        let mut heap = Heap::new();
-
-        let max_depth = heap.mutate(|mc| {
-            crate::boot::install_in(mc).expect("the prelude boots");
-            let mut reader = Reader::new(&chars);
-            let definition = reader.read(mc).unwrap().unwrap();
-            eval_now(mc, definition, PLENTY).unwrap();
-
-            let call = reader.read(mc).unwrap().unwrap();
-            let mut deepest = 0usize;
-            {
-                use crate::slice::{run_slice, Status};
-                let mut machine = Machine::start(mc, call, Value::NIL);
-                while run_slice(&mut machine, 50) == Status::Yielded {
-                    deepest = deepest.max(machine.stack_depth());
-                }
-            }
-            deepest
-        });
-
-        let answer = heap.mutate(|mc| print(mc, mc.register(Register::Value)));
+        let (max_depth, answer) = deepest_stack(
+            "(defun down (n) (if (= n 0) 'done (down (- n 1)))) (down 20000)",
+            50,
+        );
         assert_eq!(answer, "DONE");
         assert!(
-            max_depth < 20,
+            max_depth < 50,
             "the stack reached {max_depth} frames; a tail call grew it"
         );
     }
@@ -2205,33 +2187,64 @@ mod tests {
     /// machine that silently dropped frames would pass the test above.
     #[test]
     fn non_tail_recursion_still_grows_the_stack() {
-        let source = "(defun sum (n) (if (= n 0) 0 (+ n (sum (- n 1))))) (sum 100)";
-        let chars = Reader::chars_of(source);
-        let mut heap = Heap::new();
-
-        let max_depth = heap.mutate(|mc| {
-            crate::boot::install_in(mc).expect("the prelude boots");
-            let mut reader = Reader::new(&chars);
-            let definition = reader.read(mc).unwrap().unwrap();
-            eval_now(mc, definition, PLENTY).unwrap();
-
-            let call = reader.read(mc).unwrap().unwrap();
-            let mut deepest = 0usize;
-            {
-                use crate::slice::{run_slice, Status};
-                let mut machine = Machine::start(mc, call, Value::NIL);
-                while run_slice(&mut machine, 5) == Status::Yielded {
-                    deepest = deepest.max(machine.stack_depth());
-                }
-            }
-            deepest
-        });
-
-        let answer = heap.mutate(|mc| print(mc, mc.register(Register::Value)));
+        let (max_depth, answer) = deepest_stack(
+            "(defun sum (n) (if (= n 0) 0 (+ n (sum (- n 1))))) (sum 100)",
+            5,
+        );
         assert_eq!(answer, "5050");
         assert!(
             max_depth > 100,
             "only {max_depth} frames; the stack should grow here"
+        );
+    }
+
+    /// **A known limitation, pinned so it cannot change unnoticed.**
+    ///
+    /// `defun` wraps its body in a block named after the function when the
+    /// body mentions `return-from` (see `lisp/prelude.lisp`). A `block`
+    /// pushes a frame, and a frame outstanding at a call is precisely what
+    /// tail-call elimination must not have — so a function that *both* uses
+    /// `return-from` and recurses in tail position costs one frame per call.
+    ///
+    /// The evaluator cannot simply pop the block frame on a tail call,
+    /// because a closure can carry the block's marker out of the block and
+    /// call `return-from` later:
+    ///
+    /// ```lisp
+    /// (defun f () (register-callback (lambda () (return-from f 'later))))
+    /// ```
+    ///
+    /// Proving that does not happen is flow analysis, which belongs to the
+    /// compiler (phase 1) and not to a tree-walking interpreter. **SBCL's
+    /// interpreter behaves the same way** — it stacks `SB-EVAL::EVAL-BLOCK`
+    /// frames until the control stack is exhausted — so this is where the
+    /// line between interpreter and compiler normally sits, rather than a
+    /// fault peculiar to Quokka. Quokka at least fails with
+    /// `EvalError::HeapExhausted` instead of a native stack overflow, because
+    /// its frames are in its own heap.
+    ///
+    /// If this test starts failing because the number got *smaller*, someone
+    /// has fixed it; delete the test and celebrate.
+    #[test]
+    fn a_block_in_the_body_still_defeats_the_tail_call() {
+        let without = "(defun plain (n) (if (= n 0) 'done (plain (- n 1)))) (plain 5000)";
+        let with = "(defun blocked (n)
+                      (if (= n 0) (return-from blocked 'done) (blocked (- n 1))))
+                    (blocked 5000)";
+
+        let (shallow, answer) = deepest_stack(without, 50);
+        assert_eq!(answer, "DONE");
+        assert!(shallow < 50, "no block, so no growth: got {shallow}");
+
+        let (deep, answer) = deepest_stack(with, 50);
+        assert_eq!(
+            answer, "DONE",
+            "the answer is still right, only the cost is wrong"
+        );
+        assert!(
+            deep > 4_000,
+            "{deep} frames for 5,000 calls — if this dropped, the block frame \
+             is being elided now and this test should go"
         );
     }
 

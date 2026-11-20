@@ -238,6 +238,93 @@ loud rather than hiding:
 Writing the limitation down is not an apology. It is the difference between a
 known gap and a surprise.
 
+### What this does not fix
+
+The tree walk restores tail calls for functions that do not use `return-from`.
+It does nothing for functions that do.
+
+```lisp
+(defun plain   (n) (if (= n 0) 'done (plain (- n 1))))
+(defun blocked (n) (if (= n 0) (return-from blocked 'done) (blocked (- n 1))))
+```
+
+Both recurse in tail position. Measured at five thousand deep:
+
+| | deepest frame stack |
+| --- | --- |
+| `plain` — no block emitted | **2** |
+| `blocked` — block emitted | **5002** |
+
+One frame per call. At a hundred thousand, `blocked` exhausts the heap and
+`plain` does not.
+
+The evaluator cannot simply pop the block frame when it makes the tail call,
+tempting as that looks. The call *is* in tail position of the block, so the
+block's value is the call's value and the frame appears to be dead — but a
+closure can carry the block's marker out of the block and use it later:
+
+```lisp
+(defun f () (register-callback (lambda () (return-from f 'later))))
+```
+
+If the frame were popped, that callback would have nothing to unwind to.
+Proving it cannot happen means proving no closure escapes, which is flow
+analysis, which is a compiler's job and not a tree-walking interpreter's.
+
+**This is where the line between interpreter and compiler normally sits.**
+SBCL's compiler optimises `blocked` happily — ten million iterations return
+`DONE`. SBCL's *interpreter*, with `sb-ext:*evaluator-mode*` set to
+`:interpret`, does not:
+
+```text
+ 97: SB-EVAL::EVAL-BLOCK
+ 98: SB-EVAL::EVAL-BLOCK
+ 99: SB-EVAL::EVAL-BLOCK
+100: SB-EVAL::EVAL-BLOCK      ← control stack exhausted
+```
+
+The same frames, accumulating for the same reason. Quokka is in good company,
+and degrades better: its frames are in its own heap, so it stops with a
+`HeapExhausted` error rather than a native stack overflow. Note also that
+nothing that previously worked became slower — before `defun` emitted a block,
+`return-from` inside a function simply did not work at all.
+
+So this is deferred, deliberately, and the decision is worth stating in full
+because "we will fix it in the compiler" hides two things.
+
+The first is that **the compiler will not fix this**. It will fix *compiled*
+code. The interpreter does not retire when the compiler arrives — it runs the
+REPL, `eval`, macro expansion during compilation, and the bootstrap itself. So
+the real decision is not when the interpreter gets this, but whether it ever
+does. The answer is probably not, which is exactly what SBCL does.
+
+The second is that the nearer obstacle is not flow analysis at all. A sound
+interpreter-level fix is available: the block's marker can only escape through
+a closure, so a body containing no `lambda` cannot leak it, and *that* block
+frame could be popped on a tail call. But the test for "contains no `lambda`"
+is another tree walk with the same blind spot as the one above — a macro in
+the body could expand into one. Building a second analysis with the same known
+hole is worse than building neither. Both become sound once bodies can be
+fully expanded, so the real ordering is `macroexpand-all` first, interpreter
+fix second and optional, compiler third and independent.
+
+`a_block_in_the_body_still_defeats_the_tail_call` in `eval.rs` pins the
+numbers above, so that if the figure ever drops, somebody did it on purpose.
+
+### A constraint this puts on the compiler
+
+The interpreter has to run the compiler once, before any compiler exists to
+optimise it (that is the bootstrap, and it is the whole of phase 1). So the
+compiler's own sources inherit this limitation: a function in them that both
+uses `return-from` and recurses in tail position will accumulate frames while
+being interpreted.
+
+In practice this is unlikely to bite, because compilers recurse over program
+text and symbol tables — depths in the hundreds, nowhere near a heap ceiling.
+But it is a real constraint on a file that has not been written yet, which is
+exactly the kind of thing that is obvious while writing this chapter and
+invisible six months later.
+
 ### Notice where that function is defined
 
 ```lisp
