@@ -243,9 +243,12 @@ Still to come, and deliberately so:
 - **The rest of the language** — most of Common Lisp's 25 special operators,
   `&rest` parameters, and **macros**, which are what let a program extend its
   own language.
-- **A compiler** — translating Lisp into **bytecode**, a compact instruction set
-  the VM runs faster than it can walk a structure. This is phase 1, and chapter
-  12 is what makes it safe to attempt.
+- **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
+  compact instruction set faster than anything can walk a tree — and a
+  **compiler**, written in Lisp, that translates source into those instructions.
+  The VM is hardware; the compiler is something a user might want to change, so
+  the line between them falls exactly where rule 1 puts it. This is phase 1, and
+  chapter 12 is what makes it safe to attempt.
 - **Self-hosting** — the moment the compiler, written in Lisp, can compile
   itself. The system stops needing anything outside it to be rebuilt.
 - **The environment** — editor, debugger, windows, all of them Lisp objects

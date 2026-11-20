@@ -204,8 +204,14 @@ own tests agreeing with my own understanding.
 
 ## Why this had to exist before phase 1
 
-Phase 1 replaces the tree-walking evaluator with a **bytecode compiler**. Every
-form in the language will execute by a different mechanism.
+Phase 1 replaces the tree-walking evaluator with **bytecode**, and that is two
+separate things which are easy to run together:
+
+- A **bytecode VM** — in Rust, beside the heap and the collector. It executes
+  instructions. It is the part that plays the role of hardware.
+- A **compiler** — in Lisp. It translates source into those instructions.
+
+Every form in the language will then execute by a different mechanism.
 
 The only reason to believe such a rewrite preserved behaviour is a test suite
 that compares against something *outside* the rewrite. Unit tests written
