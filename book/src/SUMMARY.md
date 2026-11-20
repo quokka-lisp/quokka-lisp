@@ -23,6 +23,7 @@
 - [Agreeing with something else](part-2-reading-and-running/12-agreeing-with-something-else.md)
 - [The special operators, one by one](part-2-reading-and-running/13-the-special-operators.md)
 - [Leaving early](part-2-reading-and-running/14-leaving-early.md)
+- [Code that writes code](part-2-reading-and-running/15-code-that-writes-code.md)
 
 ---
 

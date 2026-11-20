@@ -99,6 +99,11 @@ pub enum ReadError {
         /// What was written after `#\`.
         name: String,
     },
+    /// A comma with no backquote around it.
+    CommaOutsideBackquote {
+        /// Where, as a character offset.
+        at: usize,
+    },
     /// An integer too large for a fixnum. Bignums are not implemented.
     IntegerTooLarge {
         /// The text of the number.
@@ -117,6 +122,9 @@ impl fmt::Display for ReadError {
             }
             ReadError::UnexpectedCharacter { ch, at } => {
                 write!(f, "unexpected `{ch}` at {at}")
+            }
+            ReadError::CommaOutsideBackquote { at } => {
+                write!(f, "`,` at {at} is not inside a backquote")
             }
             ReadError::UnknownCharacterName { name } => {
                 write!(f, "unknown character name `#\\{name}`")
@@ -138,6 +146,9 @@ impl fmt::Display for ReadError {
 pub struct Reader<'t> {
     text: &'t [char],
     at: usize,
+    /// How many backquotes are open. A comma outside one is an error rather
+    /// than a symbol, which is the only reason this is tracked.
+    depth: usize,
 }
 
 impl<'t> Reader<'t> {
@@ -147,7 +158,11 @@ impl<'t> Reader<'t> {
     /// rather than byte offsets, which is what a person reporting an error
     /// counts. Use [`Reader::chars_of`] to make one.
     pub fn new(chars: &'t [char]) -> Reader<'t> {
-        Reader { text: chars, at: 0 }
+        Reader {
+            text: chars,
+            at: 0,
+            depth: 0,
+        }
     }
 
     /// Turn text into what [`Reader::new`] wants.
@@ -200,6 +215,43 @@ impl<'t> Reader<'t> {
                 let quote = mc.intern("QUOTE");
                 let tail = mc.cons(quoted, Value::NIL);
                 Ok(mc.cons(quote, tail))
+            }
+            // `(a ,b ,@c) is a template. The reader expands it here, into
+            // calls to cons and append, so the evaluator never hears of it —
+            // which is what Common Lisp implementations do, and keeps
+            // quasiquotation out of the twenty-five special operators.
+            '`' => {
+                self.at += 1;
+                self.depth += 1;
+                let template = self.read_form(mc, depth + 1);
+                self.depth -= 1;
+                let template = template?;
+                Ok(self.quasiquote(mc, template))
+            }
+            ',' if self.depth == 0 => Err(ReadError::CommaOutsideBackquote { at }),
+            ',' => {
+                self.at += 1;
+                let splicing = self.peek() == Some('@');
+                if splicing {
+                    self.at += 1;
+                }
+                let inner = self.read_form(mc, depth + 1)?;
+                // A marker, consumed by `quasiquote` a few frames up and never
+                // seen by anything else.
+                //
+                // The names contain a space on purpose. This reader has no
+                // `|bar quoting|`, so a space ends a token and *no input can
+                // name these symbols*. A marker a user could write by hand —
+                // `%UNQUOTE`, say — would make `(a (%unquote b)) expand as
+                // though a comma had been typed. Unlikely, but wrong, and the
+                // fix costs one character.
+                let tag = mc.intern(if splicing {
+                    "SPLICE MARKER"
+                } else {
+                    "UNQUOTE MARKER"
+                });
+                let tail = mc.cons(inner, Value::NIL);
+                Ok(mc.cons(tag, tail))
             }
             '#' => {
                 self.at += 1;
@@ -390,6 +442,52 @@ impl<'t> Reader<'t> {
         mc.intern(&text.to_ascii_uppercase())
     }
 
+    /// Turn a backquote template into the code that builds it.
+    ///
+    /// ```text
+    /// `atom        =>  (quote atom)
+    /// `,x          =>  x
+    /// `(a . rest)  =>  (cons `a `rest)
+    /// `(,@x . rest) => (append x `rest)
+    /// ```
+    ///
+    /// Three rules and a recursion. The result is ordinary code — `cons`,
+    /// `append` and `quote` — so nothing downstream knows a backquote was
+    /// involved.
+    ///
+    /// Nested backquotes are not handled: the inner one expands first, which
+    /// is wrong for `` `(a `(b ,,c)) `` and right for everything anyone writes
+    /// in anger. Noted rather than hidden.
+    fn quasiquote<'h>(&mut self, mc: &mut Mutation<'h>, form: Value<'h>) -> Value<'h> {
+        if !form.is_cons() {
+            // An atom stands for itself, which means quoting it.
+            let quote = mc.intern("QUOTE");
+            let tail = mc.cons(form, Value::NIL);
+            return mc.cons(quote, tail);
+        }
+
+        let head = mc.car(form);
+        if mc.symbol_is(head, "UNQUOTE MARKER") {
+            return mc.car(mc.cdr(form));
+        }
+
+        let rest = self.quasiquote(mc, mc.cdr(form));
+        if head.is_cons() && mc.symbol_is(mc.car(head), "SPLICE MARKER") {
+            // ,@x contributes its *elements*, so the list is appended rather
+            // than consed on.
+            let spliced = mc.car(mc.cdr(head));
+            let append = mc.intern("APPEND");
+            let tail = mc.cons(rest, Value::NIL);
+            let args = mc.cons(spliced, tail);
+            return mc.cons(append, args);
+        }
+        let first = self.quasiquote(mc, head);
+        let cons = mc.intern("CONS");
+        let tail = mc.cons(rest, Value::NIL);
+        let args = mc.cons(first, tail);
+        mc.cons(cons, args)
+    }
+
     // ---- whitespace and comments -----------------------------------------
 
     fn skip_blanks(&mut self) -> Result<(), ReadError> {
@@ -478,6 +576,38 @@ mod tests {
                 None => Ok(String::from("<nothing>")),
             }
         })
+    }
+
+    /// Backquote is a reader macro: the evaluator never sees one, so the test
+    /// is simply what code the reader produced.
+    #[test]
+    fn backquote_expands_to_cons_and_append() {
+        reads_as("`a", "(QUOTE A)");
+        reads_as("`,a", "A");
+        reads_as("`(a)", "(CONS (QUOTE A) (QUOTE NIL))");
+        reads_as("`(,a)", "(CONS A (QUOTE NIL))");
+        reads_as("`(,@a)", "(APPEND A (QUOTE NIL))");
+        reads_as("`(a . b)", "(CONS (QUOTE A) (QUOTE B))");
+        reads_as("`(a ,b)", "(CONS (QUOTE A) (CONS B (QUOTE NIL)))");
+    }
+
+    /// The markers the reader uses internally carry a space in their names,
+    /// which no input can produce — this is that claim, written down.
+    #[test]
+    fn comma_markers_cannot_be_written_by_hand() {
+        reads_as("(UNQUOTE MARKER)", "(UNQUOTE MARKER)");
+    }
+
+    #[test]
+    fn comma_outside_backquote_is_an_error() {
+        assert!(matches!(
+            round_trip("(a ,b)"),
+            Err(ReadError::CommaOutsideBackquote { .. })
+        ));
+        assert!(matches!(
+            round_trip(",a"),
+            Err(ReadError::CommaOutsideBackquote { .. })
+        ));
     }
 
     fn reads_as(source: &str, expected: &str) {

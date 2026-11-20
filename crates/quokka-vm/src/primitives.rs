@@ -107,6 +107,23 @@ const TABLE: &[Primitive] = &[
         name: "LIST",
         arity: Arity::AtLeast(0),
     },
+    // Needed by backquote: `(,@xs . rest) expands into an APPEND.
+    //
+    // Copies all but its last argument, so its cost grows with the *data*
+    // rather than the call — the first primitive here for which rule 9 is a
+    // live question. It is bounded by what is already in the heap, which is
+    // bounded by the heap, so a single call cannot run away; but a long append
+    // is a long step, and when slices start mattering this is the one to chunk.
+    Primitive {
+        name: "APPEND",
+        arity: Arity::AtLeast(0),
+    },
+    // Macros need names nothing else can have, or an expansion that binds a
+    // temporary captures whatever the caller happened to call it.
+    Primitive {
+        name: "GENSYM",
+        arity: Arity::AtLeast(0),
+    },
 ];
 
 /// Where `FUNCALL` sits in the table, which `crate::eval` intercepts.
@@ -192,6 +209,33 @@ pub fn call<'h>(
         "NULL" => Ok(truth(args[0].is_nil())),
         "CONSP" => Ok(truth(args[0].is_cons())),
         "SYMBOLP" => Ok(truth(mc.is_symbol(args[0]))),
+        "APPEND" => {
+            if args.is_empty() {
+                return Ok(Value::NIL);
+            }
+            // The last argument is shared, not copied — which is what makes
+            // append cheap enough to use in a macro expansion.
+            let mut out = args[args.len() - 1];
+            for list in args[..args.len() - 1].iter().rev() {
+                let mut items = Vec::new();
+                let mut cursor = *list;
+                while cursor.is_cons() {
+                    items.push(mc.car(cursor));
+                    cursor = mc.cdr(cursor);
+                }
+                if !cursor.is_nil() {
+                    return Err(EvalError::WrongType {
+                        name: "APPEND",
+                        wanted: "proper lists",
+                    });
+                }
+                for item in items.into_iter().rev() {
+                    out = mc.cons(item, out);
+                }
+            }
+            Ok(out)
+        }
+        "GENSYM" => Ok(mc.gensym()),
         "LIST" => {
             let mut out = Value::NIL;
             for v in args.iter().rev() {
@@ -298,7 +342,7 @@ mod tests {
             names,
             [
                 "+", "-", "*", "=", "<", ">", "CONS", "CAR", "CDR", "EQ", "NULL", "CONSP",
-                "SYMBOLP", "FUNCALL", "LIST"
+                "SYMBOLP", "FUNCALL", "LIST", "APPEND", "GENSYM"
             ]
         );
     }

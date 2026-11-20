@@ -15,6 +15,13 @@ Quokka it is a *bump*: take the next free words and move the mark along. No
 searching, no free list — a gift from the [copying collector](#copying-collector).
 ([5](part-1-substrate/05-objects-in-the-heap.md))
 
+**Backquote.** The template notation for building list structure: `` ` `` marks
+a template, `,` a hole filled by evaluating something, `,@` a hole filled by
+splicing a list's elements in. Handled entirely by the [reader](#reader), which
+turns it into ordinary `cons`, `append` and `quote` calls — so it is not a
+[special operator](#special-operator) and costs nothing at run time. Also
+called *quasiquotation*, after Quine's corner quotes. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
 as several. Contrast [fixnum](#fixnum). Not yet implemented.
 
@@ -26,6 +33,11 @@ uses one to make it impossible to hold a value across a garbage collection.
 ([4](part-1-substrate/04-rooting.md))
 
 **Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built. ([The bootstrap](the-bootstrap.md))
+
+**Capture (variable capture).** A [macro](#macro) binding a name that the
+caller also uses, so the caller's variable silently disappears inside the
+expansion. The classic macro bug; Common Lisp's cure is to bind a
+[gensym](#gensym) instead, and Scheme's is [hygiene](#hygiene). ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
 **car.** The first slot of a [cons cell](#cons-cell) — the item. The name is
 an abbreviation of an IBM 704 instruction from 1958 and means nothing now. Read
@@ -57,7 +69,7 @@ memory by copying everything still wanted into a fresh region and abandoning the
 old one. The garbage costs nothing to reclaim — you simply stop using the space
 it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 
-**defun.** Makes a function and puts it in a [symbol](#symbol)'s *function* cell. In Common Lisp it is a macro over `setf symbol-function`; Quokka has no macros yet, so it is a special operator with a note saying it should not be. ([10](part-2-reading-and-running/10-functions-and-scope.md))
+**defun.** Makes a function and puts it in a [symbol](#symbol)'s *function* cell. In Common Lisp it is a macro over `setf symbol-function`; Quokka made it a special operator before it had [macros](#macro), and moving it up is now possible. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file natively, under WebAssembly and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
@@ -99,14 +111,29 @@ values it can no longer reach, and reclaiming their memory. The program never
 says "I am finished with this"; it is deduced from what is still reachable.
 ([3](part-1-substrate/03-what-is-alive.md))
 
+**gensym.** A primitive returning a fresh [uninterned symbol](#uninterned-symbol),
+named `G1`, `G2` and so on. Macros use it for temporary bindings, because a
+symbol that is not in the [obarray](#obarray) cannot be named by anything the
+caller writes — so it cannot be [captured](#capture-variable-capture). ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
 **Generational collector.** A collector that exploits the fact that most values
 die young, by examining recently created ones often and long-lived ones rarely.
 Faster than copying everything each time, and more complicated. Planned, not
 built. ([6](part-1-substrate/06-cheneys-algorithm.md))
 
+**Homoiconicity.** A language whose programs are written in its own data
+structures — Lisp code *is* a list. It sounds like trivia and is the reason
+[macros](#macro) are a list-manipulating program rather than a text
+preprocessor. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
 **Heap.** The region of memory where values too big for a single word live. In
 Quokka it is an array of 64-bit words the VM owns.
 ([3](part-1-substrate/03-what-is-alive.md))
+
+**Hygiene.** The property, in Scheme's macro systems, that names introduced by
+a macro are renamed automatically so [capture](#capture-variable-capture)
+cannot happen. Quokka follows Common Lisp and does *not* have it: capture is an
+error the language lets you make, and [gensym](#gensym) is the cure. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
 **Image.** The entire contents of a running system, written to a file and
 loadable again — not a saved document but a saved *world*, resuming exactly
@@ -136,6 +163,18 @@ be invariant or the guarantee evaporates while everything still compiles.
 
 **Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
+**Macro.** A function from code to code. It is called with its argument
+*forms*, unevaluated, and the form it returns is evaluated in place of the
+call — so it runs at *expansion time*, before anything else happens, and can
+decide whether its arguments are evaluated at all. Macros are how a Lisp
+program extends its own language without changing the [evaluator](#evaluator).
+([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
+**Macroexpansion.** Running a [macro](#macro) to get the form it produces.
+Quokka does it inside the evaluator, with a frame that remembers the caller's
+[environment](#environment) so the expansion is evaluated where the call was
+written. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
 **Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. ([14](part-2-reading-and-running/14-leaving-early.md))
 
 **Mutation.** In Quokka, one bounded stretch of work on the heap. No
@@ -161,6 +200,10 @@ only door between the two languages.
 **progn.** Evaluates several forms in order and yields the last. It lets a sequence stand where one form is expected; the bodies of `lambda` and `defun` are implicit `progn`s. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Quote.** `'x` reads as the list `(quote x)` — ordinary structure, not syntax. The evaluator later treats `quote` as "give me this rather than running it", which is how a program says *data* rather than *code*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Reader macro.** Syntax the [reader](#reader) expands into ordinary code
+before the evaluator sees it. `'x` becoming `(quote x)` is the simplest one;
+[backquote](#backquote) is the one that earns its keep. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
 **Reachable.** Able to be found by following references from a [root](#root).
 This is the definition of "still wanted" that garbage collection uses.
@@ -226,6 +269,11 @@ characters, which are not references.
 ([3](part-1-substrate/03-what-is-alive.md))
 
 **Unbound.** The marker a [symbol](#symbol)'s value or function cell holds before anything is assigned. Distinct from `nil`: the difference between "this variable does not exist" and "this variable holds the empty list", which Lisp signals an error about. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Uninterned symbol.** A symbol that is not in the [obarray](#obarray), so
+reading its printed name produces a *different* symbol. Nothing a program can
+type refers to it; only whoever holds the object does. See [gensym](#gensym).
+([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
 **Unwinding.** Discarding frames until one matches, running any cleanups passed on the way. The third half-step of the machine, and what every non-local exit is made of. ([14](part-2-reading-and-running/14-leaving-early.md))
 

@@ -318,6 +318,7 @@ impl<'a, 'h> Machine<'a, 'h> {
                     special::TAGBODY => self.eval_tagbody(control),
                     special::GO => self.eval_go(control),
                     special::UNWIND_PROTECT => self.eval_unwind_protect(control),
+                    special::DEFMACRO => self.eval_defmacro(control),
                     _ => self.fail(EvalError::BadSyntax {
                         operator: "a special operator",
                         detail: "is not implemented",
@@ -906,6 +907,38 @@ impl<'a, 'h> Machine<'a, 'h> {
         self.begin_unwind(marker)
     }
 
+    /// `(defmacro name (params) body...)`.
+    ///
+    /// The same shape as `defun`, and a completely different thing. A function
+    /// receives values and returns a value; a macro receives **unevaluated
+    /// forms** and returns a form, which is then evaluated in its place.
+    ///
+    /// That is only coherent because code is data: a macro is an ordinary Lisp
+    /// function whose arguments and result happen to be program text.
+    fn eval_defmacro(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() || !self.mc.cdr(rest).is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "defmacro",
+                detail: "wants a name, a parameter list and a body",
+            });
+        }
+        let name = self.mc.car(rest);
+        if !self.mc.is_symbol(name) {
+            return self.fail(EvalError::BadSyntax {
+                operator: "defmacro",
+                detail: "wants a symbol for a name",
+            });
+        }
+        let after = self.mc.cdr(rest);
+        let params = self.mc.car(after);
+        let body = self.mc.cdr(after);
+        let env = self.mc.register(Register::Env);
+        let m = closure::make_macro(self.mc, params, body, env);
+        self.mc.set_slot(name, symbol::FUNCTION, m);
+        self.deliver(name)
+    }
+
     /// `(unwind-protect body cleanup...)`.
     ///
     /// The cleanup runs however the body ends — normally, or because something
@@ -1097,6 +1130,22 @@ impl<'a, 'h> Machine<'a, 'h> {
             return Transition::Continue;
         };
 
+        // A macro takes the argument *forms*, unevaluated, and its result is
+        // evaluated in place of the call. Nothing is evaluated on the way in,
+        // so there is no argument-collecting frame — just the expansion.
+        if closure::is_macro(self.mc, function) {
+            // The caller's environment has to be saved, because running the
+            // macro body replaces it: a macro is a closure, so applying it
+            // sets Env to the macro's own scope. In a recursive evaluator the
+            // Rust stack would hand the caller's environment back by itself;
+            // here Env is a register, and a register that is clobbered must be
+            // restored by whoever clobbered it. That is what this frame is
+            // for, and all it is for.
+            let f = frame::make_marked(self.mc, frame::EXPAND, env);
+            self.push(f);
+            return self.apply_closure(function, argument_forms);
+        }
+
         if !argument_forms.is_cons() {
             return self.apply(function, Value::NIL);
         }
@@ -1144,6 +1193,18 @@ impl<'a, 'h> Machine<'a, 'h> {
             frame::EXIT => {
                 let marker = self.mc.slot(f, frame::MARKER);
                 self.begin_unwind(marker)
+            }
+            // A macro returned a form. Evaluate that instead of the call —
+            // which is the whole of what a macro is.
+            frame::EXPAND => {
+                let expansion = self.mc.register(Register::Value);
+                // Back to where the macro was *called*, not where it was
+                // written. `(let ((v 10)) (twice v))` depends on exactly this.
+                let caller_env = self.mc.slot(f, frame::EXPAND_ENV);
+                self.mc.set_register(Register::Env, caller_env);
+                self.mc.set_register(Register::Control, expansion);
+                self.mc.set_mode(Mode::Eval.as_u8());
+                Transition::Continue
             }
             frame::CATCH_PENDING => {
                 let tag = self.mc.register(Register::Value);
@@ -1295,7 +1356,7 @@ impl<'a, 'h> Machine<'a, 'h> {
                 Err(e) => self.fail(e),
             };
         }
-        if closure::is(self.mc, function) {
+        if closure::is_callable(self.mc, function) {
             return self.apply_closure(function, arguments);
         }
         let what = crate::printer::print(self.mc, function);
@@ -1313,28 +1374,92 @@ impl<'a, 'h> Machine<'a, 'h> {
         let body = self.mc.slot(function, closure::BODY);
         let captured = self.mc.slot(function, closure::ENV);
 
-        let mut names = Vec::new();
-        let mut cursor = params;
-        while cursor.is_cons() {
-            names.push(self.mc.car(cursor));
-            cursor = self.mc.cdr(cursor);
-        }
-        let mut values = Vec::new();
-        let mut cursor = arguments;
-        while cursor.is_cons() {
-            values.push(self.mc.car(cursor));
-            cursor = self.mc.cdr(cursor);
-        }
-        if names.len() != values.len() {
-            return self.fail(EvalError::WrongArgumentCount {
-                name: "this function",
-                wanted: names.len(),
-                got: values.len(),
-            });
-        }
-
+        let (names, values) = match self.bind_lambda_list(params, arguments) {
+            Ok(pair) => pair,
+            Err(e) => return self.fail(e),
+        };
         let scope = env::make(self.mc, captured, env::VARIABLE, &names, &values);
         self.begin(body, scope)
+    }
+
+    /// Match a lambda list against arguments.
+    ///
+    /// Supports `&optional`, `&rest` and `&body`. The last two are the same
+    /// thing with different names — `&body` exists so that a macro definition
+    /// reads as what it is, and so an editor can indent it as a body.
+    ///
+    /// Not supported: default values for optionals, which need a form
+    /// evaluated at call time and therefore a frame, and destructuring
+    /// patterns, which macros may use and functions may not. Both are noted
+    /// rather than silently accepted.
+    fn bind_lambda_list(
+        &mut self,
+        params: Value<'h>,
+        arguments: Value<'h>,
+    ) -> Result<(Vec<Value<'h>>, Vec<Value<'h>>), EvalError> {
+        let mut names = Vec::new();
+        let mut values = Vec::new();
+        let mut param = params;
+        let mut arg = arguments;
+        let mut optional = false;
+
+        while param.is_cons() {
+            let name = self.mc.car(param);
+            param = self.mc.cdr(param);
+
+            if self.mc.symbol_is(name, "&OPTIONAL") {
+                optional = true;
+                continue;
+            }
+            if self.mc.symbol_is(name, "&REST") || self.mc.symbol_is(name, "&BODY") {
+                let Some(rest_name) = (param.is_cons()).then(|| self.mc.car(param)) else {
+                    return Err(EvalError::BadSyntax {
+                        operator: "a lambda list",
+                        detail: "&rest wants a name after it",
+                    });
+                };
+                names.push(rest_name);
+                values.push(arg);
+                return Ok((names, values));
+            }
+            if !self.mc.is_symbol(name) {
+                return Err(EvalError::BadSyntax {
+                    operator: "a lambda list",
+                    detail: "wants symbols for parameters",
+                });
+            }
+
+            if arg.is_cons() {
+                names.push(name);
+                values.push(self.mc.car(arg));
+                arg = self.mc.cdr(arg);
+            } else if optional {
+                // No default forms yet: an unsupplied optional is nil.
+                names.push(name);
+                values.push(Value::NIL);
+            } else {
+                return Err(EvalError::WrongArgumentCount {
+                    name: "this function",
+                    wanted: names.len() + 1,
+                    got: values.len(),
+                });
+            }
+        }
+
+        if arg.is_cons() {
+            let mut extra = 0;
+            let mut cursor = arg;
+            while cursor.is_cons() {
+                extra += 1;
+                cursor = self.mc.cdr(cursor);
+            }
+            return Err(EvalError::WrongArgumentCount {
+                name: "this function",
+                wanted: names.len(),
+                got: names.len() + extra,
+            });
+        }
+        Ok((names, values))
     }
 
     // ---- helpers ---------------------------------------------------------
@@ -1437,6 +1562,8 @@ pub mod special {
     pub const GO: i64 = 20;
     /// `(unwind-protect body cleanup...)` — cleanup however the body ends.
     pub const UNWIND_PROTECT: i64 = 21;
+    /// `(defmacro name (params) body...)` — define a macro.
+    pub const DEFMACRO: i64 = 22;
 
     /// Every special operator, by name.
     pub const ALL: &[(&str, i64)] = &[
@@ -1461,6 +1588,7 @@ pub mod special {
         ("TAGBODY", TAGBODY),
         ("GO", GO),
         ("UNWIND-PROTECT", UNWIND_PROTECT),
+        ("DEFMACRO", DEFMACRO),
     ];
 }
 
@@ -1500,6 +1628,9 @@ pub mod frame {
     pub const CATCH_PENDING: i64 = 13;
     /// Waiting on a `throw`'s tag, before its value is evaluated.
     pub const THROW_PENDING: i64 = 14;
+    /// Waiting for a macro to produce a form, which is then evaluated in place
+    /// of the call.
+    pub const EXPAND: i64 = 15;
 
     /// Slot 0 of every frame: which kind.
     pub const KIND: usize = 0;
@@ -1539,6 +1670,9 @@ pub mod frame {
     pub const LETSTAR_BODY: usize = 2;
     /// The scope built so far.
     pub const LETSTAR_ENV: usize = 3;
+    /// Where a macro call was made, so its expansion is evaluated there.
+    /// Shares the marker slot, which an `EXPAND` frame has no other use for.
+    pub const EXPAND_ENV: usize = 1;
     /// The identity a `block`, `catch` or `tagbody` is unwound to.
     pub const MARKER: usize = 1;
     /// A tagbody's whole body, for resuming at a tag.
@@ -2885,5 +3019,29 @@ pub mod closure {
     /// Is this a closure?
     pub fn is<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
         v.is_object() && mc.header(v).object_type == ObjectType::Closure
+    }
+
+    /// Make a macro: the same three slots, a different type.
+    pub fn make_macro<'h>(
+        mc: &mut Mutation<'h>,
+        params: Value<'h>,
+        body: Value<'h>,
+        env: Value<'h>,
+    ) -> Value<'h> {
+        let m = mc.alloc(ObjectType::Macro, 3);
+        mc.set_slot(m, PARAMS, params);
+        mc.set_slot(m, BODY, body);
+        mc.set_slot(m, ENV, env);
+        m
+    }
+
+    /// Is this a macro?
+    pub fn is_macro<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
+        v.is_object() && mc.header(v).object_type == ObjectType::Macro
+    }
+
+    /// Is this either?
+    pub fn is_callable<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
+        is(mc, v) || is_macro(mc, v)
     }
 }

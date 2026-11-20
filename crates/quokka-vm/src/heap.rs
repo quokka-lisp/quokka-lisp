@@ -249,6 +249,15 @@ pub enum ObjectType {
     Instance = 4,
     /// Buckets and metadata.
     HashTable = 5,
+    /// A macro: the same shape as a closure, and deliberately a different
+    /// type.
+    ///
+    /// A macro is applied to its arguments **unevaluated**, and its result is
+    /// evaluated in place of the call. Calling one as if it were a function
+    /// would quietly do the wrong thing, so the evaluator must be able to tell
+    /// them apart — which a header can and a flag inside a closure could too,
+    /// less obviously.
+    Macro = 8,
     /// One lexical scope: a parent link, then name/value pairs.
     ///
     /// A chain of these rather than an association list. A two-argument call
@@ -292,6 +301,7 @@ impl ObjectType {
             5 => HashTable,
             6 => Frame,
             7 => Environment,
+            8 => Macro,
             64 => String,
             65 => Code,
             66 => Bignum,
@@ -448,6 +458,9 @@ struct Storage {
     /// Set when an allocation passed `hard_limit`. The evaluator checks it and
     /// halts; nothing else needs to know.
     exhausted: bool,
+    /// Counts the uninterned symbols `gensym` has made, so each gets a
+    /// distinct name. Not a `Value`, so the collector does not touch it.
+    gensym_counter: u64,
     /// How many collections have happened. Torture mode uses it to vary the
     /// padding, so no object can land where it was.
     collections: u64,
@@ -671,6 +684,33 @@ impl<'h> Mutation<'h> {
         symbol
     }
 
+    /// A fresh symbol belonging to nobody.
+    ///
+    /// Deliberately **not interned**: reading `#:G1` would make a different
+    /// symbol, and that is the point. A macro that binds a temporary must use
+    /// a name the caller cannot have written, or
+    ///
+    /// ```lisp
+    /// (defmacro or2 (a b) `(let ((v ,a)) (if v v ,b)))
+    /// (let ((v 'outer)) (or2 nil v))   ; => NIL, and should be OUTER
+    /// ```
+    ///
+    /// quietly computes the wrong thing: `,b` is substituted *inside* a
+    /// binding the macro invented, so the caller's `v` is no longer in scope.
+    /// That is *variable capture*, and an uninterned symbol is the simplest
+    /// defence against it. `tests/lisp/macros.lisp` keeps both versions, so
+    /// the difference stays visible.
+    pub fn gensym(&mut self) -> Value<'h> {
+        self.storage.gensym_counter += 1;
+        let n = self.storage.gensym_counter;
+        let text = self.alloc_string(&format!("G{n}"));
+        let s = self.alloc(ObjectType::Symbol, symbol::SLOTS);
+        self.set_slot(s, symbol::NAME, text);
+        self.set_slot(s, symbol::VALUE, Value::UNBOUND);
+        self.set_slot(s, symbol::FUNCTION, Value::UNBOUND);
+        s
+    }
+
     /// Is this a symbol object?
     ///
     /// `nil` and `t` answer yes, as Common Lisp requires, because they are
@@ -830,6 +870,7 @@ impl Heap {
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
                 collections: 0,
+                gensym_counter: 0,
                 static_end: 0,
                 dynamic_start: 0,
             },

@@ -63,6 +63,7 @@ differential_cases! {
     functions => "functions",
     scopes => "scopes",
     control_flow => "control-flow",
+    macros => "macros",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

@@ -246,6 +246,7 @@ Common Lisp. Each chapter answers one question.
 | 12 | [Agreeing with something else](part-2-reading-and-running/12-agreeing-with-something-else.md) | How do you find out whether any of this is *right*? |
 | 13 | [The special operators, one by one](part-2-reading-and-running/13-the-special-operators.md) | What are the twenty-five forms everything else is built from, and why those? |
 | 14 | [Leaving early](part-2-reading-and-running/14-leaving-early.md) | How do you abandon a computation from the middle of it? |
+| 15 | [Code that writes code](part-2-reading-and-running/15-code-that-writes-code.md) | How does a program extend the language it is written in? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
