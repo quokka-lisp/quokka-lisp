@@ -43,6 +43,35 @@ An open-source, **MIT-licensed** effort to gather the standard, a technical
 reference, a tutorial and how-to guides in one place. The friendliest of
 these if you are learning the language rather than implementing it.
 
+### [The Common Lisp Cookbook](https://lispcookbook.github.io/cl-cookbook/)
+
+Task-shaped rather than specification-shaped: *how do I do this*, with worked
+code. Where the standard tells you what `handler-case` means, the Cookbook
+shows you what people actually write.
+
+That makes it useful for a question the standard cannot answer, and which
+comes up constantly when building a *subset*: **what does idiomatic Common
+Lisp look like, and therefore what should the prelude support?** The pages
+worth reading before writing the corresponding part of Quokka:
+
+| | |
+| --- | --- |
+| [Data structures](https://lispcookbook.github.io/cl-cookbook/data-structures.html) · [Strings](https://lispcookbook.github.io/cl-cookbook/strings.html) · [Arrays](https://lispcookbook.github.io/cl-cookbook/arrays.html) | what chapter 19 built, and the sequence functions it did not |
+| [Error handling](https://lispcookbook.github.io/cl-cookbook/error_handling.html) | restarts and `handler-bind`, which chapter 20 left for phase 3 |
+| [Macros and backquote](https://lispcookbook.github.io/cl-cookbook/macros.html) | chapters 15 and 17, from a user's side rather than an implementer's |
+| [Equality](https://lispcookbook.github.io/cl-cookbook/equality.html) | `eq`, `eql`, `equal`, `equalp` — Quokka has one of the four, and this is the clearest account of what the others are for |
+| [Iteration](https://lispcookbook.github.io/cl-cookbook/iteration.html) | `loop`, `dolist`, `do` — all outside tier 0 by rule 5, all eventually prelude macros |
+
+Much of it is about things Quokka will never have — Quicklisp, editors,
+databases, FFI to C. That is fine; it is a cookbook for using the language,
+not for implementing it, and it is the only reference here written from the
+user's chair.
+
+**Licence**: BSD-style. Redistribution and use, with or without modification,
+provided the copyright notice, the condition and the disclaimer are reproduced
+with it. Permissive and compatible with rule 8 — with an obligation attached,
+which matters below.
+
 | | |
 | --- | --- |
 | [Technical reference](https://lisp-docs.github.io/cl-language-reference/) | the standard's text with community-written explanations and examples |
@@ -94,9 +123,13 @@ In practice Quokka's tests are **written here, from the specification's
 claims, rather than copied from anybody's examples**. Three reasons, and only
 the first is about licensing:
 
-1. **Provenance.** MIT text can be reused with attribution, and HyperSpec text
-   cannot. Mixing sources in one directory means tracking which line came from
-   where, forever. Writing them here keeps the question from arising.
+1. **Provenance.** The free references here are permissive but not identical:
+   lisp-docs is MIT, the Cookbook is BSD-style and wants its notice and
+   disclaimer carried along, and the HyperSpec permits no derivative works at
+   all. Borrowing means tracking which line came from where, and carrying the
+   right notice for each, forever. Writing them here keeps the question from
+   arising — not because borrowing is forbidden, but because the bookkeeping
+   buys the tests nothing.
 2. **A test file has a job the examples do not.** Look at any file in
    `tests/lisp/`: the comments explain *why a case is there*, and several say
    what must not be tested and why — `(make-array 3)` with no

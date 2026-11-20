@@ -176,6 +176,11 @@ actually says.
   - [Technical reference](https://lisp-docs.github.io/cl-language-reference/) ·
     [Tutorial](https://lisp-docs.github.io/docs/tutorial) ·
     [How-to guides](https://lisp-docs.github.io/docs/howto)
+- **[The Common Lisp Cookbook](https://lispcookbook.github.io/cl-cookbook/)** —
+  task-shaped rather than specification-shaped, with worked code. The one
+  reference here written from the user's chair, and so the one that answers
+  *what does idiomatic Common Lisp look like* — which is the question that
+  decides what the prelude should support. BSD-style licence.
 - **[The Common Lisp HyperSpec](http://www.lispworks.com/documentation/HyperSpec/Front/index.htm)**
   — the hyperlinked edition most books and tools point to, and what *CLHS* in
   this repository means. **Not free**: LispWorks permits only complete,
