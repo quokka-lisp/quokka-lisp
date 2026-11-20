@@ -4,7 +4,10 @@
 //! [`quokka_vm::host::Host`] over the page and exposes a small surface to
 //! JavaScript for the dev console in `www/`.
 
+use quokka_vm::heap::Heap;
 use quokka_vm::host::{Host, HostError};
+use quokka_vm::printer::print;
+use quokka_vm::reader::Reader;
 use quokka_vm::{PHASE, VERSION};
 
 #[cfg(target_arch = "wasm32")]
@@ -33,6 +36,7 @@ impl Host for BrowserHost {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct Quokka {
     host: BrowserHost,
+    heap: Heap,
 }
 
 impl Default for Quokka {
@@ -48,6 +52,7 @@ impl Quokka {
     pub fn new() -> Self {
         Self {
             host: BrowserHost::default(),
+            heap: Heap::new(),
         }
     }
 
@@ -56,13 +61,42 @@ impl Quokka {
         format!("Quokka {VERSION} — phase {PHASE} (wasm)")
     }
 
-    /// Evaluate one line of input and return everything printed.
+    /// Read every form on the line and print each one back.
+    ///
+    /// Not evaluation — there is no evaluator yet. The reader and printer are
+    /// enough to prove the browser build does real work.
     pub fn eval(&mut self, input: &str) -> String {
         self.host.output.clear();
-        // Phase 0: the reader and interpreter go here.
-        self.host
-            .write_stdout(&format!("; not implemented: {}\n", input.trim()));
+        let chars = Reader::chars_of(input);
+        let text = self.heap.mutate(|mc| {
+            let mut reader = Reader::new(&chars);
+            let mut out = String::new();
+            loop {
+                match reader.read(mc) {
+                    Ok(None) => break,
+                    Ok(Some(form)) => {
+                        out.push_str(&print(mc, form));
+                        out.push('\n');
+                    }
+                    Err(e) => {
+                        out.push_str(&format!("; {e}\n"));
+                        break;
+                    }
+                }
+            }
+            out
+        });
+        if self.heap.wants_collection() {
+            self.heap.collect();
+        }
+        self.host.write_stdout(&text);
         self.host.output.clone()
+    }
+
+    /// How many words the heap is using. The dev console shows it, so the
+    /// collector is visible rather than theoretical.
+    pub fn heap_words(&self) -> usize {
+        self.heap.used_words()
     }
 }
 
@@ -77,8 +111,11 @@ mod tests {
     }
 
     #[test]
-    fn eval_returns_host_output() {
+    fn eval_reads_and_prints() {
         let mut q = Quokka::new();
-        assert_eq!(q.eval("(fact 20)"), "; not implemented: (fact 20)\n");
+        assert_eq!(q.eval("(fact 20)"), "(FACT 20)\n");
+        assert_eq!(q.eval("'(1 2 . 3)"), "(QUOTE (1 2 . 3))\n");
+        assert!(q.eval("(oops").starts_with("; input ended"));
+        assert!(q.heap_words() > 0);
     }
 }

@@ -132,6 +132,25 @@ pub const CONS_WORDS: usize = 2;
 /// How many words an object's header occupies.
 pub const HEADER_WORDS: usize = 1;
 
+/// A symbol's slots, in order.
+///
+/// Common Lisp gives a symbol a name, a value, a function and a property list;
+/// these are those, in that order. The value and function cells hold
+/// [`Value::UNBOUND`] until something binds them — reading an unbound variable
+/// must signal rather than quietly return `nil`.
+pub mod symbol {
+    /// The symbol's name, a string object.
+    pub const NAME: usize = 0;
+    /// Its value as a variable.
+    pub const VALUE: usize = 1;
+    /// Its value as a function. Lisp-2: a symbol can be both at once.
+    pub const FUNCTION: usize = 2;
+    /// Its property list.
+    pub const PLIST: usize = 3;
+    /// How many slots a symbol has.
+    pub const SLOTS: usize = 4;
+}
+
 /// Default soft limit: 1 MiB of heap before a collection is wanted.
 pub const DEFAULT_SOFT_LIMIT_WORDS: usize = 128 * 1024;
 
@@ -312,6 +331,9 @@ struct Storage {
     spare: Vec<u64>,
     /// The one persistent root: everything that must survive hangs off it.
     root: u64,
+    /// Every interned symbol, as a list. A second root, and the collector must
+    /// forward it — a root nobody forwards is a live object silently reclaimed.
+    obarray: u64,
     /// Above this, the heap would like to be collected. Not a hard limit —
     /// see [`Heap::wants_collection`].
     soft_limit: usize,
@@ -445,6 +467,116 @@ impl<'h> Mutation<'h> {
         self.storage.words[at] = word;
     }
 
+    /// Allocate a string.
+    ///
+    /// One Unicode scalar per word. That wastes most of each word, and it is
+    /// deliberate for now: it makes indexing a character O(1) and the code
+    /// obvious. Packing comes when something measures that it matters.
+    pub fn alloc_string(&mut self, text: &str) -> Value<'h> {
+        let chars: Vec<char> = text.chars().collect();
+        let v = self.alloc(ObjectType::String, chars.len());
+        for (index, ch) in chars.iter().enumerate() {
+            self.set_raw_slot(v, index, *ch as u64);
+        }
+        v
+    }
+
+    /// Read a string back out.
+    ///
+    /// # Panics
+    /// If `v` is not a string.
+    pub fn string_to_rust(&self, v: Value<'h>) -> String {
+        assert_eq!(
+            self.header(v).object_type,
+            ObjectType::String,
+            "not a string"
+        );
+        (0..self.header(v).slots)
+            .map(|i| char::from_u32(self.raw_slot(v, i) as u32).expect("invalid character"))
+            .collect()
+    }
+
+    /// Does this string have exactly these characters?
+    ///
+    /// Compares without allocating, which matters because interning calls it
+    /// once per symbol already known.
+    pub fn string_is(&self, v: Value<'h>, text: &str) -> bool {
+        if !v.is_object() || self.header(v).object_type != ObjectType::String {
+            return false;
+        }
+        let slots = self.header(v).slots;
+        let mut chars = text.chars();
+        for i in 0..slots {
+            match chars.next() {
+                Some(ch) if ch as u64 == self.raw_slot(v, i) => {}
+                _ => return false,
+            }
+        }
+        chars.next().is_none()
+    }
+
+    /// Find or create the symbol with this name.
+    ///
+    /// Two reads of `foo` must produce the *same* object, or `eq` on symbols
+    /// stops working and every lookup becomes a string comparison. That is what
+    /// interning means, and the table it uses is the **obarray**.
+    ///
+    /// The obarray here is a list, so this is O(n) in the number of symbols.
+    /// A hash table belongs here eventually; a list is correct, obvious, and
+    /// replaceable without anything outside noticing.
+    ///
+    /// `nil` and `t` are not symbols in this implementation — they are
+    /// immediates — so they are returned directly. See the open question about
+    /// whether that was the right call.
+    pub fn intern(&mut self, name: &str) -> Value<'h> {
+        if name.eq_ignore_ascii_case("nil") {
+            return Value::NIL;
+        }
+        if name.eq_ignore_ascii_case("t") {
+            return Value::T;
+        }
+
+        let mut cursor = Value::from_bits(self.storage.obarray);
+        while !cursor.is_nil() {
+            let symbol = self.car(cursor);
+            if self.string_is(self.slot(symbol, symbol::NAME), name) {
+                return symbol;
+            }
+            cursor = self.cdr(cursor);
+        }
+
+        let text = self.alloc_string(name);
+        let symbol = self.alloc(ObjectType::Symbol, symbol::SLOTS);
+        self.set_slot(symbol, symbol::NAME, text);
+        self.set_slot(symbol, symbol::VALUE, Value::UNBOUND);
+        self.set_slot(symbol, symbol::FUNCTION, Value::UNBOUND);
+        let entry = self.cons(symbol, Value::from_bits(self.storage.obarray));
+        self.storage.obarray = entry.bits();
+        symbol
+    }
+
+    /// Is this a symbol object?
+    ///
+    /// Note that `nil` and `t` answer **no**, which is wrong by Common Lisp and
+    /// is the open question about how `nil` is represented.
+    pub fn is_symbol(&self, v: Value<'h>) -> bool {
+        v.is_object() && self.header(v).object_type == ObjectType::Symbol
+    }
+
+    /// A symbol's name as a Rust string.
+    ///
+    /// # Panics
+    /// If `v` is not a symbol.
+    pub fn symbol_name(&self, v: Value<'h>) -> String {
+        assert!(self.is_symbol(v), "not a symbol");
+        self.string_to_rust(self.slot(v, symbol::NAME))
+    }
+
+    /// Every interned symbol, as a list. A root.
+    pub fn obarray(&self) -> Value<'h> {
+        Value::from_bits(self.storage.obarray)
+    }
+
     /// The persistent root.
     pub fn root(&self) -> Value<'h> {
         Value::from_bits(self.storage.root)
@@ -510,6 +642,7 @@ impl Heap {
                 words: Vec::new(),
                 spare: Vec::new(),
                 root: Value::NIL.bits(),
+                obarray: Value::NIL.bits(),
                 soft_limit: words,
                 collections: 0,
                 heap_start: 0,
@@ -647,6 +780,7 @@ impl Heap {
         // and the process list join it as they arrive, and each one that is
         // forgotten is a live object silently reclaimed.
         self.storage.root = forward(from, &mut to, self.storage.root);
+        self.storage.obarray = forward(from, &mut to, self.storage.obarray);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has
@@ -744,6 +878,7 @@ impl Heap {
         };
 
         check(self.storage.root, usize::MAX)?;
+        check(self.storage.obarray, usize::MAX)?;
 
         let mut at = self.storage.heap_start;
         while at < words.len() {

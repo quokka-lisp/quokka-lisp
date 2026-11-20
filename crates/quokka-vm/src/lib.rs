@@ -22,6 +22,8 @@
 
 pub mod heap;
 pub mod host;
+pub mod printer;
+pub mod reader;
 pub mod slice;
 pub mod value;
 
