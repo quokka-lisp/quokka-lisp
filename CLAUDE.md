@@ -4,6 +4,41 @@ Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Com
 
 Current phase: **0 · Spike** (tagged heap, reader and interpreter in Rust; native and WASM builds; terminal REPL).
 
+## Who this is for, and how to work with me
+
+Carsten is an experienced programmer but **new to language implementation**. No
+prior work on languages, compilers, interpreters or runtimes. Background: Scheme
+and Lisp during a CS degree, and a basic Lisp interpreter written in Modula-2 as
+a university project — about thirty years ago. Assume the general programming
+knowledge is there and the domain knowledge is not.
+
+Quokka is **deliberately a learning exercise**, for Carsten and for other people.
+A companion repository, `quokka-book`, will describe the whole design and
+implementation as a textbook for anyone who wants to understand how a system
+like this works — in the spirit of Tanenbaum's operating systems books.
+
+This changes how to work on the repo:
+
+- **Explain, do not just deliver.** When a design choice is made, say what the
+  alternatives were and why this one won. A decision with no recorded reasoning
+  is a hole in the book.
+- **Name the technique.** When the code uses a known idea — Cheney's algorithm,
+  an explicit-control evaluator, a trampoline, NaN boxing, inline caches — call
+  it by its name and point at the standard reference (SICP, the GC Handbook,
+  Lisp in Small Pieces, the CLHS). Jargon that is named is searchable; jargon
+  that is not is a wall.
+- **Teach at decision points, not everywhere.** Long explanations belong where
+  something is genuinely non-obvious or load-bearing, not on boilerplate.
+- **Prefer the comprehensible implementation** when two are close in
+  performance. Rule 7 already says this; here it is also a pedagogical rule.
+  Where the fast version is genuinely needed, keep the simple one next to it as
+  the explanation.
+- **Comments say why.** The what is in the code. Chapters get written from the
+  why.
+- **Stop and explain rather than guess.** If a choice turns on knowledge Carsten
+  has flagged as unfamiliar, lay out the options and the consequences and let
+  him decide, instead of quietly picking one.
+
 ## Rules that must not be broken
 
 1. **Rust below the primitive table, Lisp above it.** Rust provides only the VM: tagged words, heap, GC, image save/load, the bootstrap interpreter, bytecode execution, and host glue. Anything a user could want to change belongs in Lisp. If you are about to add a feature in Rust, check whether it belongs above the line.
