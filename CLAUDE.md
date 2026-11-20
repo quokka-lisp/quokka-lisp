@@ -39,6 +39,47 @@ This changes how to work on the repo:
   has flagged as unfamiliar, lay out the options and the consequences and let
   him decide, instead of quietly picking one.
 
+## How work is tracked
+
+**Every development step is a GitHub issue before it is code.** Not an internal
+agenda, not a plan that lives only in a chat window — an issue in
+`quokka-lisp/quokka-lisp`, so the project survives being put down for a fortnight
+and picked up again.
+
+- **One issue per step or decision.** Open it before starting, with the
+  background and the options written out. Issue #9 tracks phase 0 and links the
+  rest.
+- **Discussion outcomes go in the comments.** When a question is worked through
+  — why an approach was rejected, what a test turned up, what a constraint
+  actually costs — write the conclusion into the issue as a comment. A decision
+  argued and then lost to scrollback has to be argued again.
+- **Reference the issue in the commit**, and close it from there where it fits.
+- **Labels:** `phase-0`…`phase-6` for stage, `decision` for an open design
+  question, and `vm` / `lisp` / `book` / `infra` for area. Milestones mirror the
+  phases in `docs/design.md`, each with its gate.
+- **A `decision` issue is not closed by writing code.** It closes when the
+  reasoning is recorded in `docs/design.md` (and in the book, if it has a
+  chapter).
+
+## The book
+
+`book/` holds *The Road to Quokka*, written alongside the system in the spirit of
+Tanenbaum's operating systems books. Plain Markdown; `book.toml` lets mdBook
+build it as a site, but mdBook is not required for anything and is not in CI.
+
+- **A chapter lands when the thing it describes lands.** Not afterwards from
+  memory — the reasoning is the content, and it is perishable.
+- **Write from the real questions.** Chapters come out of questions actually
+  asked during development, including the ones that revealed a wrong assumption.
+  Those are the good ones.
+- **Record what a decision cost**, not only what was chosen. A chapter that
+  presents the winning option as obvious teaches nothing.
+- **Say when something is unbuilt or undecided.** Chapters carry a status note
+  rather than pretending. An open `decision` issue and its chapter stay in sync.
+- **Code in the book is real code** from the repo, shortened where it helps but
+  never invented.
+- `scripts/check.sh` verifies every chapter in `book/src/SUMMARY.md` exists.
+
 ## Rules that must not be broken
 
 1. **Rust below the primitive table, Lisp above it.** Rust provides only the VM: tagged words, heap, GC, image save/load, the bootstrap interpreter, bytecode execution, and host glue. Anything a user could want to change belongs in Lisp. If you are about to add a feature in Rust, check whether it belongs above the line.
@@ -68,8 +109,9 @@ crates/quokka-wasm    WASM bindings plus a minimal browser dev console page
 lisp/                 Lisp sources: compiler and core library (tier 0 only)
 tests/lisp/           differential test files
 docs/design.md        the design
+book/                 The Road to Quokka, written alongside the system
 scripts/check.sh      everything CI runs, in one command
-.github/workflows/    CI: native, GC torture, both wasm targets, SBCL oracle
+.github/workflows/    CI: native, GC torture, both wasm targets, rustdoc, SBCL oracle
 ```
 
 ## Commands
@@ -90,6 +132,7 @@ the cheapest way to honour rule 2.
 | Serve the dev console | `python3 -m http.server -d crates/quokka-wasm/www 8080` |
 | Format and lint | `cargo fmt --all` · `cargo clippy --workspace --all-targets -- -D warnings` |
 | Docs | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --open` |
+| Preview the book | `mdbook serve book --open` (needs `cargo install mdbook`; optional) |
 
 `quokka-repl` is a native host and is deliberately **not** built for wasm32.
 

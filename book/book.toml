@@ -1,0 +1,16 @@
+[book]
+title = "The Road to Quokka"
+description = "Building a Lisp machine from nothing, explained as it is built."
+authors = ["Carsten"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/quokka-lisp/quokka-lisp"
+edit-url-template = "https://github.com/quokka-lisp/quokka-lisp/edit/main/book/{path}"
+
+[output.html.fold]
+enable = true
+level = 1

@@ -28,6 +28,9 @@ say "native build and test"
 cargo build --workspace
 cargo test --workspace
 
+say "book structure"
+./scripts/check-book.sh
+
 say "rustdoc"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 

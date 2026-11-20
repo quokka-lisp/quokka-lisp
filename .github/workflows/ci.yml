@@ -23,6 +23,13 @@ jobs:
       - run: cargo build --workspace
       - run: cargo test --workspace
 
+  book:
+    name: Book structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-book.sh
+
   docs:
     name: Rustdoc (no broken links)
     runs-on: ubuntu-latest
