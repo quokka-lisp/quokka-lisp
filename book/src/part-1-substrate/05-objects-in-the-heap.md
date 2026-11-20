@@ -206,14 +206,111 @@ pub fn wants_collection(&self) -> bool {
 The driver checks it *between* mutations and collects if it says yes. A mutation
 that allocates heavily simply overshoots, and asks for a collection afterwards.
 
-This is affordable here for a reason established two chapters ago: rule 4
-already forbids long mutations, because the evaluator must return control to the
-browser promptly. One evaluator step per mutation means the overshoot is bounded
-by whatever one step can allocate. Two constraints adopted for unrelated
-reasons, agreeing.
+And that ought to be affordable, for a reason established two chapters ago:
+rule 4 forbids long mutations, because the evaluator must return control to the
+browser promptly. One evaluator step per mutation would mean the overshoot is
+bounded by whatever a single step can allocate.
 
-In the browser the ceiling is not theoretical. WebAssembly linear memory stops
-at 4 GiB, and browsers cap it lower.
+Read that sentence again, because it contains a word doing a great deal of
+work. *Would.*
+
+## When the bound is not a bound
+
+The argument above is the one this chapter originally made, and it is wrong in
+a way worth dwelling on, because the mistake is more instructive than the fix.
+
+Rule 4 constrains how long the VM may run without returning. It does not
+constrain how much a *caller* puts inside one `mutate`. And the REPL, written
+three chapters later, evaluates an entire line in one mutation — not one step,
+one line. The bound depended on a convention that nothing enforced, and the
+first caller to come along broke it without noticing.
+
+Here is what that looks like from outside:
+
+```
+quokka> (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1)))))
+FACT
+quokka> (fact -1)
+```
+
+`(fact -1)` never reaches `(= n 0)`. And because the `*` is still waiting for
+its arguments, it is not a **tail call** — a distinction
+[Functions and scope](../part-2-reading-and-running/10-functions-and-scope.md)
+is about — so every level of the recursion keeps its frames. Collection cannot help even in principle: every one of those frames is
+reachable, so none of them is garbage.
+
+Nineteen seconds later it stopped, having reached 2.3 GB of memory.
+
+Nothing crashed. The step budget eventually ran out and reported itself. But a
+mistyped sign had taken the process to two and a third gigabytes, and in a
+browser — where linear memory stops at 4 GiB and the tab goes with it — the same
+typo would be fatal rather than untidy.
+
+## A soft limit needs a hard one behind it
+
+The repair is small, and the principle is the part to keep:
+
+> Growing past a *request* is reasonable. Growing until the operating system
+> intervenes is not.
+
+So there is a second limit, some multiple of the first, past which allocation
+stops being possible at all:
+
+```rust
+fn alloc(&mut self, words: usize) -> usize {
+    let at = self.words.len();
+    if at + words > self.hard_limit {
+        self.exhausted = true;
+    }
+    self.words.resize(at + words, 0);
+    at
+}
+```
+
+Note what it does *not* do: refuse. The allocation still happens, and a flag is
+set instead.
+
+That looks like a fudge and is a deliberate trade. Refusing would mean every
+allocator returning a `Result`, and every caller — the reader building a list,
+the evaluator pushing a frame — handling a failure it cannot do anything about
+locally. The flag puts the decision in the one place that *can* act on it: the
+evaluator checks it before each step and halts.
+
+The overshoot is therefore one step's worth of words, perhaps a few dozen,
+rather than a multiple of the heap. That is a claim, so there is a test:
+
+```rust
+assert!(heap.used_words() < limit + 64);
+```
+
+The result, with the same typo:
+
+| | before | after |
+| --- | --- | --- |
+| time | 19.24 s | 0.88 s |
+| memory | 2,315,288,576 bytes | 104,660,992 bytes |
+
+And the system is still usable afterwards. The REPL collects — which now works,
+because whatever filled the heap became unreachable the moment the computation
+stopped — and carries on. An error that leaves the system unusable is only
+marginally better than a crash.
+
+## What this says about the first argument
+
+The original reasoning was not careless. Rule 4 is real, one step per mutation
+*is* the intended shape, and the two constraints really do agree. What it missed
+is that agreement between two rules is not enforcement of either.
+
+> A bound that depends on how callers choose to use an API is not a bound. It is
+> a hope with a justification attached.
+
+The giveaway, in hindsight, is that nothing in the code said "one step per
+mutation". It was a sentence in a design discussion, and sentences do not fail
+the build.
+
+In the browser the ceiling is not theoretical either way. WebAssembly linear
+memory stops at 4 GiB, and browsers cap it lower — which is why this chapter
+mentions it twice.
 
 ## The same mistake twice
 

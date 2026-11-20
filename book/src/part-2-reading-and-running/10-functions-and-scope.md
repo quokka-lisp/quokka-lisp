@@ -192,6 +192,14 @@ In `down`, once the recursive call is made there is nothing left for the outer
 call to do. Its frame is dead weight. In `sum` the outer call still has to add
 `n`, so the frame is genuinely needed.
 
+This distinction decides what happens when a recursion goes wrong, which is not
+obvious until you see it. `(fact -1)` never reaches its base case — and because
+the `*` is still waiting, it is *not* a tail call, so every level keeps its
+frames and the heap fills. The same mistake in a tail-recursive function spins
+forever in constant space. Both are bugs; only one of them takes the process
+with it, which is why [Objects in the heap](../part-1-substrate/05-objects-in-the-heap.md) ends on
+a ceiling.
+
 ### Why this matters more in Lisp
 
 In most languages you write a loop with `while` and recursion is a special
