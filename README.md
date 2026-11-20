@@ -14,7 +14,7 @@ smallness from Oberon.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 
-## Status: phase 0 complete
+## Status: phase 0 complete, finishing tier 0
 
 ```
 $ cargo run -p quokka-repl
@@ -32,6 +32,15 @@ quokka> (defun down (n) (if (= n 0) 'done (down (- n 1))))
 DOWN
 quokka> (down 100000)
 DONE
+quokka> (defmacro my-when (test &body body) `(if ,test (progn ,@body) nil))
+MY-WHEN
+quokka> (my-when (= 1 1) 'yes)
+YES
+quokka> (defun describe-shape (kind &key (colour 'black) (sides 0))
+          (list kind colour sides))
+DESCRIBE-SHAPE
+quokka> (describe-shape 'square :sides 4)
+(SQUARE BLACK 4)
 ```
 
 The phase 0 gate was *"`(fact 20)` runs; the GC survives an allocation stress
@@ -50,25 +59,42 @@ natively, Quokka under WebAssembly, and SBCL.
 | **Reader** | tier 0 syntax: lists, dotted pairs, symbols, fixnums, strings, characters, `quote`, nested comments |
 | **Evaluator** | an explicit-control machine — no recursive `eval`, so it can stop and resume, and Lisp recursion costs heap rather than Rust stack |
 | **Tail calls** | eliminated, so recursive loops run in constant space |
-| **Closures** | `lambda`, `defun`, lexical scope, captured environments |
+| **Closures** | `lambda`, lexical scope, captured environments |
+| **Special operators** | 19 of Common Lisp's 25, including `let`, `let*`, `flet`, `labels`, `block`/`return-from`, `catch`/`throw`, `tagbody`/`go` and `unwind-protect` |
+| **Macros** | `defmacro`, expansion in the evaluator, backquote in the reader, `gensym` |
+| **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux` |
+| **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
+| **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or` and the list functions are **Lisp**, compiled into the binary and interpreted at boot |
 | **REPL** | native terminal, and a browser dev console on the WASM build |
 
-112 tests, green on native, under wasmtime, and with the GC torture mode on.
+165 tests, green on native, under wasmtime, and with the GC torture mode on.
+Ten Common Lisp files produce byte-identical output on Quokka and SBCL.
 
 ### What does not exist yet
 
-6 of Common Lisp's 25 special operators. No `let`, `cond`, `labels`, `&rest`, or
-macros. No bignums ([#16](https://github.com/quokka-lisp/quokka-lisp/issues/16))
-or floats ([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)). No
-bytecode compiler, no image save, no renderer, no editor — those are phases 1
-through 6 in [`docs/design.md`](docs/design.md).
+Six special operators: `macrolet`, `multiple-value-call`,
+`multiple-value-prog1`, and — outside tier 0 by design — `progv`,
+`load-time-value` and `symbol-macrolet`. No destructuring macro lambda lists,
+so `(defmacro m ((a b) &body c) ...)` is still a syntax error. No vectors,
+strings-as-sequences, hash tables, `defstruct`, `error` or `handler-case`;
+those, with the operators above, are what
+[#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracks, and what
+the compiler needs before the interpreter can run it.
+
+No packages — keywords exist, the rest is phase 2
+([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why). No
+bignums ([#16](https://github.com/quokka-lisp/quokka-lisp/issues/16)) or floats
+([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)). No bytecode
+compiler, no image save, no renderer, no editor — those are phases 1 through 6
+in [`docs/design.md`](docs/design.md).
 
 ## The book
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Twelve chapters so far, assuming no prior knowledge of language
-implementation.
+afterwards. Eighteen chapters so far, assuming no prior knowledge of language
+implementation — including what a garbage collector is, what `car` and `cdr`
+are, and why a program would want to rewrite itself.
 
 It records what decisions cost, not only which were chosen — including three
 occasions where a rule was written down and then broken by the person who wrote
@@ -113,9 +139,10 @@ assets/               mascot, icons, palette
 Every development step and open decision is a
 [GitHub issue](https://github.com/quokka-lisp/quokka-lisp/issues) before it is
 code, with the reasoning in the comments.
-[#9](https://github.com/quokka-lisp/quokka-lisp/issues/9) tracks phase 0 and
-links the rest; a `decision` issue closes when the reasoning is recorded in the
-design and the book, not when the code lands.
+[#9](https://github.com/quokka-lisp/quokka-lisp/issues/9) tracked phase 0 and
+[#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracks tier 0; a
+`decision` issue closes when the reasoning is recorded in the design and the
+book, not when the code lands.
 
 ## Licence
 

@@ -2,10 +2,25 @@
 
 Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Common Lisp subset, browser-first via WASM, with a live, presentation-based UI. The full design is in `docs/design.md` — read it before making structural changes.
 
-Current phase: **0 · Spike — complete.** `(fact 20)` runs, the GC survives
-torture mode, and a hundred Lisp forms agree with SBCL on native and wasm32.
-Next is phase 1 (bytecode and image), though tier 0 is unfinished: 6 of 25
-special operators, no `let`/`cond`/`labels`, no `&rest`, no macros.
+Current phase: **0 · Spike — complete**, now finishing **tier 0** (#18) so that
+phase 1 can bootstrap. The phase 0 gate passed long ago; tier 0 is what the
+compiler needs before the interpreter can run it.
+
+Where that stands: **19 of Common Lisp's 25 special operators** (missing
+`macrolet`, `multiple-value-call`, `multiple-value-prog1`, and — outside tier 0
+by design — `progv`, `load-time-value`, `symbol-macrolet`), plus `lambda` and
+`defmacro`, which CL makes macros and Quokka has not. Macros, backquote,
+`gensym`, keywords, and lambda lists with defaults, supplied-p, `&key` and
+`&aux` all work. There is a **prelude** (`lisp/prelude.lisp`, compiled in with
+`include_str!` and interpreted at boot) where `defun`, `when`, `unless`, `cond`,
+`and`, `or` and the list functions live — Lisp, not Rust.
+
+Still missing for tier 0: destructuring macro lambda lists; vectors, strings and
+hash tables; `defstruct`; `error` and `handler-case`. Also wanted and not
+blocking: `macroexpand`.
+
+Ten differential files agree with SBCL. The Rust core is around 9,000 lines of
+the 15,000 budget.
 
 ## Who this is for, and how to work with me
 

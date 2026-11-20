@@ -258,9 +258,12 @@ it, and only then do 5 and 6 build the thing.
 ## What is not here yet
 
 Still to come, and deliberately so:
-- **The rest of the language** — most of Common Lisp's 25 special operators,
-  `&rest` parameters, and **macros**, which are what let a program extend its
-  own language.
+- **The rest of the language.** Nineteen of Common Lisp's twenty-five special
+  operators exist; the six that do not are `macrolet`,
+  `multiple-value-call`, `multiple-value-prog1`, `progv`, `load-time-value`
+  and `symbol-macrolet`. Vectors, strings, hash tables, `defstruct` and a
+  condition system are all absent, and those are what the compiler needs
+  before it can be interpreted.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.
