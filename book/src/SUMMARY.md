@@ -27,6 +27,7 @@
 - [The prelude](part-2-reading-and-running/16-the-prelude.md)
 - [Why macros matter, and what hygiene is](part-2-reading-and-running/17-why-macros-matter.md)
 - [What a parameter list can say](part-2-reading-and-running/18-lambda-lists.md)
+- [Things with an index](part-2-reading-and-running/19-things-with-an-index.md)
 
 ---
 

@@ -384,6 +384,30 @@ impl<'t> Reader<'t> {
                 self.skip_block_comment()?;
                 self.read_form(mc, 0)
             }
+            // `#(1 2 3)` is a vector literal. Read it as a list and copy the
+            // elements across, which is the shortest honest route and costs
+            // one list that is immediately garbage.
+            Some('(') => {
+                self.at += 1;
+                let items = self.read_list(mc, 1)?;
+                let mut count = 0usize;
+                let mut cursor = items;
+                while cursor.is_cons() {
+                    count += 1;
+                    cursor = mc.cdr(cursor);
+                }
+                if !cursor.is_nil() {
+                    return Err(ReadError::MisplacedDot { at: start });
+                }
+                let v = mc.alloc_vector(count);
+                let mut cursor = items;
+                for i in 0..count {
+                    let item = mc.car(cursor);
+                    mc.set_slot(v, i, item);
+                    cursor = mc.cdr(cursor);
+                }
+                Ok(v)
+            }
             Some(ch) => Err(ReadError::UnexpectedCharacter { ch, at: self.at }),
             None => Err(ReadError::UnexpectedEnd { what: "a `#` form" }),
         }

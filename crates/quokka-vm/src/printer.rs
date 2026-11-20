@@ -134,6 +134,22 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
         // A macro is a closure that is called at a different time, and like
         // any closure there is no text that reads back as this one.
         ObjectType::Macro => out.push_str("#<macro>"),
+        ObjectType::Vector => {
+            out.push_str("#(");
+            for i in 0..header.slots {
+                if i > 0 {
+                    out.push(' ');
+                }
+                // The same length cap as a list, for the same reason: a
+                // vector can be as long as the heap allows.
+                if i >= MAX_LENGTH {
+                    out.push_str("...");
+                    break;
+                }
+                write_value(out, mc, mc.slot(v, i));
+            }
+            out.push(')');
+        }
         other => {
             let _ = write!(out, "#<{other:?} {} slots>", header.slots);
         }

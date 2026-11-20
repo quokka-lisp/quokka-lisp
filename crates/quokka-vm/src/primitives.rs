@@ -24,7 +24,7 @@
 //! breaking change.
 
 use crate::eval::EvalError;
-use crate::heap::{symbol, Mutation};
+use crate::heap::{symbol, Mutation, ObjectType};
 use crate::value::Value;
 
 /// One primitive: a name, how many arguments, and what it does.
@@ -177,6 +177,53 @@ const TABLE: &[Primitive] = &[
         name: "%MACRO-FUNCTION",
         arity: Arity::Exactly(1),
     },
+    // ---- vectors and strings ------------------------------------------
+    //
+    // A vector's slots are `Value`s and a string's are raw character codes,
+    // which is the distinction `ObjectType::slots_are_values` draws and the
+    // collector depends on. Both answer `aref` and `length`, because Common
+    // Lisp calls both of them vectors and the differential tests will hold us
+    // to that.
+    //
+    // Rule 9: allocating a vector of n elements writes n words, so the cost
+    // grows with an *argument* rather than with the call — the first primitive
+    // where a single call can be arbitrarily long. Bounded by the heap, which
+    // stops it, but a `(make-array 10000000)` is one long step. The same note
+    // as APPEND, and the same answer: chunk it when slices start to matter.
+    Primitive {
+        name: "%MAKE-VECTOR",
+        arity: Arity::Exactly(2),
+    },
+    Primitive {
+        name: "VECTOR",
+        arity: Arity::AtLeast(0),
+    },
+    Primitive {
+        name: "AREF",
+        arity: Arity::Exactly(2),
+    },
+    // Common Lisp spells this `(setf (aref v i) x)`. `setf` is tier 1, and it
+    // is a macro that has to expand into something; this is the something.
+    Primitive {
+        name: "%SET-AREF",
+        arity: Arity::Exactly(3),
+    },
+    Primitive {
+        name: "%SEQUENCE-LENGTH",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "VECTORP",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "STRINGP",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "CHARACTERP",
+        arity: Arity::Exactly(1),
+    },
 ];
 
 /// Where `APPLY` sits in the table, which `crate::eval` intercepts.
@@ -188,6 +235,54 @@ pub const APPLY: u32 = 21;
 /// table order is part of the image format, and a silent drift here would make
 /// every `funcall` call some other primitive.
 pub const FUNCALL: u32 = 13;
+
+/// Is `v` a heap object of this type?
+fn is_type<'h>(mc: &Mutation<'h>, v: Value<'h>, want: ObjectType) -> Value<'h> {
+    if v.is_object() && mc.header(v).object_type == want {
+        Value::T
+    } else {
+        Value::NIL
+    }
+}
+
+/// How long `v` is, and whether its slots are raw characters.
+///
+/// Common Lisp calls both a general vector and a string a vector, so `aref`
+/// and `length` work on both. The difference is only whether a slot holds a
+/// `Value` or a character code — the line `ObjectType::slots_are_values`
+/// draws, which the collector also depends on.
+fn sequence_shape<'h>(
+    mc: &Mutation<'h>,
+    v: Value<'h>,
+    name: &'static str,
+) -> Result<(usize, bool), EvalError> {
+    if v.is_object() {
+        let header = mc.header(v);
+        match header.object_type {
+            ObjectType::Vector => return Ok((header.slots, false)),
+            ObjectType::String => return Ok((header.slots, true)),
+            _ => {}
+        }
+    }
+    Err(EvalError::WrongType {
+        name,
+        wanted: "a vector or a string",
+    })
+}
+
+/// A fixnum index inside `length`, or an error naming both.
+fn checked_index(index: Value<'_>, length: usize) -> Result<usize, EvalError> {
+    let Some(i) = index.as_fixnum() else {
+        return Err(EvalError::WrongType {
+            name: "AREF",
+            wanted: "a fixnum index",
+        });
+    };
+    if i < 0 || i as usize >= length {
+        return Err(EvalError::IndexOutOfBounds { index: i, length });
+    }
+    Ok(i as usize)
+}
 
 /// What primitive `index` is called, for printing.
 pub fn name_of(index: u32) -> Option<&'static str> {
@@ -302,6 +397,71 @@ pub fn call<'h>(
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
         }
+        "%MAKE-VECTOR" => {
+            let Some(n) = args[0].as_fixnum() else {
+                return Err(EvalError::WrongType {
+                    name: "MAKE-ARRAY",
+                    wanted: "a fixnum size",
+                });
+            };
+            if n < 0 {
+                return Err(EvalError::WrongType {
+                    name: "MAKE-ARRAY",
+                    wanted: "a size that is not negative",
+                });
+            }
+            let v = mc.alloc(ObjectType::Vector, n as usize);
+            for i in 0..n as usize {
+                mc.set_slot(v, i, args[1]);
+            }
+            Ok(v)
+        }
+        "VECTOR" => {
+            let v = mc.alloc(ObjectType::Vector, args.len());
+            for (i, item) in args.iter().enumerate() {
+                mc.set_slot(v, i, *item);
+            }
+            Ok(v)
+        }
+        "AREF" => {
+            let (length, is_string) = sequence_shape(mc, args[0], "AREF")?;
+            let index = checked_index(args[1], length)?;
+            if is_string {
+                let code = mc.raw_slot(args[0], index) as u32;
+                Ok(Value::character(
+                    char::from_u32(code).expect("a string holds characters"),
+                ))
+            } else {
+                Ok(mc.slot(args[0], index))
+            }
+        }
+        "%SET-AREF" => {
+            let (length, is_string) = sequence_shape(mc, args[0], "SET-AREF")?;
+            let index = checked_index(args[1], length)?;
+            if is_string {
+                let Some(ch) = args[2].as_character() else {
+                    return Err(EvalError::WrongType {
+                        name: "SET-AREF",
+                        wanted: "a character, to store in a string",
+                    });
+                };
+                mc.set_raw_slot(args[0], index, ch as u64);
+            } else {
+                mc.set_slot(args[0], index, args[2]);
+            }
+            Ok(args[2])
+        }
+        "%SEQUENCE-LENGTH" => {
+            let (length, _) = sequence_shape(mc, args[0], "LENGTH")?;
+            Ok(Value::fixnum(length as i64).expect("a heap object cannot be that long"))
+        }
+        "VECTORP" => Ok(is_type(mc, args[0], ObjectType::Vector)),
+        "STRINGP" => Ok(is_type(mc, args[0], ObjectType::String)),
+        "CHARACTERP" => Ok(if args[0].as_character().is_some() {
+            Value::T
+        } else {
+            Value::NIL
+        }),
         "APPLY" => Err(EvalError::BadSyntax {
             operator: "APPLY",
             detail: "is intercepted by the evaluator and should never be called here",
@@ -483,7 +643,15 @@ mod tests {
                 "KEYWORDP",
                 "SYMBOL-NAME",
                 "APPLY",
-                "%MACRO-FUNCTION"
+                "%MACRO-FUNCTION",
+                "%MAKE-VECTOR",
+                "VECTOR",
+                "AREF",
+                "%SET-AREF",
+                "%SEQUENCE-LENGTH",
+                "VECTORP",
+                "STRINGP",
+                "CHARACTERP"
             ]
         );
     }

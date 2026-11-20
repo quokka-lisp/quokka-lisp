@@ -286,6 +286,87 @@ mod tests {
         );
     }
 
+    /// Vector mutation, which `tests/lisp/vectors.lisp` cannot cover.
+    ///
+    /// Writing an element is `(setf (aref v i) x)` in Common Lisp, and `setf`
+    /// is tier 1. Until then the only way is `%set-aref`, which SBCL has no
+    /// name for — so the oracle cannot check it and these tests stand in.
+    /// Every `%` primitive costs exactly this.
+    #[test]
+    fn vectors_can_be_written() {
+        assert_eq!(
+            after_boot("(let ((v (vector 1 2 3))) (%set-aref v 0 'changed) v)"),
+            "#(CHANGED 2 3)"
+        );
+        assert_eq!(
+            after_boot(
+                "(let ((v (make-array 3 :initial-element 0)))
+                   (%set-aref v 1 'middle)
+                   (list (aref v 0) (aref v 1) (aref v 2)))"
+            ),
+            "(0 MIDDLE 0)"
+        );
+        // Built one element at a time, which is how a compiler will use them.
+        assert_eq!(
+            after_boot(
+                "(defun build (n)
+                   (let ((v (make-array n :initial-element 0)))
+                     (labels ((fill-from (i)
+                                (if (= i n) v
+                                  (progn (%set-aref v i (* i i)) (fill-from (+ i 1))))))
+                       (fill-from 0))))
+                 (build 5)"
+            ),
+            "#(0 1 4 9 16)"
+        );
+    }
+
+    /// A string's slots are raw character codes, not values, so writing one
+    /// takes a character and nothing else.
+    #[test]
+    fn strings_hold_characters_and_only_characters() {
+        assert_eq!(after_boot("(aref \"abc\" 1)"), "#\\b");
+        assert_eq!(
+            after_boot("(let ((s \"abc\")) (%set-aref s 0 #\\z) s)"),
+            "\"zbc\""
+        );
+        assert!(
+            after_boot("(%set-aref \"abc\" 0 5)").starts_with("; "),
+            "storing a fixnum in a string must be refused"
+        );
+    }
+
+    /// A vector's elements are traced, so what is only reachable through one
+    /// survives a collection. The `gc-torture` build runs this with a
+    /// collection at every mutation boundary.
+    #[test]
+    fn vector_elements_survive_collection() {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        let source = crate::reader::Reader::chars_of(
+            "(defun squares (n)
+               (labels ((upto (i acc)
+                          (if (= i n) (reverse acc) (upto (+ i 1) (cons (* i i) acc)))))
+                 (apply #'vector (upto 0 nil))))
+             (setq v (squares 200))",
+        );
+        heap.mutate(|mc| {
+            let mut reader = Reader::new(&source);
+            while let Ok(Some(form)) = reader.read(mc) {
+                eval_now(mc, form, BOOT_BUDGET).expect("runs");
+            }
+        });
+        heap.collect();
+        let after = crate::reader::Reader::chars_of("(list (length v) (aref v 199))");
+        let out = heap.mutate(|mc| {
+            let mut reader = Reader::new(&after);
+            let form = reader.read(mc).unwrap().unwrap();
+            let value = eval_now(mc, form, BOOT_BUDGET).expect("runs");
+            print(mc, value)
+        });
+        assert_eq!(out, "(200 39601)");
+    }
+
     #[test]
     fn apply_spreads_its_last_argument() {
         assert_eq!(after_boot("(apply #'+ '(1 2 3))"), "6");

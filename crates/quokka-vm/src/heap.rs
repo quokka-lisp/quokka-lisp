@@ -748,6 +748,16 @@ impl<'h> Mutation<'h> {
             && self.slot(v, symbol::HOME) == Value::fixnum(home::KEYWORD).expect("small")
     }
 
+    /// A vector of `len` slots, all nil.
+    ///
+    /// Its slots hold `Value`s, so the collector traces them — which is what
+    /// `ObjectType::Vector` being below 64 means (see
+    /// [`ObjectType::slots_are_values`]). A string, whose slots are raw
+    /// character codes, sits above that line instead.
+    pub fn alloc_vector(&mut self, len: usize) -> Value<'h> {
+        self.alloc(ObjectType::Vector, len)
+    }
+
     /// A fresh symbol belonging to nobody.
     ///
     /// Deliberately **not interned**: reading `#:G1` would make a different

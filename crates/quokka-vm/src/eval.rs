@@ -153,6 +153,13 @@ pub enum EvalError {
         /// What it wanted.
         wanted: &'static str,
     },
+    /// An index outside a sequence.
+    IndexOutOfBounds {
+        /// What was asked for.
+        index: i64,
+        /// How long the sequence is.
+        length: usize,
+    },
     /// Arithmetic left fixnum range, and bignums do not exist.
     IntegerOverflow,
     /// The heap reached its hard ceiling. Common Lisp calls this a
@@ -176,6 +183,9 @@ impl core::fmt::Display for EvalError {
                 write!(f, "{name} wants {wanted} argument(s), got {got}")
             }
             EvalError::WrongType { name, wanted } => write!(f, "{name} wants {wanted}"),
+            EvalError::IndexOutOfBounds { index, length } => {
+                write!(f, "index {index} is outside a sequence of length {length}")
+            }
             EvalError::IntegerOverflow => {
                 write!(f, "integer overflow, and bignums do not exist yet")
             }

@@ -69,6 +69,7 @@ differential_cases! {
     lambda_lists => "lambda-lists",
     destructuring => "destructuring",
     macroexpand => "macroexpand",
+    vectors => "vectors",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

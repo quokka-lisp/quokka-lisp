@@ -32,6 +32,11 @@ is `(+ 1 2 3)`. Intercepted by the evaluator rather than implemented as a
 primitive, because making a call is the machine's business. The last argument
 is shared, not copied. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
+**aref.** Reads the element of a vector or string at an index, in one step
+rather than by walking. Common Lisp calls both of them vectors, so one
+function serves both, although one holds traced references and the other raw
+character codes. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
 as several. Contrast [fixnum](#fixnum). Not yet implemented.
 
@@ -266,6 +271,12 @@ only door between the two languages.
 before the evaluator sees it. `'x` becoming `(quote x)` is the simplest one;
 [backquote](#backquote) is the one that earns its keep. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
+**Raw slots.** An object whose words are *not* references — a string's
+character codes, a bignum's digits — and which the collector must copy rather
+than follow. Quokka draws the line at type number 64: below it slots are
+traced, at or above they are raw. A type on the wrong side corrupts the heap
+silently, so a test guards it. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+
 **Reachable.** Able to be found by following references from a [root](#root).
 This is the definition of "still wanted" that garbage collection uses.
 ([3](part-1-substrate/03-what-is-alive.md))
@@ -295,6 +306,10 @@ code and data. `(* 6 7)` is a list of three things, not special syntax.
 
 **Self-hosting.** When a compiler can compile its own source, so the system needs nothing outside it to rebuild. The point at which Quokka's Rust stops growing and every further feature is written in Lisp. ([The bootstrap](the-bootstrap.md))
 
+**Sequence.** Common Lisp's name for anything `length` and `elt` work on:
+lists, vectors and strings. The functions over them dispatch on which kind
+they were given. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.
 ([6](part-1-substrate/06-cheneys-algorithm.md))
@@ -309,6 +324,10 @@ many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
 **Symbol.** A named thing — `car`, `+`, `my-variable`. Lisp symbols are objects
 in their own right, not just text, and carry a value and a function.
+
+**Simple vector.** A fixed-length run of slots holding any values, indexed
+by [aref](#aref). The only kind of array Quokka has: no fill pointers, no
+adjustable arrays, no dimensions beyond one. ([19](part-2-reading-and-running/19-things-with-an-index.md))
 
 **Tag.** A few bits inside a word saying what kind of value it holds. Quokka
 uses the low three bits, which are free because heap objects are aligned to

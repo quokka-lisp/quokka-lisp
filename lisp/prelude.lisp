@@ -186,20 +186,73 @@
 ;; stack however long the list is — which is why no iteration construct is
 ;; needed to write them, and why `tagbody` can stay unused here.
 ;;
-;; **These are the list cases only.** In Common Lisp `length` and `reverse`
-;; work on any sequence, and this prelude has no vectors or strings to work
-;; on yet. They are correct for what exists and will be replaced, not
-;; extended, when sequences arrive.
+;; These used to carry a note saying they were the list cases only and would
+;; be replaced when sequences arrived. Sequences have arrived, so they
+;; dispatch: a list is walked, a vector or string is indexed. Common Lisp
+;; calls all three sequences and the differential tests hold us to it.
 
-(defun length (list)
-  (labels ((walk (rest n)
-             (if (endp rest) n (walk (cdr rest) (+ n 1)))))
-    (walk list 0)))
+(defun length (sequence)
+  (cond ((null sequence) 0)
+        ((consp sequence)
+         (labels ((walk (rest n)
+                    (if (endp rest) n (walk (cdr rest) (+ n 1)))))
+           (walk sequence 0)))
+        (t (%sequence-length sequence))))
 
-(defun reverse (list)
-  (labels ((walk (rest acc)
-             (if (endp rest) acc (walk (cdr rest) (cons (car rest) acc)))))
-    (walk list nil)))
+(defun reverse (sequence)
+  (if (listp sequence)
+      (labels ((walk (rest acc)
+                 (if (endp rest) acc (walk (cdr rest) (cons (car rest) acc)))))
+        (walk sequence nil))
+      (let ((n (%sequence-length sequence)))
+        (let ((out (%make-vector n nil)))
+          (labels ((walk (i)
+                     (if (= i n)
+                         out
+                         (progn (%set-aref out i (aref sequence (- (- n 1) i)))
+                                (walk (+ i 1))))))
+            (walk 0))))))
+
+;; `(reverse "abc")` gives a vector of characters rather than a string, which
+;; Common Lisp would not: it returns a sequence of the same type. Making that
+;; right needs a string allocator exposed to Lisp, and `make-string` is not
+;; here yet. Said rather than hidden; `tests/lisp/vectors.lisp` does not ask.
+
+(defun listp (x) (if (null x) t (consp x)))
+
+(defun elt (sequence index)
+  (if (listp sequence) (nth index sequence) (aref sequence index)))
+
+;; `svref` is `aref` restricted to simple vectors. Quokka has only simple
+;; vectors, so for now it is the same function under a second name.
+(defun svref (vector index) (aref vector index))
+
+;; CLHS `make-array` takes a list of dimensions, an element type, a fill
+;; pointer and several other things. This takes one dimension and an initial
+;; element, which is what a tier 0 compiler needs; the rest can arrive when
+;; something wants it.
+(defun make-array (size &key (initial-element nil))
+  (%make-vector size initial-element))
+
+;; Characters are immediate values in Quokka, so identity and equality are the
+;; same test. `char=` exists anyway, because CLHS says `eq` on characters is
+;; not something a program may rely on and code written against the standard
+;; will call this.
+(defun char= (a b) (eq a b))
+
+;; Comparing two strings is O(n) in their length, which makes it the first
+;; *library* function with a rule 9 question rather than the first primitive.
+;; It is Lisp, so the evaluator can stop in the middle of it — which is
+;; exactly why the rule is about primitives and not about functions.
+(defun string= (a b)
+  (let ((n (length a)))
+    (if (= n (length b))
+        (labels ((walk (i)
+                   (cond ((= i n) t)
+                         ((char= (aref a i) (aref b i)) (walk (+ i 1)))
+                         (t nil))))
+          (walk 0))
+        nil)))
 
 ;; `nth` really is list-only in the standard, so this one is complete.
 ;; Indexing past the end is nil rather than an error, because `(car nil)` is
