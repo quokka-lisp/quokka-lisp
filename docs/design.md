@@ -66,6 +66,12 @@ The substrate is a small Rust program that plays the role of Lisp machine hardwa
 | `101` | Immediate | Characters, `nil`, `t`, unbound marker |
 | `111` | Reserved | Forwarding pointers during GC |
 
+**Object headers.** A heap object (tag `011`) starts with a header word giving its type and its length in slots: `[ length : 48 ][ type : 8 ][ subtag : 5 ][ 101 ]`. Cons cells have no header — the tag is the type — which is why they get a tag of their own.
+
+That creates a problem the encoding has to solve. The collector scans to-space linearly, so at every position it must know how big the object there is, and a header and a cons cell's car sit in the same place. Giving conses a header too would cost a third more memory on the commonest object in a Lisp. Instead the header is encoded in the immediate space under a subtag that is never handed out, so no value can be mistaken for one: the scan is a single test, and conses stay two words.
+
+The type says whether the object's slots are values. Strings, code and bignums hold raw words, and tracing those would follow numbers as if they were references, so this distinction is load-bearing rather than descriptive.
+
 **Garbage collection.** Start with a simple copying (Cheney) collector: easy to get right and to read. Move to a generational collector once the environment allocates heavily (presentations and redisplay will).
 
 **Rooting.** A copying collector decides what is alive by tracing from its roots — locations outside the heap holding values — and it cannot see Rust local variables. A value held in a Rust local across an allocation is therefore not stale but dead: the collector concluded nobody wanted it and reclaimed it. Because our references are offsets rather than pointers, the result is a wrong answer rather than a crash, which is harder to notice, not easier.
