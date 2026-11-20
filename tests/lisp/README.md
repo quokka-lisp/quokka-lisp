@@ -54,6 +54,11 @@ Three kinds of form would disagree for reasons that are nobody's fault:
   standard says `eq` on numbers is implementation-dependent, SBCL happens to
   answer `T`, and Quokka happens to agree. A test asserting it would pass for
   the wrong reason and would be testing an accident rather than a rule.
+- **Binding or redefining a `COMMON-LISP` symbol.** A specific and non-obvious
+  case of the above. `(flet ((car (x) ...)) ...)` is undefined behaviour under
+  CLHS 11.1.2.1.2, and SBCL enforces it with a package lock. Quokka has no
+  packages and allows it, so the two disagree for a reason that is the test's
+  fault. Use a name of your own; this file caught it the hard way.
 
 Adding a file means adding a line to `crates/quokka-vm/tests/differential.rs`;
 `scripts/check-differential.sh` fails if one is left out.

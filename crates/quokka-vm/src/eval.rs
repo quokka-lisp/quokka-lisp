@@ -1636,16 +1636,21 @@ mod tests {
     /// local variable named CAR must not disturb the function.
     #[test]
     fn flet_and_let_bind_in_different_namespaces() {
-        program_gives("(flet ((car (x) 'shadowed)) (car '(1 2)))", "SHADOWED");
-        program_gives("(let ((car 5)) car)", "5");
-        program_gives("(let ((car 5)) (car '(1 2)))", "1");
-        // And the sharpest demonstration: inside that flet, `car` as a
+        // The same name as a variable and as a function at once.
+        program_gives("(let ((f 5)) (flet ((f (x) (* x 2))) (list f (f 10))))", "(5 20)");
+        program_gives("(flet ((f (x) (* x 2))) (let ((f 5)) (list f (f 10))))", "(5 20)");
+        // And the sharpest demonstration: inside an flet, the name as a
         // *variable* is still unbound. The namespaces do not leak into each
         // other even when one of them has a binding.
         assert!(matches!(
-            eval_all("(flet ((car (x) 'shadowed)) car)"),
+            eval_all("(flet ((f (x) x)) f)"),
             Err(EvalError::UnboundVariable(_))
         ));
+        // Deliberately not tested against the oracle: binding a COMMON-LISP
+        // symbol is undefined behaviour and SBCL rejects it with a package
+        // lock. Quokka has no packages, so this is Quokka's behaviour rather
+        // than Common Lisp's.
+        program_gives("(let ((car 5)) (car '(1 2)))", "1");
     }
 
     /// The only difference between them: which scope the closures capture.
@@ -1683,7 +1688,7 @@ mod tests {
         program_gives("(funcall (function cdr) '(1 2))", "(2)");
         program_gives("(funcall #'(lambda (x) (* x 3)) 14)", "42");
         // A lexical binding shadows the symbol's own function cell.
-        program_gives("(flet ((car (x) 'local)) (funcall #'car 1))", "LOCAL");
+        program_gives("(flet ((f (x) 'local)) (funcall #'f 1))", "LOCAL");
     }
 
     #[test]

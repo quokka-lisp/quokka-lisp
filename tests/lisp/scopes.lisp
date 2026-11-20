@@ -41,12 +41,17 @@ h
 (flet ((f (x) (* x 2))) (f 21))
 (flet ((f (x) (* x 2)) (g (x) (+ x 1))) (f (g 20)))
 
-;; A Lisp-2 keeps the namespaces apart: a local function named CAR does not
-;; disturb the variable, and a local variable named CAR does not disturb the
-;; function.
-(flet ((car (x) 'shadowed)) (car '(1 2)))
-(let ((car 5)) car)
-(let ((car 5)) (car '(1 2)))
+;; A Lisp-2 keeps the namespaces apart: the same name can be a local variable
+;; and a local function at once, and neither disturbs the other.
+;;
+;; The name must not be a COMMON-LISP symbol. Binding one as a local function
+;; is undefined behaviour (CLHS 11.1.2.1.2) and SBCL enforces it with a package
+;; lock — which it used to catch an earlier version of this file that shadowed
+;; CAR. Quokka has no packages and allowed it, so the two disagreed for a
+;; reason that was the test's fault.
+(let ((f 5)) (flet ((f (x) (* x 2))) (list f (f 10))))
+(flet ((f (x) (* x 2))) (let ((f 5)) (list f (f 10))))
+(let ((g 1)) (flet ((g () 2)) (+ g (g))))
 
 ;; flet bindings cannot see each other; labels bindings can.
 (labels ((even-p (n) (if (= n 0) t (odd-p (- n 1))))
