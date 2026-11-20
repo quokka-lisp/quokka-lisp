@@ -99,6 +99,12 @@ pub enum ReadError {
         /// What was written after `#\`.
         name: String,
     },
+    /// A `:` this reader cannot make sense of: a bare `:`, a `::`, or
+    /// `package:symbol`, none of which mean anything until packages exist.
+    PackageMarker {
+        /// The whole token, as written.
+        text: String,
+    },
     /// A comma with no backquote around it.
     CommaOutsideBackquote {
         /// Where, as a character offset.
@@ -122,6 +128,13 @@ impl fmt::Display for ReadError {
             }
             ReadError::UnexpectedCharacter { ch, at } => {
                 write!(f, "unexpected `{ch}` at {at}")
+            }
+            ReadError::PackageMarker { text } => {
+                write!(
+                    f,
+                    "`{text}` uses a package marker, and packages are phase 2; \
+                     `:name` is a keyword and is the only colon this reader knows"
+                )
             }
             ReadError::CommaOutsideBackquote { at } => {
                 write!(f, "`,` at {at} is not inside a backquote")
@@ -257,7 +270,7 @@ impl<'t> Reader<'t> {
                 self.at += 1;
                 self.read_hash(mc, at)
             }
-            _ => Ok(self.read_atom(mc)),
+            _ => self.read_atom(mc),
         }
     }
 
@@ -424,7 +437,7 @@ impl<'t> Reader<'t> {
     /// A run of non-delimiter characters: a number if it looks like one, a
     /// symbol otherwise. Symbols are upcased, as Common Lisp's reader does, so
     /// `foo`, `Foo` and `FOO` are one symbol.
-    fn read_atom<'h>(&mut self, mc: &mut Mutation<'h>) -> Value<'h> {
+    fn read_atom<'h>(&mut self, mc: &mut Mutation<'h>) -> Result<Value<'h>, ReadError> {
         let start = self.at;
         while let Some(ch) = self.peek() {
             if is_delimiter(ch) {
@@ -436,10 +449,28 @@ impl<'t> Reader<'t> {
 
         if let Some(n) = parse_fixnum(&text) {
             if let Some(v) = Value::fixnum(n) {
-                return v;
+                return Ok(v);
             }
         }
-        mc.intern(&text.to_ascii_uppercase())
+
+        // `:foo` is a keyword. The colon is a *package marker*, not part of
+        // the name, so it is stripped here and put back by the printer —
+        // `(symbol-name :foo)` is "FOO" in Common Lisp, not ":FOO".
+        if let Some(rest) = text.strip_prefix(':') {
+            if rest.is_empty() || rest.starts_with(':') {
+                return Err(ReadError::PackageMarker { text });
+            }
+            return Ok(mc.intern_keyword(&rest.to_ascii_uppercase()));
+        }
+        // Any other colon means `package:symbol`, and packages are phase 2.
+        // Making it part of an ordinary symbol name instead would read
+        // without complaint and mean something different later, which is
+        // worse than refusing it now.
+        if text.contains(':') {
+            return Err(ReadError::PackageMarker { text });
+        }
+
+        Ok(mc.intern(&text.to_ascii_uppercase()))
     }
 
     /// Turn a backquote template into the code that builds it.
@@ -596,6 +627,58 @@ mod tests {
     #[test]
     fn comma_markers_cannot_be_written_by_hand() {
         reads_as("(UNQUOTE MARKER)", "(UNQUOTE MARKER)");
+    }
+
+    /// The point of giving symbols a namespace: one name, two symbols.
+    #[test]
+    fn a_keyword_is_a_different_symbol_with_the_same_name() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let plain = mc.intern("FOO");
+            let keyword = mc.intern_keyword("FOO");
+            assert_ne!(plain, keyword, "a keyword is not the ordinary symbol");
+            assert_eq!(mc.symbol_name(plain), "FOO");
+            assert_eq!(
+                mc.symbol_name(keyword),
+                "FOO",
+                "the colon is punctuation, not part of the name"
+            );
+            assert!(mc.is_keyword(keyword));
+            assert!(!mc.is_keyword(plain));
+            // Interning is still interning, within a namespace.
+            assert_eq!(keyword, mc.intern_keyword("FOO"));
+            assert_eq!(plain, mc.intern("FOO"));
+        });
+    }
+
+    /// A keyword is a constant variable bound to itself, which is how `:foo`
+    /// evaluates without the evaluator knowing keywords exist.
+    #[test]
+    fn a_keyword_is_bound_to_itself() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let k = mc.intern_keyword("FOO");
+            assert_eq!(mc.slot(k, crate::heap::symbol::VALUE), k);
+        });
+    }
+
+    #[test]
+    fn keywords_read_and_print() {
+        reads_as(":foo", ":FOO");
+        reads_as("(:a :b 1)", "(:A :B 1)");
+        reads_as("(:a . :b)", "(:A . :B)");
+    }
+
+    /// Everything else a colon could mean needs packages, so it is refused
+    /// rather than quietly read as an ordinary symbol with a colon in it.
+    #[test]
+    fn other_package_markers_are_refused() {
+        for text in [":", "::foo", "foo:bar", "foo::bar"] {
+            assert!(
+                matches!(round_trip(text), Err(ReadError::PackageMarker { .. })),
+                "reading {text:?} should have been refused"
+            );
+        }
     }
 
     #[test]

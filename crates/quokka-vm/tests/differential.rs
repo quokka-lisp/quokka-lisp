@@ -65,6 +65,7 @@ differential_cases! {
     control_flow => "control-flow",
     macros => "macros",
     prelude => "prelude",
+    keywords => "keywords",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

@@ -154,6 +154,11 @@ pub mod symbol {
     pub const FUNCTION: usize = 2;
     /// Its property list.
     pub const PLIST: usize = 3;
+    /// Which namespace the symbol was interned in — see [`crate::heap::home`].
+    ///
+    /// `nil` for a symbol that is interned nowhere, which is what
+    /// [`crate::heap::Mutation::gensym`] makes.
+    pub const HOME: usize = 5;
     /// Non-nil if this names a special operator, as a small integer the
     /// evaluator dispatches on.
     ///
@@ -162,7 +167,37 @@ pub mod symbol {
     /// comparing names on every form evaluated.
     pub const SPECIAL: usize = 4;
     /// How many slots a symbol has.
-    pub const SLOTS: usize = 5;
+    pub const SLOTS: usize = 6;
+}
+
+/// The namespaces a symbol can be interned in.
+///
+/// **This is deliberately two-sevenths of a package system.**
+///
+/// Common Lisp says a keyword is a symbol in the `KEYWORD` package, which
+/// means `foo` and `:foo` have the *same name* and are *different symbols*:
+///
+/// ```lisp
+/// (symbol-name :foo)   ; => "FOO", not ":FOO"
+/// (eq :foo 'foo)       ; => NIL
+/// ```
+///
+/// A symbol table keyed on the name alone cannot express that. The cheap
+/// alternative — interning `:foo` under the name `":FOO"` — would make
+/// `symbol-name` quietly wrong, and wrong in a way nothing detects until
+/// `symbol-name` is exposed to Lisp, which is the worst kind of bug to plant.
+///
+/// So the table is keyed on *(namespace, name)*, with exactly two namespaces
+/// and none of the machinery — no `use-package`, no `export`, no `::`, no
+/// `*package*`. Packages proper are tier 1, phase 2 (`docs/design.md`), and
+/// want a hash table per package, which is group C and not built. When they
+/// arrive, [`symbol::HOME`] stops being a small integer and becomes a pointer
+/// to a package object; nothing else here has to change.
+pub mod home {
+    /// The one ordinary namespace. Becomes `COMMON-LISP-USER` and friends.
+    pub const CURRENT: i64 = 0;
+    /// `KEYWORD`: self-evaluating constants, printed with a leading colon.
+    pub const KEYWORD: i64 = 1;
 }
 
 /// The static area: objects the collector never moves.
@@ -665,10 +700,32 @@ impl<'h> Mutation<'h> {
     /// `nil` and `t` need no special case: they are ordinary symbols living in
     /// the static area, interned at bootstrap like any other.
     pub fn intern(&mut self, name: &str) -> Value<'h> {
+        self.intern_in(name, home::CURRENT)
+    }
+
+    /// Intern `name` as a keyword: `intern_keyword("FOO")` is `:FOO`.
+    ///
+    /// The name does **not** include the colon — that is punctuation the
+    /// reader and printer deal in, not part of the symbol. The value cell is
+    /// set to the symbol itself, because CLHS says a keyword is a constant
+    /// variable bound to itself, and that one line is the whole reason `:foo`
+    /// evaluates without the evaluator knowing keywords exist.
+    pub fn intern_keyword(&mut self, name: &str) -> Value<'h> {
+        let symbol = self.intern_in(name, home::KEYWORD);
+        self.set_slot(symbol, symbol::VALUE, symbol);
+        symbol
+    }
+
+    /// The shared path: a symbol is identified by its namespace *and* its
+    /// name, so `FOO` and `:FOO` are two symbols with one name.
+    fn intern_in(&mut self, name: &str, home: i64) -> Value<'h> {
+        let wanted = Value::fixnum(home).expect("a namespace is a small number");
         let mut cursor = Value::from_bits(self.storage.obarray);
         while !cursor.is_nil() {
             let symbol = self.car(cursor);
-            if self.string_is(self.slot(symbol, symbol::NAME), name) {
+            if self.slot(symbol, symbol::HOME) == wanted
+                && self.string_is(self.slot(symbol, symbol::NAME), name)
+            {
                 return symbol;
             }
             cursor = self.cdr(cursor);
@@ -679,9 +736,16 @@ impl<'h> Mutation<'h> {
         self.set_slot(symbol, symbol::NAME, text);
         self.set_slot(symbol, symbol::VALUE, Value::UNBOUND);
         self.set_slot(symbol, symbol::FUNCTION, Value::UNBOUND);
+        self.set_slot(symbol, symbol::HOME, wanted);
         let entry = self.cons(symbol, Value::from_bits(self.storage.obarray));
         self.storage.obarray = entry.bits();
         symbol
+    }
+
+    /// Is this symbol a keyword?
+    pub fn is_keyword(&self, v: Value<'h>) -> bool {
+        self.is_symbol(v)
+            && self.slot(v, symbol::HOME) == Value::fixnum(home::KEYWORD).expect("small")
     }
 
     /// A fresh symbol belonging to nobody.
@@ -708,6 +772,8 @@ impl<'h> Mutation<'h> {
         self.set_slot(s, symbol::NAME, text);
         self.set_slot(s, symbol::VALUE, Value::UNBOUND);
         self.set_slot(s, symbol::FUNCTION, Value::UNBOUND);
+        // Interned nowhere, which is the point.
+        self.set_slot(s, symbol::HOME, Value::NIL);
         s
     }
 
@@ -901,6 +967,11 @@ impl Heap {
                 mc.set_slot(s, symbol::FUNCTION, Value::UNBOUND);
                 mc.set_slot(s, symbol::PLIST, Value::NIL);
                 mc.set_slot(s, symbol::SPECIAL, Value::NIL);
+                mc.set_slot(
+                    s,
+                    symbol::HOME,
+                    Value::fixnum(home::CURRENT).expect("small"),
+                );
             }
             // Both are constants that evaluate to themselves.
             mc.set_slot(nil, symbol::VALUE, Value::NIL);

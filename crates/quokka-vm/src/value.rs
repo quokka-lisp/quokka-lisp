@@ -729,8 +729,14 @@ mod tests {
         // nil and t are object references into the static area now, not
         // immediates. This is an image format change, which is exactly the
         // kind of thing this test exists to make deliberate.
+        //
+        // `t` sits one header plus one symbol's slots past `nil`, so this
+        // number moves whenever a symbol grows a slot. It went from 6 to 7
+        // when symbols gained `HOME` for the keyword namespace — another
+        // format change, caught here rather than in a mysteriously wrong
+        // image six months from now.
         assert_eq!(Value::NIL.bits(), 0b011);
-        assert_eq!(Value::T.bits(), (6 << 3) | 0b011);
+        assert_eq!(Value::T.bits(), (7 << 3) | 0b011);
         assert_eq!(Value::UNBOUND.bits(), (2 << 8) | 0b101);
         assert_eq!(Value::character('A').bits(), (65 << 8) | (1 << 3) | 0b101);
         assert_eq!(Value::fixnum(1).unwrap().bits(), 2);

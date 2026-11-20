@@ -108,7 +108,14 @@ fn write_list<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
 fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
     let header = mc.header(v);
     match header.object_type {
-        ObjectType::Symbol => out.push_str(&mc.symbol_name(v)),
+        ObjectType::Symbol => {
+            // The colon is punctuation, not part of the name, so the printer
+            // puts it back on rather than the symbol carrying it around.
+            if mc.is_keyword(v) {
+                out.push(':');
+            }
+            out.push_str(&mc.symbol_name(v));
+        }
         ObjectType::String => {
             out.push('"');
             for ch in mc.string_to_rust(v).chars() {

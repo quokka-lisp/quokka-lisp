@@ -171,6 +171,13 @@ be invariant or the guarantee evaporates while everything still compiles.
 
 **lambda.** Makes a function with no name. Its body is not evaluated when the `lambda` is — that happens when the function is called, which is why it must be a [special operator](#special-operator). ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
+**Keyword.** A symbol written with a leading colon — `:foo` — that evaluates
+to itself. The colon is punctuation, not part of the name: `(symbol-name :foo)`
+is `"FOO"`, and `:foo` is a *different symbol* from `foo` with the same name.
+In Common Lisp that is because it lives in the `KEYWORD`
+[package](#package); Quokka has no packages, so symbols carry a namespace
+marker instead. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
 **Lexical addressing.** Resolving a variable to "scope 2, slot 0" ahead of time, so lookup is an index rather than a search. It requires a compiler to assign the numbers, which is why Quokka's interpreter cannot use it yet. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Lexical scope.** Determined by where something is written, not by what calls it. `block` and `return-from` are lexical, so a `return-from` can only reach a block it can see in the source — which makes it safe and makes it useless across a function boundary. ([14](part-2-reading-and-running/14-leaving-early.md))
@@ -204,6 +211,11 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 **Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
+
+**Package.** Common Lisp's namespace for symbols: a symbol table plus rules
+about which names are visible where. Quokka does not have them — tier 1, phase
+2 — but symbols do carry a *home namespace*, with two possible values, because
+[keywords](#keyword) cannot be represented without one. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **Parser.** What the [reader](#reader) is called in most languages, where it is far larger — it must know operator precedence, statements versus expressions, declarations. A Lisp reader needs none of that, because the text is already the data structure. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 

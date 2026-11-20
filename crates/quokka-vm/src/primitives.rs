@@ -142,6 +142,18 @@ const TABLE: &[Primitive] = &[
         name: "SYMBOL-FUNCTION",
         arity: Arity::Exactly(1),
     },
+    Primitive {
+        name: "KEYWORDP",
+        arity: Arity::Exactly(1),
+    },
+    // Here to make a claim checkable. A keyword's name has no colon in it —
+    // `(symbol-name :foo)` is "FOO" — and that is exactly what interning
+    // `:foo` under the name ":FOO" would have got wrong, silently, until
+    // somebody exposed this function. So it is exposed.
+    Primitive {
+        name: "SYMBOL-NAME",
+        arity: Arity::Exactly(1),
+    },
 ];
 
 /// Where `FUNCALL` sits in the table, which `crate::eval` intercepts.
@@ -263,6 +275,21 @@ pub fn call<'h>(
             }
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
+        }
+        "KEYWORDP" => Ok(if mc.is_keyword(args[0]) {
+            Value::T
+        } else {
+            Value::NIL
+        }),
+        "SYMBOL-NAME" => {
+            if !mc.is_symbol(args[0]) {
+                return Err(EvalError::WrongType {
+                    name: "SYMBOL-NAME",
+                    wanted: "a symbol",
+                });
+            }
+            let name = mc.symbol_name(args[0]);
+            Ok(mc.alloc_string(&name))
         }
         "SYMBOL-FUNCTION" => {
             if !mc.is_symbol(args[0]) {
@@ -400,7 +427,9 @@ mod tests {
                 "APPEND",
                 "GENSYM",
                 "%SET-SYMBOL-FUNCTION",
-                "SYMBOL-FUNCTION"
+                "SYMBOL-FUNCTION",
+                "KEYWORDP",
+                "SYMBOL-NAME"
             ]
         );
     }
