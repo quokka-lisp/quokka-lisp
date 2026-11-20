@@ -186,6 +186,18 @@ collector itself.
 The general lesson, which applies well beyond language runtimes: **entanglement,
 not sophistication, determines what you have to decide early.**
 
+### And one more ordering, which is the whole strategy
+
+There is a third kind of order at work, and it is strange enough to have its
+own chapter. The compiler is written **in Lisp** — the language it compiles —
+so something must be able to run Lisp before the compiler exists. That
+something is a deliberately slow tree-walking interpreter, written in Rust,
+which is what most of this book builds. It runs the compiler exactly once, and
+is then never needed again.
+
+[The thing that builds itself](the-bootstrap.md) is that idea in full. It is
+the most powerful thing in the project and the easiest to walk past.
+
 ## The constraint that cuts across everything
 
 Quokka adds one requirement that most runtimes do not have, and it reshapes the
@@ -247,11 +259,12 @@ Still to come, and deliberately so:
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.
-  The VM is hardware; the compiler is something a user might want to change, so
-  the line between them falls exactly where rule 1 puts it. This is phase 1, and
-  chapter 12 is what makes it safe to attempt.
-- **Self-hosting** — the moment the compiler, written in Lisp, can compile
-  itself. The system stops needing anything outside it to be rebuilt.
+  Both Rust pieces are deliberately dumb; all the judgement is in the Lisp one.
+  This is phase 1, and chapter 12 is what makes it safe to attempt.
+- **Self-hosting** — the moment the compiler compiles itself and the result is
+  identical to what the interpreter produced. After that the Rust stops growing
+  and every further feature is Lisp. See
+  [The thing that builds itself](the-bootstrap.md).
 - **The environment** — editor, debugger, windows, all of them Lisp objects
   inside the same running image.
 

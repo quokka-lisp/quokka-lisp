@@ -2,6 +2,7 @@
 
 [Introduction](introduction.md)
 [What has to be built](what-has-to-be-built.md)
+[The thing that builds itself](the-bootstrap.md)
 
 # Part I · The Substrate
 

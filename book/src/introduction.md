@@ -67,6 +67,12 @@ what the parts of a language runtime are, what each is for, and why they arrive
 in the order they do. If you have never thought about this before, that chapter
 is the one that makes the rest navigable, and it assumes nothing at all.
 
+Then [The thing that builds itself](the-bootstrap.md), which is short and is
+the single most important idea here. It explains why a deliberately slow
+interpreter is built first, why the compiler is written in the language it
+compiles, and why at a certain point the Rust stops growing and never really
+starts again. If you read only one chapter before the rest, read that one.
+
 Then Part I in order. The chapters depend on each other, and several turn on a
 decision made two chapters earlier. Each opens with a short note saying where it
 fits in the whole.

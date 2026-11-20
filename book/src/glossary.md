@@ -18,15 +18,14 @@ searching, no free list — a gift from the [copying collector](#copying-collect
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
 as several. Contrast [fixnum](#fixnum). Not yet implemented.
 
+**Bootstrapping.** Building a crude version of something, using it to build a better one, and then no longer needing the crude version. Quokka's compiler is written in Lisp, so a slow tree-walking interpreter in Rust runs it once — after which the compiler exists as bytecode and the slow path is never used again. ([The bootstrap](the-bootstrap.md))
+
 **Brand.** A lifetime attached to a type purely so the compiler can refuse
 certain programs — it points at nothing and exists at compile time only. Quokka
 uses one to make it impossible to hold a value across a garbage collection.
 ([4](part-1-substrate/04-rooting.md))
 
-**Bytecode.** A compact artificial instruction set that a [VM](#vm) executes,
-rather than the machine's own instructions. Smaller and more portable than
-compiling to real machine code, and much faster than re-reading the source
-structure each time. Not yet built.
+**Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built. ([The bootstrap](the-bootstrap.md))
 
 **car.** The first slot of a [cons cell](#cons-cell) — the item. The name is
 an abbreviation of an IBM 704 instruction from 1958 and means nothing now. Read
@@ -81,6 +80,8 @@ technique are from *Structure and Interpretation of Computer Programs* §5.4.
 with no heap space used. Quokka's are 63 bits. The traditional Lisp word;
 contrast [bignum](#bignum).
 ([1](part-1-substrate/01-one-word-for-everything.md))
+
+**Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. ([The bootstrap](the-bootstrap.md))
 
 **Forwarding pointer.** A note left behind in the abandoned space during a
 [collection](#collection), saying where an object was moved to. It is what stops
@@ -181,6 +182,8 @@ code and data. `(* 6 7)` is a list of three things, not special syntax.
 ([Preface](what-has-to-be-built.md))
 
 **SBCL.** Steel Bank Common Lisp, a mature Common Lisp implementation, and Quokka's [oracle](#oracle). A reference to check answers against, never something Quokka needs in order to build. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
+
+**Self-hosting.** When a compiler can compile its own source, so the system needs nothing outside it to rebuild. The point at which Quokka's Rust stops growing and every further feature is written in Lisp. ([The bootstrap](the-bootstrap.md))
 
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.
