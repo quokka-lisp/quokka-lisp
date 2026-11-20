@@ -68,6 +68,14 @@ The substrate is a small Rust program that plays the role of Lisp machine hardwa
 
 **Garbage collection.** Start with a simple copying (Cheney) collector: easy to get right and to read. Move to a generational collector once the environment allocates heavily (presentations and redisplay will).
 
+**Rooting.** A copying collector decides what is alive by tracing from its roots — locations outside the heap holding values — and it cannot see Rust local variables. A value held in a Rust local across an allocation is therefore not stale but dead: the collector concluded nobody wanted it and reclaimed it. Because our references are offsets rather than pointers, the result is a wrong answer rather than a crash, which is harder to notice, not easier.
+
+*How it is prevented:* work on the heap happens inside `Heap::mutate`, and collection cannot happen during a mutation. `mutate` takes `F: for<'h> FnOnce(&mut Mutation<'h>) -> R`; the higher-ranked brand means the closure must work for every `'h`, and `R` is fixed outside it, so no value can be carried out. `collect` takes `&mut self`, which a live mutation borrows, so collecting mid-mutation does not compile. Holding a value across a collection is a compile error, not a convention. Thirteen lines of types, no `unsafe`, no runtime check.
+
+The brand must be *invariant* — `PhantomData<fn(&'h ()) -> &'h ()>`, not `PhantomData<&'h ()>`, which is covariant and would silently permit the escape. Heap-reference constructors are crate-private, since the brand stops a value escaping a mutation but not being invented outside one.
+
+*What it costs:* collection can only happen between mutations, so the heap must absorb whatever one allocates. Cheap here, because rule 4 already forbids long mutations — one evaluator step per mutation gives fine-grained collection for free. And it protects callers from the collector, not the collector from itself; tracing bugs still need the torture mode.
+
 **Image.** The whole heap can be saved to a file and loaded back ("save world"). Pointers are stored relative to the heap base, so an image loads by relocation or straight `mmap`. Booting means loading an image, not running a build.
 
 **Bytecode, not native code.** A compact stack-based bytecode keeps the VM small and portable, including to WASM. Speed comes later from threaded dispatch and inline caches, not a JIT.
@@ -245,6 +253,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 - [x] **Bootstrap host:** bootstrap by interpretation — the Rust interpreter runs the CL compiler to build the first image.
 - [x] **Subset boundary:** three tiers matched to phases (see The CL subset boundary).
 - [x] **Source of truth:** files on any file host are the truth; the image is a live cache of them.
+- [x] **Rooting:** lifetime branding, not a shadow stack. Holding a value across a collection is a compile error. Chosen over an explicit root stack because the Rust surface is small and permanently bounded by rule 1, so the cost of the stricter scheme is bounded too. See Substrate: the Rust VM.
 - [x] **Yielding:** the caller passes a step budget (`run_slice(budget)`); no clock and no yield callback in the VM. Chosen over a host-set wall-clock deadline for determinism and replayability. See Substrate: the Rust VM.
 - [x] **Browser target:** WASM is first-class from phase 0. The VM runs client-side in the browser, yields to the browser's event loop, and keeps images in browser storage.
 - [x] **Rendering stack:** browser-first hybrid renderer (DOM for text, canvas or SVG for drawing) behind a display protocol; native builds in a Tauri shell.

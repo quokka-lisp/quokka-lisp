@@ -1,10 +1,9 @@
 # Rooting
 
-> **Status: the decision in this chapter is still open.** The options and the
-> argument are below; the outcome is being worked out in
-> [issue #1](https://github.com/quokka-lisp/quokka-lisp/issues/1) and will be
-> written up here when it is settled. This is what the book looks like when it
-> catches up with the work rather than reporting on it.
+> **Status: decided and implemented.** Option C below was chosen; the ending of
+> this chapter records how it went, including the part that nearly went wrong.
+> The argument is left as it stood, because the reasoning that *lost* is most of
+> what makes the outcome meaningful.
 
 The previous chapter ended with a hole. Rust code occasionally has to hold a
 Lisp value across an allocation, the allocation can trigger a collection, and
@@ -139,6 +138,180 @@ learning how this works, that is a permanent tax on every page.
 And consider what it buys: it prevents a bug class that is, here, a wrong answer
 rather than a memory-safety hole. In a C runtime the calculation would come out
 differently.
+
+## What settled it
+
+The argument above came out slightly in favour of option B, on grounds of
+proportion. It was wrong, and the thing that overturned it was an observation
+about the *shape of the project* rather than about Rust.
+
+Rust is only the VM. Everything above the primitive table is Lisp — and **Lisp
+code cannot have this bug at all.** Not "is unlikely to": cannot. A Lisp value
+is always in the heap or in an evaluator frame, and frames are heap objects
+reachable from the registers. There is no such thing as an unrooted Lisp local.
+
+Which means rule 1 of the project — *Rust below the primitive table, Lisp above
+it* — is a **correctness boundary**, not only a design preference. Every line
+moved above that line is a line that structurally cannot have this class of bug.
+Nobody planned that; it falls out of the explicit-control evaluator from chapter
+2, which was adopted for an entirely different reason.
+
+And once you see that, the argument for option B inverts. B was justified by
+cost: three places need rooting, eighty lines covers them, branding is
+expensive. But if the exposed surface is small and permanently bounded, then the
+*cost of the stricter scheme is bounded by exactly the same argument*. You do
+not pay the lifetime tax across a growing system. You pay it once, over a part
+that stops growing.
+
+So: option C, with two exit conditions agreed in advance — abandon it if the
+type machinery exceeded about a hundred lines before any heap logic existed, or
+if the guarantee could not be proven sound.
+
+## The mechanism
+
+Thirteen lines, no `unsafe`, no runtime check.
+
+```rust
+pub fn mutate<F, R>(&mut self, f: F) -> R
+where
+    F: for<'h> FnOnce(&mut Mutation<'h>) -> R,
+{
+    let mut mutation = Mutation {
+        storage: &mut self.storage,
+        _brand: PhantomData,
+    };
+    f(&mut mutation)
+}
+```
+
+The higher-ranked bound `for<'h>` means the closure must work for *every* brand.
+`R` is a type fixed outside the closure, so `R` cannot mention `'h`. A
+`Value<'h>` therefore has nowhere to go: not out through the return value, and
+not into anything captured from outside, whose lifetimes are already fixed.
+
+`Heap::collect` takes `&mut self`, which a live `Mutation` borrows, so collecting
+during a mutation does not compile either. Every point where the collector may
+run is a point where no Rust local holds a value.
+
+The broken code from chapter 3 is now unwritable:
+
+```rust
+heap.mutate(|mc| {
+    let tail = mc.cons(Value::fixnum(2).unwrap(), Value::NIL);
+    let head = mc.cons(Value::fixnum(1).unwrap(), tail);  // holding `tail`: fine
+    mc.set_root(head);
+});
+heap.collect();   // legal here, and only here
+```
+
+Holding `tail` across an allocation is safe *because* collection cannot happen
+inside the mutation. The danger was never holding a value; it was holding one
+across a collection, and the two are now the same thing.
+
+## The trap
+
+The brand is written like this:
+
+```rust
+pub type Invariant<'h> = PhantomData<fn(&'h ()) -> &'h ()>;
+```
+
+Not like this:
+
+```rust
+PhantomData<&'h ()>      // covariant — the guarantee silently evaporates
+```
+
+The obvious spelling is *covariant* in `'h`, meaning a long brand can be
+shortened to a short one at will. That is precisely the escape the whole scheme
+exists to prevent. Writing it that way gives you a proof that is not one — and
+everything still compiles, every test still passes, and you have no way of
+knowing.
+
+Putting `'h` in both argument and return position of a function type forces
+invariance. It looks like noise. It is the only thing making any of this true.
+
+Which raises the question the rest of the chapter is really about: **how do you
+test a guarantee?**
+
+## Testing something that is supposed to be impossible
+
+An ordinary test runs code and checks the answer. Here there is no answer to
+check — the claim is that certain programs *do not exist*.
+
+Rust has the tool built in. A doctest marked ```` ```compile_fail ```` **fails if
+the code compiles**:
+
+```rust
+/// ```compile_fail
+/// # use quokka_vm::heap::Heap;
+/// # use quokka_vm::value::Value;
+/// let mut heap = Heap::new();
+/// let escaped = heap.mutate(|mc| mc.cons(Value::NIL, Value::NIL));
+/// ```
+```
+
+Nine cases were checked before anything was built on the brand: legal use,
+returning plain data, returning a value, assigning to an outer variable,
+stashing in an outer `Vec`, smuggling through a `Cell`, collecting during a
+mutation, shortening the brand, and the same shortening with a covariant brand.
+
+That last one is not padding. **A compile-fail test that fails for the wrong
+reason proves nothing**, and a test asserting "this does not compile" is
+uniquely prone to it, because almost any mistake makes code not compile. So one
+test asserts that the covariant spelling *would* allow shortening. If that
+stopped passing, the invariance test would be meaningless and we would be told.
+
+This was not a hypothetical worry. The first version of the harness reported
+five escape attempts correctly rejected. They were being rejected because `rustc`
+will not accept a crate name containing a hyphen. Five green ticks, nothing
+tested.
+
+It is the same failure the whole decision was about, one level up: a guarantee
+you believe but have not checked is worse than a convention you know is a
+convention, because you stop looking. Two positive controls were added.
+
+## What the brand does not do
+
+Two limits worth being precise about.
+
+**It stops a value escaping a mutation. It does not stop one being invented
+outside one.** If `Value::cons(42)` were public, anyone could conjure a heap
+reference at an arbitrary brand and the guarantee would be worthless. So the
+heap-reference constructors are crate-private, reachable only through a
+`Mutation`. Immediates — fixnums, characters, `nil` — stay public, because they
+refer to nothing. The split falls exactly along *does this word point into the
+heap*.
+
+**It protects callers from the collector, not the collector from itself.** It
+does nothing about tracing the wrong field, mis-sizing a header, or botching the
+forwarding-pointer dance. Those produce the same silent wrong answers, and
+honestly they are the likelier bugs — the collector is the part being written
+from scratch for the first time. Branding narrows the problem; the torture mode
+in the next chapter is what addresses the rest.
+
+That is worth holding on to, because a compile-time guarantee produces a feeling
+of safety wider than the thing it actually guarantees.
+
+## The cost, paid in full
+
+Collection can only happen between mutations, so the heap must absorb whatever
+one mutation allocates. In a general-purpose Rust runtime that is a real
+discipline — `gc-arena`, the crate this technique comes from, documents long
+mutations as a known limitation.
+
+Here it costs almost nothing, because rule 4 already forbids long mutations. The
+evaluator must return control to the browser promptly, so one step per mutation
+gives fine-grained collection for free. Two constraints adopted for unrelated
+reasons turned out to demand the same thing — which usually means both are
+downstream of something more basic. In this case: a runtime that can be
+interrupted must keep its state somewhere the interrupter can see.
+
+---
+
+## Appendix: the argument that lost
+
+Kept because the reasoning is more useful than the conclusion.
 
 ## The argument, such as it is
 
