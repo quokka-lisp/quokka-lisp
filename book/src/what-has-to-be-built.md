@@ -225,6 +225,9 @@ turning text into behaviour. Each chapter answers one question.
 | 6 | [Cheney's algorithm](part-1-substrate/06-cheneys-algorithm.md) | How is the memory actually reclaimed? |
 | 7 | [Saving a world](part-1-substrate/07-saving-a-world.md) | How can an entire running system be written to a file and brought back? |
 | 8 | [Text becomes structure](part-2-reading-and-running/08-text-becomes-structure.md) | How does typed text become objects in the heap — and why is that small in Lisp? |
+| 9 | [What a form means](part-2-reading-and-running/09-what-a-form-means.md) | How does a list become an answer, and why must some forms be special? |
+| 10 | [Functions and scope](part-2-reading-and-running/10-functions-and-scope.md) | How do you define a function, where do its variables live, and why can it call itself forever? |
+| 11 | [The trouble with nil](part-2-reading-and-running/11-the-trouble-with-nil.md) | What happens when one value does three jobs? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -233,9 +236,9 @@ it, and only then do 5 and 6 build the thing.
 ## What is not here yet
 
 Still to come, and deliberately so:
-
-- **The evaluator** — the machine from chapter 2, actually built. Chapter 8
-  produces structure; nothing yet works out what it means.
+- **The rest of the language** — most of Common Lisp's 25 special operators,
+  `&rest` parameters, and **macros**, which are what let a program extend its
+  own language.
 - **A compiler** — translating Lisp into **bytecode**, a compact instruction set
   the VM runs faster than it can walk a structure.
 - **Self-hosting** — the moment the compiler, written in Lisp, can compile

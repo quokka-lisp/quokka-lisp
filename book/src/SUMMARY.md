@@ -16,6 +16,9 @@
 # Part II · Reading and Running
 
 - [Text becomes structure](part-2-reading-and-running/08-text-becomes-structure.md)
+- [What a form means](part-2-reading-and-running/09-what-a-form-means.md)
+- [Functions and scope](part-2-reading-and-running/10-functions-and-scope.md)
+- [The trouble with nil](part-2-reading-and-running/11-the-trouble-with-nil.md)
 
 ---
 

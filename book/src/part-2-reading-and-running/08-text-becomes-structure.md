@@ -347,4 +347,5 @@ What is missing is the E. `(fact 20)` reads as a list of two things and that is
 all that happens to it; nothing yet knows that the first is a function and the
 second an argument.
 
-That is the next chapter, and it is the one chapter 2 has been waiting for.
+That is [the next chapter](../part-2-reading-and-running/09-what-a-form-means.md), and it is the one chapter 2
+has been waiting for.

@@ -287,3 +287,8 @@ hard problems quietly become easy:
 One constraint, three features. That is the shape worth watching for: the
 expensive decisions in a system are rarely expensive in only one place, and
 occasionally the compensation is spread just as widely.
+
+The machine itself is built in [What a form means](../part-2-reading-and-running/09-what-a-form-means.md), and
+[Functions and scope](../part-2-reading-and-running/10-functions-and-scope.md) adds a fourth payoff nobody
+planned: because frames are popped before they are acted on, tail-recursive
+calls cost no stack at all.

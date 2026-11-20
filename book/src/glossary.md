@@ -5,6 +5,11 @@ with the chapter that explains it properly.
 
 ---
 
+
+**Header.** The first word of a heap object, saying what kind it is and how many
+slots follow. Cons cells have none.
+([5](part-1-substrate/05-objects-in-the-heap.md))
+
 **Allocation.** Setting aside space in the [heap](#heap) for a new value. In
 Quokka it is a *bump*: take the next free words and move the mark along. No
 searching, no free list — a gift from the [copying collector](#copying-collector).
@@ -36,6 +41,8 @@ Its distinguishing trick is needing no extra memory to keep track of its work:
 the objects it has already copied *are* the list of things still to examine.
 ([6](part-1-substrate/06-cheneys-algorithm.md))
 
+**Closure.** A function together with the scope it was written in. Capturing that scope is what lets `(lambda (x) (+ x n))` still know what `n` is after the call that bound `n` has returned. ([10](part-2-reading-and-running/10-functions-and-scope.md))
+
 **Collection.** One run of the [garbage collector](#garbage-collection).
 
 **Cons cell.** The two-slot box Lisp builds lists out of: a [car](#car) and a
@@ -44,16 +51,22 @@ from the reference that points at it. "Cons" is short for "construct".
 ([1](part-1-substrate/01-one-word-for-everything.md),
 [5](part-1-substrate/05-objects-in-the-heap.md))
 
+**Continuation.** What remains to be done after the current computation finishes. In Quokka they are [frames](#frame) on the evaluator's stack — ordinary heap objects rather than an abstraction, which is what will let a debugger show you one. ([9](part-2-reading-and-running/09-what-a-form-means.md))
+
 **Copying collector.** A [garbage collector](#garbage-collection) that reclaims
 memory by copying everything still wanted into a fresh region and abandoning the
 old one. The garbage costs nothing to reclaim — you simply stop using the space
 it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
+
+**defun.** Makes a function and puts it in a [symbol](#symbol)'s *function* cell. In Common Lisp it is a macro over `setf symbol-function`; Quokka has no macros yet, so it is a special operator with a note saying it should not be. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Differential testing.** Running the same test on several implementations and
 requiring them to agree. Quokka runs its Lisp tests natively, under WebAssembly
 and on SBCL, which acts as the *oracle* — the reference answer.
 
 **Dotted pair.** A [cons cell](#cons-cell) whose [cdr](#cdr) is not a list, written `(a . b)`. A list is the common case of a cons cell, not the only one; the dot is how you write the general case. Also called an *improper list*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Environment.** The chain of scopes a name is looked up in: innermost first, then outward, then the symbol's own value cell for globals. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Evaluator.** The part of a runtime that actually executes a program.
 ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
@@ -74,6 +87,10 @@ contrast [bignum](#bignum).
 a shared object being copied twice and a circular structure looping forever.
 ([6](part-1-substrate/06-cheneys-algorithm.md))
 
+**Frame.** One pending step of the evaluator — "I was in the middle of something, here is how to continue once a value arrives". See [continuation](#continuation). ([9](part-2-reading-and-running/09-what-a-form-means.md))
+
+**funcall.** Applies whatever a variable *holds*, as opposed to whatever its name denotes as a function. A [Lisp-2](#lisp-2) cannot call a closure stored in a variable without it. ([9](part-2-reading-and-running/09-what-a-form-means.md))
+
 **Garbage collection.** Working out automatically, while a program runs, which
 values it can no longer reach, and reclaiming their memory. The program never
 says "I am finished with this"; it is deduced from what is still reachable.
@@ -83,11 +100,6 @@ says "I am finished with this"; it is deduced from what is still reachable.
 die young, by examining recently created ones often and long-lived ones rarely.
 Faster than copying everything each time, and more complicated. Planned, not
 built. ([6](part-1-substrate/06-cheneys-algorithm.md))
-
-
-**Header.** The first word of a heap object, saying what kind it is and how many
-slots follow. Cons cells have none.
-([5](part-1-substrate/05-objects-in-the-heap.md))
 
 **Heap.** The region of memory where values too big for a single word live. In
 Quokka it is an array of 64-bit words the VM owns.
@@ -109,14 +121,19 @@ silently substituted for a shorter or longer one. Quokka's [brand](#brand) must
 be invariant or the guarantee evaporates while everything still compiles.
 ([4](part-1-substrate/04-rooting.md))
 
+**lambda.** Makes a function with no name. Its body is not evaluated when the `lambda` is — that happens when the function is called, which is why it must be a [special operator](#special-operator). ([10](part-2-reading-and-running/10-functions-and-scope.md))
+
+**Lexical addressing.** Resolving a variable to "scope 2, slot 0" ahead of time, so lookup is an index rather than a search. It requires a compiler to assign the numbers, which is why Quokka's interpreter cannot use it yet. ([10](part-2-reading-and-running/10-functions-and-scope.md))
+
+**Lisp-1.** A Lisp where a symbol has one cell shared by variables and functions. Scheme is one; no `funcall` is needed, but functions and variables compete for names. Contrast [Lisp-2](#lisp-2). ([9](part-2-reading-and-running/09-what-a-form-means.md))
+
 **Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **Mutation.** In Quokka, one bounded stretch of work on the heap. No
 [collection](#collection) can happen inside one, which is what makes holding a
 value safe. ([4](part-1-substrate/04-rooting.md))
 
-**nil.** The empty list, and also false, and also the end-marker of every list.
-One value doing three jobs.
+**nil.** The empty list, false, and the symbol named "NIL" — one value doing three jobs, which is both the convenience and the problem. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
 
 **Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
@@ -127,6 +144,8 @@ in Lisp — arithmetic, allocation, input and output. The *primitive table* is t
 only door between the two languages.
 
 **Printer.** Turns heap objects back into text. The *P* in [REPL](#repl), and how a [reader](#reader) is tested: text that survives read-then-print was almost certainly read correctly. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**progn.** Evaluates several forms in order and yields the last. It lets a sequence stand where one form is expected; the bodies of `lambda` and `defun` are implicit `progn`s. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Quote.** `'x` reads as the list `(quote x)` — ordinary structure, not syntax. The evaluator later treats `quote` as "give me this rather than running it", which is how a program says *data* rather than *code*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
@@ -167,6 +186,8 @@ works between. At any moment one holds everything and the other is empty.
 whoever called it, so a browser can repaint and respond. The caller says how
 many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
+**Special operator.** A form that decides for itself whether and when to evaluate its arguments. `if` must be one, or both branches would run before it could choose. Common Lisp has 25, and everything else is built from them. ([9](part-2-reading-and-running/09-what-a-form-means.md))
+
 **Symbol.** A named thing — `car`, `+`, `my-variable`. Lisp symbols are objects
 in their own right, not just text, and carry a value and a function.
 
@@ -174,6 +195,8 @@ in their own right, not just text, and carry a value and a function.
 uses the low three bits, which are free because heap objects are aligned to
 8-byte boundaries. A *tagged word* is a value plus its tag.
 ([1](part-1-substrate/01-one-word-for-everything.md))
+
+**Tail call.** A call whose result is immediately the result of the enclosing function, so the caller's [frame](#frame) is no longer needed. Eliminating it is what makes recursive loops run in constant space — which matters in Lisp, where recursion *is* iteration. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Torture mode.** A build setting that makes rare conditions happen constantly —
 here, collecting garbage at every opportunity and checking the heap afterwards —
