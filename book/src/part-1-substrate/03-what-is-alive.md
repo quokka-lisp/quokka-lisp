@@ -1,5 +1,12 @@
 # What is alive?
 
+> **Where this fits.** A running program creates values it then stops needing,
+> and the memory has to come back. This chapter is about how a system works
+> that out automatically — **garbage collection** — and it introduces the two
+> ideas the next three chapters depend on: the *heap*, and the *roots* a search
+> for live data starts from. It explains the problem; chapter 6 builds the
+> solution.
+
 A program that runs for a while makes things it later stops needing. The space
 those things occupy has to come back, or the program eventually runs out of
 heap.

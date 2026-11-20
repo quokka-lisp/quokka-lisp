@@ -1,5 +1,11 @@
 # Objects in the heap
 
+> **Where this fits.** The contract is settled, so now the thing it protects
+> can be built. This chapter is about what is actually stored in memory and,
+> mostly, about one question that sounds like a detail: walking through the
+> heap, how do you know where one object ends and the next begins? Get it wrong
+> and the collector in the next chapter corrupts everything it touches.
+
 Chapter 1 settled what a single value looks like. Chapter 3 said the heap is an
 array of words and objects are runs of adjacent words in it. This chapter is
 about the runs.

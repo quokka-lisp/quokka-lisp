@@ -1,5 +1,11 @@
 # Cheney's algorithm
 
+> **Where this fits.** The payoff. Chapter 3 defined what "still wanted" means
+> and left the collector as a stub; this is the collector. It is the piece that
+> sounded like the hard part at the start of the book and turns out to be about
+> two hundred lines — because chapters 4 and 5 did the work that made it
+> possible.
+
 Chapter 3 defined alive as *reachable from a root* and left the collector as a
 stub. This is the collector.
 

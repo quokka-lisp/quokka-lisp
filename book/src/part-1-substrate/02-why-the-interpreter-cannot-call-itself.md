@@ -1,5 +1,11 @@
 # Why the interpreter cannot call itself
 
+> **Where this fits.** With values settled, the next question is how a
+> computation runs — and in a browser, how it can *stop halfway and continue
+> later*. The answer rules out the obvious design for an evaluator and reshapes
+> the whole system. It is the most consequential decision in the book, and it
+> turns out to pay for three other things in later chapters.
+
 Here is how you write a Lisp interpreter. It is how almost everyone writes their
 first one, and it is correct:
 

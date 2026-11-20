@@ -78,6 +78,16 @@ build it as a site, but mdBook is not required for anything and is not in CI.
   rather than pretending. An open `decision` issue and its chapter stay in sync.
 - **Code in the book is real code** from the repo, shortened where it helps but
   never invented.
+- **Assume no prior knowledge, including the vocabulary.** A reader may not know
+  what a garbage collector, a REPL, a heap, `car` or `cdr` is. Explain a term the
+  first time it appears, add it to `book/src/glossary.md`, and never let jargon
+  stand unexplained because it feels basic. The jargon is the wall.
+- **Every chapter opens with a "Where this fits" note**: what is already
+  established, what this chapter adds, and what it unlocks. A reader who cannot
+  see the shape of the whole cannot tell why a chapter exists.
+- **`book/src/what-has-to-be-built.md` is the map** — the parts of a language
+  runtime, and why they are built in that order. When a new chapter changes the
+  order or adds a part, update it and the chapter table in it.
 - `scripts/check.sh` verifies every chapter in `book/src/SUMMARY.md` exists.
 
 ## Rules that must not be broken

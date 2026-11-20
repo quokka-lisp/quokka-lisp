@@ -1,5 +1,11 @@
 # Saving a world
 
+> **Where this fits.** The last chapter of the substrate, and the one that shows
+> why the earlier decisions were worth their cost. A Lisp machine does not start
+> by running a build; it loads an **image** — the whole contents of a running
+> system, written to a file and resumed exactly where it stopped. Two decisions
+> made chapters ago are what make that possible at all.
+
 > **Status: this chapter describes a design, not working code.** Images arrive
 > in phase 1. It is written now because the decisions that make it possible were
 > made in phase 0, and the reasoning belongs next to them.

@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](introduction.md)
+[What has to be built](what-has-to-be-built.md)
 
 # Part I · The Substrate
 
@@ -11,3 +12,7 @@
 - [Objects in the heap](part-1-substrate/05-objects-in-the-heap.md)
 - [Cheney's algorithm](part-1-substrate/06-cheneys-algorithm.md)
 - [Saving a world](part-1-substrate/07-saving-a-world.md)
+
+---
+
+[Glossary](glossary.md)

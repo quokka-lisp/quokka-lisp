@@ -1,5 +1,11 @@
 # One word for everything
 
+> **Where this fits.** The first question any runtime has to answer: how is a
+> piece of data represented, and how do you tell a number from a list? Every
+> later chapter is constrained by what is decided here, so it comes first —
+> and it is the one part of the system where complete confidence is cheap,
+> because nothing moves yet.
+
 Every Lisp object in Quokka — a number, a character, a symbol, a list, a
 function — is represented by exactly one 64-bit word.
 
@@ -29,9 +35,10 @@ you know which kind it is?
 Before the answer, the thing being referred to.
 
 The heap is an array of 64-bit words that the VM owns. In Rust it is literally a
-`Vec<u64>`. An object is a run of adjacent words in that array. A *cons cell* —
-Lisp's pair, the thing lists are built out of — is two words: the `car` and the
-`cdr`.
+`Vec<u64>`. An object is a run of adjacent words in that array. A **cons cell** — the
+two-slot box Lisp builds lists out of, introduced in
+[What has to be built](../what-has-to-be-built.md) — is two words: the `car`
+(the item) and the `cdr` (the rest of the list).
 
 Here is a heap holding three cons cells. `→4` means "a reference to index 4":
 

@@ -57,11 +57,19 @@ argument in the comments, and the outcome comes back here when it is settled.
 
 ## How to read it
 
-In order, the first time. Part I builds the substrate — the representation of a
-value, the reason the interpreter is shaped the way it is, and the memory
-management that follows from both. It is the part with the fewest moving pieces
-and the most consequences.
+**Start with [What has to be built](what-has-to-be-built.md).** It is the map:
+what the parts of a language runtime are, what each is for, and why they arrive
+in the order they do. If you have never thought about this before, that chapter
+is the one that makes the rest navigable, and it assumes nothing at all.
 
-Code in this book is real code from the repository, not pseudocode, though it is
-sometimes shortened. Where a chapter describes something not yet built, it says
-so.
+Then Part I in order. The chapters depend on each other, and several turn on a
+decision made two chapters earlier. Each opens with a short note saying where it
+fits in the whole.
+
+The [glossary](glossary.md) has every unfamiliar term in a sentence, with the
+chapter that explains it properly. Nothing in this book is a word you are
+expected to already know.
+
+Code is real code from the repository, not pseudocode, though it is sometimes
+shortened. Where a chapter describes something not yet built or not yet decided,
+it says so.

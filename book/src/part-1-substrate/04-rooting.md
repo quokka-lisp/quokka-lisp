@@ -1,5 +1,12 @@
 # Rooting
 
+> **Where this fits.** The previous chapter left a hole: the garbage collector
+> cannot see values held by the implementation language itself. Closing it means
+> fixing a *contract* — what every allocation hands back, and what every
+> function takes — which lands in the signature of code that does not exist yet.
+> That is why it comes before the heap and the collector it protects, even
+> though it sounds like a detail and they sound like the main event.
+
 > **Status: decided and implemented.** Option C below was chosen; the ending of
 > this chapter records how it went, including the part that nearly went wrong.
 > The argument is left as it stood, because the reasoning that *lost* is most of
