@@ -22,6 +22,7 @@
 - [The trouble with nil](part-2-reading-and-running/11-the-trouble-with-nil.md)
 - [Agreeing with something else](part-2-reading-and-running/12-agreeing-with-something-else.md)
 - [The special operators, one by one](part-2-reading-and-running/13-the-special-operators.md)
+- [Leaving early](part-2-reading-and-running/14-leaving-early.md)
 
 ---
 

@@ -338,9 +338,10 @@ file no matter how the body ends.
 
 **What they unlock.** This is the machinery phase 3's **condition system** is
 built from: `handler-case` is a `block` plus a dynamically found handler, and a
-restart is `catch` with a protocol. Building it for these five operators is
-building it for conditions, which is why they come first in group B of
-[issue #18](https://github.com/quokka-lisp/quokka-lisp/issues/18).
+restart is `catch` with a protocol.
+
+All five are built, and [Leaving early](14-leaving-early.md) is how — including
+why they are one mechanism with three lookups rather than five features.
 
 ## Iteration — `tagbody`, `go`
 
@@ -354,7 +355,7 @@ parentheses.
 **What they unlock.** Everything that iterates. `do`, `dotimes`, `dolist` and
 `loop` are macros that expand into `tagbody` and `go`. It is the primitive
 iteration construct, and the reason Lisp can have twenty looping constructs
-without twenty implementations.
+without twenty implementations. Built; see [Leaving early](14-leaving-early.md).
 
 ## Multiple values — `multiple-value-call`, `multiple-value-prog1`
 

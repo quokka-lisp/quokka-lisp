@@ -63,6 +63,8 @@ it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 
 **Dotted pair.** A [cons cell](#cons-cell) whose [cdr](#cdr) is not a list, written `(a . b)`. A list is the common case of a cons cell, not the only one; the dot is how you write the general case. Also called an *improper list*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
+**Dynamic extent.** Found by searching the stack at run time rather than by looking at the source. `catch` and `throw` work this way, so a function can abandon a computation on behalf of a caller it has never heard of. Contrast [lexical](#lexical-scope). ([14](part-2-reading-and-running/14-leaving-early.md))
+
 **Environment.** The chain of scopes a name is looked up in: innermost first, then outward, then the symbol's own value cell for globals. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **eval-when.** Says whether a form runs at compile time, load time, or when executed. Looks obscure and is load-bearing: it is how a macro defined in a file exists by the time a later form in that file is compiled, and therefore how self-hosting is possible at all. ([13](part-2-reading-and-running/13-the-special-operators.md))
@@ -128,9 +130,13 @@ be invariant or the guarantee evaporates while everything still compiles.
 
 **Lexical addressing.** Resolving a variable to "scope 2, slot 0" ahead of time, so lookup is an index rather than a search. It requires a compiler to assign the numbers, which is why Quokka's interpreter cannot use it yet. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
+**Lexical scope.** Determined by where something is written, not by what calls it. `block` and `return-from` are lexical, so a `return-from` can only reach a block it can see in the source — which makes it safe and makes it useless across a function boundary. ([14](part-2-reading-and-running/14-leaving-early.md))
+
 **Lisp-1.** A Lisp where a symbol has one cell shared by variables and functions. Scheme is one; no `funcall` is needed, but functions and variables compete for names. Contrast [Lisp-2](#lisp-2). ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
 **Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. ([14](part-2-reading-and-running/14-leaving-early.md))
 
 **Mutation.** In Quokka, one bounded stretch of work on the heap. No
 [collection](#collection) can happen inside one, which is what makes holding a
@@ -138,7 +144,7 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 
 **nil.** The empty list, false, and the symbol named "NIL" — one value doing three jobs, which is both the convenience and the problem. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
 
-**Non-local exit.** Leaving a computation from the middle of it — `return-from`, `throw`. The machinery is the same one a condition system needs, which is why they are built together. ([13](part-2-reading-and-running/13-the-special-operators.md))
+**Non-local exit.** Leaving a computation from the middle of it — `return-from`, `throw`. All of them are one mechanism differing only in how the target is found, and it is the same machinery a condition system needs. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
@@ -218,6 +224,8 @@ characters, which are not references.
 ([3](part-1-substrate/03-what-is-alive.md))
 
 **Unbound.** The marker a [symbol](#symbol)'s value or function cell holds before anything is assigned. Distinct from `nil`: the difference between "this variable does not exist" and "this variable holds the empty list", which Lisp signals an error about. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Unwinding.** Discarding frames until one matches, running any cleanups passed on the way. The third half-step of the machine, and what every non-local exit is made of. ([14](part-2-reading-and-running/14-leaving-early.md))
 
 **Value.** One piece of Lisp data as the machine holds it: in Quokka, exactly one
 64-bit word, either the data itself or a reference to somewhere in the heap.
