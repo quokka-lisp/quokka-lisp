@@ -125,7 +125,7 @@ the cheapest way to honour rule 2.
 | Build (native) | `cargo build --workspace` |
 | Test (native) | `cargo test --workspace` |
 | REPL | `cargo run -p quokka-repl` |
-| GC torture | `cargo test -p quokka-vm --features gc-torture` |
+| GC torture | `cargo test -p quokka-vm --features gc-torture` — collects at every mutation boundary and verifies the heap afterwards |
 | Build for the browser | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
 | Test under WASI | `CARGO_TARGET_WASM32_WASIP1_RUNNER='wasmtime --dir=.' cargo test -p quokka-vm --target wasm32-wasip1` |
 | Dev console bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |

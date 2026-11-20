@@ -41,7 +41,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   gc-torture:
-    name: GC torture (collect on every allocation)
+    name: GC torture (collect at every mutation, then verify)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

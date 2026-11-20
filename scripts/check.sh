@@ -34,7 +34,7 @@ say "book structure"
 say "rustdoc"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-say "GC torture"
+say "GC torture (collect at every mutation, then verify)"
 cargo test -p quokka-vm --features gc-torture
 
 say "wasm32-unknown-unknown (browser build)"
