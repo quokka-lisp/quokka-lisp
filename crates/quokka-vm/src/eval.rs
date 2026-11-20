@@ -375,6 +375,15 @@ impl<'a, 'h> Machine<'a, 'h> {
         let env = self.mc.register(Register::Env);
         // The body is not evaluated. Capturing `env` is what lets the closure
         // still see its enclosing scope after that scope has been left.
+        //
+        // The lambda list is rewritten here, once, rather than at every call:
+        // defaults and `&aux` become a `let*` around the body, so what the
+        // closure stores is something `bind_lambda_list` can match without
+        // evaluating anything.
+        let (params, body) = match crate::lambda_list::rewrite(self.mc, params, body) {
+            Ok(pair) => pair,
+            Err(e) => return self.fail(e),
+        };
         let c = closure::make(self.mc, params, body, env);
         self.deliver(c)
     }
@@ -630,6 +639,10 @@ impl<'a, 'h> Machine<'a, 'h> {
         let scope = env::make(self.mc, env, env::FUNCTION, &names, &placeholders);
         let captured = if recursive { scope } else { env };
         for (i, (params, fn_body)) in shapes.into_iter().enumerate() {
+            let (params, fn_body) = match crate::lambda_list::rewrite(self.mc, params, fn_body) {
+                Ok(pair) => pair,
+                Err(e) => return self.fail(e),
+            };
             let c = closure::make(self.mc, params, fn_body, captured);
             self.mc.set_slot(scope, env::FIRST_PAIR + 1 + i * 2, c);
         }
@@ -903,7 +916,13 @@ impl<'a, 'h> Machine<'a, 'h> {
         let params = self.mc.car(after);
         let body = self.mc.cdr(after);
         let env = self.mc.register(Register::Env);
-        let m = closure::make_macro(self.mc, params, body, env);
+        let m = {
+            let (params, body) = match crate::lambda_list::rewrite(self.mc, params, body) {
+                Ok(pair) => pair,
+                Err(e) => return self.fail(e),
+            };
+            closure::make_macro(self.mc, params, body, env)
+        };
         self.mc.set_slot(name, symbol::FUNCTION, m);
         self.deliver(name)
     }
@@ -1361,6 +1380,17 @@ impl<'a, 'h> Machine<'a, 'h> {
     /// evaluated at call time and therefore a frame, and destructuring
     /// patterns, which macros may use and functions may not. Both are noted
     /// rather than silently accepted.
+    /// Match arguments to a **simple** lambda list: bare symbols, `&optional`,
+    /// `&rest`, and `&key` as `(keyword variable)` pairs.
+    ///
+    /// Nothing here evaluates anything, which is the point —
+    /// [`crate::lambda_list::rewrite`] has already turned every default form
+    /// into a `let*` around the body, so this only has to decide *which* value
+    /// each name gets, never *compute* one.
+    ///
+    /// A parameter with no argument is bound to the unsupplied marker rather
+    /// than to nil, because `(f)` and `(f nil)` have to be able to differ. The
+    /// `let*` upstream turns the marker into the default.
     fn bind_lambda_list(
         &mut self,
         params: Value<'h>,
@@ -1370,27 +1400,64 @@ impl<'a, 'h> Machine<'a, 'h> {
         let mut values = Vec::new();
         let mut param = params;
         let mut arg = arguments;
-        let mut optional = false;
+        let mut required = 0usize;
+        let mut supplied = 0usize;
+        let mut section = 0u8; // 0 required, 1 optional, 2 rest, 3 key
+                               // `&rest` swallows everything left, so leftover arguments stop being
+                               // an error once one has been bound. `&key` still scans the same tail,
+                               // which is what CLHS says the two do together.
+        let mut has_rest = false;
+        let mut keys: Vec<(Value<'h>, Value<'h>)> = Vec::new();
+        let mut allow_other_keys = false;
+        let marker = self.mc.intern(crate::lambda_list::UNSUPPLIED);
 
         while param.is_cons() {
             let name = self.mc.car(param);
             param = self.mc.cdr(param);
 
-            if self.mc.symbol_is(name, "&OPTIONAL") {
-                optional = true;
-                continue;
+            if self.mc.is_symbol(name) {
+                if self.mc.symbol_is(name, "&OPTIONAL") {
+                    section = 1;
+                    continue;
+                }
+                if self.mc.symbol_is(name, "&REST") || self.mc.symbol_is(name, "&BODY") {
+                    let Some(rest_name) = (param.is_cons()).then(|| self.mc.car(param)) else {
+                        return Err(EvalError::BadSyntax {
+                            operator: "a lambda list",
+                            detail: "&rest wants a name after it",
+                        });
+                    };
+                    param = self.mc.cdr(param);
+                    names.push(rest_name);
+                    values.push(arg);
+                    has_rest = true;
+                    section = 2;
+                    continue;
+                }
+                if self.mc.symbol_is(name, "&KEY") {
+                    section = 3;
+                    continue;
+                }
+                if self.mc.symbol_is(name, "&ALLOW-OTHER-KEYS") {
+                    allow_other_keys = true;
+                    continue;
+                }
             }
-            if self.mc.symbol_is(name, "&REST") || self.mc.symbol_is(name, "&BODY") {
-                let Some(rest_name) = (param.is_cons()).then(|| self.mc.car(param)) else {
+
+            if section == 3 {
+                // `(keyword variable)`, which is what the rewrite emits.
+                if !name.is_cons() {
                     return Err(EvalError::BadSyntax {
                         operator: "a lambda list",
-                        detail: "&rest wants a name after it",
+                        detail: "&key wants (keyword variable) pairs here",
                     });
-                };
-                names.push(rest_name);
-                values.push(arg);
-                return Ok((names, values));
+                }
+                let keyword = self.mc.car(name);
+                let variable = self.mc.car(self.mc.cdr(name));
+                keys.push((keyword, variable));
+                continue;
             }
+
             if !self.mc.is_symbol(name) {
                 return Err(EvalError::BadSyntax {
                     operator: "a lambda list",
@@ -1398,24 +1465,39 @@ impl<'a, 'h> Machine<'a, 'h> {
                 });
             }
 
+            if section == 0 {
+                required += 1;
+            }
             if arg.is_cons() {
                 names.push(name);
                 values.push(self.mc.car(arg));
                 arg = self.mc.cdr(arg);
-            } else if optional {
-                // No default forms yet: an unsupplied optional is nil.
+                supplied += 1;
+            } else if section == 1 {
                 names.push(name);
-                values.push(Value::NIL);
+                values.push(marker);
             } else {
                 return Err(EvalError::WrongArgumentCount {
                     name: "this function",
-                    wanted: names.len() + 1,
-                    got: values.len(),
+                    wanted: required,
+                    got: supplied,
                 });
             }
         }
 
-        if arg.is_cons() {
+        if !keys.is_empty() || allow_other_keys {
+            self.bind_keys(
+                &keys,
+                arg,
+                marker,
+                allow_other_keys,
+                &mut names,
+                &mut values,
+            )?;
+            return Ok((names, values));
+        }
+
+        if arg.is_cons() && !has_rest {
             let mut extra = 0;
             let mut cursor = arg;
             while cursor.is_cons() {
@@ -1429,6 +1511,57 @@ impl<'a, 'h> Machine<'a, 'h> {
             });
         }
         Ok((names, values))
+    }
+
+    /// Scan what is left of the argument list as `:keyword value` pairs.
+    ///
+    /// CLHS says the *leftmost* occurrence of a keyword wins, which is why
+    /// this takes the first match rather than the last, and that unknown
+    /// keywords are an error unless `&allow-other-keys` was declared.
+    fn bind_keys(
+        &mut self,
+        keys: &[(Value<'h>, Value<'h>)],
+        mut arg: Value<'h>,
+        marker: Value<'h>,
+        allow_other_keys: bool,
+        names: &mut Vec<Value<'h>>,
+        values: &mut Vec<Value<'h>>,
+    ) -> Result<(), EvalError> {
+        let mut given: Vec<(Value<'h>, Value<'h>)> = Vec::new();
+        while arg.is_cons() {
+            let keyword = self.mc.car(arg);
+            let rest = self.mc.cdr(arg);
+            if !rest.is_cons() {
+                return Err(EvalError::BadSyntax {
+                    operator: "a function call",
+                    detail: "odd number of keyword arguments",
+                });
+            }
+            given.push((keyword, self.mc.car(rest)));
+            arg = self.mc.cdr(rest);
+        }
+
+        if !allow_other_keys {
+            for (keyword, _) in &given {
+                if !keys.iter().any(|(k, _)| k == keyword) {
+                    return Err(EvalError::BadSyntax {
+                        operator: "a function call",
+                        detail: "unknown keyword argument",
+                    });
+                }
+            }
+        }
+
+        for (keyword, variable) in keys {
+            let found = given
+                .iter()
+                .find(|(k, _)| k == keyword)
+                .map(|(_, v)| *v)
+                .unwrap_or(marker);
+            names.push(*variable);
+            values.push(found);
+        }
+        Ok(())
     }
 
     // ---- helpers ---------------------------------------------------------

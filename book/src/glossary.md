@@ -178,6 +178,12 @@ In Common Lisp that is because it lives in the `KEYWORD`
 [package](#package); Quokka has no packages, so symbols carry a namespace
 marker instead. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
+**Lambda list.** A function's parameter list, which in Common Lisp says more
+than a list of names: `&optional` parameters with default *forms*, `&key`
+parameters supplied by name, supplied-p variables, and `&aux` locals. Quokka
+rewrites the whole thing into a simple list plus a `let*` when the closure is
+made, so nothing has to be evaluated while arguments are being bound. ([18](part-2-reading-and-running/18-lambda-lists.md))
+
 **Lexical addressing.** Resolving a variable to "scope 2, slot 0" ahead of time, so lookup is an index rather than a search. It requires a compiler to assign the numbers, which is why Quokka's interpreter cannot use it yet. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Lexical scope.** Determined by where something is written, not by what calls it. `block` and `return-from` are lexical, so a `return-from` can only reach a block it can see in the source — which makes it safe and makes it useless across a function boundary. ([14](part-2-reading-and-running/14-leaving-early.md))
@@ -197,6 +203,17 @@ program extends its own language without changing the [evaluator](#evaluator).
 Quokka does it inside the evaluator, with a frame that remembers the caller's
 [environment](#environment) so the expansion is evaluated where the call was
 written. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
+**Keyword argument.** An argument supplied by name — `(draw 'square :colour
+'red)` — rather than by position, so a function can gain an option without
+breaking its callers. Matched by [keyword](#keyword), leftmost occurrence
+first, and an unrecognised one is an error unless `&allow-other-keys` says
+otherwise. ([18](part-2-reading-and-running/18-lambda-lists.md))
+
+**Supplied-p parameter.** The third element of an `&optional` or `&key` entry,
+bound to true when an argument was actually given. It exists because `nil` is
+a perfectly good argument, so "absent" and "nil" have to be different things.
+([18](part-2-reading-and-running/18-lambda-lists.md))
 
 **Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. ([14](part-2-reading-and-running/14-leaving-early.md))
 

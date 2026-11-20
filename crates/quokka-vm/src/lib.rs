@@ -24,6 +24,7 @@ pub mod boot;
 pub mod eval;
 pub mod heap;
 pub mod host;
+pub mod lambda_list;
 pub mod primitives;
 pub mod printer;
 pub mod reader;

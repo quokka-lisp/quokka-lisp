@@ -26,6 +26,7 @@
 - [Code that writes code](part-2-reading-and-running/15-code-that-writes-code.md)
 - [The prelude](part-2-reading-and-running/16-the-prelude.md)
 - [Why macros matter, and what hygiene is](part-2-reading-and-running/17-why-macros-matter.md)
+- [What a parameter list can say](part-2-reading-and-running/18-lambda-lists.md)
 
 ---
 
