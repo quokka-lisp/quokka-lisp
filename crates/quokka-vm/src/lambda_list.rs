@@ -88,6 +88,20 @@ use crate::value::Value;
 /// Contains a space, so no input can produce it. See the module docs.
 pub const UNSUPPLIED: &str = "UNSUPPLIED MARKER";
 
+/// Which kind of lambda list this is.
+///
+/// Only macros destructure. `(defun f ((a b)) ...)` is an error in Common Lisp
+/// and stays one here: an ordinary function receives *values*, and a value has
+/// no shape the lambda list could take apart. A macro receives *forms*, which
+/// are lists, and taking them apart is the whole point.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// `lambda`, `defun`, `flet`, `labels`.
+    Ordinary,
+    /// `defmacro`, which may destructure and may be dotted.
+    Macro,
+}
+
 /// Which part of the lambda list we are reading.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
@@ -128,15 +142,20 @@ pub fn rewrite<'h>(
     mc: &mut Mutation<'h>,
     params: Value<'h>,
     body: Value<'h>,
+    kind: Kind,
 ) -> Result<(Value<'h>, Value<'h>), EvalError> {
     let mut section = Section::Required;
     let mut required: Vec<Value<'h>> = Vec::new();
+    // Nested patterns, as (placeholder, pattern) pairs. The placeholder goes
+    // into the lambda list and the pattern is taken apart in the `let*`.
+    let mut patterns: Vec<(Value<'h>, Value<'h>)> = Vec::new();
     let mut optional: Vec<Entry<'h>> = Vec::new();
     let mut keys: Vec<Entry<'h>> = Vec::new();
     let mut aux: Vec<Entry<'h>> = Vec::new();
     let mut rest: Option<Value<'h>> = None;
     let mut allow_other_keys = false;
     let mut saw_key = false;
+    let mut dotted = false;
 
     let mut cursor = params;
     while cursor.is_cons() {
@@ -169,11 +188,17 @@ pub fn rewrite<'h>(
 
         match section {
             Section::Required => {
-                if !mc.is_symbol(item) {
-                    // Where destructuring would go, if it existed.
+                if mc.is_symbol(item) {
+                    required.push(item);
+                } else if kind == Kind::Macro && item.is_cons() {
+                    // A nested lambda list. The function gets a name it can
+                    // bind, and the pattern is taken apart in the `let*`.
+                    let placeholder = mc.gensym();
+                    required.push(placeholder);
+                    patterns.push((placeholder, item));
+                } else {
                     return Err(bad("wants a symbol for a required parameter"));
                 }
-                required.push(item);
             }
             Section::Rest => {
                 if !mc.is_symbol(item) {
@@ -190,12 +215,23 @@ pub fn rewrite<'h>(
         }
     }
     if !cursor.is_nil() {
-        return Err(bad("a lambda list must be a proper list"));
+        // `(defmacro m (a . b) ...)` — a dotted macro lambda list, where the
+        // tail is `&rest` by another spelling. CLHS 3.4.4 allows it; an
+        // ordinary lambda list may not be dotted.
+        if kind == Kind::Macro && mc.is_symbol(cursor) && rest.is_none() {
+            rest = Some(cursor);
+            // The list has to be rebuilt as a proper one even if nothing else
+            // needs rewriting, because the binder walks conses and would
+            // never reach a dotted tail.
+            dotted = true;
+        } else {
+            return Err(bad("a lambda list must be a proper list"));
+        }
     }
 
     // The common case: nothing that needs evaluating, so nothing is rewritten
     // and the closure holds exactly what was written.
-    if optional.is_empty() && keys.is_empty() && aux.is_empty() {
+    if optional.is_empty() && keys.is_empty() && aux.is_empty() && patterns.is_empty() && !dotted {
         return Ok((params, body));
     }
 
@@ -240,6 +276,12 @@ pub fn rewrite<'h>(
     let eq = mc.intern("EQ");
     let if_ = mc.intern("IF");
     let mut bindings: Vec<Value<'h>> = Vec::new();
+
+    // Patterns first: a required parameter is bound before any default form
+    // runs, so a default may refer to a name a pattern introduced.
+    for (placeholder, pattern) in &patterns {
+        destructure(mc, *pattern, *placeholder, &mut bindings)?;
+    }
     for e in optional.iter().chain(keys.iter()) {
         let default = e.default.unwrap_or(Value::NIL);
         let test = list3(mc, eq, e.name, quoted_marker);
@@ -270,6 +312,13 @@ pub fn rewrite<'h>(
         bindings.push(b);
     }
 
+    // A dotted lambda list and nothing else needs a new parameter list but no
+    // bindings at all, and `(let* () ...)` around every such macro would be
+    // noise in every expansion anyone ever printed.
+    if bindings.is_empty() {
+        return Ok((simple, body));
+    }
+
     let bindings = list_of(mc, &bindings);
     let let_star = mc.intern("LET*");
     let form = mc.cons(bindings, body);
@@ -277,6 +326,150 @@ pub fn rewrite<'h>(
     let new_body = mc.cons(form, Value::NIL);
 
     Ok((simple, new_body))
+}
+
+/// Take a nested pattern apart, appending `let*` bindings that bind every
+/// name in it from the value of `source`.
+///
+/// The generated code is `car`, `cdr`, `if` and `null` — nothing that did not
+/// already exist. A pattern like
+///
+/// ```lisp
+/// (var name &optional (mode 'read))
+/// ```
+///
+/// matched against a cursor `g` becomes, roughly:
+///
+/// ```lisp
+/// (c    g)
+/// (var  (car c))   (c (cdr c))
+/// (name (car c))   (c (cdr c))
+/// (mode (if (null c) 'read (car c)))
+/// (c    (if (null c) nil (cdr c)))
+/// ```
+///
+/// The cursor is rebound rather than advanced, which `let*` allows and which
+/// keeps the whole thing to one list of bindings. Nested patterns recurse,
+/// taking a fresh cursor of their own.
+///
+/// **Arity is not checked.** `(with-thing (h) ...)` against the pattern
+/// `(var name)` binds `name` to nil rather than complaining, where a real
+/// Common Lisp signals. Checking would mean emitting a test per position;
+/// worth doing, and worth doing *after* there is a condition system to signal
+/// into (group E of #18).
+fn destructure<'h>(
+    mc: &mut Mutation<'h>,
+    pattern: Value<'h>,
+    source: Value<'h>,
+    bindings: &mut Vec<Value<'h>>,
+) -> Result<(), EvalError> {
+    let car = mc.intern("CAR");
+    let cdr = mc.intern("CDR");
+    let null = mc.intern("NULL");
+    let if_ = mc.intern("IF");
+
+    let cursor = mc.gensym();
+    let b = list2(mc, cursor, source);
+    bindings.push(b);
+
+    let mut optional = false;
+    let mut item = pattern;
+    while item.is_cons() {
+        let entry = mc.car(item);
+        item = mc.cdr(item);
+
+        if mc.is_symbol(entry) {
+            if mc.symbol_is(entry, "&OPTIONAL") {
+                optional = true;
+                continue;
+            }
+            if mc.symbol_is(entry, "&REST") || mc.symbol_is(entry, "&BODY") {
+                if !item.is_cons() {
+                    return Err(bad("&rest wants a name after it"));
+                }
+                let name = mc.car(item);
+                item = mc.cdr(item);
+                bind_here(mc, name, cursor, bindings)?;
+                return finish(mc, item, cursor, bindings);
+            }
+            if mc.symbol_is(entry, "&KEY") || mc.symbol_is(entry, "&AUX") {
+                // Keyword and aux parameters inside a *nested* pattern would
+                // need keyword scanning in generated Lisp. Refused rather
+                // than half-done; the top level of a macro lambda list
+                // supports both.
+                return Err(bad(
+                    "&key and &aux are not supported inside a nested pattern",
+                ));
+            }
+        }
+
+        if optional {
+            let e = parse_entry(mc, entry, false)?;
+            let default = e.default.unwrap_or(Value::NIL);
+            let empty = list2(mc, null, cursor);
+            if let Some(given) = e.supplied {
+                let is_given = list_of(mc, &[if_, empty, Value::NIL, Value::T]);
+                let b = list2(mc, given, is_given);
+                bindings.push(b);
+            }
+            let take = list2(mc, car, cursor);
+            let pick = list_of(mc, &[if_, empty, default, take]);
+            let b = list2(mc, e.name, pick);
+            bindings.push(b);
+            let step = list2(mc, cdr, cursor);
+            let advance = list_of(mc, &[if_, empty, Value::NIL, step]);
+            let b = list2(mc, cursor, advance);
+            bindings.push(b);
+            continue;
+        }
+
+        // A required position: take the head, then move on.
+        let take = list2(mc, car, cursor);
+        bind_here(mc, entry, take, bindings)?;
+        let step = list2(mc, cdr, cursor);
+        let b = list2(mc, cursor, step);
+        bindings.push(b);
+    }
+
+    finish(mc, item, cursor, bindings)
+}
+
+/// Bind one pattern element — a name, or a nested pattern — to an expression.
+fn bind_here<'h>(
+    mc: &mut Mutation<'h>,
+    target: Value<'h>,
+    source: Value<'h>,
+    bindings: &mut Vec<Value<'h>>,
+) -> Result<(), EvalError> {
+    if mc.is_symbol(target) {
+        let b = list2(mc, target, source);
+        bindings.push(b);
+        return Ok(());
+    }
+    if target.is_cons() {
+        return destructure(mc, target, source, bindings);
+    }
+    Err(bad(
+        "a pattern element must be a symbol or a nested pattern",
+    ))
+}
+
+/// A dotted pattern tail — `(a . rest)` — binds the rest of the list.
+fn finish<'h>(
+    mc: &mut Mutation<'h>,
+    tail: Value<'h>,
+    cursor: Value<'h>,
+    bindings: &mut Vec<Value<'h>>,
+) -> Result<(), EvalError> {
+    if tail.is_nil() {
+        return Ok(());
+    }
+    if mc.is_symbol(tail) {
+        let b = list2(mc, tail, cursor);
+        bindings.push(b);
+        return Ok(());
+    }
+    Err(bad("a pattern tail must be a symbol"))
 }
 
 /// `name`, `(name default)`, `(name default supplied-p)`, or for `&key` also
@@ -380,7 +573,7 @@ mod tests {
             let form = reader.read(mc).unwrap().unwrap();
             let params = mc.car(form);
             let body = mc.cdr(form);
-            let (params, body) = rewrite(mc, params, body).expect("rewrites");
+            let (params, body) = rewrite(mc, params, body, Kind::Ordinary).expect("rewrites");
             let whole = mc.cons(params, body);
             print(mc, whole)
         })
@@ -424,6 +617,68 @@ mod tests {
         );
     }
 
+    fn rewritten_macro(source: &str) -> String {
+        let chars = Reader::chars_of(source);
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).unwrap().unwrap();
+            let params = mc.car(form);
+            let body = mc.cdr(form);
+            let (params, body) = rewrite(mc, params, body, Kind::Macro).expect("rewrites");
+            let whole = mc.cons(params, body);
+            print(mc, whole)
+        })
+    }
+
+    /// Only macros destructure. A function receives values, and a value has
+    /// no shape to take apart.
+    #[test]
+    fn only_macros_destructure() {
+        let chars = Reader::chars_of("(((a b)) a)");
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).unwrap().unwrap();
+            let params = mc.car(form);
+            let body = mc.cdr(form);
+            assert!(rewrite(mc, params, body, Kind::Ordinary).is_err());
+            assert!(rewrite(mc, params, body, Kind::Macro).is_ok());
+        });
+    }
+
+    /// A nested pattern leaves a placeholder in the lambda list and becomes
+    /// `car`/`cdr` walking in the body. The gensym names are not pinned —
+    /// only the shape is, which is what matters.
+    #[test]
+    fn a_pattern_becomes_car_and_cdr() {
+        let out = rewritten_macro("(((var name) &body body) var)");
+        assert!(out.contains("LET*"), "{out}");
+        assert!(out.contains("(CAR "), "{out}");
+        assert!(out.contains("(CDR "), "{out}");
+        assert!(out.contains("(VAR (CAR "), "{out}");
+        assert!(out.contains("(NAME (CAR "), "{out}");
+        // &body is still a plain parameter, not part of the pattern.
+        assert!(
+            out.contains("&REST BODY") || out.contains("&BODY BODY"),
+            "{out}"
+        );
+    }
+
+    /// `(defmacro m (a . b) ...)` — the tail is `&rest` by another spelling,
+    /// and the list must be rebuilt as a proper one or the binder, which
+    /// walks conses, never reaches it.
+    #[test]
+    fn a_dotted_macro_lambda_list_becomes_rest() {
+        assert_eq!(rewritten_macro("((a . b) a)"), "((A &REST B) A)");
+    }
+
+    /// Nothing to rewrite means nothing is rewritten, macro or not.
+    #[test]
+    fn a_macro_lambda_list_with_no_patterns_is_left_alone() {
+        assert_eq!(rewritten_macro("((a b) a)"), "((A B) A)");
+    }
+
     #[test]
     fn a_malformed_lambda_list_is_an_error() {
         let chars = Reader::chars_of("((a . b) 1)");
@@ -433,7 +688,7 @@ mod tests {
             let form = reader.read(mc).unwrap().unwrap();
             let params = mc.car(form);
             let body = mc.cdr(form);
-            assert!(rewrite(mc, params, body).is_err());
+            assert!(rewrite(mc, params, body, Kind::Ordinary).is_err());
         });
     }
 }

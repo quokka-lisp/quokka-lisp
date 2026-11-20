@@ -380,7 +380,12 @@ impl<'a, 'h> Machine<'a, 'h> {
         // defaults and `&aux` become a `let*` around the body, so what the
         // closure stores is something `bind_lambda_list` can match without
         // evaluating anything.
-        let (params, body) = match crate::lambda_list::rewrite(self.mc, params, body) {
+        let (params, body) = match crate::lambda_list::rewrite(
+            self.mc,
+            params,
+            body,
+            crate::lambda_list::Kind::Ordinary,
+        ) {
             Ok(pair) => pair,
             Err(e) => return self.fail(e),
         };
@@ -639,7 +644,12 @@ impl<'a, 'h> Machine<'a, 'h> {
         let scope = env::make(self.mc, env, env::FUNCTION, &names, &placeholders);
         let captured = if recursive { scope } else { env };
         for (i, (params, fn_body)) in shapes.into_iter().enumerate() {
-            let (params, fn_body) = match crate::lambda_list::rewrite(self.mc, params, fn_body) {
+            let (params, fn_body) = match crate::lambda_list::rewrite(
+                self.mc,
+                params,
+                fn_body,
+                crate::lambda_list::Kind::Ordinary,
+            ) {
                 Ok(pair) => pair,
                 Err(e) => return self.fail(e),
             };
@@ -917,7 +927,12 @@ impl<'a, 'h> Machine<'a, 'h> {
         let body = self.mc.cdr(after);
         let env = self.mc.register(Register::Env);
         let m = {
-            let (params, body) = match crate::lambda_list::rewrite(self.mc, params, body) {
+            let (params, body) = match crate::lambda_list::rewrite(
+                self.mc,
+                params,
+                body,
+                crate::lambda_list::Kind::Macro,
+            ) {
                 Ok(pair) => pair,
                 Err(e) => return self.fail(e),
             };

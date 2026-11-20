@@ -67,6 +67,7 @@ differential_cases! {
     prelude => "prelude",
     keywords => "keywords",
     lambda_lists => "lambda-lists",
+    destructuring => "destructuring",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

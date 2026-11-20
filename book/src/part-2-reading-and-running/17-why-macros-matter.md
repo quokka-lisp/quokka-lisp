@@ -75,11 +75,6 @@ guide and a code review. With macros:
   (use handle))
 ```
 
-> **Status.** That `(var name)` in the parameter list is a *destructuring*
-> macro lambda list, and Quokka does not have them yet — this exact macro is
-> a syntax error as things stand. It is the clearest example of what macros
-> are for, so it stays, with this note attached. Chapter 18 says what is
-> missing and why it is next.
 
 The pattern becomes a thing with a name, so forgetting it is a compile error
 rather than a slow leak. Common Lisp's standard library is full of these:

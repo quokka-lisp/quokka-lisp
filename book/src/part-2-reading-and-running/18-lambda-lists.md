@@ -188,15 +188,67 @@ Common Lisp has a few features like this, which exist because somebody found
 them convenient in 1984. Knowing which ones are load-bearing and which are
 historical is most of knowing the language, and `&aux` is historical.
 
+## A macro's parameter list describes a shape
+
+Everything so far applies to functions and macros alike. One thing applies to
+macros only:
+
+```lisp
+(defmacro with-thing ((var name) &body body)
+  `(let ((,var ,name))
+     (unwind-protect (progn ,@body)
+       (close-thing ,var))))
+
+(with-thing (handle "x")
+  (use handle))
+```
+
+The first parameter is not a name. It is a **pattern**: `(var name)` says the
+first argument will be a two-element list, and binds `var` and `name` to its
+parts. That is what lets a `with-` macro take its arguments in the shape
+people want to write them, and it is why chapter 17 could claim macros
+abstract over *syntax* rather than values.
+
+Only macros can do this, and the reason is worth stating. A function receives
+**values**, and a value has no shape for a lambda list to take apart — by the
+time `f` runs, `(list 1 2)` has become one object. A macro receives **forms**,
+which are lists, which have parts. Destructuring is not a convenience bolted
+onto macro parameters; it is the only place it could possibly mean anything.
+`(defun f ((a b)) ...)` is an error in Common Lisp, and an error here.
+
+The implementation is the same trick again, one level down. A pattern leaves
+a gensym in the lambda list, and becomes `car` and `cdr` in the `let*`:
+
+```lisp
+(c     <the argument>)
+(var   (car c))   (c (cdr c))
+(name  (car c))   (c (cdr c))
+```
+
+The cursor is *rebound* rather than advanced, which `let*` allows, so the
+whole of destructuring is one more list of bindings beside the ones defaults
+produced. Patterns nest by recursion, each level taking a fresh cursor, and a
+pattern may contain `&optional` and `&rest` of its own.
+
+`(defmacro m (a . b) ...)` works too — a dotted macro lambda list, where the
+tail is `&rest` by another spelling. That one needs the list rebuilt as a
+proper one even when nothing else does, because the binder walks conses and
+would never reach a dotted tail.
+
 ## What this does not do
 
-- **Destructuring is not implemented.** `(defmacro with-thing ((var name)
-  &body body) ...)` — a nested list in the parameter position — is still a
-  syntax error. It applies to `defmacro` only, and it needs this rewrite to
-  recurse into nested lists, which is the natural next step and not a large
-  one. Chapter 17 uses `with-thing` as its headline example of what macros are
-  for, so that chapter is, for now, describing a thing Quokka cannot run.
-- **`&whole` and `&environment`** are absent, for the same reason.
+- **Pattern arity is not checked.** `(with-thing (h) ...)` against the pattern
+  `(var name)` binds `name` to nil, where a real Common Lisp signals an error.
+  Checking means emitting a test per position, which is easy; signalling means
+  having something to signal *into*, which is the condition system and is not
+  built. Doing the first without the second would mean inventing an error
+  mechanism to throw away later.
+- **`&key` and `&aux` inside a nested pattern** are refused. They would need
+  keyword scanning in generated Lisp; the top level of a macro lambda list
+  supports both.
+- **`&whole` and `&environment`** are absent. `&whole` binds the entire macro
+  call, which Quokka's macro application does not currently pass along — it
+  hands over the argument forms and not the call itself.
 - **`:allow-other-keys t` passed as an argument** is not honoured; only the
   `&allow-other-keys` declaration in the lambda list is.
 
