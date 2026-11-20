@@ -251,6 +251,7 @@ Common Lisp. Each chapter answers one question.
 | 17 | [Why macros matter, and what hygiene is](part-2-reading-and-running/17-why-macros-matter.md) | Why is any of this worth it, and why do Scheme and Common Lisp disagree? |
 | 18 | [What a parameter list can say](part-2-reading-and-running/18-lambda-lists.md) | How do optional, keyword and defaulted arguments work, when binding cannot evaluate anything? |
 | 19 | [Things with an index](part-2-reading-and-running/19-things-with-an-index.md) | How do you store a run of things, and how does the collector know which words are references? |
+| 20 | [Errors you can catch](part-2-reading-and-running/20-errors-you-can-catch.md) | How does an error stop being the end of the computation and become an object? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -263,9 +264,9 @@ Still to come, and deliberately so:
   operators exist; the six that do not are `macrolet`,
   `multiple-value-call`, `multiple-value-prog1`, `progv`, `load-time-value`
   and `symbol-macrolet`. Macros, lambda lists, keywords, vectors, strings,
-  hash tables and `setf` are all built. What is left before the compiler can
-  be interpreted is a **condition system** — `error` and `handler-case` — and
-  **`defstruct`**.
+  hash tables, `setf` and a minimal **condition system** are all built. What
+  is left before the compiler can be interpreted is **`defstruct`**, and with
+  it an extensible `setf`.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.

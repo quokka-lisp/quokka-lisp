@@ -295,6 +295,14 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 
   What is still tier 1 is the extensibility. A program cannot teach this `setf` a new place; it knows a fixed list. `defstruct` will need the real expander.
 
+- [x] **Conditions are flat, not a class hierarchy.** Tier 0 asks for `error` and `handler-case`, and Common Lisp's are built on CLOS: `simple-error` is an `error` is a `serious-condition` is a `condition`, programs add their own with `define-condition`, and `handler-case` matches by *subtype*. Quokka has no class system until phase 3.
+
+  So a condition is an object with a type symbol, a message and some data, and matching is flat: a clause naming `error`, `condition` or `t` catches everything, anything else must name the condition's own type exactly. The evaluator's own errors are given the standard's type names — `type-error`, `unbound-variable`, `undefined-function`, `program-error`, `control-error`, `arithmetic-error` — so code written against Common Lisp catches what it expects, and the differential tests check that it does.
+
+  What this costs: a program cannot define a condition type. `(error 'my-error)` works here and is not portable, because a real Common Lisp requires that symbol to name a class. That half is therefore untestable against the oracle, and is covered by Rust tests. `define-condition` and subtype matching arrive with the class system in phase 3, along with `handler-bind` and restarts.
+
+  `HeapExhausted` and `BudgetExhausted` are deliberately **not** conditions: neither is a fault in the program being run, and a handler catching them would be catching the machinery. Heap exhaustion becomes a `storage-condition` in phase 3, when there is a hierarchy to put it in.
+
 
 **Still open** (none blocks phase 0)
 

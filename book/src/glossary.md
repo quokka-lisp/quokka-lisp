@@ -76,6 +76,13 @@ the objects it has already copied *are* the list of things still to examine.
 
 **Collection.** One run of the [garbage collector](#garbage-collection).
 
+**Condition.** An error, or any other noteworthy situation, as an *object* a
+program can catch rather than something that ends the computation. Quokka's
+has a type symbol, a message and some data; Common Lisp's are class instances
+matched by subtype. The word is not "exception" on purpose: a condition is
+signalled before the stack unwinds, so a handler can in principle repair
+things and resume. ([20](part-2-reading-and-running/20-errors-you-can-catch.md))
+
 **Cons cell.** The two-slot box Lisp builds lists out of: a [car](#car) and a
 [cdr](#cdr). Two words in the heap, with no header, because its type is known
 from the reference that points at it. "Cons" is short for "construct".
@@ -150,6 +157,11 @@ built. ([6](part-1-substrate/06-cheneys-algorithm.md))
 structures — Lisp code *is* a list. It sounds like trivia and is the reason
 [macros](#macro) are a list-manipulating program rather than a text
 preprocessor. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
+**handler-case.** Runs a form, and if a condition is signalled inside it,
+hands it to the first clause whose type matches. A [catch](#non-local-exit)
+that matches on type instead of identity — the same unwinding, asking a
+different question of each frame. ([20](part-2-reading-and-running/20-errors-you-can-catch.md))
 
 **Heap.** The region of memory where values too big for a single word live. In
 Quokka it is an array of 64-bit words the VM owns.

@@ -21,6 +21,7 @@
 #![warn(missing_docs)]
 
 pub mod boot;
+pub mod condition;
 pub mod eval;
 pub mod hash;
 pub mod heap;

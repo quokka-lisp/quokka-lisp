@@ -28,6 +28,7 @@
 - [Why macros matter, and what hygiene is](part-2-reading-and-running/17-why-macros-matter.md)
 - [What a parameter list can say](part-2-reading-and-running/18-lambda-lists.md)
 - [Things with an index](part-2-reading-and-running/19-things-with-an-index.md)
+- [Errors you can catch](part-2-reading-and-running/20-errors-you-can-catch.md)
 
 ---
 

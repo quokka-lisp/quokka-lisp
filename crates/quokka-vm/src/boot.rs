@@ -496,6 +496,105 @@ mod tests {
         );
     }
 
+    /// A condition named by any symbol, which SBCL cannot do without
+    /// `define-condition` — so the oracle cannot check this half.
+    #[test]
+    fn a_condition_can_be_named_by_any_symbol() {
+        assert_eq!(
+            after_boot("(handler-case (error 'boom) (boom () 'caught))"),
+            "CAUGHT"
+        );
+        assert_eq!(
+            after_boot("(handler-case (error 'boom) (error (c) (%condition-type c)))"),
+            "BOOM"
+        );
+        // A clause for a different type does not catch it.
+        assert!(after_boot("(handler-case (error 'a) (b () 'wrong))").starts_with("; "));
+    }
+
+    #[test]
+    fn a_string_datum_makes_a_simple_error() {
+        assert_eq!(
+            after_boot("(handler-case (error \"gone wrong\") (error (c) (%condition-type c)))"),
+            "SIMPLE-ERROR"
+        );
+        assert_eq!(
+            after_boot("(handler-case (error \"gone wrong\") (error (c) (%condition-message c)))"),
+            "\"gone wrong\""
+        );
+    }
+
+    /// The evaluator's own errors carry Common Lisp's type names, so a
+    /// program that catches `undefined-function` catches what it expects.
+    #[test]
+    fn evaluator_errors_carry_standard_type_names() {
+        for (source, wanted) in [
+            ("(car 5)", "TYPE-ERROR"),
+            ("(no-such-function)", "UNDEFINED-FUNCTION"),
+            ("no-such-variable", "UNBOUND-VARIABLE"),
+            ("(aref (vector 1) 9)", "TYPE-ERROR"),
+        ] {
+            let program = format!("(handler-case {source} (error (c) (%condition-type c)))");
+            assert_eq!(after_boot(&program), wanted, "for {source}");
+        }
+    }
+
+    /// **Regression.** Conditions were `ObjectType::Instance` at first, and
+    /// `fresh_marker` allocates an `Instance` too — so every `block` and
+    /// `catch` marker looked like a condition, and a `return-from` passing
+    /// through a `handler-case` was caught by it. Conditions have their own
+    /// object type now.
+    #[test]
+    fn a_return_from_passes_through_a_handler() {
+        assert_eq!(
+            after_boot("(block out (handler-case (return-from out 'returned) (error () 'no)))"),
+            "RETURNED"
+        );
+        assert_eq!(
+            after_boot("(catch 'tag (handler-case (throw 'tag 'thrown) (error () 'no)))"),
+            "THROWN"
+        );
+        // And a tagbody's go, which uses the same markers.
+        assert_eq!(
+            after_boot(
+                "(let ((n 0))
+                   (tagbody
+                     top
+                     (setq n (+ n 1))
+                     (handler-case (if (< n 3) (go top)) (error () nil)))
+                   n)"
+            ),
+            "3"
+        );
+    }
+
+    /// Running out of heap is not the program's fault, so it is not the
+    /// program's to catch. A handler that caught it would be catching the
+    /// machinery rather than the program.
+    #[test]
+    fn resource_limits_are_not_conditions() {
+        // `%handler-case` rather than the prelude macro, so the heap holds
+        // only what this test is about.
+        let source = "(%handler-case
+                        (labels ((grow (acc) (grow (cons 1 acc)))) (grow nil))
+                        (error () 'caught))";
+        let chars = crate::reader::Reader::chars_of(source);
+        let mut heap = Heap::with_soft_limit(20_000);
+        install_in_small_heap(&mut heap);
+        let outcome = heap.mutate(|mc| {
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).unwrap().unwrap();
+            eval_now(mc, form, u64::MAX).map(|_| ())
+        });
+        assert_eq!(outcome, Err(crate::eval::EvalError::HeapExhausted));
+    }
+
+    fn install_in_small_heap(heap: &mut Heap) {
+        heap.mutate(|mc| {
+            crate::primitives::install(mc);
+        });
+    }
+
     #[test]
     fn apply_spreads_its_last_argument() {
         assert_eq!(after_boot("(apply #'+ '(1 2 3))"), "6");

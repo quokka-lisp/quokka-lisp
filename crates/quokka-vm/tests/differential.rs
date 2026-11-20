@@ -71,6 +71,7 @@ differential_cases! {
     macroexpand => "macroexpand",
     vectors => "vectors",
     hash_tables => "hash-tables",
+    conditions => "conditions",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

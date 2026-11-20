@@ -444,3 +444,31 @@
             ((null (cdr forms)) (car forms))
             (t (cons 'progn forms))))))
 
+;;; ------------------------------------------------------------------
+;;; Conditions
+;;; ------------------------------------------------------------------
+
+;; `handler-case` is a **macro** in Common Lisp, over `handler-bind` and
+;; `block`. Quokka has no `handler-bind`, so the machinery is the special
+;; operator `%handler-case` — but the name people write stays a macro, which
+;; keeps the special operator count honest and leaves somewhere to check
+;; clauses before the evaluator sees them.
+;;
+;; A clause is `(type (var) body...)`, or `(type () body...)` to ignore the
+;; condition. Clauses are tried in order and the first matching type wins.
+;;
+;; **Type matching is flat.** `error`, `condition` and `t` catch everything;
+;; anything else must name the condition's own type exactly. Common Lisp
+;; matches by subtype through the class system, which is phase 3. Written
+;; down in `docs/design.md` rather than discovered.
+(defmacro handler-case (form &rest clauses)
+  (cons '%handler-case (cons form clauses)))
+
+;; Run a form; if it signals, yield nil instead.
+;;
+;; Common Lisp's returns two values — nil and the condition — so a caller can
+;; tell "it failed" from "it returned nil". There are no multiple values yet,
+;; which is the same gap `macroexpand` and `gethash` have.
+(defmacro ignore-errors (&rest forms)
+  `(handler-case (progn ,@forms) (error () nil)))
+

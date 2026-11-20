@@ -269,7 +269,33 @@ const TABLE: &[Primitive] = &[
         name: "RPLACD",
         arity: Arity::Exactly(2),
     },
+    // ---- conditions ----------------------------------------------------
+    //
+    // Intercepted by `crate::eval`, like FUNCALL and APPLY: signalling means
+    // unwinding the frame stack, which is the machine's business.
+    Primitive {
+        name: "ERROR",
+        arity: Arity::AtLeast(1),
+    },
+    // Common Lisp reads a condition through its class — `type-of`, and
+    // readers like `simple-condition-format-control` — all of which need the
+    // class system. These are the `%` stand-ins until phase 3 has one.
+    Primitive {
+        name: "%CONDITION-TYPE",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "%CONDITION-MESSAGE",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "%CONDITIONP",
+        arity: Arity::Exactly(1),
+    },
 ];
+
+/// Where `ERROR` sits in the table, which `crate::eval` intercepts.
+pub const ERROR: u32 = 40;
 
 /// Where `APPLY` sits in the table, which `crate::eval` intercepts.
 pub const APPLY: u32 = 21;
@@ -441,6 +467,33 @@ pub fn call<'h>(
             }
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
+        }
+        "ERROR" => Err(EvalError::BadSyntax {
+            operator: "ERROR",
+            detail: "is intercepted by the evaluator and should never be called here",
+        }),
+        "%CONDITIONP" => Ok(if crate::condition::is_condition(mc, args[0]) {
+            Value::T
+        } else {
+            Value::NIL
+        }),
+        "%CONDITION-TYPE" => {
+            if !crate::condition::is_condition(mc, args[0]) {
+                return Err(EvalError::WrongType {
+                    name: "%CONDITION-TYPE",
+                    wanted: "a condition",
+                });
+            }
+            Ok(mc.slot(args[0], crate::condition::TYPE))
+        }
+        "%CONDITION-MESSAGE" => {
+            if !crate::condition::is_condition(mc, args[0]) {
+                return Err(EvalError::WrongType {
+                    name: "%CONDITION-MESSAGE",
+                    wanted: "a condition",
+                });
+            }
+            Ok(mc.slot(args[0], crate::condition::MESSAGE))
         }
         "RPLACA" => {
             if !args[0].is_cons() {
@@ -691,6 +744,7 @@ mod tests {
     fn the_intercepted_indices_are_still_right() {
         assert_eq!(TABLE[FUNCALL as usize].name, "FUNCALL");
         assert_eq!(TABLE[APPLY as usize].name, "APPLY");
+        assert_eq!(TABLE[ERROR as usize].name, "ERROR");
     }
 
     /// Table order is part of the image format. This does not stop a reorder,
@@ -740,7 +794,11 @@ mod tests {
                 "HASH-TABLE-P",
                 "%HASH-TABLE-ENTRIES",
                 "RPLACA",
-                "RPLACD"
+                "RPLACD",
+                "ERROR",
+                "%CONDITION-TYPE",
+                "%CONDITION-MESSAGE",
+                "%CONDITIONP"
             ]
         );
     }

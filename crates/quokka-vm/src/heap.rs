@@ -284,6 +284,15 @@ pub enum ObjectType {
     Instance = 4,
     /// Buckets and metadata.
     HashTable = 5,
+    /// A signalled condition: type, message, data. See `crate::condition`.
+    ///
+    /// Its own type rather than an `Instance`, which it was at first — and
+    /// `Instance` is also what `fresh_marker` allocates for a `block` or
+    /// `catch` to unwind to. Every marker therefore looked like a condition,
+    /// so a `return-from` passing through a `handler-case` was caught by it.
+    /// Reusing a type for two purposes is reusing a *name*, and the collector
+    /// does not care but everything above it does.
+    Condition = 9,
     /// A macro: the same shape as a closure, and deliberately a different
     /// type.
     ///
@@ -337,6 +346,7 @@ impl ObjectType {
             6 => Frame,
             7 => Environment,
             8 => Macro,
+            9 => Condition,
             64 => String,
             65 => Code,
             66 => Bignum,

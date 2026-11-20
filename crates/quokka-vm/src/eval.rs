@@ -153,6 +153,8 @@ pub enum EvalError {
         /// What it wanted.
         wanted: &'static str,
     },
+    /// A condition reached the top without being handled.
+    Signalled(String),
     /// An index outside a sequence.
     IndexOutOfBounds {
         /// What was asked for.
@@ -183,6 +185,7 @@ impl core::fmt::Display for EvalError {
                 write!(f, "{name} wants {wanted} argument(s), got {got}")
             }
             EvalError::WrongType { name, wanted } => write!(f, "{name} wants {wanted}"),
+            EvalError::Signalled(what) => write!(f, "{what}"),
             EvalError::IndexOutOfBounds { index, length } => {
                 write!(f, "index {index} is outside a sequence of length {length}")
             }
@@ -253,10 +256,36 @@ impl<'a, 'h> Machine<'a, 'h> {
         Mode::from_u8(self.mc.mode()) == Mode::Halt
     }
 
+    /// Stop, or signal — whichever the program can do something about.
+    ///
+    /// If the error is a fault in the program *and* some `handler-case` is on
+    /// the stack, it becomes a condition and unwinds to it. Otherwise the
+    /// machine halts carrying it, exactly as before.
+    ///
+    /// The handler search happens here rather than unconditionally because
+    /// turning every error into a condition would mean allocating one for
+    /// errors nobody can catch, including the one for running out of heap.
     fn fail(&mut self, e: EvalError) -> Transition {
+        if self.has_handler() {
+            if let Some(condition) = crate::condition::from_eval_error(self.mc, &e) {
+                return self.signal(condition);
+            }
+        }
         self.error = Some(e);
         self.mc.set_mode(Mode::Halt.as_u8());
         Transition::Halt
+    }
+
+    /// Is there a `handler-case` anywhere on the stack?
+    fn has_handler(&mut self) -> bool {
+        let mut cursor = self.mc.register(Register::Stack);
+        while cursor.is_cons() {
+            if frame::kind(self.mc, self.mc.car(cursor)) == frame::HANDLER {
+                return true;
+            }
+            cursor = self.mc.cdr(cursor);
+        }
+        false
     }
 
     // ---- the Eval half ---------------------------------------------------
@@ -328,6 +357,7 @@ impl<'a, 'h> Machine<'a, 'h> {
                     special::GO => self.eval_go(control),
                     special::UNWIND_PROTECT => self.eval_unwind_protect(control),
                     special::DEFMACRO => self.eval_defmacro(control),
+                    special::HANDLER_CASE => self.eval_handler_case(control),
                     _ => self.fail(EvalError::BadSyntax {
                         operator: "a special operator",
                         detail: "is not implemented",
@@ -401,6 +431,88 @@ impl<'a, 'h> Machine<'a, 'h> {
         };
         let c = closure::make(self.mc, params, body, env);
         self.deliver(c)
+    }
+
+    /// `(%handler-case form clause...)`, where a clause is
+    /// `(type (var) body...)`.
+    ///
+    /// The frame is pushed *before* the form is evaluated, which is the whole
+    /// mechanism: a signal unwinds the stack looking for one, exactly as a
+    /// `throw` unwinds looking for a `catch`. The difference is only what
+    /// counts as a match — a tag by identity there, a condition type here.
+    fn eval_handler_case(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "handler-case",
+                detail: "wants a form to protect",
+            });
+        }
+        let protected = self.mc.car(rest);
+        let clauses = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+
+        let f = self.mc.alloc(ObjectType::Frame, 3);
+        let kind = Value::fixnum(frame::HANDLER).expect("small");
+        self.mc.set_slot(f, frame::KIND, kind);
+        self.mc.set_slot(f, frame::HANDLER_CLAUSES, clauses);
+        self.mc.set_slot(f, frame::HANDLER_ENV, env);
+        self.push(f);
+
+        self.mc.set_register(Register::Control, protected);
+        self.mc.set_register(Register::Env, env);
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    /// Turn `error`'s arguments into a condition.
+    ///
+    /// `(error 'my-error)` names a type. `(error "text")` is a `simple-error`
+    /// carrying a message — Common Lisp would treat the string as a `format`
+    /// control string and the rest as its arguments, which needs a `format`
+    /// Quokka has not got; the arguments are kept as data instead. Re-signalling
+    /// a condition that was caught is `(error c)`.
+    fn build_condition(&mut self, arguments: Value<'h>) -> Result<Value<'h>, EvalError> {
+        if !arguments.is_cons() {
+            return Err(EvalError::WrongArgumentCount {
+                name: "ERROR",
+                wanted: 1,
+                got: 0,
+            });
+        }
+        let datum = self.mc.car(arguments);
+        let rest = self.mc.cdr(arguments);
+        if crate::condition::is_condition(self.mc, datum) {
+            return Ok(datum);
+        }
+        if self.mc.is_symbol(datum) {
+            return Ok(crate::condition::make(self.mc, datum, Value::NIL, rest));
+        }
+        if datum.is_object() && self.mc.header(datum).object_type == ObjectType::String {
+            let simple = self.mc.intern("SIMPLE-ERROR");
+            return Ok(crate::condition::make(self.mc, simple, datum, rest));
+        }
+        Err(EvalError::WrongType {
+            name: "ERROR",
+            wanted: "a condition, a symbol naming one, or a string",
+        })
+    }
+
+    /// Signal `condition`: unwind to the nearest handler that wants it.
+    ///
+    /// The target register carries the condition itself rather than a marker.
+    /// Nothing else can be mistaken for one, so `step_unwind` tells the two
+    /// kinds of unwinding apart without needing a second mode.
+    ///
+    /// That claim was false when this was written: conditions were
+    /// `ObjectType::Instance`, which is also what `fresh_marker` allocates, so
+    /// every `block` marker looked like a condition and a `return-from`
+    /// through a `handler-case` was caught by it. Conditions have their own
+    /// object type now, and `a_return_from_passes_through_a_handler` is the
+    /// test that says so.
+    fn signal(&mut self, condition: Value<'h>) -> Transition {
+        self.mc.set_register(Register::Value, condition);
+        self.begin_unwind(condition)
     }
 
     fn eval_progn(&mut self, form: Value<'h>) -> Transition {
@@ -989,9 +1101,17 @@ impl<'a, 'h> Machine<'a, 'h> {
     fn step_unwind(&mut self) -> Transition {
         let stack = self.mc.register(Register::Stack);
         if stack.is_nil() {
+            let target = self.mc.register(Register::Unwind);
+            // A condition nobody handled. The machine stops, which is what an
+            // unhandled error means — phase 3 replaces this with the debugger.
+            if crate::condition::is_condition(self.mc, target) {
+                let what = crate::condition::describe(self.mc, target);
+                self.mc.set_register(Register::Unwind, Value::NIL);
+                return self.fail(EvalError::Signalled(what));
+            }
             // Nothing matched: a `throw` with no catch, which is an error
             // rather than a silent halt.
-            let what = crate::printer::print(self.mc, self.mc.register(Register::Unwind));
+            let what = crate::printer::print(self.mc, target);
             return self.fail(EvalError::NoSuchExit(what));
         }
 
@@ -1011,6 +1131,46 @@ impl<'a, 'h> Machine<'a, 'h> {
             let resume = frame::make_cleanup(self.mc, value, target);
             self.push(resume);
             return self.begin(cleanup, env);
+        }
+
+        // A condition looking for a handler. The clauses are tried in order,
+        // as CLHS says, and the first type that matches wins.
+        if kind == frame::HANDLER && crate::condition::is_condition(self.mc, target) {
+            let clauses = self.mc.slot(f, frame::HANDLER_CLAUSES);
+            let env = self.mc.slot(f, frame::HANDLER_ENV);
+            let mut cursor = clauses;
+            while cursor.is_cons() {
+                let clause = self.mc.car(cursor);
+                cursor = self.mc.cdr(cursor);
+                if !clause.is_cons() {
+                    continue;
+                }
+                let wanted = self.mc.car(clause);
+                if !crate::condition::matches(self.mc, wanted, target) {
+                    continue;
+                }
+                let after = self.mc.cdr(clause);
+                let (names, values) = if after.is_cons() && self.mc.car(after).is_cons() {
+                    // `(type (c) body...)` — the condition is bound to c.
+                    let var = self.mc.car(self.mc.car(after));
+                    (vec![var], vec![target])
+                } else {
+                    // `(type () body...)` or `(type body...)`: no binding.
+                    (Vec::new(), Vec::new())
+                };
+                let body = if after.is_cons() && self.mc.car(after).is_cons() {
+                    self.mc.cdr(after)
+                } else {
+                    after
+                };
+                self.pop();
+                self.mc.set_register(Register::Unwind, Value::NIL);
+                let scope = env::make(self.mc, env, env::VARIABLE, &names, &values);
+                return self.begin(body, scope);
+            }
+            // This handler-case does not want it; keep unwinding.
+            self.pop();
+            return Transition::Continue;
         }
 
         // A matching block, catch or tagbody ends the unwind.
@@ -1209,6 +1369,12 @@ impl<'a, 'h> Machine<'a, 'h> {
             }
             // A macro returned a form. Evaluate that instead of the call —
             // which is the whole of what a macro is.
+            // The protected form finished without signalling, so the
+            // handlers were not needed. Drop them and pass the value on.
+            frame::HANDLER => {
+                let value = self.mc.register(Register::Value);
+                self.deliver(value)
+            }
             frame::EXPAND => {
                 let expansion = self.mc.register(Register::Value);
                 // Back to where the macro was *called*, not where it was
@@ -1363,6 +1529,16 @@ impl<'a, 'h> Machine<'a, 'h> {
                 function = self.mc.car(arguments);
                 arguments = self.mc.cdr(arguments);
                 continue;
+            }
+            // `(error datum ...)` signals rather than returning, so it
+            // unwinds the stack — which a primitive cannot do, for the same
+            // reason one cannot make a call.
+            if function.as_primitive() == Some(primitives::ERROR) {
+                let condition = match self.build_condition(arguments) {
+                    Ok(c) => c,
+                    Err(e) => return self.fail(e),
+                };
+                return self.signal(condition);
             }
             // `(apply f a b list)` calls f with a, b and the elements of list.
             // Intercepted here for the same reason as funcall: the call itself
@@ -1771,6 +1947,14 @@ pub mod special {
     pub const UNWIND_PROTECT: i64 = 21;
     /// `(defmacro name (params) body...)` — define a macro.
     pub const DEFMACRO: i64 = 22;
+    /// `(%handler-case form (type (var) body...) ...)` — run `form`, and if a
+    /// condition is signalled inside it, hand it to a matching clause.
+    ///
+    /// Named with a `%` because **Common Lisp's `handler-case` is a macro**,
+    /// over `handler-bind` and `block`. Quokka has no `handler-bind`, so the
+    /// machinery is an operator — but the CL-visible `handler-case` is a
+    /// prelude macro over this, which keeps the special operator count honest.
+    pub const HANDLER_CASE: i64 = 23;
 
     /// Every special operator, by name.
     pub const ALL: &[(&str, i64)] = &[
@@ -1795,6 +1979,7 @@ pub mod special {
         ("GO", GO),
         ("UNWIND-PROTECT", UNWIND_PROTECT),
         ("DEFMACRO", DEFMACRO),
+        ("%HANDLER-CASE", HANDLER_CASE),
     ];
 }
 
@@ -1837,9 +2022,15 @@ pub mod frame {
     /// Waiting for a macro to produce a form, which is then evaluated in place
     /// of the call.
     pub const EXPAND: i64 = 15;
+    /// A `handler-case` in progress: its clauses are waiting for a condition.
+    pub const HANDLER: i64 = 16;
 
     /// Slot 0 of every frame: which kind.
     pub const KIND: usize = 0;
+    /// A `handler-case`'s clauses, unevaluated.
+    pub const HANDLER_CLAUSES: usize = 1;
+    /// The environment the clause bodies run in.
+    pub const HANDLER_ENV: usize = 2;
     /// `(then else...)`, unevaluated.
     pub const IF_BRANCHES: usize = 1;
     /// The environment to evaluate the chosen branch in.
