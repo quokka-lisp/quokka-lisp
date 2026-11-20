@@ -339,6 +339,8 @@ pub enum Register {
     Value,
     /// Frames: what to do once that result arrives.
     Stack,
+    /// What an unwind is searching for, or `nil`.
+    Unwind,
 }
 
 /// An object header word, as stored in the heap.
@@ -394,6 +396,9 @@ struct Storage {
     env: u64,
     value: u64,
     stack: u64,
+    /// What an unwind is looking for: a `block`'s marker, a `catch`'s tag, or
+    /// a `tagbody`'s marker. `nil` when not unwinding. A root like the rest.
+    unwind: u64,
     /// Which half of the evaluator's cycle it is in. Not a `Value` — it is VM
     /// state rather than Lisp data, so the collector does not touch it.
     ///
@@ -665,6 +670,7 @@ impl<'h> Mutation<'h> {
             Register::Env => self.storage.env,
             Register::Value => self.storage.value,
             Register::Stack => self.storage.stack,
+            Register::Unwind => self.storage.unwind,
         })
     }
 
@@ -675,6 +681,7 @@ impl<'h> Mutation<'h> {
             Register::Env => &mut self.storage.env,
             Register::Value => &mut self.storage.value,
             Register::Stack => &mut self.storage.stack,
+            Register::Unwind => &mut self.storage.unwind,
         };
         *slot = v.bits();
     }
@@ -769,6 +776,7 @@ impl Heap {
                 env: Value::NIL.bits(),
                 value: Value::NIL.bits(),
                 stack: Value::NIL.bits(),
+                unwind: Value::NIL.bits(),
                 mode: 0,
                 soft_limit: words,
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
@@ -940,6 +948,7 @@ impl Heap {
         self.storage.env = forward(from, &mut to, self.storage.env);
         self.storage.value = forward(from, &mut to, self.storage.value);
         self.storage.stack = forward(from, &mut to, self.storage.stack);
+        self.storage.unwind = forward(from, &mut to, self.storage.unwind);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has
@@ -1042,6 +1051,7 @@ impl Heap {
         check(self.storage.env, usize::MAX)?;
         check(self.storage.value, usize::MAX)?;
         check(self.storage.stack, usize::MAX)?;
+        check(self.storage.unwind, usize::MAX)?;
 
         let mut at = self.storage.heap_start;
         while at < words.len() {

@@ -85,6 +85,13 @@ pub enum Mode {
     Eval,
     /// Deliver `value` to the top frame.
     Return,
+    /// Discard frames until one matches the `Unwind` register, running any
+    /// cleanups passed on the way.
+    ///
+    /// This is the third half-step, and it is what every non-local exit is
+    /// made of. `return-from`, `throw` and `go` differ only in how their
+    /// target is found — once found, all three unwind identically.
+    Unwind,
     /// Finished. `value` is the answer.
     Halt,
 }
@@ -93,7 +100,8 @@ impl Mode {
     fn from_u8(byte: u8) -> Mode {
         match byte {
             1 => Mode::Return,
-            2 => Mode::Halt,
+            2 => Mode::Unwind,
+            3 => Mode::Halt,
             _ => Mode::Eval,
         }
     }
@@ -101,7 +109,8 @@ impl Mode {
         match self {
             Mode::Eval => 0,
             Mode::Return => 1,
-            Mode::Halt => 2,
+            Mode::Unwind => 2,
+            Mode::Halt => 3,
         }
     }
 }
@@ -119,6 +128,8 @@ pub enum EvalError {
     UndefinedFunction(String),
     /// Something that is not a function in head position.
     NotAFunction(String),
+    /// A `return-from`, `go` or `throw` with nowhere to go.
+    NoSuchExit(String),
     /// A special operator written wrongly.
     BadSyntax {
         /// Which operator.
@@ -159,6 +170,7 @@ impl core::fmt::Display for EvalError {
             EvalError::UnboundVariable(n) => write!(f, "the variable {n} is unbound"),
             EvalError::UndefinedFunction(n) => write!(f, "the function {n} is undefined"),
             EvalError::NotAFunction(n) => write!(f, "{n} is not a function"),
+            EvalError::NoSuchExit(n) => write!(f, "there is no exit named {n} here"),
             EvalError::BadSyntax { operator, detail } => write!(f, "bad {operator}: {detail}"),
             EvalError::WrongArgumentCount { name, wanted, got } => {
                 write!(f, "{name} wants {wanted} argument(s), got {got}")
@@ -197,6 +209,7 @@ impl<'a, 'h> Machine<'a, 'h> {
         mc.set_register(Register::Env, env);
         mc.set_register(Register::Value, Value::NIL);
         mc.set_register(Register::Stack, Value::NIL);
+        mc.set_register(Register::Unwind, Value::NIL);
         mc.set_mode(Mode::Eval.as_u8());
         Machine { mc, error: None }
     }
@@ -298,6 +311,13 @@ impl<'a, 'h> Machine<'a, 'h> {
                         self.begin(body, env)
                     }
                     special::EVAL_WHEN => self.eval_eval_when(control),
+                    special::BLOCK => self.eval_block(control),
+                    special::RETURN_FROM => self.eval_return_from(control),
+                    special::CATCH => self.eval_catch(control),
+                    special::THROW => self.eval_throw(control),
+                    special::TAGBODY => self.eval_tagbody(control),
+                    special::GO => self.eval_go(control),
+                    special::UNWIND_PROTECT => self.eval_unwind_protect(control),
                     _ => self.fail(EvalError::BadSyntax {
                         operator: "a special operator",
                         detail: "is not implemented",
@@ -710,6 +730,300 @@ impl<'a, 'h> Machine<'a, 'h> {
         self.deliver(Value::NIL)
     }
 
+    // ---- non-local exits -------------------------------------------------
+    //
+    // Three operators leave a computation early, and they differ only in how
+    // the target is found. `return-from` and `go` look theirs up in the
+    // environment, so they can only reach somewhere that encloses them in the
+    // source. `throw` searches the frame stack at run time, so it can reach a
+    // caller that the thrower has never heard of.
+    //
+    // Once a target is found all three do the same thing: put it in the Unwind
+    // register, put the value in Value, and switch to Unwind mode.
+
+    /// Is this something `block` can be named?
+    ///
+    /// A symbol — or `nil`, which **is** a symbol in Common Lisp and is not one
+    /// here. `(block nil ...)` is not an edge case: it is what `loop`, `do` and
+    /// `dolist` all expand into, and what a bare `return` targets.
+    ///
+    /// So this is the fourth place `nil` being an immediate costs a special
+    /// case, after two in `intern` and one in the printer. See issue #7, which
+    /// has been open since chapter 1 of the book and predicted this exact
+    /// moment.
+    fn is_block_name(&self, v: Value<'h>) -> bool {
+        self.mc.is_symbol(v) || v.is_nil()
+    }
+
+    /// A fresh object, equal to nothing but itself.
+    ///
+    /// `block` and `tagbody` each need an identity that no other entry to the
+    /// same form can collide with — two calls to a recursive function are two
+    /// different blocks, even though the name is the same.
+    fn fresh_marker(&mut self) -> Value<'h> {
+        self.mc.alloc(ObjectType::Instance, 0)
+    }
+
+    fn eval_block(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() || !self.is_block_name(self.mc.car(rest)) {
+            return self.fail(EvalError::BadSyntax {
+                operator: "block",
+                detail: "wants a name and a body",
+            });
+        }
+        let name = self.mc.car(rest);
+        let body = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+
+        let marker = self.fresh_marker();
+        let scope = env::make(self.mc, env, env::BLOCK, &[name], &[marker]);
+        let f = frame::make_marked(self.mc, frame::BLOCK, marker);
+        self.push(f);
+        self.begin(body, scope)
+    }
+
+    fn eval_return_from(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() || !self.is_block_name(self.mc.car(rest)) {
+            return self.fail(EvalError::BadSyntax {
+                operator: "return-from",
+                detail: "wants a block name",
+            });
+        }
+        let name = self.mc.car(rest);
+        let env = self.mc.register(Register::Env);
+        let Some(marker) = env::lookup_marker(self.mc, env, env::BLOCK, name) else {
+            let what = self.mc.symbol_name(name);
+            return self.fail(EvalError::NoSuchExit(what));
+        };
+
+        // The value form is evaluated first, then the unwind happens — which is
+        // why this needs a frame rather than being immediate.
+        let value_form = self.mc.cdr(rest);
+        let f = frame::make_marked(self.mc, frame::EXIT, marker);
+        self.push(f);
+        if value_form.is_cons() {
+            self.mc
+                .set_register(Register::Control, self.mc.car(value_form));
+            self.mc.set_mode(Mode::Eval.as_u8());
+            Transition::Continue
+        } else {
+            self.deliver(Value::NIL)
+        }
+    }
+
+    fn eval_catch(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "catch",
+                detail: "wants a tag and a body",
+            });
+        }
+        // The tag is evaluated, unlike a block name — that is the whole
+        // difference between lexical and dynamic.
+        let f = frame::make_catch_pending(self.mc, self.mc.cdr(rest));
+        self.push(f);
+        self.mc.set_register(Register::Control, self.mc.car(rest));
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    fn eval_throw(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "throw",
+                detail: "wants a tag and a value",
+            });
+        }
+        let f = frame::make_throw_pending(self.mc, self.mc.cdr(rest));
+        self.push(f);
+        self.mc.set_register(Register::Control, self.mc.car(rest));
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    /// `(tagbody tag form ... tag form ...)`.
+    ///
+    /// Atoms in the body are labels; conses are forms. It yields nil, and
+    /// exists so that `go` has somewhere to go — which is to say, so that every
+    /// looping macro in the language has something to expand into.
+    fn eval_tagbody(&mut self, form: Value<'h>) -> Transition {
+        let body = self.mc.cdr(form);
+        let env = self.mc.register(Register::Env);
+        let marker = self.fresh_marker();
+
+        // Every tag in this body is bound to the same marker, so `go` finds
+        // *this* tagbody; which tag to resume at travels in the Value register.
+        let mut tags = Vec::new();
+        let mut cursor = body;
+        while cursor.is_cons() {
+            let item = self.mc.car(cursor);
+            if !item.is_cons() {
+                tags.push(item);
+            }
+            cursor = self.mc.cdr(cursor);
+        }
+        let markers = vec![marker; tags.len()];
+        let scope = env::make(self.mc, env, env::TAG, &tags, &markers);
+
+        let f = frame::make_tagbody(self.mc, marker, body, body, scope);
+        self.push(f);
+        self.tagbody_step(body, body, marker, scope)
+    }
+
+    /// Run the next form of a tagbody, skipping labels.
+    fn tagbody_step(
+        &mut self,
+        body: Value<'h>,
+        remaining: Value<'h>,
+        marker: Value<'h>,
+        env: Value<'h>,
+    ) -> Transition {
+        let mut cursor = remaining;
+        while cursor.is_cons() && !self.mc.car(cursor).is_cons() {
+            cursor = self.mc.cdr(cursor); // a label, not a form
+        }
+        if !cursor.is_cons() {
+            // Fell off the end. A tagbody yields nil.
+            self.pop();
+            return self.deliver(Value::NIL);
+        }
+        let next = self.mc.car(cursor);
+        let rest = self.mc.cdr(cursor);
+        let f = frame::make_tagbody(self.mc, marker, body, rest, env);
+        self.replace_top(f);
+        self.mc.set_register(Register::Env, env);
+        self.mc.set_register(Register::Control, next);
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    fn eval_go(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "go",
+                detail: "wants a tag",
+            });
+        }
+        let tag = self.mc.car(rest);
+        let env = self.mc.register(Register::Env);
+        let Some(marker) = env::lookup_marker(self.mc, env, env::TAG, tag) else {
+            let what = crate::printer::print(self.mc, tag);
+            return self.fail(EvalError::NoSuchExit(what));
+        };
+        // The tag travels as the value; the tagbody frame reads it on arrival.
+        self.mc.set_register(Register::Value, tag);
+        self.begin_unwind(marker)
+    }
+
+    /// `(unwind-protect body cleanup...)`.
+    ///
+    /// The cleanup runs however the body ends — normally, or because something
+    /// unwound straight past. The second case is the hard one: the unwind has
+    /// to *pause*, run ordinary code, and then carry on from where it was.
+    fn eval_unwind_protect(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "unwind-protect",
+                detail: "wants a body",
+            });
+        }
+        let body = self.mc.car(rest);
+        let cleanup = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+
+        let f = frame::make_protect(self.mc, cleanup, env);
+        self.push(f);
+        self.mc.set_register(Register::Control, body);
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    // ---- the Unwind half -------------------------------------------------
+
+    /// Start unwinding towards `target`. The value to deliver is already in the
+    /// Value register.
+    fn begin_unwind(&mut self, target: Value<'h>) -> Transition {
+        self.mc.set_register(Register::Unwind, target);
+        self.mc.set_mode(Mode::Unwind.as_u8());
+        Transition::Continue
+    }
+
+    fn step_unwind(&mut self) -> Transition {
+        let stack = self.mc.register(Register::Stack);
+        if stack.is_nil() {
+            // Nothing matched: a `throw` with no catch, which is an error
+            // rather than a silent halt.
+            let what = crate::printer::print(self.mc, self.mc.register(Register::Unwind));
+            return self.fail(EvalError::NoSuchExit(what));
+        }
+
+        let f = self.mc.car(stack);
+        let target = self.mc.register(Register::Unwind);
+        let kind = frame::kind(self.mc, f);
+
+        // A cleanup must run even though we are leaving. The unwind pauses: the
+        // saved target goes into a CLEANUP frame, ordinary evaluation resumes
+        // for the cleanup forms, and the CLEANUP frame restarts the unwind
+        // afterwards. Without this, unwind-protect would be a comment.
+        if kind == frame::PROTECT {
+            self.pop();
+            let cleanup = self.mc.slot(f, frame::PROTECT_CLEANUP);
+            let env = self.mc.slot(f, frame::PROTECT_ENV);
+            let value = self.mc.register(Register::Value);
+            let resume = frame::make_cleanup(self.mc, value, target);
+            self.push(resume);
+            return self.begin(cleanup, env);
+        }
+
+        // A matching block, catch or tagbody ends the unwind.
+        if frame::marker_of(self.mc, f) == Some(target) {
+            if kind == frame::TAGBODY {
+                let body = self.mc.slot(f, frame::TAGBODY_BODY);
+                let env = self.mc.slot(f, frame::TAGBODY_ENV);
+                let tag = self.mc.register(Register::Value);
+                let resume = self.after_tag(body, tag);
+                self.mc.set_register(Register::Unwind, Value::NIL);
+                return self.tagbody_step(body, resume, target, env);
+            }
+            self.pop();
+            self.mc.set_register(Register::Unwind, Value::NIL);
+            let value = self.mc.register(Register::Value);
+            return self.deliver(value);
+        }
+
+        self.pop();
+        Transition::Continue
+    }
+
+    /// The part of a tagbody's body just after `tag`.
+    fn after_tag(&mut self, body: Value<'h>, tag: Value<'h>) -> Value<'h> {
+        let mut cursor = body;
+        while cursor.is_cons() {
+            if self.mc.car(cursor) == tag {
+                return self.mc.cdr(cursor);
+            }
+            cursor = self.mc.cdr(cursor);
+        }
+        Value::NIL
+    }
+
+    fn pop(&mut self) {
+        let stack = self.mc.register(Register::Stack);
+        let rest = self.mc.cdr(stack);
+        self.mc.set_register(Register::Stack, rest);
+    }
+
+    fn replace_top(&mut self, f: Value<'h>) {
+        self.pop();
+        self.push(f);
+    }
+
     // ---- binding shapes --------------------------------------------------
     //
     // A binding may be written `(name init)`, `(name)` or bare `name`. The last
@@ -835,6 +1149,70 @@ impl<'a, 'h> Machine<'a, 'h> {
             frame::SETQ => self.return_to_setq(f),
             frame::LET => self.return_to_let(f),
             frame::LETSTAR => self.return_to_let_star(f),
+            // A block or catch that was left normally: its value is the value.
+            frame::BLOCK | frame::CATCH => {
+                let value = self.mc.register(Register::Value);
+                self.deliver(value)
+            }
+            // A return-from whose value has now been evaluated.
+            frame::EXIT => {
+                let marker = self.mc.slot(f, frame::MARKER);
+                self.begin_unwind(marker)
+            }
+            frame::CATCH_PENDING => {
+                let tag = self.mc.register(Register::Value);
+                let body = self.mc.slot(f, frame::PENDING_REST);
+                let env = self.mc.register(Register::Env);
+                let c = frame::make_marked(self.mc, frame::CATCH, tag);
+                self.push(c);
+                self.begin(body, env)
+            }
+            frame::THROW_PENDING => {
+                let tag = self.mc.register(Register::Value);
+                let rest = self.mc.slot(f, frame::PENDING_REST);
+                let e = frame::make_marked(self.mc, frame::EXIT, tag);
+                self.push(e);
+                if rest.is_cons() {
+                    let value_form = self.mc.car(rest);
+                    self.mc.set_register(Register::Control, value_form);
+                    self.mc.set_mode(Mode::Eval.as_u8());
+                    Transition::Continue
+                } else {
+                    self.deliver(Value::NIL)
+                }
+            }
+            frame::TAGBODY => {
+                // A form finished; run the next one. Its value is discarded —
+                // a tagbody is for effect.
+                let marker = self.mc.slot(f, frame::MARKER);
+                let body = self.mc.slot(f, frame::TAGBODY_BODY);
+                let rest = self.mc.slot(f, frame::TAGBODY_REST);
+                let env = self.mc.slot(f, frame::TAGBODY_ENV);
+                self.push(f);
+                self.tagbody_step(body, rest, marker, env)
+            }
+            // The body returned normally, so the cleanup still runs — and the
+            // body's value has to survive it.
+            frame::PROTECT => {
+                let cleanup = self.mc.slot(f, frame::PROTECT_CLEANUP);
+                let env = self.mc.slot(f, frame::PROTECT_ENV);
+                let value = self.mc.register(Register::Value);
+                let resume = frame::make_cleanup(self.mc, value, Value::NIL);
+                self.push(resume);
+                self.begin(cleanup, env)
+            }
+            // A cleanup finished. Its own value is discarded; what was saved
+            // before it ran is what matters.
+            frame::CLEANUP => {
+                let saved = self.mc.slot(f, frame::CLEANUP_VALUE);
+                let target = self.mc.slot(f, frame::CLEANUP_TARGET);
+                self.mc.set_register(Register::Value, saved);
+                if target.is_nil() {
+                    self.deliver(saved)
+                } else {
+                    self.begin_unwind(target)
+                }
+            }
             _ => self.fail(EvalError::BadSyntax {
                 operator: "a frame",
                 detail: "has an unknown kind",
@@ -1017,6 +1395,7 @@ impl Steppable for Machine<'_, '_> {
         match Mode::from_u8(self.mc.mode()) {
             Mode::Eval => self.step_eval(),
             Mode::Return => self.step_return(),
+            Mode::Unwind => self.step_unwind(),
             Mode::Halt => Transition::Halt,
         }
     }
@@ -1058,6 +1437,20 @@ pub mod special {
     pub const LOCALLY: i64 = 13;
     /// `(eval-when (situations...) body...)` — when this is for.
     pub const EVAL_WHEN: i64 = 14;
+    /// `(block name body...)` — a named region that can be left early.
+    pub const BLOCK: i64 = 15;
+    /// `(return-from name value)` — leave it.
+    pub const RETURN_FROM: i64 = 16;
+    /// `(catch tag body...)` — a region findable at run time.
+    pub const CATCH: i64 = 17;
+    /// `(throw tag value)` — leave the nearest matching catch.
+    pub const THROW: i64 = 18;
+    /// `(tagbody tag form... tag form...)` — a body with labels.
+    pub const TAGBODY: i64 = 19;
+    /// `(go tag)` — jump to one.
+    pub const GO: i64 = 20;
+    /// `(unwind-protect body cleanup...)` — cleanup however the body ends.
+    pub const UNWIND_PROTECT: i64 = 21;
 
     /// Every special operator, by name.
     pub const ALL: &[(&str, i64)] = &[
@@ -1075,6 +1468,13 @@ pub mod special {
         ("THE", THE),
         ("LOCALLY", LOCALLY),
         ("EVAL-WHEN", EVAL_WHEN),
+        ("BLOCK", BLOCK),
+        ("RETURN-FROM", RETURN_FROM),
+        ("CATCH", CATCH),
+        ("THROW", THROW),
+        ("TAGBODY", TAGBODY),
+        ("GO", GO),
+        ("UNWIND-PROTECT", UNWIND_PROTECT),
     ];
 }
 
@@ -1098,6 +1498,22 @@ pub mod frame {
     pub const LET: i64 = 5;
     /// Evaluating a `let*`'s next init, in the scope built so far.
     pub const LETSTAR: i64 = 6;
+    /// A `block`: an unwind target found lexically.
+    pub const BLOCK: i64 = 7;
+    /// A `catch`: an unwind target found by searching the stack.
+    pub const CATCH: i64 = 8;
+    /// A `tagbody`, holding where it is up to.
+    pub const TAGBODY: i64 = 9;
+    /// An `unwind-protect`, whose cleanup runs however the body ends.
+    pub const PROTECT: i64 = 10;
+    /// Waiting for a cleanup to finish, holding what to do next.
+    pub const CLEANUP: i64 = 11;
+    /// Waiting on the value of a `return-from`.
+    pub const EXIT: i64 = 12;
+    /// Waiting on a `catch`'s tag, before the body runs.
+    pub const CATCH_PENDING: i64 = 13;
+    /// Waiting on a `throw`'s tag, before its value is evaluated.
+    pub const THROW_PENDING: i64 = 14;
 
     /// Slot 0 of every frame: which kind.
     pub const KIND: usize = 0;
@@ -1137,6 +1553,33 @@ pub mod frame {
     pub const LETSTAR_BODY: usize = 2;
     /// The scope built so far.
     pub const LETSTAR_ENV: usize = 3;
+    /// The identity a `block`, `catch` or `tagbody` is unwound to.
+    pub const MARKER: usize = 1;
+    /// A tagbody's whole body, for resuming at a tag.
+    pub const TAGBODY_BODY: usize = 2;
+    /// What of it is still to run.
+    pub const TAGBODY_REST: usize = 3;
+    /// The scope its tags are bound in.
+    pub const TAGBODY_ENV: usize = 4;
+    /// An `unwind-protect`'s cleanup forms.
+    pub const PROTECT_CLEANUP: usize = 1;
+    /// The scope they run in.
+    pub const PROTECT_ENV: usize = 2;
+    /// The value to deliver once a cleanup finishes.
+    pub const CLEANUP_VALUE: usize = 1;
+    /// What the paused unwind was looking for, or nil if the body returned
+    /// normally.
+    pub const CLEANUP_TARGET: usize = 2;
+    /// The remaining forms of a pending `catch` or `throw`.
+    pub const PENDING_REST: usize = 2;
+
+    /// What this frame can be unwound to, if anything.
+    pub fn marker_of<'h>(mc: &Mutation<'h>, f: Value<'h>) -> Option<Value<'h>> {
+        match kind(mc, f) {
+            BLOCK | CATCH | TAGBODY => Some(mc.slot(f, MARKER)),
+            _ => None,
+        }
+    }
 
     /// Which kind of frame this is.
     pub fn kind<'h>(mc: &Mutation<'h>, f: Value<'h>) -> i64 {
@@ -1149,6 +1592,73 @@ pub mod frame {
         mc.set_slot(f, KIND, Value::fixnum(IF).expect("small"));
         mc.set_slot(f, IF_BRANCHES, branches);
         mc.set_slot(f, IF_ENV, env);
+        f
+    }
+
+    /// A frame carrying only an identity: `block`, `catch`, `return-from`.
+    pub fn make_marked<'h>(mc: &mut Mutation<'h>, kind: i64, marker: Value<'h>) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 2);
+        mc.set_slot(f, KIND, Value::fixnum(kind).expect("small"));
+        mc.set_slot(f, MARKER, marker);
+        f
+    }
+
+    /// A `tagbody`, holding its body and where it is up to.
+    pub fn make_tagbody<'h>(
+        mc: &mut Mutation<'h>,
+        marker: Value<'h>,
+        body: Value<'h>,
+        rest: Value<'h>,
+        env: Value<'h>,
+    ) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 5);
+        mc.set_slot(f, KIND, Value::fixnum(TAGBODY).expect("small"));
+        mc.set_slot(f, MARKER, marker);
+        mc.set_slot(f, TAGBODY_BODY, body);
+        mc.set_slot(f, TAGBODY_REST, rest);
+        mc.set_slot(f, TAGBODY_ENV, env);
+        f
+    }
+
+    /// An `unwind-protect` waiting on its body.
+    pub fn make_protect<'h>(
+        mc: &mut Mutation<'h>,
+        cleanup: Value<'h>,
+        env: Value<'h>,
+    ) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 3);
+        mc.set_slot(f, KIND, Value::fixnum(PROTECT).expect("small"));
+        mc.set_slot(f, PROTECT_CLEANUP, cleanup);
+        mc.set_slot(f, PROTECT_ENV, env);
+        f
+    }
+
+    /// A paused unwind, or a value waiting on a cleanup.
+    pub fn make_cleanup<'h>(
+        mc: &mut Mutation<'h>,
+        value: Value<'h>,
+        target: Value<'h>,
+    ) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 3);
+        mc.set_slot(f, KIND, Value::fixnum(CLEANUP).expect("small"));
+        mc.set_slot(f, CLEANUP_VALUE, value);
+        mc.set_slot(f, CLEANUP_TARGET, target);
+        f
+    }
+
+    /// A `catch` whose tag is being evaluated.
+    pub fn make_catch_pending<'h>(mc: &mut Mutation<'h>, rest: Value<'h>) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 3);
+        mc.set_slot(f, KIND, Value::fixnum(CATCH_PENDING).expect("small"));
+        mc.set_slot(f, PENDING_REST, rest);
+        f
+    }
+
+    /// A `throw` whose tag is being evaluated.
+    pub fn make_throw_pending<'h>(mc: &mut Mutation<'h>, rest: Value<'h>) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 3);
+        mc.set_slot(f, KIND, Value::fixnum(THROW_PENDING).expect("small"));
+        mc.set_slot(f, PENDING_REST, rest);
         f
     }
 
@@ -1417,6 +1927,34 @@ mod tests {
             }
             Ok(last)
         })
+    }
+
+    /// Run a program, sampling the frame stack as it goes, and return the
+    /// deepest it ever reached along with the final value.
+    ///
+    /// Claims about tail calls and loops are claims about *depth*, and a claim
+    /// about depth should be measured rather than inferred from the fact that
+    /// nothing crashed.
+    fn deepest_stack(source: &str, slice: u64) -> (usize, String) {
+        use crate::slice::{run_slice, Status};
+
+        let chars = Reader::chars_of(source);
+        let mut heap = Heap::new();
+        let deepest = heap.mutate(|mc| {
+            primitives::install(mc);
+            let mut reader = Reader::new(&chars);
+            let mut deepest = 0usize;
+            while let Some(form) = reader.read(mc).expect("reads") {
+                let mut machine = Machine::start(mc, form, Value::NIL);
+                while run_slice(&mut machine, slice) == Status::Yielded {
+                    deepest = deepest.max(machine.stack_depth());
+                }
+                assert!(machine.error.is_none(), "{:?}", machine.error);
+            }
+            deepest
+        });
+        let answer = heap.mutate(|mc| print(mc, mc.register(Register::Value)));
+        (deepest, answer)
     }
 
     fn program_gives(source: &str, expected: &str) {
@@ -1740,6 +2278,169 @@ mod tests {
         ));
     }
 
+    // ---- group B: non-local exits ----------------------------------------
+
+    #[test]
+    fn block_and_return_from_are_lexical() {
+        program_gives("(block nil 1 2 3)", "3");
+        program_gives("(block nil 1 (return-from nil 2) 3)", "2");
+        program_gives("(block done (return-from done 'early) 'late)", "EARLY");
+        // The inner block does not catch a return aimed at the outer one.
+        program_gives(
+            "(block outer (block inner (return-from outer 'far)) 'near)",
+            "FAR",
+        );
+        program_gives(
+            "(block outer (block inner (return-from inner 'in)) 'after)",
+            "AFTER",
+        );
+        program_gives("(block b (return-from b (+ 1 2)))", "3");
+        program_gives("(block b (return-from b))", "NIL");
+    }
+
+    /// Two entries to the same block are two different blocks, which is why the
+    /// target is a fresh object rather than the name.
+    #[test]
+    fn recursive_blocks_do_not_collide() {
+        program_gives(
+            "(defun f (n) (block b (if (= n 0) (return-from b 'bottom) (f (- n 1)))))
+             (f 5)",
+            "BOTTOM",
+        );
+    }
+
+    /// catch is the dynamic version: the thrower need not know where the catch
+    /// is, or even that there is one.
+    #[test]
+    fn catch_and_throw_are_dynamic() {
+        program_gives("(catch 'tag 1 2 3)", "3");
+        program_gives("(catch 'tag (throw 'tag 42) 'unreached)", "42");
+        program_gives("(catch 'a (catch 'b (throw 'a 'through)))", "THROUGH");
+        program_gives("(catch 'a (catch 'b (throw 'b 'inner)))", "INNER");
+        // Through fifty frames of a caller that knows nothing about it.
+        program_gives(
+            "(defun deep (n) (if (= n 0) (throw 'out 'arrived) (deep (- n 1))))
+             (catch 'out (deep 50))",
+            "ARRIVED",
+        );
+    }
+
+    #[test]
+    fn tagbody_and_go_make_a_loop() {
+        program_gives("(tagbody)", "NIL");
+        program_gives("(tagbody a b c)", "NIL");
+        program_gives(
+            "(setq n 0) (tagbody top (setq n (+ n 1)) (if (< n 5) (go top))) n",
+            "5",
+        );
+        program_gives(
+            "(setq out nil) (tagbody (go skip) (setq out 'wrong) skip (setq out 'right)) out",
+            "RIGHT",
+        );
+    }
+
+    /// A tagbody loop must run in **constant space**, or every looping macro
+    /// in the language inherits a limit from the construct it expands into.
+    ///
+    /// Measured rather than inferred: the frame is replaced on each iteration
+    /// rather than pushed, and the way to show that is to watch the depth.
+    #[test]
+    fn a_tagbody_loop_does_not_grow_the_stack() {
+        let (deepest, answer) = deepest_stack(
+            "(setq n 0) (tagbody top (setq n (+ n 1)) (if (< n 20000) (go top))) n",
+            50,
+        );
+        assert_eq!(answer, "20000");
+        assert!(
+            deepest < 20,
+            "twenty thousand iterations reached {deepest} frames"
+        );
+    }
+
+    /// And a `catch` that is never thrown to must not accumulate either, since
+    /// a loop wrapped in one is ordinary.
+    #[test]
+    fn repeated_catches_do_not_accumulate() {
+        let (deepest, answer) = deepest_stack(
+            "(defun f (n) (if (= n 0) 'done (catch 'tag (f (- n 1)))))
+             (f 200)",
+            50,
+        );
+        assert_eq!(answer, "DONE");
+        // This one *should* grow — a catch is a frame that must be there to be
+        // found. The point is that it grows linearly rather than faster.
+        assert!(
+            deepest > 200 && deepest < 1_000,
+            "200 nested catches reached {deepest} frames"
+        );
+    }
+
+    #[test]
+    fn unwind_protect_cleans_up_on_a_normal_return() {
+        program_gives(
+            "(setq log nil) (unwind-protect 'body (setq log 'cleaned)) log",
+            "CLEANED",
+        );
+        // The body's value survives; the cleanup's is discarded.
+        program_gives("(unwind-protect 'kept 'discarded)", "KEPT");
+    }
+
+    /// The hard case: the unwind has to *pause*, run ordinary code, and then
+    /// carry on from where it was.
+    #[test]
+    fn unwind_protect_cleans_up_while_being_unwound_through() {
+        program_gives(
+            "(setq log nil) (block b (unwind-protect (return-from b 'left) (setq log 'cleaned))) log",
+            "CLEANED",
+        );
+        program_gives(
+            "(setq log nil) (catch 'x (unwind-protect (throw 'x 'thrown) (setq log 'cleaned))) log",
+            "CLEANED",
+        );
+        // And the unwind continues past it to a target further out.
+        program_gives(
+            "(catch 'outer (unwind-protect (catch 'inner (throw 'outer 'past)) nil))",
+            "PAST",
+        );
+    }
+
+    /// Nested cleanups run innermost first, which is the only order that makes
+    /// sense and is worth pinning.
+    #[test]
+    fn nested_cleanups_run_inside_out() {
+        program_gives(
+            "(setq log nil)
+             (catch 'x
+               (unwind-protect
+                   (unwind-protect (throw 'x 'done) (setq log (cons 'inner log)))
+                 (setq log (cons 'outer log))))
+             log",
+            "(OUTER INNER)",
+        );
+    }
+
+    #[test]
+    fn an_exit_with_no_target_signals() {
+        for source in [
+            "(return-from nowhere 1)",
+            "(throw 'nothing 1)",
+            "(go nowhere)",
+        ] {
+            assert!(
+                matches!(eval_all(source), Err(EvalError::NoSuchExit(_))),
+                "{source} should have nowhere to go"
+            );
+        }
+        assert!(matches!(
+            eval_all("(block)"),
+            Err(EvalError::BadSyntax { .. })
+        ));
+        assert!(matches!(
+            eval_all("(catch)"),
+            Err(EvalError::BadSyntax { .. })
+        ));
+    }
+
     // ---- not finishing ---------------------------------------------------
 
     /// A recursion with no base case must stop, and stop *cheaply*.
@@ -1958,6 +2659,15 @@ pub mod env {
 
     /// Variables — what `let` binds and a symbol evaluates to.
     pub const VARIABLE: i64 = 0;
+    /// Block names — what `block` binds and `return-from` looks up.
+    ///
+    /// A third and fourth namespace, because `(block list ...)` must not
+    /// disturb either the variable `list` or the function. Common Lisp has
+    /// several namespaces, not two, and this is two of the others.
+    pub const BLOCK: i64 = 2;
+    /// `tagbody` tags — what `go` looks up.
+    pub const TAG: i64 = 3;
+
     /// Functions — what `flet` and `labels` bind, and what the operator
     /// position of a call looks up.
     ///
@@ -2044,6 +2754,20 @@ pub mod env {
         } else {
             Some(global)
         }
+    }
+
+    /// The marker a block name or a tag is bound to, if any.
+    ///
+    /// Lexical: `return-from` and `go` can only reach a block or tag that
+    /// encloses them in the source, which is what makes them safe. `throw`
+    /// is the dynamic alternative and does not come through here.
+    pub fn lookup_marker<'h>(
+        mc: &Mutation<'h>,
+        env: Value<'h>,
+        namespace: i64,
+        name: Value<'h>,
+    ) -> Option<Value<'h>> {
+        find(mc, env, namespace, name).map(|(scope, slot)| mc.slot(scope, slot))
     }
 
     /// Assign to `name`, creating a global if it is bound nowhere.
