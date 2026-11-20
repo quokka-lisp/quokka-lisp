@@ -92,13 +92,33 @@ const TABLE: &[Primitive] = &[
         name: "SYMBOLP",
         arity: Arity::Exactly(1),
     },
+    // Handled by the evaluator, not by `call` below: applying a function is
+    // the machine's job, not a primitive's. Present here so it has a name and
+    // a function cell like everything else.
+    Primitive {
+        name: "FUNCALL",
+        arity: Arity::AtLeast(1),
+    },
 ];
+
+/// Where `FUNCALL` sits in the table, which `crate::eval` intercepts.
+///
+/// A constant rather than a search, with a test that it is still right —
+/// table order is part of the image format, and a silent drift here would make
+/// every `funcall` call some other primitive.
+pub const FUNCALL: u32 = 13;
 
 /// Put every primitive in its symbol's function cell, so `(+ 1 2)` can find it.
 ///
 /// Called once when a heap is prepared. Interning the names is also what puts
 /// them in the obarray, so they survive collection like any other symbol.
 pub fn install(mc: &mut Mutation<'_>) {
+    // Special operators are marked on their own symbols; see `crate::eval`.
+    for (name, code) in crate::eval::special::ALL {
+        let symbol = mc.intern(name);
+        let value = Value::fixnum(*code).expect("small");
+        mc.set_slot(symbol, crate::heap::symbol::SPECIAL, value);
+    }
     for (index, p) in TABLE.iter().enumerate() {
         let name = mc.intern(p.name);
         let value = Value::primitive(index as u32);
@@ -238,4 +258,28 @@ fn to_vec<'h>(mc: &Mutation<'h>, list: Value<'h>) -> Vec<Value<'h>> {
         cursor = mc.cdr(cursor);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_funcall_index_is_still_right() {
+        assert_eq!(TABLE[FUNCALL as usize].name, "FUNCALL");
+    }
+
+    /// Table order is part of the image format. This does not stop a reorder,
+    /// but it makes one a deliberate act with a failing test attached.
+    #[test]
+    fn the_table_order_is_pinned() {
+        let names: Vec<&str> = TABLE.iter().map(|p| p.name).collect();
+        assert_eq!(
+            names,
+            [
+                "+", "-", "*", "=", "<", ">", "CONS", "CAR", "CDR", "EQ", "NULL", "CONSP",
+                "SYMBOLP", "FUNCALL"
+            ]
+        );
+    }
 }

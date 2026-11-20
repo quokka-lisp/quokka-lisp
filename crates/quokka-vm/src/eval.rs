@@ -70,7 +70,7 @@
 //! No Rust recursion anywhere. Stop between any two rows and the entire state
 //! is four heap values.
 
-use crate::heap::{Mutation, ObjectType, Register};
+use crate::heap::{symbol, Mutation, ObjectType, Register};
 use crate::primitives;
 use crate::slice::{Steppable, Transition};
 use crate::value::Value;
@@ -196,6 +196,20 @@ impl<'a, 'h> Machine<'a, 'h> {
         self.mc.register(Register::Value)
     }
 
+    /// How many frames are pending.
+    ///
+    /// For tests that need to observe the stack rather than infer it: a tail
+    /// call is a claim about depth, and a claim about depth should be measured.
+    pub fn stack_depth(&self) -> usize {
+        let mut depth = 0;
+        let mut cursor = self.mc.register(Register::Stack);
+        while cursor.is_cons() {
+            depth += 1;
+            cursor = self.mc.cdr(cursor);
+        }
+        depth
+    }
+
     /// Has it finished?
     pub fn is_halted(&self) -> bool {
         Mode::from_u8(self.mc.mode()) == Mode::Halt
@@ -230,12 +244,24 @@ impl<'a, 'h> Machine<'a, 'h> {
         }
 
         // A list. Special operator, or a call?
+        //
+        // Dispatch is a slot read rather than a name comparison: `if` is
+        // special *because the symbol IF is*, so that is where the fact lives.
         let head = self.mc.car(control);
         if self.mc.is_symbol(head) {
-            match self.mc.symbol_name(head).as_str() {
-                "QUOTE" => return self.eval_quote(control),
-                "IF" => return self.eval_if(control),
-                _ => {}
+            if let Some(op) = self.mc.slot(head, symbol::SPECIAL).as_fixnum() {
+                return match op {
+                    special::QUOTE => self.eval_quote(control),
+                    special::IF => self.eval_if(control),
+                    special::LAMBDA => self.eval_lambda(control),
+                    special::PROGN => self.eval_progn(control),
+                    special::SETQ => self.eval_setq(control),
+                    special::DEFUN => self.eval_defun(control),
+                    _ => self.fail(EvalError::BadSyntax {
+                        operator: "a special operator",
+                        detail: "is not implemented",
+                    }),
+                };
             }
         }
         self.eval_call(control)
@@ -275,6 +301,113 @@ impl<'a, 'h> Machine<'a, 'h> {
         Transition::Continue
     }
 
+    fn eval_lambda(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "lambda",
+                detail: "wants a parameter list",
+            });
+        }
+        let params = self.mc.car(rest);
+        let body = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+        // The body is not evaluated. Capturing `env` is what lets the closure
+        // still see its enclosing scope after that scope has been left.
+        let c = closure::make(self.mc, params, body, env);
+        self.deliver(c)
+    }
+
+    fn eval_progn(&mut self, form: Value<'h>) -> Transition {
+        let body = self.mc.cdr(form);
+        let env = self.mc.register(Register::Env);
+        self.begin(body, env)
+    }
+
+    fn eval_setq(&mut self, form: Value<'h>) -> Transition {
+        let pairs = self.mc.cdr(form);
+        self.setq_next(pairs)
+    }
+
+    fn setq_next(&mut self, pairs: Value<'h>) -> Transition {
+        if !pairs.is_cons() {
+            // `(setq)` and the end of `(setq a 1 b 2)` both yield the last
+            // value, or nil when there was none.
+            return self.deliver(self.mc.register(Register::Value));
+        }
+        let name = self.mc.car(pairs);
+        let rest = self.mc.cdr(pairs);
+        if !self.mc.is_symbol(name) || !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "setq",
+                detail: "wants alternating symbols and values",
+            });
+        }
+        let value_form = self.mc.car(rest);
+        let env = self.mc.register(Register::Env);
+        let f = frame::make_setq(self.mc, name, self.mc.cdr(rest), env);
+        self.push(f);
+        self.mc.set_register(Register::Control, value_form);
+        // Reached from both halves of the cycle: from `eval_setq` already in
+        // Eval, and from `return_to_setq` in Return. Saying so explicitly is
+        // the fix for `(setq a 1 b 2)` assigning only the first pair.
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    /// `(defun name (params) body...)`.
+    ///
+    /// A special operator here; in Common Lisp it is a macro over `setf
+    /// fdefinition`, and it becomes one once there are macros.
+    fn eval_defun(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() || !self.mc.cdr(rest).is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "defun",
+                detail: "wants a name, a parameter list and a body",
+            });
+        }
+        let name = self.mc.car(rest);
+        if !self.mc.is_symbol(name) {
+            return self.fail(EvalError::BadSyntax {
+                operator: "defun",
+                detail: "wants a symbol for a name",
+            });
+        }
+        let after = self.mc.cdr(rest);
+        let params = self.mc.car(after);
+        let body = self.mc.cdr(after);
+        let env = self.mc.register(Register::Env);
+        let c = closure::make(self.mc, params, body, env);
+        // Lisp-2: a definition goes in the function cell, leaving the variable
+        // of the same name untouched.
+        self.mc.set_slot(name, symbol::FUNCTION, c);
+        self.deliver(name)
+    }
+
+    /// Evaluate `forms` in order, yielding the last.
+    ///
+    /// **The last form is in tail position**, so it must be started with no
+    /// frame outstanding — otherwise a recursive call in tail position would
+    /// grow the stack and the tail-call property would be lost. That is the one
+    /// rule every operator with a body has to respect.
+    fn begin(&mut self, forms: Value<'h>, env: Value<'h>) -> Transition {
+        if !forms.is_cons() {
+            return self.deliver(Value::NIL);
+        }
+        let first = self.mc.car(forms);
+        let rest = self.mc.cdr(forms);
+        self.mc.set_register(Register::Env, env);
+        self.mc.set_register(Register::Control, first);
+        self.mc.set_mode(Mode::Eval.as_u8());
+        if rest.is_cons() {
+            // More to come, so remember it. Not pushed when `first` is last.
+            let f = frame::make_progn(self.mc, rest, env);
+            self.push(f);
+        }
+        Transition::Continue
+    }
+
     fn eval_call(&mut self, form: Value<'h>) -> Transition {
         let head = self.mc.car(form);
         let argument_forms = self.mc.cdr(form);
@@ -289,16 +422,21 @@ impl<'a, 'h> Machine<'a, 'h> {
         // is what Scheme does, and what this code did until a test asked for
         // `(cons 1 2)` and got "the variable CONS is unbound".
         let function = if self.mc.is_symbol(head) {
-            let f = self.mc.slot(head, crate::heap::symbol::FUNCTION);
+            let f = self.mc.slot(head, symbol::FUNCTION);
             if f == Value::UNBOUND {
                 let name = self.mc.symbol_name(head);
                 return self.fail(EvalError::UndefinedFunction(name));
             }
             f
         } else {
-            // `((lambda (x) x) 1)` belongs here and arrives with lambda.
-            let what = crate::printer::print(self.mc, head);
-            return self.fail(EvalError::NotAFunction(what));
+            // `((lambda (x) x) 1)`. The head is evaluated like any other form,
+            // which is the one place the Lisp-2 rule bends — and it has to,
+            // since there is no symbol here to carry a function cell.
+            let env = self.mc.register(Register::Env);
+            let f = frame::make_args(self.mc, Value::NIL, form, env);
+            self.push(f);
+            self.mc.set_register(Register::Control, head);
+            return Transition::Continue;
         };
 
         if !argument_forms.is_cons() {
@@ -331,6 +469,12 @@ impl<'a, 'h> Machine<'a, 'h> {
         match frame::kind(self.mc, f) {
             frame::IF => self.return_to_if(f),
             frame::ARGS => self.return_to_args(f),
+            frame::PROGN => {
+                let rest = self.mc.slot(f, frame::PROGN_REST);
+                let env = self.mc.slot(f, frame::PROGN_ENV);
+                self.begin(rest, env)
+            }
+            frame::SETQ => self.return_to_setq(f),
             _ => self.fail(EvalError::BadSyntax {
                 operator: "a frame",
                 detail: "has an unknown kind",
@@ -358,6 +502,16 @@ impl<'a, 'h> Machine<'a, 'h> {
         self.mc.set_register(Register::Control, chosen);
         self.mc.set_mode(Mode::Eval.as_u8());
         Transition::Continue
+    }
+
+    fn return_to_setq(&mut self, f: Value<'h>) -> Transition {
+        let name = self.mc.slot(f, frame::SETQ_NAME);
+        let rest = self.mc.slot(f, frame::SETQ_REST);
+        let env = self.mc.slot(f, frame::SETQ_ENV);
+        let value = self.mc.register(Register::Value);
+        env::assign(self.mc, env, name, value);
+        self.mc.set_register(Register::Env, env);
+        self.setq_next(rest)
     }
 
     fn return_to_args(&mut self, f: Value<'h>) -> Transition {
@@ -390,14 +544,73 @@ impl<'a, 'h> Machine<'a, 'h> {
     // ---- applying --------------------------------------------------------
 
     fn apply(&mut self, function: Value<'h>, arguments: Value<'h>) -> Transition {
+        // `(funcall f 1 2)` applies whatever `f` *holds* rather than whatever
+        // its name denotes as a function. A Lisp-2 needs this: a closure in a
+        // variable is otherwise uncallable, because the operator position only
+        // ever looks at function cells.
+        //
+        // A loop rather than recursion, since `(funcall #'funcall ...)` nests
+        // as deeply as the user likes and Rust's stack is not the place for it.
+        let mut function = function;
+        let mut arguments = arguments;
+        while function.as_primitive() == Some(primitives::FUNCALL) {
+            if !arguments.is_cons() {
+                return self.fail(EvalError::WrongArgumentCount {
+                    name: "FUNCALL",
+                    wanted: 1,
+                    got: 0,
+                });
+            }
+            function = self.mc.car(arguments);
+            arguments = self.mc.cdr(arguments);
+        }
+
         if let Some(index) = function.as_primitive() {
             return match primitives::call(self.mc, index, arguments) {
                 Ok(v) => self.deliver(v),
                 Err(e) => self.fail(e),
             };
         }
+        if closure::is(self.mc, function) {
+            return self.apply_closure(function, arguments);
+        }
         let what = crate::printer::print(self.mc, function);
         self.fail(EvalError::NotAFunction(what))
+    }
+
+    /// Bind the parameters and evaluate the body.
+    ///
+    /// **Pushes no frame.** That is what makes a call in tail position a tail
+    /// call: by the time this runs, the caller's frames have already been
+    /// popped, so a self-call in tail position leaves the stack exactly as deep
+    /// as it was. The property falls out of the design rather than being added.
+    fn apply_closure(&mut self, function: Value<'h>, arguments: Value<'h>) -> Transition {
+        let params = self.mc.slot(function, closure::PARAMS);
+        let body = self.mc.slot(function, closure::BODY);
+        let captured = self.mc.slot(function, closure::ENV);
+
+        let mut names = Vec::new();
+        let mut cursor = params;
+        while cursor.is_cons() {
+            names.push(self.mc.car(cursor));
+            cursor = self.mc.cdr(cursor);
+        }
+        let mut values = Vec::new();
+        let mut cursor = arguments;
+        while cursor.is_cons() {
+            values.push(self.mc.car(cursor));
+            cursor = self.mc.cdr(cursor);
+        }
+        if names.len() != values.len() {
+            return self.fail(EvalError::WrongArgumentCount {
+                name: "this function",
+                wanted: names.len(),
+                got: values.len(),
+            });
+        }
+
+        let scope = env::make(self.mc, captured, &names, &values);
+        self.begin(body, scope)
     }
 
     // ---- helpers ---------------------------------------------------------
@@ -418,20 +631,7 @@ impl<'a, 'h> Machine<'a, 'h> {
     /// Look a name up: the environment first, then the symbol's own value cell,
     /// which is where globals live.
     fn lookup(&mut self, name: Value<'h>, env: Value<'h>) -> Option<Value<'h>> {
-        let mut cursor = env;
-        while cursor.is_cons() {
-            let binding = self.mc.car(cursor);
-            if binding.is_cons() && self.mc.car(binding) == name {
-                return Some(self.mc.cdr(binding));
-            }
-            cursor = self.mc.cdr(cursor);
-        }
-        let global = self.mc.slot(name, crate::heap::symbol::VALUE);
-        if global == Value::UNBOUND {
-            None
-        } else {
-            Some(global)
-        }
+        env::lookup(self.mc, env, name)
     }
 
     fn reverse(&mut self, list: Value<'h>) -> Value<'h> {
@@ -456,6 +656,36 @@ impl Steppable for Machine<'_, '_> {
     }
 }
 
+/// Special operator codes, as stored in a symbol's `SPECIAL` slot.
+///
+/// Common Lisp has 25 special operators. These six are what the phase 0 gate
+/// needs; the rest arrive once the shape of one is settled by worked examples
+/// rather than written blind.
+pub mod special {
+    /// `(quote x)` — return `x` unevaluated.
+    pub const QUOTE: i64 = 1;
+    /// `(if test then else)` — evaluate one branch.
+    pub const IF: i64 = 2;
+    /// `(lambda (params) body...)` — make a closure.
+    pub const LAMBDA: i64 = 3;
+    /// `(progn forms...)` — evaluate in order, yield the last.
+    pub const PROGN: i64 = 4;
+    /// `(setq var value ...)` — assign.
+    pub const SETQ: i64 = 5;
+    /// `(defun name (params) body...)` — define a function.
+    pub const DEFUN: i64 = 6;
+
+    /// Every special operator, by name.
+    pub const ALL: &[(&str, i64)] = &[
+        ("QUOTE", QUOTE),
+        ("IF", IF),
+        ("LAMBDA", LAMBDA),
+        ("PROGN", PROGN),
+        ("SETQ", SETQ),
+        ("DEFUN", DEFUN),
+    ];
+}
+
 /// Frames: one pending step of the evaluator.
 ///
 /// Slot 0 is the kind. The rest depend on it. Deliberately plain objects rather
@@ -468,6 +698,10 @@ pub mod frame {
     pub const IF: i64 = 1;
     /// Evaluating the parts of a call, left to right.
     pub const ARGS: i64 = 2;
+    /// More body forms to evaluate after this one.
+    pub const PROGN: i64 = 3;
+    /// Waiting on the value of a `setq`.
+    pub const SETQ: i64 = 4;
 
     /// Slot 0 of every frame: which kind.
     pub const KIND: usize = 0;
@@ -481,6 +715,16 @@ pub mod frame {
     pub const ARGS_LEFT: usize = 2;
     /// The environment the call is being made in.
     pub const ARGS_ENV: usize = 3;
+    /// Body forms still to evaluate.
+    pub const PROGN_REST: usize = 1;
+    /// The environment the body runs in.
+    pub const PROGN_ENV: usize = 2;
+    /// Which variable is being assigned.
+    pub const SETQ_NAME: usize = 1;
+    /// Remaining name/value pairs.
+    pub const SETQ_REST: usize = 2;
+    /// The environment the assignment happens in.
+    pub const SETQ_ENV: usize = 3;
 
     /// Which kind of frame this is.
     pub fn kind<'h>(mc: &Mutation<'h>, f: Value<'h>) -> i64 {
@@ -493,6 +737,30 @@ pub mod frame {
         mc.set_slot(f, KIND, Value::fixnum(IF).expect("small"));
         mc.set_slot(f, IF_BRANCHES, branches);
         mc.set_slot(f, IF_ENV, env);
+        f
+    }
+
+    /// A frame remembering the rest of a body.
+    pub fn make_progn<'h>(mc: &mut Mutation<'h>, rest: Value<'h>, env: Value<'h>) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 3);
+        mc.set_slot(f, KIND, Value::fixnum(PROGN).expect("small"));
+        mc.set_slot(f, PROGN_REST, rest);
+        mc.set_slot(f, PROGN_ENV, env);
+        f
+    }
+
+    /// A frame waiting on the value of a `setq`.
+    pub fn make_setq<'h>(
+        mc: &mut Mutation<'h>,
+        name: Value<'h>,
+        rest: Value<'h>,
+        env: Value<'h>,
+    ) -> Value<'h> {
+        let f = mc.alloc(ObjectType::Frame, 4);
+        mc.set_slot(f, KIND, Value::fixnum(SETQ).expect("small"));
+        mc.set_slot(f, SETQ_NAME, name);
+        mc.set_slot(f, SETQ_REST, rest);
+        mc.set_slot(f, SETQ_ENV, env);
         f
     }
 
@@ -689,6 +957,206 @@ mod tests {
         );
     }
 
+    // ---- closures, definitions, scope ------------------------------------
+
+    /// Evaluate several forms in one heap, so definitions persist.
+    fn eval_all(source: &str) -> Result<String, EvalError> {
+        let mut heap = Heap::new();
+        let chars = Reader::chars_of(source);
+        heap.mutate(|mc| {
+            primitives::install(mc);
+            let mut reader = Reader::new(&chars);
+            let mut last = String::new();
+            while let Some(form) = reader.read(mc).expect("reads") {
+                let value = eval_now(mc, form, PLENTY)?;
+                last = print(mc, value);
+            }
+            Ok(last)
+        })
+    }
+
+    fn program_gives(source: &str, expected: &str) {
+        assert_eq!(
+            eval_all(source).as_deref(),
+            Ok(expected),
+            "running {source}"
+        );
+    }
+
+    #[test]
+    fn lambda_makes_something_callable() {
+        program_gives("((lambda (x) (* x x)) 7)", "49");
+        program_gives("((lambda () 42))", "42");
+        program_gives("((lambda (a b) (- a b)) 10 3)", "7");
+    }
+
+    #[test]
+    fn defun_defines_a_function() {
+        program_gives("(defun square (x) (* x x)) (square 9)", "81");
+        // defun returns the name.
+        program_gives("(defun f (x) x)", "F");
+    }
+
+    /// A Lisp-2 keeps the variable and the function apart: defining one must
+    /// leave the other alone.
+    #[test]
+    fn a_name_can_be_a_function_and_a_variable_at_once() {
+        program_gives(
+            "(defun thing (x) (* x 2)) (setq thing 5) (thing thing)",
+            "10",
+        );
+    }
+
+    #[test]
+    fn setq_assigns() {
+        program_gives("(setq x 1) x", "1");
+        program_gives("(setq a 1 b 2) (+ a b)", "3");
+        program_gives("(setq x 1) (setq x (+ x 1)) x", "2");
+        // Assigning inside a function body touches the binding, not a global.
+        program_gives(
+            "(setq x 'outer) ((lambda (x) (setq x 'inner) x) 1)",
+            "INNER",
+        );
+        program_gives(
+            "(setq x 'outer) ((lambda (x) (setq x 'inner)) 1) x",
+            "OUTER",
+        );
+    }
+
+    #[test]
+    fn progn_yields_its_last_form() {
+        program_gives("(progn 1 2 3)", "3");
+        program_gives("(progn)", "NIL");
+        program_gives("(progn (setq x 1) (setq x (+ x 1)) x)", "2");
+    }
+
+    /// The thing a closure is for: the captured scope outlives the call that
+    /// made it. `adder`'s `n` is gone by the time the returned lambda runs, and
+    /// the lambda still knows it.
+    #[test]
+    fn a_closure_captures_its_scope() {
+        program_gives(
+            "(defun adder (n) (lambda (x) (+ x n)))
+             (setq add5 (adder 5))
+             (setq add9 (adder 9))
+             (+ (funcall add5 1) (funcall add9 1))",
+            "16",
+        );
+    }
+
+    #[test]
+    fn inner_scopes_shadow_outer_ones() {
+        program_gives("(setq x 'global) ((lambda (x) x) 'local)", "LOCAL");
+        program_gives("(setq x 'global) ((lambda (y) x) 'local)", "GLOBAL");
+        program_gives("((lambda (x) ((lambda (x) x) 'inner)) 'outer)", "INNER");
+        program_gives("((lambda (x) ((lambda (y) x) 'inner)) 'outer)", "OUTER");
+    }
+
+    #[test]
+    fn wrong_argument_count_to_a_closure_is_an_error() {
+        assert!(matches!(
+            eval_all("(defun f (x) x) (f 1 2)"),
+            Err(EvalError::WrongArgumentCount { .. })
+        ));
+    }
+
+    // ---- the phase 0 gate ------------------------------------------------
+
+    /// `(fact 20)` runs. The first half of the phase 0 gate.
+    ///
+    /// 20! is 2,432,902,008,176,640,000 and the largest fixnum is
+    /// 4,611,686,018,427,387,903, so it fits — and 21! does not. The gate asks
+    /// for 20 rather than a rounder number because that is the largest
+    /// factorial needing no bignums.
+    #[test]
+    fn the_gate_fact_20() {
+        program_gives(
+            "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 20)",
+            "2432902008176640000",
+        );
+        program_gives(
+            "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 0)",
+            "1",
+        );
+        program_gives(
+            "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 5)",
+            "120",
+        );
+    }
+
+    // ---- tail calls ------------------------------------------------------
+
+    /// A tail call must not grow the stack.
+    ///
+    /// Measured rather than asserted: the machine is stepped and the depth of
+    /// the frame stack sampled. Without the property this grows by one frame
+    /// per iteration, and a million iterations would exhaust the heap.
+    #[test]
+    fn a_tail_call_does_not_grow_the_stack() {
+        let source = "(defun down (n) (if (= n 0) 'done (down (- n 1)))) (down 20000)";
+        let chars = Reader::chars_of(source);
+        let mut heap = Heap::new();
+
+        let max_depth = heap.mutate(|mc| {
+            primitives::install(mc);
+            let mut reader = Reader::new(&chars);
+            let definition = reader.read(mc).unwrap().unwrap();
+            eval_now(mc, definition, PLENTY).unwrap();
+
+            let call = reader.read(mc).unwrap().unwrap();
+            let mut deepest = 0usize;
+            {
+                use crate::slice::{run_slice, Status};
+                let mut machine = Machine::start(mc, call, Value::NIL);
+                while run_slice(&mut machine, 50) == Status::Yielded {
+                    deepest = deepest.max(machine.stack_depth());
+                }
+            }
+            deepest
+        });
+
+        let answer = heap.mutate(|mc| print(mc, mc.register(Register::Value)));
+        assert_eq!(answer, "DONE");
+        assert!(
+            max_depth < 20,
+            "the stack reached {max_depth} frames; a tail call grew it"
+        );
+    }
+
+    /// Non-tail recursion must still work, and must still use the stack — a
+    /// machine that silently dropped frames would pass the test above.
+    #[test]
+    fn non_tail_recursion_still_grows_the_stack() {
+        let source = "(defun sum (n) (if (= n 0) 0 (+ n (sum (- n 1))))) (sum 100)";
+        let chars = Reader::chars_of(source);
+        let mut heap = Heap::new();
+
+        let max_depth = heap.mutate(|mc| {
+            primitives::install(mc);
+            let mut reader = Reader::new(&chars);
+            let definition = reader.read(mc).unwrap().unwrap();
+            eval_now(mc, definition, PLENTY).unwrap();
+
+            let call = reader.read(mc).unwrap().unwrap();
+            let mut deepest = 0usize;
+            {
+                use crate::slice::{run_slice, Status};
+                let mut machine = Machine::start(mc, call, Value::NIL);
+                while run_slice(&mut machine, 5) == Status::Yielded {
+                    deepest = deepest.max(machine.stack_depth());
+                }
+            }
+            deepest
+        });
+
+        let answer = heap.mutate(|mc| print(mc, mc.register(Register::Value)));
+        assert_eq!(answer, "5050");
+        assert!(
+            max_depth > 100,
+            "only {max_depth} frames; the stack should grow here"
+        );
+    }
+
     // ---- the machine, rather than the language ---------------------------
 
     /// The property `crate::slice` was designed for, now on something real:
@@ -784,5 +1252,126 @@ mod tests {
         assert!(finished, "the machine never halted");
         let answer = heap.mutate(|mc| print(mc, mc.register(Register::Value)));
         assert_eq!(answer, "15");
+    }
+}
+
+/// Lexical environments: a chain of scopes.
+///
+/// Each scope is one heap object: a parent link, then name/value pairs. Looking
+/// a name up scans this scope's names, then follows the parent, then falls back
+/// to the symbol's own value cell, which is where globals live.
+///
+/// # Why not an association list
+///
+/// The textbook tree-walker uses an alist — `((x . 1) (y . 2))`, extended by
+/// consing onto the front. It is shorter, and this is not.
+///
+/// Two reasons. A two-argument call costs one object of six words here against
+/// four cons cells of eight there, with better locality. And, decisively, this
+/// is the layout *lexical addressing* uses: once the compiler of phase 1 can
+/// resolve `x` to "scope 2, slot 0" at compile time, the name scan below
+/// becomes an index and the data structure does not change. An alist would have
+/// to be thrown away.
+///
+/// The genuinely fast option — lexical addressing — is not available yet,
+/// because resolving a name to a slot number requires a compiler to walk the
+/// body, and a tree-walking interpreter re-reads the source each time with
+/// nowhere to attach the answer. This is the efficient option that exists.
+pub mod env {
+    use super::*;
+
+    /// Slot 0: the enclosing scope, or `nil`.
+    pub const PARENT: usize = 0;
+
+    /// A scope binding `names` to `values` inside `parent`.
+    pub fn make<'h>(
+        mc: &mut Mutation<'h>,
+        parent: Value<'h>,
+        names: &[Value<'h>],
+        values: &[Value<'h>],
+    ) -> Value<'h> {
+        debug_assert_eq!(names.len(), values.len());
+        let scope = mc.alloc(ObjectType::Environment, 1 + names.len() * 2);
+        mc.set_slot(scope, PARENT, parent);
+        for (i, (name, value)) in names.iter().zip(values).enumerate() {
+            mc.set_slot(scope, 1 + i * 2, *name);
+            mc.set_slot(scope, 2 + i * 2, *value);
+        }
+        scope
+    }
+
+    /// Where `name` is bound: the scope and the slot holding its value.
+    fn find<'h>(mc: &Mutation<'h>, env: Value<'h>, name: Value<'h>) -> Option<(Value<'h>, usize)> {
+        let mut scope = env;
+        while scope.is_object() {
+            let slots = mc.header(scope).slots;
+            let mut i = 1;
+            while i < slots {
+                if mc.slot(scope, i) == name {
+                    return Some((scope, i + 1));
+                }
+                i += 2;
+            }
+            scope = mc.slot(scope, PARENT);
+        }
+        None
+    }
+
+    /// The value of `name`, or `None` if it is unbound everywhere.
+    pub fn lookup<'h>(mc: &Mutation<'h>, env: Value<'h>, name: Value<'h>) -> Option<Value<'h>> {
+        if let Some((scope, slot)) = find(mc, env, name) {
+            return Some(mc.slot(scope, slot));
+        }
+        // Globals live in the symbol's own value cell, which #4 already gave us.
+        let global = mc.slot(name, symbol::VALUE);
+        if global == Value::UNBOUND {
+            None
+        } else {
+            Some(global)
+        }
+    }
+
+    /// Assign to `name`, creating a global if it is bound nowhere.
+    pub fn assign<'h>(mc: &mut Mutation<'h>, env: Value<'h>, name: Value<'h>, value: Value<'h>) {
+        if let Some((scope, slot)) = find(mc, env, name) {
+            mc.set_slot(scope, slot, value);
+        } else {
+            mc.set_slot(name, symbol::VALUE, value);
+        }
+    }
+}
+
+/// Closures: a function plus the scope it was written in.
+///
+/// Capturing the environment is what makes `(let ((x 10)) (lambda () x))` still
+/// know that `x` is 10 after the `let` has finished. Without it a lambda could
+/// only see globals.
+pub mod closure {
+    use super::*;
+
+    /// The parameter list.
+    pub const PARAMS: usize = 0;
+    /// The body forms, an implicit `progn`.
+    pub const BODY: usize = 1;
+    /// The scope the lambda was evaluated in.
+    pub const ENV: usize = 2;
+
+    /// Make a closure.
+    pub fn make<'h>(
+        mc: &mut Mutation<'h>,
+        params: Value<'h>,
+        body: Value<'h>,
+        env: Value<'h>,
+    ) -> Value<'h> {
+        let c = mc.alloc(ObjectType::Closure, 3);
+        mc.set_slot(c, PARAMS, params);
+        mc.set_slot(c, BODY, body);
+        mc.set_slot(c, ENV, env);
+        c
+    }
+
+    /// Is this a closure?
+    pub fn is<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
+        v.is_object() && mc.header(v).object_type == ObjectType::Closure
     }
 }

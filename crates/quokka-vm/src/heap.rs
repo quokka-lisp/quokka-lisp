@@ -147,8 +147,15 @@ pub mod symbol {
     pub const FUNCTION: usize = 2;
     /// Its property list.
     pub const PLIST: usize = 3;
+    /// Non-nil if this names a special operator, as a small integer the
+    /// evaluator dispatches on.
+    ///
+    /// On the symbol rather than in a lookup table because that is what it is:
+    /// `if` is special because the symbol `IF` is, and a slot read beats
+    /// comparing names on every form evaluated.
+    pub const SPECIAL: usize = 4;
     /// How many slots a symbol has.
-    pub const SLOTS: usize = 4;
+    pub const SLOTS: usize = 5;
 }
 
 /// Default soft limit: 1 MiB of heap before a collection is wanted.
@@ -195,6 +202,14 @@ pub enum ObjectType {
     Instance = 4,
     /// Buckets and metadata.
     HashTable = 5,
+    /// One lexical scope: a parent link, then name/value pairs.
+    ///
+    /// A chain of these rather than an association list. A two-argument call
+    /// costs one object of six words instead of four cons cells of eight, and
+    /// — the point — this is the layout lexical addressing uses, so when the
+    /// compiler arrives it replaces the name scan with an index and the data
+    /// structure does not change. See `crate::eval::env`.
+    Environment = 7,
     /// One pending step of the evaluator: what to do once a value arrives.
     ///
     /// Slot 0 is which kind, as a fixnum; the rest depend on it. One object
@@ -229,6 +244,7 @@ impl ObjectType {
             4 => Instance,
             5 => HashTable,
             6 => Frame,
+            7 => Environment,
             64 => String,
             65 => Code,
             66 => Bignum,
@@ -599,6 +615,13 @@ impl<'h> Mutation<'h> {
     /// is the open question about how `nil` is represented.
     pub fn is_symbol(&self, v: Value<'h>) -> bool {
         v.is_object() && self.header(v).object_type == ObjectType::Symbol
+    }
+
+    /// Is this the symbol with exactly this name?
+    ///
+    /// Allocates nothing, unlike comparing [`Self::symbol_name`].
+    pub fn symbol_is(&self, v: Value<'h>, name: &str) -> bool {
+        self.is_symbol(v) && self.string_is(self.slot(v, symbol::NAME), name)
     }
 
     /// A symbol's name as a Rust string.

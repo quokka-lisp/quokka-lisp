@@ -111,6 +111,11 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
             }
             out.push('"');
         }
+        ObjectType::Closure => {
+            // Common Lisp prints functions unreadably, since there is no text
+            // that reads back as this closure with its captured scope.
+            out.push_str("#<function>");
+        }
         other => {
             let _ = write!(out, "#<{other:?} {} slots>", header.slots);
         }
