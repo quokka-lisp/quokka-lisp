@@ -8,4 +8,6 @@
 - [Why the interpreter cannot call itself](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md)
 - [What is alive?](part-1-substrate/03-what-is-alive.md)
 - [Rooting](part-1-substrate/04-rooting.md)
-- [Saving a world](part-1-substrate/05-saving-a-world.md)
+- [Objects in the heap](part-1-substrate/05-objects-in-the-heap.md)
+- [Cheney's algorithm](part-1-substrate/06-cheneys-algorithm.md)
+- [Saving a world](part-1-substrate/07-saving-a-world.md)

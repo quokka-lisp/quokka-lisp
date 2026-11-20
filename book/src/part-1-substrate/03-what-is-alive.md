@@ -239,7 +239,8 @@ overflow however deep or tangled the object graph is.
 
 The design document says Cheney was chosen because it is "easy to get right and
 to read". This is a third reason, and for a browser-first system it is the one
-that matters.
+that matters. [Cheney's algorithm](06-cheneys-algorithm.md) is the collector in
+full.
 
 ## Where this leaves us
 

@@ -101,7 +101,7 @@ One thing to notice, because it matters a great deal later: these are
 **offsets, not addresses**. The word says "index 4 of the heap array", not
 "memory location 0x7fff8a2c0020". An offset means the same thing on a 64-bit Mac
 and inside a WebAssembly sandbox, which is what lets a saved image be loaded by
-either. [Saving a world](05-saving-a-world.md) is about what that buys.
+either. [Saving a world](07-saving-a-world.md) is about what that buys.
 
 ## Why does `nil` need a tag of its own?
 

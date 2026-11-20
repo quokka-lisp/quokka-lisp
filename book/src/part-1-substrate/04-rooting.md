@@ -288,7 +288,7 @@ does nothing about tracing the wrong field, mis-sizing a header, or botching the
 forwarding-pointer dance. Those produce the same silent wrong answers, and
 honestly they are the likelier bugs — the collector is the part being written
 from scratch for the first time. Branding narrows the problem; the torture mode
-in the next chapter is what addresses the rest.
+in [Cheney's algorithm](06-cheneys-algorithm.md) is what addresses the rest.
 
 That is worth holding on to, because a compile-time guarantee produces a feeling
 of safety wider than the thing it actually guarantees.
@@ -306,6 +306,9 @@ gives fine-grained collection for free. Two constraints adopted for unrelated
 reasons turned out to demand the same thing — which usually means both are
 downstream of something more basic. In this case: a runtime that can be
 interrupted must keep its state somewhere the interrupter can see.
+
+The heap this protects is [the next chapter](05-objects-in-the-heap.md), and the
+collector it protects it from is [the one after](06-cheneys-algorithm.md).
 
 ---
 

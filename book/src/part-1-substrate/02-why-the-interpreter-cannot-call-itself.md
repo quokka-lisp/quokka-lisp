@@ -276,7 +276,7 @@ hard problems quietly become easy:
   enormously.
 - **Saving a running world.** Writing the image to a file, loading it later, and
   resuming the computation that was in progress. Possible only because the
-  computation *is* heap data. [Saving a world](05-saving-a-world.md).
+  computation *is* heap data. [Saving a world](07-saving-a-world.md).
 
 One constraint, three features. That is the shape worth watching for: the
 expensive decisions in a system are rarely expensive in only one place, and
