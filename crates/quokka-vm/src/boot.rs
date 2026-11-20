@@ -191,11 +191,17 @@ mod tests {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
         heap.collect();
-        // 2,476 words when this was written — about 20 KB, which is the
-        // macro objects, the closures, their bodies, and one symbol per name.
+        // A moving target, deliberately. 2,476 words when the prelude was
+        // only `defun` and the conditionals; 4,246 once it also had the
+        // sequence functions, hash tables and `macroexpand`. About 34 KB.
+        //
+        // The point is not the number but that raising it is a deliberate
+        // act with a failing test attached — the same job as
+        // `the_table_order_is_pinned`. Each rise should be explainable by
+        // what was added; this one is.
         let words = heap.used_words();
         assert!(
-            words < 4_000,
+            words < 8_000,
             "the prelude now costs {words} live words after a collection"
         );
     }
@@ -365,6 +371,127 @@ mod tests {
             print(mc, value)
         });
         assert_eq!(out, "(200 39601)");
+    }
+
+    /// Hash tables, which like vector mutation are almost entirely invisible
+    /// to the oracle: writing an entry is `(setf (gethash k h) v)` in Common
+    /// Lisp and `setf` is tier 1, so `%set-gethash` has no counterpart for
+    /// SBCL to disagree with. These tests are the substitute.
+    #[test]
+    fn hash_tables_store_and_find() {
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table)))
+                   (%set-gethash 'a h 1)
+                   (%set-gethash 'b h 2)
+                   (list (gethash 'a h) (gethash 'b h) (gethash 'c h) (hash-table-count h)))"
+            ),
+            "(1 2 NIL 2)"
+        );
+        // Storing twice under one key replaces rather than adds.
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table)))
+                   (%set-gethash 'a h 1) (%set-gethash 'a h 2)
+                   (list (gethash 'a h) (hash-table-count h)))"
+            ),
+            "(2 1)"
+        );
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table)))
+                   (%set-gethash 'a h 1) (remhash 'a h)
+                   (list (gethash 'a h) (hash-table-count h)))"
+            ),
+            "(NIL 0)"
+        );
+    }
+
+    /// Fixnums, characters and symbols are hashable by content. A keyword and
+    /// an ordinary symbol share a name and are different keys, which the hash
+    /// has to account for.
+    #[test]
+    fn keys_are_hashed_by_content() {
+        assert_eq!(
+            after_boot("(let ((h (make-hash-table))) (%set-gethash 1 h 'one) (gethash 1 h))"),
+            "ONE"
+        );
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table))) (%set-gethash #\\a h 'char) (gethash #\\a h))"
+            ),
+            "CHAR"
+        );
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table)))
+                   (%set-gethash :k h 'keyword) (%set-gethash 'k h 'symbol)
+                   (list (gethash :k h) (gethash 'k h)))"
+            ),
+            "(KEYWORD SYMBOL)"
+        );
+        // Strings match by content, and only in an EQUAL table.
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table :test 'equal)))
+                   (%set-gethash \"key\" h 'found)
+                   (list (gethash \"key\" h) (gethash \"other\" h 'no)))"
+            ),
+            "(FOUND NO)"
+        );
+    }
+
+    /// The divergence the decision bought, and the reason it is loud: a key
+    /// the collector could move is refused rather than hashed unreliably.
+    #[test]
+    fn unhashable_keys_are_refused_rather_than_guessed() {
+        for source in [
+            "(let ((h (make-hash-table))) (%set-gethash '(1) h 'x))",
+            "(let ((h (make-hash-table))) (%set-gethash (vector 1) h 'x))",
+            // A string is not an EQL key, because that would mean comparing
+            // string objects by identity.
+            "(let ((h (make-hash-table))) (%set-gethash \"s\" h 'x))",
+            "(make-hash-table :test 'bogus)",
+        ] {
+            assert!(
+                after_boot(source).starts_with("; "),
+                "should have been refused: {source}"
+            );
+        }
+    }
+
+    /// Growing past the load factor rehashes everything, and must not lose or
+    /// duplicate an entry. Under `gc-torture` this also runs with a collection
+    /// at every mutation boundary.
+    #[test]
+    fn a_table_survives_growing() {
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table)))
+                   (labels ((fill-up (i)
+                              (if (= i 200) h (progn (%set-gethash i h (* i i)) (fill-up (+ i 1))))))
+                     (let ((full (fill-up 0)))
+                       (list (hash-table-count full)
+                             (gethash 0 full)
+                             (gethash 7 full)
+                             (gethash 199 full)
+                             (gethash 200 full 'absent)))))"
+            ),
+            "(200 0 49 39601 ABSENT)"
+        );
+    }
+
+    #[test]
+    fn maphash_visits_every_entry() {
+        assert_eq!(
+            after_boot(
+                "(let ((h (make-hash-table)) (total 0))
+                   (%set-gethash 'a h 1) (%set-gethash 'b h 2) (%set-gethash 'c h 3)
+                   (maphash (lambda (k v) (setq total (+ total v))) h)
+                   total)"
+            ),
+            "6"
+        );
     }
 
     #[test]

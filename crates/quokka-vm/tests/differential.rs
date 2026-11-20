@@ -70,6 +70,7 @@ differential_cases! {
     destructuring => "destructuring",
     macroexpand => "macroexpand",
     vectors => "vectors",
+    hash_tables => "hash-tables",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

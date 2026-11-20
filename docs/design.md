@@ -283,6 +283,13 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
   One scheduling note: packages belong at the **start** of phase 2, not inside it. The compiler's sources are written during phase 1, and packages landing after self-hosting begins means re-packaging every file mid-bootstrap. When they arrive, `symbol::HOME` stops being a small integer and becomes a pointer to a package object; nothing else in the symbol representation has to change.
 
 
+- [x] **Hash tables hash contents, not addresses.** An `eq` or `eql` hash table in a real Lisp hashes an object's identity, and Cheney's collector moves objects — so an address-based hash is correct until the next collection and silently wrong afterwards. Four ways out were considered: content hashing only; a stable hash word stored in every hashable object; rehashing live tables after each collection (what SBCL does); and pinning hashed objects in the static area.
+
+  Settled on **content hashing**, because what is actually blocked by the absence of hash tables is content-keyed: the obarray (strings), and the compiler's symbol and label tables. The collector gains nothing to do, which keeps #3 as it is through phase 1's image work.
+
+  What this costs, stated plainly: keys may be fixnums, characters and symbols in an `eql` table, and additionally strings in an `equal` one. Any other key — a cons, a vector — is **refused with an error** rather than quietly hashed by something unreliable. `(make-hash-table :test #'eq)` therefore exists but cannot take the keys a real Common Lisp would allow, which is a divergence from SBCL under rule 6 and is why it signals loudly instead of guessing. Identity hashing comes back on the table when there is a concrete use for it, most likely alongside phase 1's image work, which touches the same code. See [#22](https://github.com/quokka-lisp/quokka-lisp/issues/22).
+
+
 **Still open** (none blocks phase 0)
 
 - [ ] **Concurrency:** green threads on one OS thread for good, or plan for real parallelism later?

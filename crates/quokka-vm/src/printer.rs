@@ -134,6 +134,7 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
         // A macro is a closure that is called at a different time, and like
         // any closure there is no text that reads back as this one.
         ObjectType::Macro => out.push_str("#<macro>"),
+        ObjectType::HashTable => out.push_str("#<hash-table>"),
         ObjectType::Vector => {
             out.push_str("#(");
             for i in 0..header.slots {

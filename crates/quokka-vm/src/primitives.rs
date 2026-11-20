@@ -224,6 +224,40 @@ const TABLE: &[Primitive] = &[
         name: "CHARACTERP",
         arity: Arity::Exactly(1),
     },
+    // ---- hash tables ---------------------------------------------------
+    //
+    // Keyed by content, never by address, because the collector moves things.
+    // See `crate::hash` and issue #22 for what that costs.
+    Primitive {
+        name: "%MAKE-HASH-TABLE",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "%GETHASH",
+        arity: Arity::Exactly(3),
+    },
+    Primitive {
+        name: "%SET-GETHASH",
+        arity: Arity::Exactly(3),
+    },
+    Primitive {
+        name: "REMHASH",
+        arity: Arity::Exactly(2),
+    },
+    Primitive {
+        name: "HASH-TABLE-COUNT",
+        arity: Arity::Exactly(1),
+    },
+    Primitive {
+        name: "HASH-TABLE-P",
+        arity: Arity::Exactly(1),
+    },
+    // `maphash` takes a function, and calling one is the evaluator's job. So
+    // the primitive hands back the entries and the prelude does the calling.
+    Primitive {
+        name: "%HASH-TABLE-ENTRIES",
+        arity: Arity::Exactly(1),
+    },
 ];
 
 /// Where `APPLY` sits in the table, which `crate::eval` intercepts.
@@ -397,6 +431,21 @@ pub fn call<'h>(
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
         }
+        "%MAKE-HASH-TABLE" => crate::hash::make(mc, args[0]),
+        "%GETHASH" => crate::hash::get(mc, args[1], args[0], args[2]),
+        "%SET-GETHASH" => crate::hash::put(mc, args[1], args[0], args[2]),
+        "REMHASH" => Ok(if crate::hash::remove(mc, args[1], args[0])? {
+            Value::T
+        } else {
+            Value::NIL
+        }),
+        "HASH-TABLE-COUNT" => crate::hash::count(mc, args[0]),
+        "HASH-TABLE-P" => Ok(if crate::hash::is_table(mc, args[0]) {
+            Value::T
+        } else {
+            Value::NIL
+        }),
+        "%HASH-TABLE-ENTRIES" => crate::hash::entries(mc, args[0]),
         "%MAKE-VECTOR" => {
             let Some(n) = args[0].as_fixnum() else {
                 return Err(EvalError::WrongType {
@@ -651,7 +700,14 @@ mod tests {
                 "%SEQUENCE-LENGTH",
                 "VECTORP",
                 "STRINGP",
-                "CHARACTERP"
+                "CHARACTERP",
+                "%MAKE-HASH-TABLE",
+                "%GETHASH",
+                "%SET-GETHASH",
+                "REMHASH",
+                "HASH-TABLE-COUNT",
+                "HASH-TABLE-P",
+                "%HASH-TABLE-ENTRIES"
             ]
         );
     }

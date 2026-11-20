@@ -319,3 +319,57 @@
     (if (eq once form)
         form
         (macroexpand once))))
+
+;;; ------------------------------------------------------------------
+;;; Hash tables
+;;; ------------------------------------------------------------------
+
+;; Keys are hashed by **content**, never by address, because the collector
+;; moves objects and an address-based hash would be correct until the next
+;; collection and silently wrong afterwards. `crates/quokka-vm/src/hash.rs`
+;; and issue #22 have the reasoning and what it costs.
+;;
+;; In short: an `eql` table takes fixnums, characters and symbols; an `equal`
+;; table also takes strings. Any other key is refused rather than hashed by
+;; something unreliable.
+
+(defun make-hash-table (&key (test 'eql))
+  ;; CLHS also takes :size, :rehash-size and :rehash-threshold, all of which
+  ;; are hints an implementation may ignore. This one ignores them by not
+  ;; having them yet.
+  ;;
+  ;; The test must be the *symbol* `eq`, `eql` or `equal`. Common Lisp also
+  ;; accepts the function — `:test #'equal` — and comparing function objects
+  ;; is how an implementation would tell which one it got. Quokka has no
+  ;; `equal` function to take `#'` of, so the question does not arise yet.
+  (%make-hash-table test))
+
+;; `gethash` returns two values in Common Lisp — the value, and whether the
+;; key was there. There are no multiple values yet, so the optional default is
+;; the whole of the story: it covers everything except telling a stored nil
+;; from a missing key, which is what the second value exists for.
+(defun gethash (key table &optional default)
+  (%gethash key table default))
+
+;; `(setf (gethash k table) v)` is how Common Lisp writes this, and `setf` is
+;; tier 1. Until then the writer has a name of its own.
+(defun %set-gethash-fn (key table value)
+  (%set-gethash key table value))
+
+;; Iteration. The primitive hands back the entries as a list of (key . value)
+;; cells, because calling the function is the evaluator's job rather than a
+;; primitive's — the same division as `macroexpand` and for the same reason.
+(defun maphash (function table)
+  (labels ((walk (entries)
+             (if (endp entries)
+                 nil
+                 (progn (funcall function (caar entries) (cdar entries))
+                        (walk (cdr entries))))))
+    (walk (%hash-table-entries table))))
+
+;; `hash-table-keys` and `hash-table-values` were here, and the oracle threw
+;; them out: they are not ANSI Common Lisp — they come from Alexandria, which
+;; is a library. Defining them in the standard namespace is what rule 6 says
+;; not to do, and the differential tests noticed within a minute of a test
+;; file calling them. `maphash` is the standard way, and is enough.
+

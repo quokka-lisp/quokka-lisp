@@ -22,6 +22,7 @@
 
 pub mod boot;
 pub mod eval;
+pub mod hash;
 pub mod heap;
 pub mod host;
 pub mod lambda_list;
