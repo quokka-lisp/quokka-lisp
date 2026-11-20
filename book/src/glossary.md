@@ -53,6 +53,8 @@ it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 requiring them to agree. Quokka runs its Lisp tests natively, under WebAssembly
 and on SBCL, which acts as the *oracle* — the reference answer.
 
+**Dotted pair.** A [cons cell](#cons-cell) whose [cdr](#cdr) is not a list, written `(a . b)`. A list is the common case of a cons cell, not the only one; the dot is how you write the general case. Also called an *improper list*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
 **Evaluator.** The part of a runtime that actually executes a program.
 ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
@@ -77,6 +79,12 @@ values it can no longer reach, and reclaiming their memory. The program never
 says "I am finished with this"; it is deduced from what is still reachable.
 ([3](part-1-substrate/03-what-is-alive.md))
 
+**Generational collector.** A collector that exploits the fact that most values
+die young, by examining recently created ones often and long-lived ones rarely.
+Faster than copying everything each time, and more complicated. Planned, not
+built. ([6](part-1-substrate/06-cheneys-algorithm.md))
+
+
 **Header.** The first word of a heap object, saying what kind it is and how many
 slots follow. Cons cells have none.
 ([5](part-1-substrate/05-objects-in-the-heap.md))
@@ -94,10 +102,14 @@ where it was. Booting means loading one rather than running a build.
 a character, `nil`, `t`. Contrast a *reference*, which points into the heap.
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
+**Interning.** Keeping one object per name, so that two reads of `foo` produce the *same* [symbol](#symbol) rather than two equal ones. Without it, `eq` on symbols fails and every variable lookup becomes a string comparison. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
 **Invariance.** A property of a type's lifetime parameter meaning it cannot be
 silently substituted for a shorter or longer one. Quokka's [brand](#brand) must
 be invariant or the guarantee evaporates while everything still compiles.
 ([4](part-1-substrate/04-rooting.md))
+
+**Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **Mutation.** In Quokka, one bounded stretch of work on the heap. No
 [collection](#collection) can happen inside one, which is what makes holding a
@@ -106,9 +118,17 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 **nil.** The empty list, and also false, and also the end-marker of every list.
 One value doing three jobs.
 
+**Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Parser.** What the [reader](#reader) is called in most languages, where it is far larger — it must know operator precedence, statements versus expressions, declarations. A Lisp reader needs none of that, because the text is already the data structure. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
 **Primitive.** An operation the [VM](#vm) provides directly in Rust rather than
 in Lisp — arithmetic, allocation, input and output. The *primitive table* is the
 only door between the two languages.
+
+**Printer.** Turns heap objects back into text. The *P* in [REPL](#repl), and how a [reader](#reader) is tested: text that survives read-then-print was almost certainly read correctly. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Quote.** `'x` reads as the list `(quote x)` — ordinary structure, not syntax. The evaluator later treats `quote` as "give me this rather than running it", which is how a program says *data* rather than *code*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **Reachable.** Able to be found by following references from a [root](#root).
 This is the definition of "still wanted" that garbage collection uses.
@@ -165,6 +185,8 @@ so latent bugs fail on the first test run rather than the thousandth.
 characters, which are not references.
 ([3](part-1-substrate/03-what-is-alive.md))
 
+**Unbound.** The marker a [symbol](#symbol)'s value or function cell holds before anything is assigned. Distinct from `nil`: the difference between "this variable does not exist" and "this variable holds the empty list", which Lisp signals an error about. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
 **Value.** One piece of Lisp data as the machine holds it: in Quokka, exactly one
 64-bit word, either the data itself or a reference to somewhere in the heap.
 ([1](part-1-substrate/01-one-word-for-everything.md))
@@ -182,8 +204,3 @@ must be able to stop and hand control back.
 a new one. A [generational](#generational-collector) collector needs it; the
 simple copying collector here does not.
 ([6](part-1-substrate/06-cheneys-algorithm.md))
-
-**Generational collector.** A collector that exploits the fact that most values
-die young, by examining recently created ones often and long-lived ones rarely.
-Faster than copying everything each time, and more complicated. Planned, not
-built. ([6](part-1-substrate/06-cheneys-algorithm.md))

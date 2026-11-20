@@ -13,6 +13,10 @@
 - [Cheney's algorithm](part-1-substrate/06-cheneys-algorithm.md)
 - [Saving a world](part-1-substrate/07-saving-a-world.md)
 
+# Part II · Reading and Running
+
+- [Text becomes structure](part-2-reading-and-running/08-text-becomes-structure.md)
+
 ---
 
 [Glossary](glossary.md)

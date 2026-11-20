@@ -212,8 +212,8 @@ three other things — which is a recurring shape worth watching for.
 
 ## The map
 
-Part I builds the substrate: everything underneath the evaluator. Each chapter
-answers one question.
+Part I builds the substrate: everything underneath the evaluator. Part II starts
+turning text into behaviour. Each chapter answers one question.
 
 | | Chapter | The question it answers |
 | --- | --- | --- |
@@ -224,6 +224,7 @@ answers one question.
 | 5 | [Objects in the heap](part-1-substrate/05-objects-in-the-heap.md) | What is actually stored in memory, and how do you find where one thing ends? |
 | 6 | [Cheney's algorithm](part-1-substrate/06-cheneys-algorithm.md) | How is the memory actually reclaimed? |
 | 7 | [Saving a world](part-1-substrate/07-saving-a-world.md) | How can an entire running system be written to a file and brought back? |
+| 8 | [Text becomes structure](part-2-reading-and-running/08-text-becomes-structure.md) | How does typed text become objects in the heap — and why is that small in Lisp? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -231,10 +232,10 @@ it, and only then do 5 and 6 build the thing.
 
 ## What is not here yet
 
-Part I stops below the evaluator. Still to come, and deliberately so:
+Still to come, and deliberately so:
 
-- **The reader** — turning text into those cons cells.
-- **The evaluator** — the machine from chapter 2, actually built.
+- **The evaluator** — the machine from chapter 2, actually built. Chapter 8
+  produces structure; nothing yet works out what it means.
 - **A compiler** — translating Lisp into **bytecode**, a compact instruction set
   the VM runs faster than it can walk a structure.
 - **Self-hosting** — the moment the compiler, written in Lisp, can compile
