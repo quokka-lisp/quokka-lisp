@@ -53,9 +53,12 @@ fn main() {
                 host.write_stdout(&output);
 
                 // Between mutations is the only place collection may happen,
-                // so this is where the heap's request gets answered.
-                if heap.wants_collection() {
+                // so this is where the heap's request gets answered — and
+                // where a heap that hit its ceiling gets a chance to recover,
+                // since whatever was filling it is now unreachable.
+                if heap.wants_collection() || heap.is_exhausted() {
                     heap.collect();
+                    heap.clear_exhausted();
                 }
             }
             Err(e) => {
@@ -71,7 +74,12 @@ fn main() {
 /// Without an interrupt there is nothing else to stop a program that never
 /// finishes, and a REPL that hangs is the failure the slice machinery exists to
 /// prevent. Phase 3 replaces this with Ctrl-C landing in the debugger.
-const EVAL_BUDGET: u64 = 50_000_000;
+///
+/// Five million rather than fifty: the old figure let `(fact -1)` run for
+/// nineteen seconds before saying anything. A line that needs more than this is
+/// rare enough to be worth noticing, and the heap ceiling usually arrives first
+/// anyway.
+const EVAL_BUDGET: u64 = 5_000_000;
 
 /// Read every form on the line, evaluate it, and print the result.
 ///

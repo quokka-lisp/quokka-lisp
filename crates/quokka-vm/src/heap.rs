@@ -161,6 +161,18 @@ pub mod symbol {
 /// Default soft limit: 1 MiB of heap before a collection is wanted.
 pub const DEFAULT_SOFT_LIMIT_WORDS: usize = 128 * 1024;
 
+/// How far past the soft limit the heap may grow before allocation stops.
+///
+/// The soft limit is a request the driver answers between mutations. This is
+/// the backstop for when it cannot be answered — a single mutation that
+/// allocates without end, which collection cannot help with because everything
+/// it allocated is still reachable.
+///
+/// Sixty-four times is generous enough that no reasonable program meets it and
+/// small enough that an unreasonable one stops in under a second rather than
+/// after gigabytes.
+pub const HARD_LIMIT_MULTIPLE: usize = 64;
+
 // An object header, which is not a value — see `value::SUBTAG_HEADER`.
 //
 //   [ length : 48 ][ type : 8 ][ subtag 31 : 5 ][ 101 ]
@@ -391,6 +403,11 @@ struct Storage {
     /// Above this, the heap would like to be collected. Not a hard limit —
     /// see [`Heap::wants_collection`].
     soft_limit: usize,
+    /// Above this, allocation stops being possible. See [`Heap::is_exhausted`].
+    hard_limit: usize,
+    /// Set when an allocation passed `hard_limit`. The evaluator checks it and
+    /// halts; nothing else needs to know.
+    exhausted: bool,
     /// How many collections have happened. Torture mode uses it to vary the
     /// padding, so no object can land where it was.
     collections: u64,
@@ -401,6 +418,14 @@ struct Storage {
 impl Storage {
     fn alloc(&mut self, words: usize) -> usize {
         let at = self.words.len();
+        if at + words > self.hard_limit {
+            // The allocation still happens. Refusing it would mean every
+            // allocator returning a Result, and every caller handling a case
+            // that cannot be recovered from locally. Instead the flag is set
+            // and the evaluator halts at its next step, so the overshoot is
+            // one step's worth of words — a handful.
+            self.exhausted = true;
+        }
         self.words.resize(at + words, 0);
         at
     }
@@ -684,6 +709,11 @@ impl<'h> Mutation<'h> {
         self.storage.words.len()
     }
 
+    /// Has an allocation passed the hard limit? See [`Heap::is_exhausted`].
+    pub fn is_exhausted(&self) -> bool {
+        self.storage.exhausted
+    }
+
     fn cell(&self, v: Value<'h>) -> usize {
         v.word_index().expect("not a reference into the heap")
     }
@@ -741,10 +771,36 @@ impl Heap {
                 stack: Value::NIL.bits(),
                 mode: 0,
                 soft_limit: words,
+                hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
+                exhausted: false,
                 collections: 0,
                 heap_start: 0,
             },
         }
+    }
+
+    /// Has an allocation passed the hard limit?
+    ///
+    /// The evaluator checks this each step and stops. Unlike
+    /// [`Heap::wants_collection`] this is not a request: past here the heap
+    /// will not grow further, and continuing would mean growing until the
+    /// operating system intervenes — or, on wasm32, until linear memory runs
+    /// out at 4 GiB and takes the tab with it.
+    pub fn is_exhausted(&self) -> bool {
+        self.storage.exhausted
+    }
+
+    /// Forget an exhaustion, so the REPL can carry on after reporting it.
+    ///
+    /// Only safe once whatever was allocating has stopped and a collection has
+    /// reclaimed it; the REPL does both.
+    pub fn clear_exhausted(&mut self) {
+        self.storage.exhausted = false;
+    }
+
+    /// The hard ceiling, in words.
+    pub fn hard_limit(&self) -> usize {
+        self.storage.hard_limit
     }
 
     /// Has the heap grown past its soft limit?

@@ -144,6 +144,13 @@ pub enum EvalError {
     },
     /// Arithmetic left fixnum range, and bignums do not exist.
     IntegerOverflow,
+    /// The heap reached its hard ceiling. Common Lisp calls this a
+    /// `storage-condition`; it becomes one in phase 3.
+    HeapExhausted,
+    /// The step budget ran out. Not an error in the program so much as a
+    /// refusal to wait any longer — phase 3 replaces it with Ctrl-C landing in
+    /// the debugger, which is what a person actually wants.
+    BudgetExhausted,
 }
 
 impl core::fmt::Display for EvalError {
@@ -160,6 +167,14 @@ impl core::fmt::Display for EvalError {
             EvalError::IntegerOverflow => {
                 write!(f, "integer overflow, and bignums do not exist yet")
             }
+            EvalError::HeapExhausted => write!(
+                f,
+                "out of heap — a computation that does not finish, perhaps?"
+            ),
+            EvalError::BudgetExhausted => write!(
+                f,
+                "gave up after the step budget — a computation that does not finish, perhaps?"
+            ),
         }
     }
 }
@@ -648,6 +663,12 @@ impl<'a, 'h> Machine<'a, 'h> {
 
 impl Steppable for Machine<'_, '_> {
     fn step(&mut self) -> Transition {
+        // Checked before anything else: past the hard limit the heap will not
+        // grow further, so continuing would allocate into a ceiling. One check
+        // per step bounds the overshoot to one step's worth of words.
+        if self.mc.is_exhausted() {
+            return self.fail(EvalError::HeapExhausted);
+        }
         match Mode::from_u8(self.mc.mode()) {
             Mode::Eval => self.step_eval(),
             Mode::Return => self.step_return(),
@@ -801,10 +822,7 @@ pub fn eval_now<'h>(
             Some(e) => Err(e),
             None => Ok(machine.result()),
         },
-        Status::Yielded => Err(EvalError::BadSyntax {
-            operator: "the evaluator",
-            detail: "ran out of budget",
-        }),
+        Status::Yielded => Err(EvalError::BudgetExhausted),
     }
 }
 
@@ -1155,6 +1173,92 @@ mod tests {
             max_depth > 100,
             "only {max_depth} frames; the stack should grow here"
         );
+    }
+
+    // ---- not finishing ---------------------------------------------------
+
+    /// A recursion with no base case must stop, and stop *cheaply*.
+    ///
+    /// `(fact -1)` never reaches `(= n 0)`, and because the `*` is still
+    /// pending it is not a tail call, so every level keeps its frames.
+    /// Collection cannot help: they are all reachable. Only a ceiling can.
+    #[test]
+    fn a_recursion_that_never_ends_hits_the_heap_ceiling() {
+        let source = "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact -1)";
+        let chars = Reader::chars_of(source);
+        let mut heap = Heap::with_soft_limit(4_000);
+        let limit = heap.hard_limit();
+
+        let outcome = heap.mutate(|mc| {
+            primitives::install(mc);
+            let mut reader = Reader::new(&chars);
+            let definition = reader.read(mc).unwrap().unwrap();
+            eval_now(mc, definition, PLENTY).unwrap();
+            let call = reader.read(mc).unwrap().unwrap();
+            // The value cannot leave the mutation, and is not wanted: the
+            // error is the subject. Mapping it away is the brand doing its job.
+            eval_now(mc, call, u64::MAX).map(|_| ())
+        });
+
+        assert_eq!(outcome, Err(EvalError::HeapExhausted));
+        // The overshoot past the ceiling is one step's worth of words, not a
+        // multiple of the heap.
+        assert!(
+            heap.used_words() < limit + 64,
+            "overshot the ceiling by {} words",
+            heap.used_words() - limit
+        );
+    }
+
+    /// And the heap must be usable afterwards. An error that leaves the system
+    /// unusable is only marginally better than a crash.
+    #[test]
+    fn the_heap_recovers_after_exhaustion() {
+        let source = "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact -1)";
+        let chars = Reader::chars_of(source);
+        let mut heap = Heap::with_soft_limit(4_000);
+
+        heap.mutate(|mc| {
+            primitives::install(mc);
+            let mut reader = Reader::new(&chars);
+            let definition = reader.read(mc).unwrap().unwrap();
+            eval_now(mc, definition, PLENTY).unwrap();
+            let call = reader.read(mc).unwrap().unwrap();
+            assert_eq!(
+                eval_now(mc, call, u64::MAX).map(|_| ()),
+                Err(EvalError::HeapExhausted)
+            );
+        });
+
+        // What filled the heap is unreachable now, so collecting frees it.
+        assert!(heap.is_exhausted());
+        heap.collect();
+        heap.clear_exhausted();
+        assert!(!heap.is_exhausted());
+        heap.verify().unwrap();
+
+        let answer = heap.mutate(|mc| {
+            let chars = Reader::chars_of("(fact 20)");
+            let mut reader = Reader::new(&chars);
+            let call = reader.read(mc).unwrap().unwrap();
+            let value = eval_now(mc, call, PLENTY).unwrap();
+            print(mc, value)
+        });
+        assert_eq!(answer, "2432902008176640000");
+    }
+
+    /// A budget that runs out is reported as itself, not as a syntax error.
+    #[test]
+    fn running_out_of_budget_says_so() {
+        let mut heap = Heap::new();
+        let chars = Reader::chars_of("(+ 1 (* 2 (- 10 (+ 3 4))))");
+        let outcome = heap.mutate(|mc| {
+            primitives::install(mc);
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).unwrap().unwrap();
+            eval_now(mc, form, 3).map(|_| ())
+        });
+        assert_eq!(outcome, Err(EvalError::BudgetExhausted));
     }
 
     // ---- the machine, rather than the language ---------------------------
