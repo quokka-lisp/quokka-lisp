@@ -254,6 +254,7 @@ Common Lisp. Each chapter answers one question.
 | 20 | [Errors you can catch](part-2-reading-and-running/20-errors-you-can-catch.md) | How does an error stop being the end of the computation and become an object? |
 | 21 | [Records, and a macro that writes ten functions](part-2-reading-and-running/21-records.md) | How does one line define a type, and how does `setf` learn a place it has never seen? |
 | 22 | [The names with a percent sign](part-2-reading-and-running/22-the-percent-names.md) | What are all those `%` names in the prelude, and what is missing that they stand in for? |
+| 23 | [More than one answer](part-2-reading-and-running/23-more-than-one-answer.md) | How can a form return two things, when the machine has one register for results? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -266,9 +267,11 @@ Still to come, and deliberately so:
   operators exist; the six that do not are `macrolet`,
   `multiple-value-call`, `multiple-value-prog1`, `progv`, `load-time-value`
   and `symbol-macrolet`. Macros, lambda lists, keywords, vectors, strings,
-  hash tables, `setf`, a minimal **condition system** and `defstruct` are all
-  built. What is left is `macrolet` and the two `multiple-value-*` operators,
-  which need a second value register.
+  hash tables, `setf`, a minimal **condition system**, `defstruct` and
+  multiple values are all built, and so is tier 0. What is left is the three
+  operators `docs/design.md` excludes on purpose — `progv`,
+  `load-time-value` and `symbol-macrolet` — which an interpreter can add
+  later at little cost.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.

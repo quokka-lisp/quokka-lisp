@@ -6,10 +6,11 @@ Current phase: **0 · Spike — complete**, now finishing **tier 0** (#18) so th
 phase 1 can bootstrap. The phase 0 gate passed long ago; tier 0 is what the
 compiler needs before the interpreter can run it.
 
-Where that stands: **19 of Common Lisp's 25 special operators** (missing
-`macrolet`, `multiple-value-call`, `multiple-value-prog1`, and — outside tier 0
-by design — `progv`, `load-time-value`, `symbol-macrolet`), plus `lambda` and
-`defmacro`, which CL makes macros and Quokka has not.
+**Tier 0 is finished.** **22 of Common Lisp's 25 special operators** — the
+three missing are `progv`, `load-time-value` and `symbol-macrolet`, which
+`docs/design.md` excludes on purpose. Plus `lambda` and `defmacro`, which CL
+makes macros and Quokka has not. Next is **phase 1**: the interpreter runs the
+compiler to build an image.
 
 Done: macros with backquote, `gensym`, `macroexpand` and destructuring lambda
 lists; `&optional`/`&key` with default forms and supplied-p; keywords; vectors
@@ -19,16 +20,16 @@ SBCL at all.
 
 There is a **prelude** (`lisp/prelude.lisp`, compiled into the binary with
 `include_str!` and interpreted at boot) holding `defun`, `when`, `unless`,
-`cond`, `and`, `or`, `setf`, `macroexpand`, the list and sequence functions and
-the hash-table wrappers — Lisp, not Rust.
+`cond`, `and`, `or`, `setf`, `defstruct`, `macroexpand`, `handler-case`,
+`multiple-value-bind`, the list and sequence functions and the hash-table
+wrappers — Lisp, not Rust.
 
-Still missing for tier 0: **`error` and `handler-case`** (group E, and the
-thing most worth doing next — three other pieces are waiting on something to
-signal), **`defstruct`** (group F, which also wants an extensible `setf`), and
-the three operators above.
+Also done: a condition system (`error`, `handler-case`, `ignore-errors`),
+`defstruct` with an extensible `setf`, and multiple values — which closed the
+documented divergences in `macroexpand`, `gethash` and `ignore-errors`.
 
-184 tests; 14 differential files agree with SBCL. The Rust core is about 10,400
-lines of the 15,000 budget.
+189 tests; **17 differential files agree with SBCL**. The Rust core is about
+11,000 lines of the 15,000 budget.
 
 ## Who this is for, and how to work with me
 

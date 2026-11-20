@@ -311,7 +311,24 @@ const TABLE: &[Primitive] = &[
         name: "%VECTOR-TO-LIST",
         arity: Arity::Exactly(1),
     },
+    // ---- multiple values -------------------------------------------------
+    //
+    // Intercepted by `crate::eval`, like FUNCALL, APPLY and ERROR: how many
+    // values a form returns is machine state, and a primitive returns one.
+    Primitive {
+        name: "VALUES",
+        arity: Arity::AtLeast(0),
+    },
+    Primitive {
+        name: "VALUES-LIST",
+        arity: Arity::Exactly(1),
+    },
 ];
+
+/// Where `VALUES` sits in the table, which `crate::eval` intercepts.
+pub const VALUES: u32 = 47;
+/// Where `VALUES-LIST` sits in the table, which `crate::eval` intercepts.
+pub const VALUES_LIST: u32 = 48;
 
 /// Where `ERROR` sits in the table, which `crate::eval` intercepts.
 pub const ERROR: u32 = 40;
@@ -487,6 +504,10 @@ pub fn call<'h>(
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
         }
+        "VALUES" | "VALUES-LIST" => Err(EvalError::BadSyntax {
+            operator: "VALUES",
+            detail: "is intercepted by the evaluator and should never be called here",
+        }),
         "ERROR" => Err(EvalError::BadSyntax {
             operator: "ERROR",
             detail: "is intercepted by the evaluator and should never be called here",
@@ -801,6 +822,8 @@ mod tests {
         assert_eq!(TABLE[FUNCALL as usize].name, "FUNCALL");
         assert_eq!(TABLE[APPLY as usize].name, "APPLY");
         assert_eq!(TABLE[ERROR as usize].name, "ERROR");
+        assert_eq!(TABLE[VALUES as usize].name, "VALUES");
+        assert_eq!(TABLE[VALUES_LIST as usize].name, "VALUES-LIST");
     }
 
     /// Table order is part of the image format. This does not stop a reorder,
@@ -857,7 +880,9 @@ mod tests {
                 "%CONDITIONP",
                 "%INTERN",
                 "%STRING-APPEND",
-                "%VECTOR-TO-LIST"
+                "%VECTOR-TO-LIST",
+                "VALUES",
+                "VALUES-LIST"
             ]
         );
     }

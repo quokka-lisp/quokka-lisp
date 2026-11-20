@@ -256,6 +256,19 @@ into subforms. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
 **Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. ([14](part-2-reading-and-running/14-leaving-early.md))
 
+**Multiple values.** A form may return any number of results, and a caller
+that wants one writes nothing special — the extras evaporate. Different from
+returning a list, which every caller would have to take apart. `gethash`
+returns the value *and* whether the key was there, which is the only way to
+tell a stored nil from a missing key. ([23](part-2-reading-and-running/23-more-than-one-answer.md))
+
+**macrolet.** Binds a macro with a lexical scope, as `flet` binds a function.
+Needed no new machinery here, because the evaluator already looked operators
+up through the environment and already asked whether what it found was a
+macro. Its expander runs in a null lexical environment — it cannot see the
+surrounding variables, because at expansion time they do not have values yet.
+([23](part-2-reading-and-running/23-more-than-one-answer.md))
+
 **Mutation.** In Quokka, one bounded stretch of work on the heap. No
 [collection](#collection) can happen inside one, which is what makes holding a
 value safe. ([4](part-1-substrate/04-rooting.md))
@@ -383,6 +396,12 @@ uses the low three bits, which are free because heap objects are aligned to
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
 **tagbody.** The primitive iteration construct: a body with labels that `go` jumps to. Almost never written directly; `do`, `dolist` and `loop` are macros that expand into it. ([13](part-2-reading-and-running/13-the-special-operators.md))
+
+**Transparent to values.** Said of a form that returns however many values
+its last form returned — `block`, `let`, `progn`, `if`, `unwind-protect` and
+most others. Mostly free here, because a form in [tail position](#tail-call)
+never re-delivers; the three that were not free each read the value register
+and delivered it again, which was *almost* right. ([23](part-2-reading-and-running/23-more-than-one-answer.md))
 
 **Tail call.** A call whose result is immediately the result of the enclosing function, so the caller's [frame](#frame) is no longer needed. Eliminating it is what makes recursive loops run in constant space — which matters in Lisp, where recursion *is* iteration. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 

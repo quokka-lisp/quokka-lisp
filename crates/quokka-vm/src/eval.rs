@@ -325,8 +325,8 @@ impl<'a, 'h> Machine<'a, 'h> {
                     special::SETQ => self.eval_setq(control),
                     special::LET => self.eval_let(control),
                     special::LET_STAR => self.eval_let_star(control),
-                    special::FLET => self.eval_flet(control, false),
-                    special::LABELS => self.eval_flet(control, true),
+                    special::FLET => self.eval_flet(control, false, false),
+                    special::LABELS => self.eval_flet(control, true, false),
                     special::FUNCTION => self.eval_function(control),
                     // `the` declares a type the interpreter does not check, and
                     // `locally` carries declarations there are none of yet.
@@ -358,6 +358,9 @@ impl<'a, 'h> Machine<'a, 'h> {
                     special::UNWIND_PROTECT => self.eval_unwind_protect(control),
                     special::DEFMACRO => self.eval_defmacro(control),
                     special::HANDLER_CASE => self.eval_handler_case(control),
+                    special::MULTIPLE_VALUE_CALL => self.eval_multiple_value_call(control),
+                    special::MULTIPLE_VALUE_PROG1 => self.eval_multiple_value_prog1(control),
+                    special::MACROLET => self.eval_flet(control, false, true),
                     _ => self.fail(EvalError::BadSyntax {
                         operator: "a special operator",
                         detail: "is not implemented",
@@ -496,6 +499,66 @@ impl<'a, 'h> Machine<'a, 'h> {
             name: "ERROR",
             wanted: "a condition, a symbol naming one, or a string",
         })
+    }
+
+    /// `(multiple-value-call function form...)`.
+    ///
+    /// The same shape as an ordinary call, with one difference that is the
+    /// whole point: each form contributes *all* of its values rather than its
+    /// first. So the frame accumulates lists and appends them, where `ARGS`
+    /// accumulates single values and conses them.
+    fn eval_multiple_value_call(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "multiple-value-call",
+                detail: "wants a function",
+            });
+        }
+        let env = self.mc.register(Register::Env);
+        let f = self.make_mv_frame(Value::NIL, rest, env);
+        self.push(f);
+        let first = self.mc.car(rest);
+        self.mc.set_register(Register::Control, first);
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
+    }
+
+    fn make_mv_frame(&mut self, done: Value<'h>, left: Value<'h>, env: Value<'h>) -> Value<'h> {
+        let f = self.mc.alloc(ObjectType::Frame, 4);
+        let kind = Value::fixnum(frame::MV_ARGS).expect("small");
+        self.mc.set_slot(f, frame::KIND, kind);
+        self.mc.set_slot(f, frame::MV_DONE, done);
+        self.mc.set_slot(f, frame::MV_LEFT, left);
+        self.mc.set_slot(f, frame::MV_ENV, env);
+        f
+    }
+
+    /// `(multiple-value-prog1 first rest...)` — run everything, yield all of
+    /// `first`'s values.
+    fn eval_multiple_value_prog1(&mut self, form: Value<'h>) -> Transition {
+        let rest = self.mc.cdr(form);
+        if !rest.is_cons() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "multiple-value-prog1",
+                detail: "wants a form",
+            });
+        }
+        let first = self.mc.car(rest);
+        let after = self.mc.cdr(rest);
+        let env = self.mc.register(Register::Env);
+        // The frame starts empty; the Return handler fills in the saved
+        // values once the first form has produced them.
+        let f = self.mc.alloc(ObjectType::Frame, 4);
+        let kind = Value::fixnum(frame::MV_PROG1).expect("small");
+        self.mc.set_slot(f, frame::KIND, kind);
+        self.mc.set_slot(f, frame::MV_SAVED, Value::UNBOUND);
+        self.mc.set_slot(f, frame::MV_LEFT, after);
+        self.mc.set_slot(f, frame::MV_ENV, env);
+        self.push(f);
+        self.mc.set_register(Register::Control, first);
+        self.mc.set_mode(Mode::Eval.as_u8());
+        Transition::Continue
     }
 
     /// Signal `condition`: unwind to the nearest handler that wants it.
@@ -718,7 +781,19 @@ impl<'a, 'h> Machine<'a, 'h> {
     /// `labels` they capture the new one, so they can — which is what makes
     /// mutual recursion possible. That means the scope has to exist before the
     /// closures that go in it, so it is built empty and filled.
-    fn eval_flet(&mut self, form: Value<'h>, recursive: bool) -> Transition {
+    /// `flet`, `labels` and `macrolet`, which differ in two bits.
+    ///
+    /// `recursive` is whether the bindings can see each other — `labels` yes,
+    /// `flet` no. `macros` is whether they are macros rather than functions,
+    /// and that is the whole of `macrolet`: the evaluator already looks up an
+    /// operator in the function namespace and already checks whether what it
+    /// found is a macro, so binding a macro object there is enough.
+    ///
+    /// A `macrolet` expander also captures **nothing**. CLHS says its
+    /// macro-function runs in a null lexical environment, so it cannot see the
+    /// variables around it — which is surprising until you remember it runs at
+    /// expansion time, when those variables do not have values yet.
+    fn eval_flet(&mut self, form: Value<'h>, recursive: bool, macros: bool) -> Transition {
         let rest = self.mc.cdr(form);
         if !rest.is_cons() {
             return self.fail(EvalError::BadSyntax {
@@ -764,18 +839,30 @@ impl<'a, 'h> Machine<'a, 'h> {
         // then capture it and are written into it.
         let placeholders = vec![Value::NIL; names.len()];
         let scope = env::make(self.mc, env, env::FUNCTION, &names, &placeholders);
-        let captured = if recursive { scope } else { env };
+        let captured = if macros {
+            // A null lexical environment, per CLHS 3.1.2.1.2.2.
+            Value::NIL
+        } else if recursive {
+            scope
+        } else {
+            env
+        };
         for (i, (params, fn_body)) in shapes.into_iter().enumerate() {
-            let (params, fn_body) = match crate::lambda_list::rewrite(
-                self.mc,
-                params,
-                fn_body,
-                crate::lambda_list::Kind::Ordinary,
-            ) {
-                Ok(pair) => pair,
-                Err(e) => return self.fail(e),
+            let kind = if macros {
+                crate::lambda_list::Kind::Macro
+            } else {
+                crate::lambda_list::Kind::Ordinary
             };
-            let c = closure::make(self.mc, params, fn_body, captured);
+            let (params, fn_body) =
+                match crate::lambda_list::rewrite(self.mc, params, fn_body, kind) {
+                    Ok(pair) => pair,
+                    Err(e) => return self.fail(e),
+                };
+            let c = if macros {
+                closure::make_macro(self.mc, params, fn_body, captured)
+            } else {
+                closure::make(self.mc, params, fn_body, captured)
+            };
             self.mc.set_slot(scope, env::FIRST_PAIR + 1 + i * 2, c);
         }
         self.begin(body, scope)
@@ -1127,7 +1214,7 @@ impl<'a, 'h> Machine<'a, 'h> {
             self.pop();
             let cleanup = self.mc.slot(f, frame::PROTECT_CLEANUP);
             let env = self.mc.slot(f, frame::PROTECT_ENV);
-            let value = self.mc.register(Register::Value);
+            let value = self.all_values();
             let resume = frame::make_cleanup(self.mc, value, target);
             self.push(resume);
             return self.begin(cleanup, env);
@@ -1185,8 +1272,9 @@ impl<'a, 'h> Machine<'a, 'h> {
             }
             self.pop();
             self.mc.set_register(Register::Unwind, Value::NIL);
-            let value = self.mc.register(Register::Value);
-            return self.deliver(value);
+            // Transparent to values, as a normal exit is: `return-from` can
+            // carry several, since its value form may produce several.
+            return self.deliver_unchanged();
         }
 
         self.pop();
@@ -1357,11 +1445,9 @@ impl<'a, 'h> Machine<'a, 'h> {
             frame::SETQ => self.return_to_setq(f),
             frame::LET => self.return_to_let(f),
             frame::LETSTAR => self.return_to_let_star(f),
-            // A block or catch that was left normally: its value is the value.
-            frame::BLOCK | frame::CATCH => {
-                let value = self.mc.register(Register::Value);
-                self.deliver(value)
-            }
+            // A block or catch left normally is transparent: its values are
+            // the body's values, however many there were.
+            frame::BLOCK | frame::CATCH => self.deliver_unchanged(),
             // A return-from whose value has now been evaluated.
             frame::EXIT => {
                 let marker = self.mc.slot(f, frame::MARKER);
@@ -1369,12 +1455,76 @@ impl<'a, 'h> Machine<'a, 'h> {
             }
             // A macro returned a form. Evaluate that instead of the call —
             // which is the whole of what a macro is.
+            frame::MV_ARGS => {
+                let values = self.all_values();
+                let done = self.mc.slot(f, frame::MV_DONE);
+                let left = self.mc.cdr(self.mc.slot(f, frame::MV_LEFT));
+                let env = self.mc.slot(f, frame::MV_ENV);
+                // Reversed as it goes, so collecting stays O(1) per form.
+                let mut collected = done;
+                let mut cursor = values;
+                while cursor.is_cons() {
+                    let item = self.mc.car(cursor);
+                    collected = self.mc.cons(item, collected);
+                    cursor = self.mc.cdr(cursor);
+                }
+                // `step_return` has already popped this frame.
+                if left.is_cons() {
+                    let next = self.mc.car(left);
+                    let f = self.make_mv_frame(collected, left, env);
+                    self.push(f);
+                    self.mc.set_register(Register::Control, next);
+                    self.mc.set_register(Register::Env, env);
+                    self.mc.set_mode(Mode::Eval.as_u8());
+                    return Transition::Continue;
+                }
+                // Everything is in, reversed: the function first, then its
+                // arguments in order.
+                let mut arguments = Value::NIL;
+                let mut function = Value::NIL;
+                let mut cursor = collected;
+                while cursor.is_cons() {
+                    let item = self.mc.car(cursor);
+                    let next = self.mc.cdr(cursor);
+                    if next.is_nil() {
+                        function = item;
+                    } else {
+                        arguments = self.mc.cons(item, arguments);
+                    }
+                    cursor = next;
+                }
+                self.apply(function, arguments)
+            }
+            frame::MV_PROG1 => {
+                let saved = self.mc.slot(f, frame::MV_SAVED);
+                let left = self.mc.slot(f, frame::MV_LEFT);
+                let env = self.mc.slot(f, frame::MV_ENV);
+                // First time through: remember what the protected form
+                // returned, then run the rest for effect.
+                let saved = if saved == Value::UNBOUND {
+                    let all = self.all_values();
+                    self.mc.set_slot(f, frame::MV_SAVED, all);
+                    all
+                } else {
+                    saved
+                };
+                if left.is_cons() {
+                    let next = self.mc.car(left);
+                    let rest = self.mc.cdr(left);
+                    self.mc.set_slot(f, frame::MV_LEFT, rest);
+                    // `step_return` popped it; it goes back because there is
+                    // still a form to run and values to hold meanwhile.
+                    self.push(f);
+                    self.mc.set_register(Register::Control, next);
+                    self.mc.set_register(Register::Env, env);
+                    self.mc.set_mode(Mode::Eval.as_u8());
+                    return Transition::Continue;
+                }
+                self.deliver_values(saved)
+            }
             // The protected form finished without signalling, so the
             // handlers were not needed. Drop them and pass the value on.
-            frame::HANDLER => {
-                let value = self.mc.register(Register::Value);
-                self.deliver(value)
-            }
+            frame::HANDLER => self.deliver_unchanged(),
             frame::EXPAND => {
                 let expansion = self.mc.register(Register::Value);
                 // Back to where the macro was *called*, not where it was
@@ -1422,7 +1572,7 @@ impl<'a, 'h> Machine<'a, 'h> {
             frame::PROTECT => {
                 let cleanup = self.mc.slot(f, frame::PROTECT_CLEANUP);
                 let env = self.mc.slot(f, frame::PROTECT_ENV);
-                let value = self.mc.register(Register::Value);
+                let value = self.all_values();
                 let resume = frame::make_cleanup(self.mc, value, Value::NIL);
                 self.push(resume);
                 self.begin(cleanup, env)
@@ -1430,12 +1580,25 @@ impl<'a, 'h> Machine<'a, 'h> {
             // A cleanup finished. Its own value is discarded; what was saved
             // before it ran is what matters.
             frame::CLEANUP => {
+                // What the protected form returned, held across the cleanup.
+                // All of it: CLHS says `unwind-protect` yields the protected
+                // form's values, and a cleanup running in between must not
+                // cost the second one.
                 let saved = self.mc.slot(f, frame::CLEANUP_VALUE);
                 let target = self.mc.slot(f, frame::CLEANUP_TARGET);
-                self.mc.set_register(Register::Value, saved);
                 if target.is_nil() {
-                    self.deliver(saved)
+                    self.deliver_values(saved)
                 } else {
+                    let primary = if saved.is_cons() {
+                        self.mc.car(saved)
+                    } else {
+                        Value::NIL
+                    };
+                    self.mc.set_register(Register::Value, primary);
+                    // The unwind carries on with everything it was carrying.
+                    // A `throw` may hand several values to its `catch`, and a
+                    // cleanup in between must not reduce them to one.
+                    self.mc.set_register(Register::Values, saved);
                     self.begin_unwind(target)
                 }
             }
@@ -1529,6 +1692,22 @@ impl<'a, 'h> Machine<'a, 'h> {
                 function = self.mc.car(arguments);
                 arguments = self.mc.cdr(arguments);
                 continue;
+            }
+            // `(values ...)` returns however many it was given, which is
+            // the Values register and so the machine's business.
+            if function.as_primitive() == Some(primitives::VALUES) {
+                return self.deliver_values(arguments);
+            }
+            if function.as_primitive() == Some(primitives::VALUES_LIST) {
+                if !arguments.is_cons() {
+                    return self.fail(EvalError::WrongArgumentCount {
+                        name: "VALUES-LIST",
+                        wanted: 1,
+                        got: 0,
+                    });
+                }
+                let list = self.mc.car(arguments);
+                return self.deliver_values(list);
             }
             // `(error datum ...)` signals rather than returning, so it
             // unwinds the stack — which a primitive cannot do, for the same
@@ -1840,10 +2019,57 @@ impl<'a, 'h> Machine<'a, 'h> {
     // ---- helpers ---------------------------------------------------------
 
     /// Hand a value to whatever is waiting for one.
+    /// Return one value.
+    ///
+    /// This clears the Values register, which is what makes extra values
+    /// *transient*: `(+ (values 1 2) 3)` is 4 because the `+` delivers one
+    /// value and whatever `(values 1 2)` left behind is gone. Forgetting to
+    /// clear it would let a stale second value leak into the next form that
+    /// looked, which is the kind of bug that appears a long way from its
+    /// cause.
     fn deliver(&mut self, v: Value<'h>) -> Transition {
         self.mc.set_register(Register::Value, v);
+        self.mc.set_register(Register::Values, Value::UNBOUND);
         self.mc.set_mode(Mode::Return.as_u8());
         Transition::Continue
+    }
+
+    /// Hand on whatever the last step returned, untouched.
+    ///
+    /// For a frame that is transparent to values — a `block` left normally, a
+    /// `handler-case` whose body did not signal — delivering the Value
+    /// register again would be *almost* right, and would quietly drop the
+    /// extra values. `(multiple-value-list (block b (values 1 2)))` is `(1 2)`
+    /// and was `(1)` until this existed.
+    fn deliver_unchanged(&mut self) -> Transition {
+        self.mc.set_mode(Mode::Return.as_u8());
+        Transition::Continue
+    }
+
+    /// Return however many values `all` holds — none, one or many.
+    fn deliver_values(&mut self, all: Value<'h>) -> Transition {
+        let primary = if all.is_cons() {
+            self.mc.car(all)
+        } else {
+            Value::NIL
+        };
+        self.mc.set_register(Register::Value, primary);
+        self.mc.set_register(Register::Values, all);
+        self.mc.set_mode(Mode::Return.as_u8());
+        Transition::Continue
+    }
+
+    /// Everything the last step returned, as a list.
+    ///
+    /// `UNBOUND` in the Values register means the ordinary one-value case,
+    /// so the list is built here rather than on every return.
+    fn all_values(&mut self) -> Value<'h> {
+        let values = self.mc.register(Register::Values);
+        if values != Value::UNBOUND {
+            return values;
+        }
+        let primary = self.mc.register(Register::Value);
+        self.mc.cons(primary, Value::NIL)
     }
 
     fn push(&mut self, f: Value<'h>) {
@@ -1955,6 +2181,14 @@ pub mod special {
     /// machinery is an operator — but the CL-visible `handler-case` is a
     /// prelude macro over this, which keeps the special operator count honest.
     pub const HANDLER_CASE: i64 = 23;
+    /// `(multiple-value-call f form...)` — call `f` with every value every
+    /// form returned, not just the first of each.
+    pub const MULTIPLE_VALUE_CALL: i64 = 24;
+    /// `(multiple-value-prog1 first rest...)` — all of `first`'s values,
+    /// after running the rest for effect.
+    pub const MULTIPLE_VALUE_PROG1: i64 = 25;
+    /// `(macrolet ((name (args) body)...) body...)` — macros, locally.
+    pub const MACROLET: i64 = 26;
 
     /// Every special operator, by name.
     pub const ALL: &[(&str, i64)] = &[
@@ -1980,6 +2214,9 @@ pub mod special {
         ("UNWIND-PROTECT", UNWIND_PROTECT),
         ("DEFMACRO", DEFMACRO),
         ("%HANDLER-CASE", HANDLER_CASE),
+        ("MULTIPLE-VALUE-CALL", MULTIPLE_VALUE_CALL),
+        ("MULTIPLE-VALUE-PROG1", MULTIPLE_VALUE_PROG1),
+        ("MACROLET", MACROLET),
     ];
 }
 
@@ -2024,9 +2261,23 @@ pub mod frame {
     pub const EXPAND: i64 = 15;
     /// A `handler-case` in progress: its clauses are waiting for a condition.
     pub const HANDLER: i64 = 16;
+    /// Collecting every value of every argument form, for
+    /// `multiple-value-call`.
+    pub const MV_ARGS: i64 = 17;
+    /// Holding the first form's values while the rest run, for
+    /// `multiple-value-prog1`.
+    pub const MV_PROG1: i64 = 18;
 
     /// Slot 0 of every frame: which kind.
     pub const KIND: usize = 0;
+    /// Values collected so far, reversed.
+    pub const MV_DONE: usize = 1;
+    /// Forms still to evaluate.
+    pub const MV_LEFT: usize = 2;
+    /// The environment the forms run in.
+    pub const MV_ENV: usize = 3;
+    /// The values being held across the rest of a `multiple-value-prog1`.
+    pub const MV_SAVED: usize = 1;
     /// A `handler-case`'s clauses, unevaluated.
     pub const HANDLER_CLAUSES: usize = 1;
     /// The environment the clause bodies run in.
@@ -2151,6 +2402,8 @@ pub mod frame {
     }
 
     /// A paused unwind, or a value waiting on a cleanup.
+    /// `value` is the **list** of everything the protected form returned,
+    /// not just the first, so a cleanup does not cost the second one.
     pub fn make_cleanup<'h>(
         mc: &mut Mutation<'h>,
         value: Value<'h>,

@@ -31,6 +31,7 @@
 - [Errors you can catch](part-2-reading-and-running/20-errors-you-can-catch.md)
 - [Records, and a macro that writes ten functions](part-2-reading-and-running/21-records.md)
 - [The names with a percent sign](part-2-reading-and-running/22-the-percent-names.md)
+- [More than one answer](part-2-reading-and-running/23-more-than-one-answer.md)
 
 ---
 

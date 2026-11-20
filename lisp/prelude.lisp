@@ -293,32 +293,27 @@
             (let ((expander (%macro-function head)))
               (if expander
                   ;; The macro's parameters are the argument *forms*, which
-                  ;; is exactly what `(cdr form)` is.
-                  (apply expander (cdr form))
-                  form))
-            form))
-      form))
+                  ;; is exactly what `(cdr form)` is. Two values, as CLHS
+                  ;; says: the expansion, and whether anything happened.
+                  (values (apply expander (cdr form)) t)
+                  (values form nil)))
+            (values form nil)))
+      (values form nil)))
 
-;; Expand until the head is no longer a macro.
+;; Expand until the head is no longer a macro, and say whether anything
+;; happened.
 ;;
-;; **One divergence from the standard, on purpose.** Common Lisp's
-;; `macroexpand` returns two values — the form, and whether anything was
-;; expanded — and loops on the second. Quokka has no multiple values yet, so
-;; this loops while the form keeps *changing*, compared with `eq`.
-;;
-;; The difference shows only for a macro that returns the identical form object
-;; it was given. The standard says that counts as an expansion, so a conforming
-;; implementation loops forever; this one stops. Diverging towards terminating
-;; seemed the better way to be wrong, and it goes away when
-;; `multiple-value-call` arrives.
+;; This used to loop while the form kept *changing*, compared with `eq`,
+;; because there were no multiple values to loop on — a documented divergence
+;; that said it would go away when `multiple-value-call` arrived. It has.
 ;;
 ;; Like the standard's, this expands the *top* of the form only. Nothing
 ;; descends into subforms; that is `macroexpand-all`, which does not exist.
 (defun macroexpand (form)
-  (let ((once (macroexpand-1 form)))
-    (if (eq once form)
-        form
-        (macroexpand once))))
+  (labels ((walk (f changed)
+             (multiple-value-bind (once expanded) (macroexpand-1 f)
+               (if expanded (walk once t) (values f changed)))))
+    (walk form nil)))
 
 ;;; ------------------------------------------------------------------
 ;;; Hash tables
@@ -344,12 +339,17 @@
   ;; `equal` function to take `#'` of, so the question does not arise yet.
   (%make-hash-table test))
 
-;; `gethash` returns two values in Common Lisp — the value, and whether the
-;; key was there. There are no multiple values yet, so the optional default is
-;; the whole of the story: it covers everything except telling a stored nil
-;; from a missing key, which is what the second value exists for.
+;; A marker meaning "no entry", made once at boot. A gensym, so no program
+;; can store it as a value and fool the test below.
+(setq %hash-missing (gensym))
+
+;; Two values, as CLHS says: the value, and whether the key was there. That
+;; second value is the only way to tell a stored nil from a missing key.
 (defun gethash (key table &optional default)
-  (%gethash key table default))
+  (let ((found (%gethash key table %hash-missing)))
+    (if (eq found %hash-missing)
+        (values default nil)
+        (values found t))))
 
 ;; Iteration. The primitive hands back the entries as a list of (key . value)
 ;; cells, because calling the function is the evaluator's job rather than a
@@ -481,13 +481,10 @@
 (defmacro handler-case (form &rest clauses)
   (cons '%handler-case (cons form clauses)))
 
-;; Run a form; if it signals, yield nil instead.
-;;
-;; Common Lisp's returns two values — nil and the condition — so a caller can
-;; tell "it failed" from "it returned nil". There are no multiple values yet,
-;; which is the same gap `macroexpand` and `gethash` have.
+;; Run a form; if it signals, yield nil and the condition — two values, so a
+;; caller can tell "it failed" from "it returned nil".
 (defmacro ignore-errors (&rest forms)
-  `(handler-case (progn ,@forms) (error () nil)))
+  `(handler-case (progn ,@forms) (error (%ignored-condition) (values nil %ignored-condition))))
 
 ;; Called from the code `lambda_list::destructure` generates, when a macro
 ;; call does not fit the shape its parameter list described. These were
@@ -606,4 +603,28 @@
                                   (list 'quote reader)
                                   (list 'quote writer))
                             (%defstruct-accessors name (cdr names) (+ index 1)))))))))
+
+;;; ------------------------------------------------------------------
+;;; Multiple values
+;;; ------------------------------------------------------------------
+
+;; `multiple-value-call` and `multiple-value-prog1` are the two operators;
+;; everything anyone actually writes is a macro over them.
+;;
+;; `&optional` gives the missing-values rule for free — a variable with no
+;; value gets nil — and `&rest` discards the extras. The lambda list work from
+;; chapter 18 doing a job nobody had it in mind for.
+(defmacro multiple-value-bind (variables form &body body)
+  (let ((extra (gensym)))
+    `(multiple-value-call
+         (lambda (&optional ,@variables &rest ,extra)
+           ,extra
+           ,@body)
+       ,form)))
+
+(defmacro multiple-value-list (form)
+  `(multiple-value-call (function list) ,form))
+
+(defmacro nth-value (n form)
+  `(nth ,n (multiple-value-list ,form)))
 

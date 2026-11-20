@@ -431,6 +431,18 @@ pub enum Register {
     Stack,
     /// What an unwind is searching for, or `nil`.
     Unwind,
+    /// **All** the values the last step produced, or [`Value::UNBOUND`].
+    ///
+    /// Common Lisp forms may return any number of values, and almost nothing
+    /// looks at more than the first. So the ordinary path keeps using
+    /// [`Register::Value`], and this holds `UNBOUND` to mean "one value, in
+    /// the Value register" — the common case, costing nothing.
+    ///
+    /// When a form does return some other number, this holds the whole list
+    /// (empty for `(values)`), and only `multiple-value-call` and
+    /// `multiple-value-prog1` look. Anything else takes the primary and the
+    /// rest are dropped, which is what makes `(+ (values 1 2) 3)` equal 4.
+    Values,
 }
 
 /// An object header word, as stored in the heap.
@@ -489,6 +501,9 @@ struct Storage {
     /// What an unwind is looking for: a `block`'s marker, a `catch`'s tag, or
     /// a `tagbody`'s marker. `nil` when not unwinding. A root like the rest.
     unwind: u64,
+    /// All the values the last step produced, or `UNBOUND` for "just one".
+    /// A root like the rest.
+    values: u64,
     /// Which half of the evaluator's cycle it is in. Not a `Value` — it is VM
     /// state rather than Lisp data, so the collector does not touch it.
     ///
@@ -829,6 +844,7 @@ impl<'h> Mutation<'h> {
             Register::Value => self.storage.value,
             Register::Stack => self.storage.stack,
             Register::Unwind => self.storage.unwind,
+            Register::Values => self.storage.values,
         })
     }
 
@@ -840,6 +856,7 @@ impl<'h> Mutation<'h> {
             Register::Value => &mut self.storage.value,
             Register::Stack => &mut self.storage.stack,
             Register::Unwind => &mut self.storage.unwind,
+            Register::Values => &mut self.storage.values,
         };
         *slot = v.bits();
     }
@@ -951,6 +968,7 @@ impl Heap {
                 value: Value::NIL.bits(),
                 stack: Value::NIL.bits(),
                 unwind: Value::NIL.bits(),
+                values: Value::UNBOUND.bits(),
                 mode: 0,
                 soft_limit: words,
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
@@ -1192,6 +1210,7 @@ impl Heap {
         self.storage.value = forward(from, &mut to, static_end, self.storage.value);
         self.storage.stack = forward(from, &mut to, static_end, self.storage.stack);
         self.storage.unwind = forward(from, &mut to, static_end, self.storage.unwind);
+        self.storage.values = forward(from, &mut to, static_end, self.storage.values);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has
