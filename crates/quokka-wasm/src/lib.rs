@@ -7,7 +7,6 @@
 use quokka_vm::eval::eval_now;
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{Host, HostError};
-use quokka_vm::primitives;
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
 use quokka_vm::{PHASE, VERSION};
@@ -56,7 +55,9 @@ impl Quokka {
             host: BrowserHost::default(),
             heap: {
                 let mut heap = Heap::new();
-                heap.mutate(primitives::install);
+                // The prelude is compiled into this binary, so a failure
+                // here means the build is broken rather than the input.
+                quokka_vm::boot::install(&mut heap).expect("the prelude boots");
                 heap
             },
         }

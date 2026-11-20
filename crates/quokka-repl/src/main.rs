@@ -9,7 +9,6 @@ use std::io::{self, BufRead, Write};
 use quokka_vm::eval::eval_now;
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{Host, HostError};
-use quokka_vm::primitives;
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
 use quokka_vm::{PHASE, VERSION};
@@ -52,7 +51,10 @@ fn main() {
     host.write_stdout("Ctrl-D to leave.\n");
 
     let mut heap = Heap::new();
-    heap.mutate(primitives::install);
+    if let Err(e) = quokka_vm::boot::install(&mut heap) {
+        eprintln!("quokka: {e}");
+        std::process::exit(1);
+    }
     let stdin = io::stdin();
     loop {
         host.write_stdout("quokka> ");

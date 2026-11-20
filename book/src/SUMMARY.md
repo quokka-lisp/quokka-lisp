@@ -24,6 +24,8 @@
 - [The special operators, one by one](part-2-reading-and-running/13-the-special-operators.md)
 - [Leaving early](part-2-reading-and-running/14-leaving-early.md)
 - [Code that writes code](part-2-reading-and-running/15-code-that-writes-code.md)
+- [The prelude](part-2-reading-and-running/16-the-prelude.md)
+- [Why macros matter, and what hygiene is](part-2-reading-and-running/17-why-macros-matter.md)
 
 ---
 

@@ -10,6 +10,11 @@ with the chapter that explains it properly.
 slots follow. Cons cells have none.
 ([5](part-1-substrate/05-objects-in-the-heap.md))
 
+**Anaphoric macro.** A macro that deliberately introduces a binding the
+caller can see — `(aif (lookup x) (greet it))`, where `it` is the macro's
+doing. The useful case that [hygiene](#hygiene) makes awkward, and one reason
+Common Lisp did not adopt it. ([17](part-2-reading-and-running/17-why-macros-matter.md))
+
 **Allocation.** Setting aside space in the [heap](#heap) for a new value. In
 Quokka it is a *bump*: take the next free words and move the mark along. No
 searching, no free list — a gift from the [copying collector](#copying-collector).
@@ -135,6 +140,12 @@ a macro are renamed automatically so [capture](#capture-variable-capture)
 cannot happen. Quokka follows Common Lisp and does *not* have it: capture is an
 error the language lets you make, and [gensym](#gensym) is the cure. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
+**Hygienic macro expansion.** Scheme's answer to
+[capture](#capture-variable-capture): the expander renames identifiers
+introduced by a macro, so they cannot collide with the caller's, and names
+*used* by a macro keep the meaning they had where it was written. Kohlbecker's
+algorithm (1986). Quokka does not have it; see [gensym](#gensym). ([17](part-2-reading-and-running/17-why-macros-matter.md))
+
 **Image.** The entire contents of a running system, written to a file and
 loadable again — not a saved document but a saved *world*, resuming exactly
 where it was. Booting means loading one rather than running a build.
@@ -190,6 +201,11 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 **Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
 **Parser.** What the [reader](#reader) is called in most languages, where it is far larger — it must know operator precedence, statements versus expressions, declarations. A Lisp reader needs none of that, because the text is already the data structure. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Prelude.** The Lisp that a Lisp system loads before any user code —
+`lisp/prelude.lisp` here. Compiled into the binary with `include_str!`, since
+the core VM has no filesystem, and interpreted at boot. `defun`, `when`,
+`cond`, `and` and `or` live there rather than in Rust. ([16](part-2-reading-and-running/16-the-prelude.md))
 
 **Primitive.** An operation the [VM](#vm) provides directly in Rust rather than
 in Lisp — arithmetic, allocation, input and output. The *primitive table* is the

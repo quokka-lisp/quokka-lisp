@@ -247,6 +247,8 @@ Common Lisp. Each chapter answers one question.
 | 13 | [The special operators, one by one](part-2-reading-and-running/13-the-special-operators.md) | What are the twenty-five forms everything else is built from, and why those? |
 | 14 | [Leaving early](part-2-reading-and-running/14-leaving-early.md) | How do you abandon a computation from the middle of it? |
 | 15 | [Code that writes code](part-2-reading-and-running/15-code-that-writes-code.md) | How does a program extend the language it is written in? |
+| 16 | [The prelude](part-2-reading-and-running/16-the-prelude.md) | Where does the Lisp that is written in Lisp actually live, and how does it get loaded? |
+| 17 | [Why macros matter, and what hygiene is](part-2-reading-and-running/17-why-macros-matter.md) | Why is any of this worth it, and why do Scheme and Common Lisp disagree? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

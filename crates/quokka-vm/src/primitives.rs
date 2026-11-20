@@ -124,6 +124,24 @@ const TABLE: &[Primitive] = &[
         name: "GENSYM",
         arity: Arity::AtLeast(0),
     },
+    // The one primitive the prelude could not do without: it is how `defun`,
+    // written in Lisp, puts a function where the evaluator will find it.
+    //
+    // Common Lisp spells this `(setf (symbol-function 'name) f)`. Quokka has
+    // no `setf` yet, and `setf` is itself a macro that needs a writer to
+    // expand into — so the writer comes first and the sugar comes later. The
+    // `%` marks it as Quokka's own rather than Common Lisp's, which is what
+    // rule 6 asks for in the absence of packages.
+    Primitive {
+        name: "%SET-SYMBOL-FUNCTION",
+        arity: Arity::Exactly(2),
+    },
+    // Reading the cell back, which is standard and which `defun` does not
+    // need — but a prelude you cannot inspect is a prelude you debug blind.
+    Primitive {
+        name: "SYMBOL-FUNCTION",
+        arity: Arity::Exactly(1),
+    },
 ];
 
 /// Where `FUNCALL` sits in the table, which `crate::eval` intercepts.
@@ -236,6 +254,29 @@ pub fn call<'h>(
             Ok(out)
         }
         "GENSYM" => Ok(mc.gensym()),
+        "%SET-SYMBOL-FUNCTION" => {
+            if !mc.is_symbol(args[0]) {
+                return Err(EvalError::WrongType {
+                    name: "%SET-SYMBOL-FUNCTION",
+                    wanted: "a symbol",
+                });
+            }
+            mc.set_slot(args[0], symbol::FUNCTION, args[1]);
+            Ok(args[1])
+        }
+        "SYMBOL-FUNCTION" => {
+            if !mc.is_symbol(args[0]) {
+                return Err(EvalError::WrongType {
+                    name: "SYMBOL-FUNCTION",
+                    wanted: "a symbol",
+                });
+            }
+            let f = mc.slot(args[0], symbol::FUNCTION);
+            if f == Value::UNBOUND {
+                return Err(EvalError::UndefinedFunction(mc.symbol_name(args[0])));
+            }
+            Ok(f)
+        }
         "LIST" => {
             let mut out = Value::NIL;
             for v in args.iter().rev() {
@@ -341,8 +382,25 @@ mod tests {
         assert_eq!(
             names,
             [
-                "+", "-", "*", "=", "<", ">", "CONS", "CAR", "CDR", "EQ", "NULL", "CONSP",
-                "SYMBOLP", "FUNCALL", "LIST", "APPEND", "GENSYM"
+                "+",
+                "-",
+                "*",
+                "=",
+                "<",
+                ">",
+                "CONS",
+                "CAR",
+                "CDR",
+                "EQ",
+                "NULL",
+                "CONSP",
+                "SYMBOLP",
+                "FUNCALL",
+                "LIST",
+                "APPEND",
+                "GENSYM",
+                "%SET-SYMBOL-FUNCTION",
+                "SYMBOL-FUNCTION"
             ]
         );
     }

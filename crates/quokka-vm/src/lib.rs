@@ -20,6 +20,7 @@
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
+pub mod boot;
 pub mod eval;
 pub mod heap;
 pub mod host;
@@ -56,9 +57,11 @@ pub fn run_forms(source: &str, budget: u64) -> String {
     use crate::reader::Reader;
 
     let mut heap = Heap::new();
+    // The prelude is part of the system under test: `defun` is one of its
+    // macros now, and SBCL has it too.
+    crate::boot::install(&mut heap).expect("the prelude boots");
     let chars = Reader::chars_of(source);
     let mut out = heap.mutate(|mc| {
-        primitives::install(mc);
         let mut reader = Reader::new(&chars);
         let mut out = String::new();
         loop {

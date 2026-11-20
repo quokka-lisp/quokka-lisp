@@ -284,7 +284,6 @@ impl<'a, 'h> Machine<'a, 'h> {
                     special::LAMBDA => self.eval_lambda(control),
                     special::PROGN => self.eval_progn(control),
                     special::SETQ => self.eval_setq(control),
-                    special::DEFUN => self.eval_defun(control),
                     special::LET => self.eval_let(control),
                     special::LET_STAR => self.eval_let_star(control),
                     special::FLET => self.eval_flet(control, false),
@@ -415,36 +414,6 @@ impl<'a, 'h> Machine<'a, 'h> {
         // the fix for `(setq a 1 b 2)` assigning only the first pair.
         self.mc.set_mode(Mode::Eval.as_u8());
         Transition::Continue
-    }
-
-    /// `(defun name (params) body...)`.
-    ///
-    /// A special operator here; in Common Lisp it is a macro over `setf
-    /// fdefinition`, and it becomes one once there are macros.
-    fn eval_defun(&mut self, form: Value<'h>) -> Transition {
-        let rest = self.mc.cdr(form);
-        if !rest.is_cons() || !self.mc.cdr(rest).is_cons() {
-            return self.fail(EvalError::BadSyntax {
-                operator: "defun",
-                detail: "wants a name, a parameter list and a body",
-            });
-        }
-        let name = self.mc.car(rest);
-        if !self.mc.is_symbol(name) {
-            return self.fail(EvalError::BadSyntax {
-                operator: "defun",
-                detail: "wants a symbol for a name",
-            });
-        }
-        let after = self.mc.cdr(rest);
-        let params = self.mc.car(after);
-        let body = self.mc.cdr(after);
-        let env = self.mc.register(Register::Env);
-        let c = closure::make(self.mc, params, body, env);
-        // Lisp-2: a definition goes in the function cell, leaving the variable
-        // of the same name untouched.
-        self.mc.set_slot(name, symbol::FUNCTION, c);
-        self.deliver(name)
     }
 
     /// Evaluate `forms` in order, yielding the last.
@@ -1528,8 +1497,16 @@ pub mod special {
     pub const PROGN: i64 = 4;
     /// `(setq var value ...)` — assign.
     pub const SETQ: i64 = 5;
-    /// `(defun name (params) body...)` — define a function.
-    pub const DEFUN: i64 = 6;
+    // 6 was `defun`, which lives in `lisp/prelude.lisp` now — it is a macro
+    // in Common Lisp and never should have been an operator here. The number
+    // is left unused rather than reused, so an old image cannot silently mean
+    // something new.
+    //
+    // `lambda` (3) stays, and is the interesting case. It is *also* a macro in
+    // Common Lisp, expanding to `(function (lambda ...))` — but `function`
+    // still has to turn a lambda expression into a closure, so the Rust code
+    // below cannot leave. Making the symbol a macro as well would move no
+    // work, only a dispatch. The line is in the right place already.
     /// `(let ((v init)...) body...)` — bind variables, all at once.
     pub const LET: i64 = 7;
     /// `(let* ((v init)...) body...)` — bind variables in order.
@@ -1572,7 +1549,6 @@ pub mod special {
         ("LAMBDA", LAMBDA),
         ("PROGN", PROGN),
         ("SETQ", SETQ),
-        ("DEFUN", DEFUN),
         ("LET", LET),
         ("LET*", LET_STAR),
         ("FLET", FLET),
@@ -1896,7 +1872,7 @@ mod tests {
         let mut heap = Heap::new();
         let chars = Reader::chars_of(source);
         heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let mut reader = Reader::new(&chars);
             let form = reader.read(mc).expect("reads").expect("a form");
             eval_now(mc, form, PLENTY).map(|v| print(mc, v))
@@ -2038,7 +2014,7 @@ mod tests {
         let mut heap = Heap::new();
         let chars = Reader::chars_of(source);
         heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let mut reader = Reader::new(&chars);
             let mut last = String::new();
             while let Some(form) = reader.read(mc).expect("reads") {
@@ -2061,7 +2037,7 @@ mod tests {
         let chars = Reader::chars_of(source);
         let mut heap = Heap::new();
         let deepest = heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let mut reader = Reader::new(&chars);
             let mut deepest = 0usize;
             while let Some(form) = reader.read(mc).expect("reads") {
@@ -2200,7 +2176,7 @@ mod tests {
         let mut heap = Heap::new();
 
         let max_depth = heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let mut reader = Reader::new(&chars);
             let definition = reader.read(mc).unwrap().unwrap();
             eval_now(mc, definition, PLENTY).unwrap();
@@ -2234,7 +2210,7 @@ mod tests {
         let mut heap = Heap::new();
 
         let max_depth = heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let mut reader = Reader::new(&chars);
             let definition = reader.read(mc).unwrap().unwrap();
             eval_now(mc, definition, PLENTY).unwrap();
@@ -2652,7 +2628,11 @@ mod tests {
     /// Collection cannot help: they are all reachable. Only a ceiling can.
     #[test]
     fn a_recursion_that_never_ends_hits_the_heap_ceiling() {
-        let source = "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact -1)";
+        // Defined with the primitive rather than `defun`, so the 4,000-word
+        // heap holds only what this test is about. `defun` is a prelude macro
+        // now, and the prelude does not fit in a heap this small — which is
+        // the right answer for a test of the ceiling itself.
+        let source = "(%set-symbol-function 'fact\n              (lambda (n) (if (= n 0) 1 (* n (fact (- n 1))))))\n             (fact -1)";
         let chars = Reader::chars_of(source);
         let mut heap = Heap::with_soft_limit(4_000);
         let limit = heap.hard_limit();
@@ -2682,7 +2662,11 @@ mod tests {
     /// unusable is only marginally better than a crash.
     #[test]
     fn the_heap_recovers_after_exhaustion() {
-        let source = "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact -1)";
+        // Defined with the primitive rather than `defun`, so the 4,000-word
+        // heap holds only what this test is about. `defun` is a prelude macro
+        // now, and the prelude does not fit in a heap this small — which is
+        // the right answer for a test of the ceiling itself.
+        let source = "(%set-symbol-function 'fact\n              (lambda (n) (if (= n 0) 1 (* n (fact (- n 1))))))\n             (fact -1)";
         let chars = Reader::chars_of(source);
         let mut heap = Heap::with_soft_limit(4_000);
 
@@ -2721,7 +2705,7 @@ mod tests {
         let mut heap = Heap::new();
         let chars = Reader::chars_of("(+ 1 (* 2 (- 10 (+ 3 4))))");
         let outcome = heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let mut reader = Reader::new(&chars);
             let form = reader.read(mc).unwrap().unwrap();
             eval_now(mc, form, 3).map(|_| ())
@@ -2743,7 +2727,7 @@ mod tests {
         for budget in [1u64, 2, 3, 5, 8, 13, 100, 10_000] {
             let mut heap = Heap::new();
             let answer = heap.mutate(|mc| {
-                primitives::install(mc);
+                crate::boot::install_in(mc).expect("the prelude boots");
                 let mut reader = Reader::new(&chars);
                 let form = reader.read(mc).unwrap().unwrap();
                 {
@@ -2775,7 +2759,7 @@ mod tests {
         let depth = 5_000;
         let mut heap = Heap::new();
         let answer = heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let plus = mc.intern("+");
             let one = Value::fixnum(1).unwrap();
 
@@ -2801,7 +2785,7 @@ mod tests {
         let chars = Reader::chars_of("(+ 1 (* 2 (+ 3 4)))");
         let mut heap = Heap::new();
         heap.mutate(|mc| {
-            primitives::install(mc);
+            crate::boot::install_in(mc).expect("the prelude boots");
             let mut reader = Reader::new(&chars);
             let form = reader.read(mc).unwrap().unwrap();
             Machine::start(mc, form, Value::NIL);
