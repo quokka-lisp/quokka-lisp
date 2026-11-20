@@ -1,0 +1,19 @@
+[package]
+name = "quokka-vm"
+description = "Quokka core VM: tagged words, heap, GC, reader, interpreter. No host dependencies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# CLAUDE.md rule 2: the core VM crate has no host dependencies.
+# No std::fs, no threads, no wall clock, no networking. Keep this list empty
+# unless the dependency is pure computation.
+[dependencies]
+
+[features]
+default = []
+# CLAUDE.md / design.md: collect on every allocation. Run this in CI.
+gc-torture = []

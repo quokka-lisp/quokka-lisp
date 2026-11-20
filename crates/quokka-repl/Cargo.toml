@@ -1,0 +1,16 @@
+[package]
+name = "quokka-repl"
+description = "Quokka native terminal REPL."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+quokka-vm.workspace = true
+
+[[bin]]
+name = "quokka"
+path = "src/main.rs"

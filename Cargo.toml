@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/quokka-vm",
+    "crates/quokka-repl",
+    "crates/quokka-wasm",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/quokka-lisp/quokka-lisp"
+authors = ["The Quokka authors"]
+
+[workspace.dependencies]
+quokka-vm = { path = "crates/quokka-vm" }
+
+[profile.release]
+# Keep the wasm payload small; the VM is meant to be comprehensible, not fast yet.
+opt-level = "s"
+lto = true
+codegen-units = 1
+# No panic = "abort": it breaks `cargo test --release`, and the size win is small.

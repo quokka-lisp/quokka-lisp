@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Local tooling and editor state
+.DS_Store
+.idea/
+.vscode/
+
+# Build output for the browser dev console
+crates/quokka-wasm/pkg/
+crates/quokka-wasm/www/quokka_wasm*.js
+crates/quokka-wasm/www/quokka_wasm*.wasm
+
+# Saved images are build artefacts, not sources
+*.quokka-image

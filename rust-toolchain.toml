@@ -1,0 +1,6 @@
+# Pinned so that native and both wasm targets are always available.
+# Rule 2 in CLAUDE.md: every change must build and test for native and wasm32.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown", "wasm32-wasip1"]

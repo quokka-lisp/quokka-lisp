@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # CLAUDE.md rule 2: every change must build and pass tests for native and wasm32.
+  native:
+    name: Native (build, test, fmt, clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo build --workspace
+      - run: cargo test --workspace
+
+  gc-torture:
+    name: GC torture (collect on every allocation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p quokka-vm --features gc-torture
+
+  wasm-browser:
+    name: wasm32-unknown-unknown (browser build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      # quokka-repl is a native host and is deliberately excluded.
+      - run: cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
+
+  wasm-wasi:
+    name: wasm32-wasip1 (tests under wasmtime)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: bytecodealliance/actions/wasmtime/setup@v1
+      - name: Run the core VM tests under wasmtime
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir=.
+        run: cargo test -p quokka-vm --target wasm32-wasip1
+
+  # SBCL is the differential-test oracle, never a build dependency.
+  sbcl-oracle:
+    name: SBCL oracle (differential tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y sbcl
+      - run: sbcl --version
+      - name: Differential tests
+        run: echo "No differential tests yet — they arrive with the reader in phase 0."

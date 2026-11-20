@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quokka dev console</title>
+    <style>
+      :root { color-scheme: light dark; --bg: #fbfaf8; --fg: #1c1b19; --dim: #6f6b66; --rule: #ddd8d0; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #16150f; --fg: #ece7dd; --dim: #8e887e; --rule: #322f28; }
+      }
+      body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+             font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      main { max-width: 760px; margin: 0 auto; }
+      h1 { font: 600 15px/1.4 system-ui, sans-serif; color: var(--dim); margin: 0 0 16px; }
+      #transcript { white-space: pre-wrap; border-bottom: 1px solid var(--rule); padding-bottom: 12px; min-height: 40vh; }
+      form { display: flex; gap: 8px; align-items: baseline; padding-top: 12px; }
+      label { color: var(--dim); }
+      input { flex: 1; font: inherit; color: inherit; background: transparent; border: 0; outline: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Quokka dev console — phase 0</h1>
+      <div id="transcript"></div>
+      <form id="form">
+        <label for="input">quokka&gt;</label>
+        <input id="input" autocomplete="off" autofocus />
+      </form>
+    </main>
+    <script type="module">
+      // Built with: wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
+      import init, { Quokka } from "./pkg/quokka_wasm.js";
+
+      const transcript = document.getElementById("transcript");
+      const form = document.getElementById("form");
+      const input = document.getElementById("input");
+
+      const print = (text) => {
+        transcript.append(document.createTextNode(text));
+        window.scrollTo(0, document.body.scrollHeight);
+      };
+
+      await init();
+      const vm = new Quokka();
+      print(vm.banner() + "\n");
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const line = input.value;
+        input.value = "";
+        print("quokka> " + line + "\n");
+        print(vm.eval(line));
+      });
+    </script>
+  </body>
+</html>
