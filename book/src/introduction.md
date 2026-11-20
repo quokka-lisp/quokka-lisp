@@ -1,5 +1,10 @@
 # Introduction
 
+<p align="center">
+  <img src="logo-horizontal.png" alt="Quokka Lisp" width="520">
+</p>
+
+
 This book is being written while the system it describes is being built. There
 is no finished thing to look back on and tidy up. Each chapter comes out of a
 question that had to be answered before the next commit could happen, and it is

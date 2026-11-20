@@ -4,24 +4,43 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Quokka dev console</title>
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
+    <meta name="theme-color" content="#105C55" />
     <style>
-      :root { color-scheme: light dark; --bg: #fbfaf8; --fg: #1c1b19; --dim: #6f6b66; --rule: #ddd8d0; }
+      /* Brand palette — see assets/README.md. */
+      :root {
+        color-scheme: light dark;
+        --bg: #fdf7ec;    /* soft cream  */
+        --fg: #4c2311;    /* dark brown  */
+        --dim: #8a6a55;
+        --rule: #e4d7c3;
+        --accent: #105c55; /* teal       */
+      }
       @media (prefers-color-scheme: dark) {
-        :root { --bg: #16150f; --fg: #ece7dd; --dim: #8e887e; --rule: #322f28; }
+        :root {
+          --bg: #073a39;  /* dark teal   */
+          --fg: #fdf7ec;
+          --dim: #7fa6a0;
+          --rule: #10534f;
+          --accent: #a2d9c5; /* mint     */
+        }
       }
       body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
              font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
       main { max-width: 760px; margin: 0 auto; }
-      h1 { font: 600 15px/1.4 system-ui, sans-serif; color: var(--dim); margin: 0 0 16px; }
+      h1 { font: 600 15px/1.4 system-ui, sans-serif; color: var(--dim); margin: 0 0 16px;
+           display: flex; align-items: center; gap: 10px; }
+      h1 img { width: 22px; height: 22px; }
+      label { color: var(--accent); font-weight: 600; }
       #transcript { white-space: pre-wrap; border-bottom: 1px solid var(--rule); padding-bottom: 12px; min-height: 40vh; }
       form { display: flex; gap: 8px; align-items: baseline; padding-top: 12px; }
-      label { color: var(--dim); }
       input { flex: 1; font: inherit; color: inherit; background: transparent; border: 0; outline: none; }
     </style>
   </head>
   <body>
     <main>
-      <h1>Quokka dev console — phase 0</h1>
+      <h1><img src="favicon-32x32.png" alt="" />Quokka dev console — phase 0</h1>
       <div id="transcript"></div>
       <form id="form">
         <label for="input">quokka&gt;</label>

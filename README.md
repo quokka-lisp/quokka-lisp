@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/01_Logos/logo-horizontal-transparent-1440x360.png" alt="Quokka Lisp" width="560">
+</p>
+
 # Quokka
 
 > A modern Lisp-machine-style environment: a small Rust VM running a Common Lisp
@@ -37,6 +41,12 @@ cargo test  --workspace
 Every change must also build for wasm32 — see [`CLAUDE.md`](CLAUDE.md) for the
 full command set and the rules that must not be broken.
 
+## Brand assets
+
+Mascot, wordmark, icons, favicons and cover art are in
+[`assets/`](assets/README.md), along with the palette.
+
 ## Licence
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE). The brand assets in `assets/` are covered by the
+same licence.

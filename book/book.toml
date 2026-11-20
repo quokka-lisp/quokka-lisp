@@ -6,6 +6,7 @@ language = "en"
 src = "src"
 
 [output.html]
+# theme/favicon.{png,svg} override mdBook's own; see assets/README.md.
 default-theme = "light"
 preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/quokka-lisp/quokka-lisp"

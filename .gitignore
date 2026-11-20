@@ -14,3 +14,7 @@ crates/quokka-wasm/www/quokka_wasm*.wasm
 
 # Saved images are build artefacts, not sources
 *.quokka-image
+
+# The brand pack, unpacked into assets/brand/. The archive itself is redundant
+# with it, and nothing can reference a file inside a zip.
+assets/*.zip
