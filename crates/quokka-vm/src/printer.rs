@@ -131,6 +131,9 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
             // that reads back as this closure with its captured scope.
             out.push_str("#<function>");
         }
+        // A macro is a closure that is called at a different time, and like
+        // any closure there is no text that reads back as this one.
+        ObjectType::Macro => out.push_str("#<macro>"),
         other => {
             let _ = write!(out, "#<{other:?} {} slots>", header.slots);
         }

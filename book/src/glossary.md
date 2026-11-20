@@ -27,6 +27,11 @@ turns it into ordinary `cons`, `append` and `quote` calls — so it is not a
 [special operator](#special-operator) and costs nothing at run time. Also
 called *quasiquotation*, after Quine's corner quotes. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
+**apply.** Calls a function with a list of arguments — `(apply #'+ 1 '(2 3))`
+is `(+ 1 2 3)`. Intercepted by the evaluator rather than implemented as a
+primitive, because making a call is the machine's business. The last argument
+is shared, not copied. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
 as several. Contrast [fixnum](#fixnum). Not yet implemented.
 
@@ -214,6 +219,12 @@ otherwise. ([18](part-2-reading-and-running/18-lambda-lists.md))
 bound to true when an argument was actually given. It exists because `nil` is
 a perfectly good argument, so "absent" and "nil" have to be different things.
 ([18](part-2-reading-and-running/18-lambda-lists.md))
+
+**macroexpand.** Runs a [macro](#macro) and returns the form it produced,
+without evaluating it — the first debugging tool a macro system needs, since
+what a macro produces is otherwise invisible. `macroexpand-1` does one step;
+`macroexpand` repeats until the head is no longer a macro. Neither descends
+into subforms. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
 **Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. ([14](part-2-reading-and-running/14-leaving-early.md))
 

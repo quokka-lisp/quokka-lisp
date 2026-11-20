@@ -245,6 +245,64 @@ mod tests {
         assert_eq!(after_boot("(let ((v 'outer)) (or nil v))"), "OUTER");
     }
 
+    /// The first debugging tool: a macro's output as an ordinary value.
+    #[test]
+    fn macroexpand_shows_what_a_macro_did() {
+        assert_eq!(
+            after_boot("(defmacro m (a) `(if ,a 1 2)) (macroexpand-1 '(m t))"),
+            "(IF T 1 2)"
+        );
+        // One step, versus all the way down.
+        assert_eq!(
+            after_boot(
+                "(defmacro inner (a) `(if ,a 1 2))
+                 (defmacro outer (a) (list 'inner a))
+                 (macroexpand-1 '(outer t))"
+            ),
+            "(INNER T)"
+        );
+        assert_eq!(
+            after_boot(
+                "(defmacro inner (a) `(if ,a 1 2))
+                 (defmacro outer (a) (list 'inner a))
+                 (macroexpand '(outer t))"
+            ),
+            "(IF T 1 2)"
+        );
+    }
+
+    /// Anything that is not a macro call is returned untouched, which is what
+    /// makes `macroexpand` safe to call on arbitrary forms.
+    #[test]
+    fn macroexpand_leaves_everything_else_alone() {
+        assert_eq!(after_boot("(macroexpand-1 'foo)"), "FOO");
+        assert_eq!(after_boot("(macroexpand-1 5)"), "5");
+        assert_eq!(after_boot("(macroexpand-1 '())"), "NIL");
+        assert_eq!(after_boot("(macroexpand-1 '(car x))"), "(CAR X)");
+        // Subforms are not descended into; that would be macroexpand-all.
+        assert_eq!(
+            after_boot("(defmacro m (a) a) (macroexpand '(list (m 1)))"),
+            "(LIST (M 1))"
+        );
+    }
+
+    #[test]
+    fn apply_spreads_its_last_argument() {
+        assert_eq!(after_boot("(apply #'+ '(1 2 3))"), "6");
+        assert_eq!(after_boot("(apply #'+ 1 2 '(3 4))"), "10");
+        assert_eq!(after_boot("(apply #'list 1 '())"), "(1)");
+        assert_eq!(after_boot("(apply #'+ '())"), "0");
+        // The spread list is shared rather than copied, so a long one costs
+        // nothing here — the binder pays for it instead.
+        assert_eq!(
+            after_boot(
+                "(defun build (n acc) (if (= n 0) acc (build (- n 1) (cons 1 acc))))
+                 (apply #'+ (build 500 nil))"
+            ),
+            "500"
+        );
+    }
+
     #[test]
     fn the_list_functions_are_lisp() {
         assert_eq!(after_boot("(length '(1 2 3))"), "3");

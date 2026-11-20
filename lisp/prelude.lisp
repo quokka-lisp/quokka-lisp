@@ -216,3 +216,53 @@
   (cond ((endp list) nil)
         ((eq item (car list)) list)
         (t (member item (cdr list)))))
+
+;;; ------------------------------------------------------------------
+;;; Seeing what a macro did
+;;; ------------------------------------------------------------------
+
+;; Up to here, a macro that misbehaved could only be debugged by reasoning
+;; about code nobody had seen. `macroexpand-1` runs one expansion and hands
+;; back the form, so the expansion becomes an ordinary value you can print,
+;; pick apart, or feed to `eval`.
+;;
+;; It is written in Lisp because it can be: `%macro-function` fetches the
+;; expander and `apply` calls it, and the *evaluator* does the calling. A Rust
+;; primitive could not have done this — running a macro means running Lisp,
+;; and a primitive that called the evaluator would put Lisp back on the Rust
+;; stack, which rule 4 exists to prevent. The same wall that defaults in
+;; lambda lists ran into, and the same way round it.
+
+(defun macroexpand-1 (form)
+  (if (consp form)
+      (let ((head (car form)))
+        (if (symbolp head)
+            (let ((expander (%macro-function head)))
+              (if expander
+                  ;; The macro's parameters are the argument *forms*, which
+                  ;; is exactly what `(cdr form)` is.
+                  (apply expander (cdr form))
+                  form))
+            form))
+      form))
+
+;; Expand until the head is no longer a macro.
+;;
+;; **One divergence from the standard, on purpose.** Common Lisp's
+;; `macroexpand` returns two values — the form, and whether anything was
+;; expanded — and loops on the second. Quokka has no multiple values yet, so
+;; this loops while the form keeps *changing*, compared with `eq`.
+;;
+;; The difference shows only for a macro that returns the identical form object
+;; it was given. The standard says that counts as an expansion, so a conforming
+;; implementation loops forever; this one stops. Diverging towards terminating
+;; seemed the better way to be wrong, and it goes away when
+;; `multiple-value-call` arrives.
+;;
+;; Like the standard's, this expands the *top* of the form only. Nothing
+;; descends into subforms; that is `macroexpand-all`, which does not exist.
+(defun macroexpand (form)
+  (let ((once (macroexpand-1 form)))
+    (if (eq once form)
+        form
+        (macroexpand once))))

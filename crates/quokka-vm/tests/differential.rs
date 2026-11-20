@@ -68,6 +68,7 @@ differential_cases! {
     keywords => "keywords",
     lambda_lists => "lambda-lists",
     destructuring => "destructuring",
+    macroexpand => "macroexpand",
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

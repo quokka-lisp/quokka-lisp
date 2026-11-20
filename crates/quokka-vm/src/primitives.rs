@@ -154,7 +154,33 @@ const TABLE: &[Primitive] = &[
         name: "SYMBOL-NAME",
         arity: Arity::Exactly(1),
     },
+    // Intercepted by `crate::eval`, like FUNCALL: calling a function is the
+    // machine's job, not a primitive's.
+    //
+    // Rule 9: the fixed arguments are copied, and a written call has a bounded
+    // number of them. The spread list is *shared*, not copied, so apply itself
+    // is cheap however long it is — but the call it makes then binds that many
+    // parameters, which is the unbounded part and lives in the binder.
+    Primitive {
+        name: "APPLY",
+        arity: Arity::AtLeast(2),
+    },
+    // The macro expander stored in a symbol's function cell, or nil.
+    //
+    // Named with a `%` because it is **not** Common Lisp's `macro-function`:
+    // that returns a function of two arguments, the form and an environment,
+    // and this returns the macro's own closure, which takes the argument forms
+    // directly. `macroexpand-1` is built on it in the prelude and does obey the
+    // standard. Giving the CL name to something with a different contract
+    // would be worse than having no CL name at all.
+    Primitive {
+        name: "%MACRO-FUNCTION",
+        arity: Arity::Exactly(1),
+    },
 ];
+
+/// Where `APPLY` sits in the table, which `crate::eval` intercepts.
+pub const APPLY: u32 = 21;
 
 /// Where `FUNCALL` sits in the table, which `crate::eval` intercepts.
 ///
@@ -276,6 +302,24 @@ pub fn call<'h>(
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
         }
+        "APPLY" => Err(EvalError::BadSyntax {
+            operator: "APPLY",
+            detail: "is intercepted by the evaluator and should never be called here",
+        }),
+        "%MACRO-FUNCTION" => {
+            if !mc.is_symbol(args[0]) {
+                return Err(EvalError::WrongType {
+                    name: "%MACRO-FUNCTION",
+                    wanted: "a symbol",
+                });
+            }
+            let f = mc.slot(args[0], symbol::FUNCTION);
+            if f != Value::UNBOUND && crate::eval::closure::is_macro(mc, f) {
+                Ok(f)
+            } else {
+                Ok(Value::NIL)
+            }
+        }
         "KEYWORDP" => Ok(if mc.is_keyword(args[0]) {
             Value::T
         } else {
@@ -396,9 +440,17 @@ fn to_vec<'h>(mc: &Mutation<'h>, list: Value<'h>) -> Vec<Value<'h>> {
 mod tests {
     use super::*;
 
+    /// Both intercepted indices, not just one.
+    ///
+    /// `APPLY` was first written as 25 — counted by eye, and the eye counted
+    /// the `name:` fields of some error constructors too. The interception
+    /// silently did not fire and `apply` reported that it should never have
+    /// been called. A constant that names a table slot needs a test that it
+    /// still names it.
     #[test]
-    fn the_funcall_index_is_still_right() {
+    fn the_intercepted_indices_are_still_right() {
         assert_eq!(TABLE[FUNCALL as usize].name, "FUNCALL");
+        assert_eq!(TABLE[APPLY as usize].name, "APPLY");
     }
 
     /// Table order is part of the image format. This does not stop a reorder,
@@ -429,7 +481,9 @@ mod tests {
                 "%SET-SYMBOL-FUNCTION",
                 "SYMBOL-FUNCTION",
                 "KEYWORDP",
-                "SYMBOL-NAME"
+                "SYMBOL-NAME",
+                "APPLY",
+                "%MACRO-FUNCTION"
             ]
         );
     }

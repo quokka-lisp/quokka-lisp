@@ -1341,16 +1341,34 @@ impl<'a, 'h> Machine<'a, 'h> {
         // as deeply as the user likes and Rust's stack is not the place for it.
         let mut function = function;
         let mut arguments = arguments;
-        while function.as_primitive() == Some(primitives::FUNCALL) {
-            if !arguments.is_cons() {
-                return self.fail(EvalError::WrongArgumentCount {
-                    name: "FUNCALL",
-                    wanted: 1,
-                    got: 0,
-                });
+        loop {
+            if function.as_primitive() == Some(primitives::FUNCALL) {
+                if !arguments.is_cons() {
+                    return self.fail(EvalError::WrongArgumentCount {
+                        name: "FUNCALL",
+                        wanted: 1,
+                        got: 0,
+                    });
+                }
+                function = self.mc.car(arguments);
+                arguments = self.mc.cdr(arguments);
+                continue;
             }
-            function = self.mc.car(arguments);
-            arguments = self.mc.cdr(arguments);
+            // `(apply f a b list)` calls f with a, b and the elements of list.
+            // Intercepted here for the same reason as funcall: the call itself
+            // is the machine's business, and a primitive that wanted to make
+            // one would have to run the evaluator from inside Rust.
+            if function.as_primitive() == Some(primitives::APPLY) {
+                match self.spread(arguments) {
+                    Ok((f, args)) => {
+                        function = f;
+                        arguments = args;
+                        continue;
+                    }
+                    Err(e) => return self.fail(e),
+                }
+            }
+            break;
         }
 
         if let Some(index) = function.as_primitive() {
@@ -1364,6 +1382,60 @@ impl<'a, 'h> Machine<'a, 'h> {
         }
         let what = crate::printer::print(self.mc, function);
         self.fail(EvalError::NotAFunction(what))
+    }
+
+    /// Turn `apply`'s arguments into the argument list for the real call.
+    ///
+    /// `(f a b (c d))` becomes `(a b c d)`. The last argument is **shared**
+    /// rather than copied, which is what keeps `apply` itself cheap however
+    /// long the list is — only the fixed arguments before it are consed, and a
+    /// written call has a bounded number of those.
+    fn spread(&mut self, arguments: Value<'h>) -> Result<(Value<'h>, Value<'h>), EvalError> {
+        if !arguments.is_cons() {
+            return Err(EvalError::WrongArgumentCount {
+                name: "APPLY",
+                wanted: 2,
+                got: 0,
+            });
+        }
+        let function = self.mc.car(arguments);
+        let rest = self.mc.cdr(arguments);
+        if !rest.is_cons() {
+            return Err(EvalError::WrongArgumentCount {
+                name: "APPLY",
+                wanted: 2,
+                got: 1,
+            });
+        }
+
+        let mut fixed = Vec::new();
+        let mut cursor = rest;
+        loop {
+            let next = self.mc.cdr(cursor);
+            if next.is_nil() {
+                break;
+            }
+            if !next.is_cons() {
+                return Err(EvalError::BadSyntax {
+                    operator: "APPLY",
+                    detail: "wants a proper argument list",
+                });
+            }
+            fixed.push(self.mc.car(cursor));
+            cursor = next;
+        }
+        let spread = self.mc.car(cursor);
+        if !spread.is_nil() && !spread.is_cons() {
+            return Err(EvalError::WrongType {
+                name: "APPLY",
+                wanted: "a list as the last argument",
+            });
+        }
+        let mut out = spread;
+        for v in fixed.into_iter().rev() {
+            out = self.mc.cons(v, out);
+        }
+        Ok((function, out))
     }
 
     /// Bind the parameters and evaluate the body.

@@ -345,6 +345,71 @@ The last argument is shared rather than copied, which is why `(append '(1) 'x)`
 is `(1 . X)` and not an error. That is specified behaviour, it matches SBCL,
 and the test file checks it.
 
+## Seeing what happened
+
+A macro turns code you wrote into code you did not, and then the evaluator
+runs the second one. When it goes wrong, the thing that is wrong is invisible
+— which is why the first tool anyone wants is a way to look:
+
+```lisp
+(defmacro my-when (test &body body)
+  `(if ,test (progn ,@body) nil))
+
+(macroexpand-1 '(my-when t 1 2))     ; => (IF T (PROGN 1 2) NIL)
+```
+
+`macroexpand-1` runs one expansion and hands back the form. `macroexpand`
+keeps going until the head is no longer a macro, which matters when macros
+expand into macros — as they usually do, once a prelude exists:
+
+```lisp
+(defmacro outer (x) (list 'my-when t x))
+
+(macroexpand-1 '(outer 5))   ; => (MY-WHEN T 5)
+(macroexpand   '(outer 5))   ; => (IF T (PROGN 5) NIL)
+```
+
+Both are written in Lisp, in the prelude, and the reason they *can* be is the
+chapter's own point turned around. Expanding a macro means **running** it, and
+running it means running Lisp. A Rust primitive that wanted to do that would
+have to call the evaluator from inside itself, putting Lisp back on the Rust
+stack — the same wall chapter 18's default forms ran into, and refused for the
+same reason (rule 4).
+
+So two small things went into Rust and the rest went into Lisp.
+`%macro-function` fetches a symbol's expander, and `apply` calls a function
+with a list of arguments. `apply`, like `funcall` before it, is *intercepted by
+the evaluator* rather than implemented as a primitive, precisely because making
+a call is the machine's business. With those two, the whole of `macroexpand-1`
+is:
+
+```lisp
+(defun macroexpand-1 (form)
+  (if (consp form)
+      (let ((head (car form)))
+        (if (symbolp head)
+            (let ((expander (%macro-function head)))
+              (if expander
+                  (apply expander (cdr form))
+                  form))
+            form))
+      form))
+```
+
+The `%` on `%macro-function` is doing real work. Common Lisp has a
+`macro-function`, and it returns something else — a function of two arguments,
+the whole form and an environment. Giving the standard's name to something
+with a different contract would be worse than not having the name, so the
+Quokka-specific one is marked as Quokka's.
+
+**One divergence, on purpose.** The standard's `macroexpand` returns two
+values — the form, and whether anything was expanded — and loops on the
+second. Quokka has no multiple values yet, so it loops while the form keeps
+*changing*, compared with `eq`. The two differ only for a macro that returns
+the identical form object it was handed: the standard says that counts as an
+expansion, so a conforming implementation loops forever, and this one stops.
+Diverging towards terminating seemed the better way to be wrong.
+
 ## What is still missing
 
 Status, as of this chapter:
@@ -357,8 +422,6 @@ Status, as of this chapter:
 - **Lambda lists are still simple.** `&optional` with default values,
   `&key`, and destructuring (`(defmacro m ((a b) c) ...)`) are all absent.
   `&optional` binds `nil`, and that is the whole of it.
-- **No `macroexpand`**, so there is no way from inside Lisp to see what a macro
-  produced. This is the first debugging tool anyone will want.
 
 ## What this unlocks
 
