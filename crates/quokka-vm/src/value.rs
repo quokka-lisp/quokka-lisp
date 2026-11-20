@@ -116,6 +116,21 @@ const IMM_PAYLOAD_SHIFT: u32 = 8;
 const SUBTAG_SINGLETON: u64 = 0 << SUBTAG_SHIFT;
 const SUBTAG_CHARACTER: u64 = 1 << SUBTAG_SHIFT;
 
+/// Reserved: marks an object header, which is **not a value**.
+///
+/// The collector scans to-space linearly, so at every position it must know how
+/// big the object there is. A headed object's header says; a cons cell has no
+/// header, because the tag is its type. Something has to tell the two apart.
+///
+/// Giving cons cells a header too would cost a third more memory on the most
+/// common object in a Lisp. Instead a header is encoded in the immediate space
+/// with a subtag that is never handed out, so it cannot be mistaken for a value
+/// — in particular, a cons cell's car can never impersonate one. The scan
+/// becomes a single test, and conses stay two words.
+///
+/// The layout above the subtag is [`crate::heap`]'s business.
+pub(crate) const SUBTAG_HEADER: u64 = 31 << SUBTAG_SHIFT;
+
 const SINGLETON_NIL: u64 = 0;
 const SINGLETON_T: u64 = 1;
 const SINGLETON_UNBOUND: u64 = 2;
@@ -351,6 +366,14 @@ impl<'h> Value<'h> {
     /// Is this anything other than `nil`? Lisp's notion of truth.
     pub const fn is_true(self) -> bool {
         self.0 != Value::NIL.0
+    }
+
+    /// Is this word an object header rather than a value?
+    ///
+    /// Only the heap and the collector ask. Headers are never handed to Lisp,
+    /// and no value can answer yes — see [`SUBTAG_HEADER`].
+    pub(crate) const fn is_header(self) -> bool {
+        self.is_immediate() && (self.0 & SUBTAG_MASK) == SUBTAG_HEADER
     }
 
     /// Is this a character?
@@ -613,6 +636,33 @@ mod tests {
         assert!(!Value::T.is_nil());
         assert!(Value::T.is_true());
         assert!(!Value::NIL.is_true());
+    }
+
+    /// Nothing reachable from Lisp may answer yes to `is_header`, or a linear
+    /// scan of the heap could mistake a cons cell's car for an object header.
+    #[test]
+    fn no_ordinary_value_looks_like_a_header() {
+        let mut candidates = vec![
+            Value::NIL,
+            Value::T,
+            Value::UNBOUND,
+            Value::cons(0).unwrap(),
+            Value::object(0).unwrap(),
+            Value::forwarding(0).unwrap(),
+        ];
+        for n in interesting_fixnums() {
+            candidates.push(Value::fixnum(n).unwrap());
+        }
+        for c in ['a', '\0', '\u{10FFFF}'] {
+            candidates.push(Value::character(c));
+        }
+        let mut rng = Rng(4242);
+        for _ in 0..10_000 {
+            candidates.push(Value::fixnum(rng.fixnum()).unwrap());
+        }
+        for v in candidates {
+            assert!(!v.is_header(), "{v:?} would be read as an object header");
+        }
     }
 
     #[test]
