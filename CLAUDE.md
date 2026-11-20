@@ -104,7 +104,7 @@ build it as a site, but mdBook is not required for anything and is not in CI.
 
 ## Testing
 
-- **Differential tests:** Lisp test files hold forms with expected printed results. They run on Quokka native, Quokka in WASM, and SBCL; all three must agree. SBCL is the oracle, not a build dependency.
+- **Differential tests:** `tests/lisp/*.lisp` are ordinary Common Lisp. The same file runs on Quokka native, Quokka under wasmtime, and SBCL, and all three must agree — Quokka against SBCL catches *we implemented Lisp wrong*, Quokka native against wasm32 catches *the VM differs by target*. SBCL is the oracle, not a build dependency: without it that leg skips and says so. A file must not depend on bignums, print a function, or test anything the standard leaves unspecified; `tests/lisp/README.md` says why.
 - **Rust tests:** unit and property tests for tagged words, the heap, the reader and the GC.
 - **GC torture mode:** a build or runtime flag that collects on every allocation. Run it in CI.
 - **WASM:** run the same tests under wasmtime (WASI) and in a headless browser.
@@ -136,6 +136,8 @@ the cheapest way to honour rule 2.
 | Test (native) | `cargo test --workspace` |
 | REPL | `cargo run -p quokka-repl` |
 | GC torture | `cargo test -p quokka-vm --features gc-torture` — collects at every mutation boundary and verifies the heap afterwards |
+| Differential tests | `cargo test -p quokka-vm --test differential` (Quokka) · `./scripts/oracle.sh` (SBCL) |
+| Regenerate a baseline | `cargo run -p quokka-repl -- --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |
 | Build for the browser | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
 | Test under WASI | `CARGO_TARGET_WASM32_WASIP1_RUNNER='wasmtime --dir=.' cargo test -p quokka-vm --target wasm32-wasip1` |
 | Dev console bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |

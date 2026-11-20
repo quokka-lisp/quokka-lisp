@@ -33,6 +33,20 @@ impl Host for NativeHost {
 }
 
 fn main() {
+    // `quokka --run FILE` evaluates a file and prints the differential testing
+    // format, which is how baselines are produced. Everything else is a REPL.
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 3 && args[1] == "--run" {
+        match std::fs::read_to_string(&args[2]) {
+            Ok(source) => print!("{}", quokka_vm::run_forms(&source, EVAL_BUDGET)),
+            Err(e) => {
+                eprintln!("cannot read {}: {e}", args[2]);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let mut host = NativeHost;
     host.write_stdout(&format!("Quokka {VERSION} — phase {PHASE}\n"));
     host.write_stdout("Ctrl-D to leave.\n");

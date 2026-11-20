@@ -35,6 +35,56 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The phase this build implements, for the banner.
 pub const PHASE: &str = "0 · Spike";
 
+/// Evaluate every form in `source` and render the results in the differential
+/// testing format: one line per top-level form.
+///
+/// ```text
+/// => 42          the form's value, printed as the reader would want it back
+/// !! error       the form signalled
+/// ```
+///
+/// Errors are flattened to a single token deliberately. Quokka says "the
+/// function NOPE is undefined" and SBCL says something else entirely, with a
+/// condition class and a restart list; the text will never agree. Comparing
+/// condition *classes* would be stronger and is a refinement for when the
+/// condition system exists — for now this still catches the large case, which
+/// is one implementation signalling where the other does not.
+pub fn run_forms(source: &str, budget: u64) -> String {
+    use crate::eval::eval_now;
+    use crate::heap::Heap;
+    use crate::printer::print;
+    use crate::reader::Reader;
+
+    let mut heap = Heap::new();
+    let chars = Reader::chars_of(source);
+    let mut out = heap.mutate(|mc| {
+        primitives::install(mc);
+        let mut reader = Reader::new(&chars);
+        let mut out = String::new();
+        loop {
+            match reader.read(mc) {
+                Ok(None) => break,
+                Ok(Some(form)) => match eval_now(mc, form, budget) {
+                    Ok(value) => {
+                        out.push_str("=> ");
+                        out.push_str(&print(mc, value));
+                        out.push('\n');
+                    }
+                    Err(_) => out.push_str("!! error\n"),
+                },
+                // A malformed file is a fault in the test, not a result worth
+                // comparing, so it is loud rather than recorded.
+                Err(e) => panic!("could not read the test file: {e}"),
+            }
+        }
+        out
+    });
+    if heap.is_exhausted() {
+        out.push_str("!! heap exhausted\n");
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

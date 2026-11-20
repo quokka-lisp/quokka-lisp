@@ -31,6 +31,12 @@ cargo test --workspace
 say "book structure"
 ./scripts/check-book.sh
 
+say "differential test coverage"
+./scripts/check-differential.sh
+
+say "SBCL oracle"
+./scripts/oracle.sh
+
 say "rustdoc"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
