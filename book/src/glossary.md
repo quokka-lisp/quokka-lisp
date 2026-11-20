@@ -66,6 +66,8 @@ it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 
 **Environment.** The chain of scopes a name is looked up in: innermost first, then outward, then the symbol's own value cell for globals. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
+**eval-when.** Says whether a form runs at compile time, load time, or when executed. Looks obscure and is load-bearing: it is how a macro defined in a file exists by the time a later form in that file is compiled, and therefore how self-hosting is possible at all. ([13](part-2-reading-and-running/13-the-special-operators.md))
+
 **Evaluator.** The part of a runtime that actually executes a program.
 ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
@@ -112,6 +114,8 @@ where it was. Booting means loading one rather than running a build.
 a character, `nil`, `t`. Contrast a *reference*, which points into the heap.
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
+**Implicit progn.** A body that is a sequence of forms yielding the last — the bodies of `lambda`, `defun`, `let` and most else. Nobody writes the `progn`; it is what a body means. ([13](part-2-reading-and-running/13-the-special-operators.md))
+
 **Interning.** Keeping one object per name, so that two reads of `foo` produce the *same* [symbol](#symbol) rather than two equal ones. Without it, `eq` on symbols fails and every variable lookup becomes a string comparison. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **Invariance.** A property of a type's lifetime parameter meaning it cannot be
@@ -133,7 +137,11 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 
 **nil.** The empty list, false, and the symbol named "NIL" — one value doing three jobs, which is both the convenience and the problem. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
 
+**Non-local exit.** Leaving a computation from the middle of it — `return-from`, `throw`. The machinery is the same one a condition system needs, which is why they are built together. ([13](part-2-reading-and-running/13-the-special-operators.md))
+
 **Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
 **Parser.** What the [reader](#reader) is called in most languages, where it is far larger — it must know operator precedence, statements versus expressions, declarations. A Lisp reader needs none of that, because the text is already the data structure. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
@@ -172,8 +180,6 @@ Garbage collection starts its search from these. A root is a *place*; a
 code and data. `(* 6 7)` is a list of three things, not special syntax.
 ([Preface](what-has-to-be-built.md))
 
-**Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
-
 **SBCL.** Steel Bank Common Lisp, a mature Common Lisp implementation, and Quokka's [oracle](#oracle). A reference to check answers against, never something Quokka needs in order to build. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
@@ -184,7 +190,7 @@ works between. At any moment one holds everything and the other is empty.
 whoever called it, so a browser can repaint and respond. The caller says how
 many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
-**Special operator.** A form that decides for itself whether and when to evaluate its arguments. `if` must be one, or both branches would run before it could choose. Common Lisp has 25, and everything else is built from them. ([9](part-2-reading-and-running/09-what-a-form-means.md))
+**Special operator.** A form that decides for itself whether, when, or in what environment its arguments are evaluated — or whose arguments are not expressions at all. `if` must be one, or both branches would run before it could choose. Common Lisp has exactly 25, they are a *basis* rather than a feature list, and everything else is macros over them. ([9](part-2-reading-and-running/09-what-a-form-means.md), [13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Symbol.** A named thing — `car`, `+`, `my-variable`. Lisp symbols are objects
 in their own right, not just text, and carry a value and a function.
@@ -193,6 +199,8 @@ in their own right, not just text, and carry a value and a function.
 uses the low three bits, which are free because heap objects are aligned to
 8-byte boundaries. A *tagged word* is a value plus its tag.
 ([1](part-1-substrate/01-one-word-for-everything.md))
+
+**tagbody.** The primitive iteration construct: a body with labels that `go` jumps to. Almost never written directly; `do`, `dolist` and `loop` are macros that expand into it. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Tail call.** A call whose result is immediately the result of the enclosing function, so the caller's [frame](#frame) is no longer needed. Eliminating it is what makes recursive loops run in constant space — which matters in Lisp, where recursion *is* iteration. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 

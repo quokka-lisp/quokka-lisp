@@ -58,9 +58,12 @@ Every one of them exists for that reason:
 - `setq` — evaluate the value but not the variable name.
 
 Common Lisp has exactly 25, and that number is the irreducible core of the
-language. Everything else — `when`, `unless`, `cond`, `let*`, `dolist` — is
-built out of them by macros. Quokka implements six so far, which is what the
-phase 0 gate needs.
+language. Everything else — `when`, `unless`, `cond`, `dolist` — is built out
+of them by macros.
+
+[The special operators, one by one](13-the-special-operators.md) goes through
+them individually: what each does, why it cannot be a function, and what it
+makes possible. It is a reference chapter and can wait.
 
 ## Where "special" is recorded
 
