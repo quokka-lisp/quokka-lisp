@@ -62,10 +62,78 @@ worth reading before writing the corresponding part of Quokka:
 | [Equality](https://lispcookbook.github.io/cl-cookbook/equality.html) | `eq`, `eql`, `equal`, `equalp` — Quokka has one of the four, and this is the clearest account of what the others are for |
 | [Iteration](https://lispcookbook.github.io/cl-cookbook/iteration.html) | `loop`, `dolist`, `do` — all outside tier 0 by rule 5, all eventually prelude macros |
 
-Much of it is about things Quokka will never have — Quicklisp, editors,
-databases, FFI to C. That is fine; it is a cookbook for using the language,
-not for implementing it, and it is the only reference here written from the
-user's chair.
+#### The chapters that look irrelevant, and are not
+
+It is tempting to write off the Cookbook's "Editor support" and "Outside
+world" chapters — Quicklisp, Emacs, databases, foreign function interfaces —
+as things Quokka will never have. That is wrong, and the way it is wrong is
+worth the paragraph.
+
+Every one of those chapters assumes the same thing: that **Lisp is a process on
+a Unix box, talking to other processes**. The editor is a different program.
+The database is a different program. The library archive is a directory on
+disk. Common Lisp grew up in that world and its tooling is shaped by it.
+
+Quokka is not a process. It is a *world* — one image holding the VM, the
+language, the editor and the tools, in the Lisp machine and Smalltalk tradition
+(see [The thing that builds itself](the-bootstrap.md) and `docs/design.md`).
+So those chapters do not transfer as instructions. But each one names a
+capability Quokka still owes its users, and reading it tells you what that
+capability has to *do* — which is the harder half, and independent of
+architecture.
+
+| Chapter | What it assumes | Quokka's answer |
+| --- | --- | --- |
+| [Editor support](https://lispcookbook.github.io/cl-cookbook/editor-support.html) | the editor is another program, talking to Lisp over a socket | the editor is Lisp objects inside the image — phases 4 to 6, and `docs/design.md`'s "Environment and UI" |
+| [Databases](https://lispcookbook.github.io/cl-cookbook/databases.html) | the database is another process you connect to | objects stay live in the image; persistence is a property of the image, not a server |
+| [Quicklisp](https://lispcookbook.github.io/cl-cookbook/getting-started.html) | libraries are downloaded to disk, built, and loaded into a session | code lives on file hosts and is loaded into a world that is then saved |
+| [Foreign function interfaces](https://lispcookbook.github.io/cl-cookbook/ffi.html) | the foreign world is C, reached by loading a shared library | the foreign world is the browser; the general problem is open ([#19](https://github.com/quokka-lisp/quokka-lisp/issues/19)) |
+
+Three of those deserve more than a table row.
+
+**The editor.** Emacs and SLIME (*Superior Lisp Interaction Mode for Emacs*,
+whose Lisp-side server is called Swank) exist **because** the editor is outside
+the Lisp. Every feature in SLIME is a way of reaching across that boundary:
+evaluate the form at point, jump to a definition, show a function's arguments
+while you type it, macroexpand in place, inspect the last value, find callers.
+
+Quokka has no boundary to reach across, so none of SLIME's *machinery* applies.
+Its *list* applies completely — it is thirty years of people finding out what a
+Lisp environment must do, and it is the specification for phase 4 whether or not
+anybody writes it down as one. The Cookbook even carries the counterexample
+itself: its LispWorks IDE page describes an IDE written in Common Lisp and
+running in the same image as your program, which is Quokka's model, not Emacs's.
+
+**The database.** The Cookbook's own taxonomy has four categories, and the
+third is *persistent object databases* — libraries where objects simply stay
+live and a transaction log lets them come back after a restart. That technique
+has a name, **prevalence** (from the Prevayler project), and it is the
+Quokka-shaped answer: a log of changes plus periodic snapshots, instead of a
+separate process you serialise into and out of.
+
+Which is worth noticing, because Quokka has **half of it already**. Saving an
+image is a snapshot. What `docs/design.md` does not yet describe is a log of
+what happened since the last one — the difference between losing the work since
+your last save and losing nothing. A user who wanted a database in Quokka would
+not connect to one; they would define structures and rely on the image, and the
+quality of that experience is a VM decision nobody has made yet ([#24](https://github.com/quokka-lisp/quokka-lisp/issues/24)).
+
+**Quicklisp** is Common Lisp's library manager: an index of several thousand
+libraries plus a downloader, so that `(ql:quickload "mito")` fetches a library
+and everything it depends on and loads it into the running Lisp. It sits on top
+of ASDF (*Another System Definition Facility*), which is the build system that
+knows how to compile and load a set of files in dependency order.
+
+Two things about it survive the change of architecture. The first is that
+loading is **into a live image**, not into a binary — `quickload` is something
+you do to a running system, which is already Quokka's shape. The second is the
+design choice that made Quicklisp trusted: a release is a **curated snapshot**,
+a set of library versions known to build together, rather than "the latest of
+everything". Any eventual Quokka equivalent will face that decision, and
+Quicklisp is the evidence about which way to go.
+
+So: not things Quokka will never have. Things Quokka will have to answer
+differently, from a reference that is honest about what the question is.
 
 **Licence**: BSD-style. Redistribution and use, with or without modification,
 provided the copyright notice, the condition and the disclaimer are reproduced

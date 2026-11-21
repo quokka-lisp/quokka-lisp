@@ -310,11 +310,25 @@ is phase 2, and is enforced by nothing until then. ([22](part-2-reading-and-runn
 in Lisp — arithmetic, allocation, input and output. The *primitive table* is the
 only door between the two languages.
 
+**Prevalence.** Keeping a system's data as live objects in memory rather than
+in a separate database, and making it survive a restart with a log of every
+change plus periodic snapshots. Named after the Prevayler project; Common Lisp
+has `bknr.datastore`. Quokka's image save is the snapshot half, and it has no
+log — [#24](https://github.com/quokka-lisp/quokka-lisp/issues/24) is the open question. ([Further reading](further-reading.md))
+
 **Printer.** Turns heap objects back into text. The *P* in [REPL](#repl), and how a [reader](#reader) is tested: text that survives read-then-print was almost certainly read correctly. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **progn.** Evaluates several forms in order and yields the last. It lets a sequence stand where one form is expected; the bodies of `lambda` and `defun` are implicit `progn`s. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Quote.** `'x` reads as the list `(quote x)` — ordinary structure, not syntax. The evaluator later treats `quote` as "give me this rather than running it", which is how a program says *data* rather than *code*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Quicklisp.** Common Lisp's library manager: an index of a few thousand
+libraries and a downloader, so `(ql:quickload "mito")` fetches a library and
+its dependencies and loads them into the Lisp you are running. Each release is
+a *curated snapshot* — versions known to build together — which is the choice
+that made it trusted. It builds on ASDF (Another System Definition Facility),
+the build system that compiles and loads a set of files in dependency order.
+Quokka has no equivalent and will eventually need one. ([Further reading](further-reading.md))
 
 **Reader macro.** Syntax the [reader](#reader) expands into ordinary code
 before the evaluator sees it. `'x` becoming `(quote x)` is the simplest one;
@@ -357,6 +371,13 @@ code and data. `(* 6 7)` is a list of three things, not special syntax.
 ([Preface](what-has-to-be-built.md))
 
 **SBCL.** Steel Bank Common Lisp, a mature Common Lisp implementation, and Quokka's [oracle](#oracle). A reference to check answers against, never something Quokka needs in order to build. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
+
+**SLIME.** Superior Lisp Interaction Mode for Emacs: the usual way to develop
+Common Lisp, where the editor is one program and Lisp is another, and the two
+talk over a socket using a protocol called Swank. Its feature list — evaluate
+the form at point, jump to a definition, show arguments while you type — is a
+good specification for Quokka's own environment. Its architecture is the one
+Quokka does not have, because the editor will live inside the image. ([Further reading](further-reading.md))
 
 **Self-hosting.** When a compiler can compile its own source, so the system needs nothing outside it to rebuild. The point at which Quokka's Rust stops growing and every further feature is written in Lisp. ([The bootstrap](the-bootstrap.md))
 

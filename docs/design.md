@@ -212,7 +212,7 @@ Code never knows which backend it is talking to, so the same environment works n
 - **Local host** (`local:/…`). The real filesystem, on native builds only. This is where Git working trees live.
 - **Remote hosts (later)** (`cloud:/…`). Files on a server over HTTPS. A documented protocol lets people self-host; a subscription file service can be offered on top. Offline edits need a sync and conflict model, and the Krill Notes Swarm protocol work may carry over.
 - **Versions.** CL pathnames have a version component. Hosts that can keep versions (image, remote) expose file history, as Genera's file system did.
-- **Image backup.** In the browser, the whole image can be downloaded as a file and uploaded again to restore or move it. Periodic snapshots go to browser storage automatically.
+- **Image backup.** In the browser, the whole image can be downloaded as a file and uploaded again to restore or move it. Periodic snapshots go to browser storage automatically. What is **not** decided is whether anything records the work *between* two snapshots — a change log, in the prevalence sense, which is also what a user-built in-image database would need. See [#24](https://github.com/quokka-lisp/quokka-lisp/issues/24). The one part that cannot wait, because it constrains the image format phase 1 is fixing, is a monotonic sequence number in the image header saying which point in history a snapshot is.
 - **Credentials stay out of the image.** Tokens for remote hosts live in the browser's or OS's credential store, so a downloaded or shared image never carries them. Opening someone else's image means running their code.
 
 ## Roadmap
