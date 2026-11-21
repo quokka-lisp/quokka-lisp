@@ -160,7 +160,7 @@ the result and mark the holes:
   `(if ,test (progn ,@body) nil))
 ```
 
-The backquote <code>`</code> means *this is a template*. A comma `,` means
+The backquote `` ` `` means *this is a template*. A comma `,` means
 *this hole is filled by evaluating what follows*. A comma-at `,@` means *this
 hole is filled by splicing in the elements of a list*. The template is the
 shape of the output, at the size it will be.
