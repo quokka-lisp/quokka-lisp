@@ -92,13 +92,25 @@
         ((eq (car remaining) item) index)
         (t (%position item (cdr remaining) (+ index 1)))))
 
-(defun %lookup (name env depth)
+;;; A scope is `(tag name ...)`, where the tag is `:variable` or `:function`.
+;;;
+;;; The tag matters because `depth` counts **every** link, whatever namespace
+;;; it binds in — an `flet` scope is stepped over by a variable lookup and is
+;;; still a link. Chapter 26 works the case through; this is where the
+;;; counting has to be right, and `LREF` and `FREF` check the namespace on
+;;; arrival so that getting it wrong is an error rather than a wrong answer.
+(defun %scope (tag names) (cons tag names))
+
+(defun %lookup (name env depth tag)
   (if (null env)
       nil
-      (let ((index (%position name (car env) 0)))
-        (if index
-            (cons depth index)
-            (%lookup name (cdr env) (+ depth 1))))))
+      (let ((scope (car env)))
+        (let ((index (if (eq (car scope) tag)
+                         (%position name (cdr scope) 0)
+                         nil)))
+          (if index
+              (cons depth index)
+              (%lookup name (cdr env) (+ depth 1) tag))))))
 
 ;;; `(if test then else)`
 ;;;
@@ -162,13 +174,13 @@
         (inits (%binding-inits (second form))))
     (append (%compile-arguments inits env)
             (list (list 'BIND (%constant-index (apply #'vector names))))
-            (%compile-body (cddr form) (cons names env))
+            (%compile-body (cddr form) (cons (%scope ':variable names) env))
             (list (list 'UNBIND 1)))))
 
 ;;; `(setq x v)` — the value stays on the stack, because `setq` returns it.
 ;;; `LSET` and `GSET` pop and push, so that is what they already do.
 (defun %compile-setq (form env)
-  (let ((place (%lookup (second form) env 0)))
+  (let ((place (%lookup (second form) env 0 ':variable)))
     (append (%compile (third form) env)
             (if place
                 (list (list 'LSET (car place) (cdr place)))
@@ -202,7 +214,7 @@
   (let ((outer %constants)
         (outer-count %constant-count))
     (%reset-constants)
-    (let ((code (append (%compile-body body (cons params env))
+    (let ((code (append (%compile-body body (cons (%scope ':variable params) env))
                         (list (list 'RET)))))
       (let ((compiled (%assemble code (%constants-vector) params 'lambda)))
         (setq %constants outer)
@@ -224,7 +236,14 @@
 ;;; version is the one to get working first, and the inlining decision
 ;;; deserves its own change and its own explanation.
 (defun %compile-callee (head env)
-  (cond ((symbolp head) (list (list 'GFREF (%constant-index head))))
+  (cond ((symbolp head)
+         ;; A local function first, which is what makes this a Lisp-2 worth
+         ;; having: `(flet ((list (x) x)) (list 1))` calls the local one and
+         ;; the variable `list` is untouched.
+         (let ((place (%lookup head env 0 ':function)))
+           (if place
+               (list (list 'FREF (car place) (cdr place)))
+               (list (list 'GFREF (%constant-index head))))))
         ;; `((lambda (x) ...) 1)` — a lambda expression in operator position,
         ;; which is a call like any other once the closure is on the stack.
         ((and (consp head) (eq (car head) 'lambda)) (%compile-lambda head env))
@@ -234,6 +253,55 @@
   (append (%compile-callee (car form) env)
           (%compile-arguments (cdr form) env)
           (list (list 'CALL (length (cdr form))))))
+
+;;; `(flet ((f (x) ...)) ...)`
+;;;
+;;; The closures are made *before* the scope exists, in the enclosing
+;;; environment — which is exactly what distinguishes `flet` from `labels`:
+;;; an `flet` function cannot see itself or its siblings.
+(defun %compile-local-functions (definitions env)
+  (if (endp definitions)
+      nil
+      (append (%compile-lambda (cons 'lambda (cdr (car definitions))) env)
+              (%compile-local-functions (cdr definitions) env))))
+
+(defun %compile-flet (form env)
+  (let ((names (%binding-names (second form))))
+    (append (%compile-local-functions (second form) env)
+            (list (list 'BINDF (%constant-index (apply #'vector names))))
+            (%compile-body (cddr form) (cons (%scope ':function names) env))
+            (list (list 'UNBIND 1)))))
+
+;;; `(labels ((f (x) ... (f ...))) ...)`
+;;;
+;;; The functions can call themselves and each other, so the closures have to
+;;; capture a scope that already exists — which means the scope is made first,
+;;; with nothing in it, and the closures are stored into it afterwards.
+;;;
+;;; **That is the instruction the specification did not have.** `docs/bytecode.md`
+;;; had `LSET` for a variable and `GSET` for a global and nothing that writes
+;;; the function namespace, because `flet` does not need one and writing the VM
+;;; never reached a case that did. `FSET` is the thirty-seventh opcode, and it
+;;; exists because the compiler asked for it.
+(defun %nils (n)
+  (if (= n 0) nil (cons (list 'NIL) (%nils (- n 1)))))
+
+(defun %store-local-functions (definitions env index)
+  (if (endp definitions)
+      nil
+      (append (%compile-lambda (cons 'lambda (cdr (car definitions))) env)
+              (list (list 'FSET 0 index))
+              (list (list 'POP))
+              (%store-local-functions (cdr definitions) env (+ index 1)))))
+
+(defun %compile-labels (form env)
+  (let ((names (%binding-names (second form))))
+    (let ((inner (cons (%scope ':function names) env)))
+      (append (%nils (length names))
+              (list (list 'BINDF (%constant-index (apply #'vector names))))
+              (%store-local-functions (second form) inner 0)
+              (%compile-body (cddr form) inner)
+              (list (list 'UNBIND 1))))))
 
 ;;; A list form: a special operator, a macro call, or a function call.
 ;;;
@@ -249,6 +317,8 @@
           ((eq head 'let) (%compile-let form env))
           ((eq head 'setq) (%compile-setq form env))
           ((eq head 'lambda) (%compile-lambda form env))
+          ((eq head 'flet) (%compile-flet form env))
+          ((eq head 'labels) (%compile-labels form env))
           (t (multiple-value-bind (expansion expanded) (macroexpand-1 form)
                (if expanded
                    (%compile expansion env)
@@ -265,7 +335,7 @@
   (cond ((null form) (list (list 'NIL)))
         ((eq form t) (list (list 'T)))
         ((symbolp form)
-         (let ((place (%lookup form env 0)))
+         (let ((place (%lookup form env 0 ':variable)))
            (if place
                (list (list 'LREF (car place) (cdr place)))
                (list (list 'GREF (%constant-index form))))))

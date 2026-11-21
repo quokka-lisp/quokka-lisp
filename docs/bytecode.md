@@ -109,12 +109,12 @@ depend on their operands.
 
 ## 5 · The instructions
 
-**Thirty-six.** Grouped by what they are for, not by number.
+**Thirty-seven.** Grouped by what they are for, not by number.
 
 (This document said thirty-four until the enum was written and the rows were
-counted by a compiler rather than by me. `code::OPCODE_COUNT` is the number
-now, and a test pins it, because a count in prose drifts the moment nobody is
-checking.)
+counted by a compiler rather than by me; then thirty-six until the compiler
+asked for `FSET`. `code::OPCODE_COUNT` is the number, and a test pins it,
+because a count in prose drifts the moment nobody is checking.)
 
 ### Pushing a value
 
@@ -136,6 +136,7 @@ mentions.
 | --- | --- | --- |
 | `LREF d:u8 i:u8` | 3 | push the variable `d` scopes out, slot `i` |
 | `LSET d:u8 i:u8` | 3 | pop into it |
+| `FSET d:u8 i:u8` | 3 | pop into the **function** slot `d` scopes out |
 | `GREF k:u16` | 3 | push the value cell of the symbol `constants[k]` |
 | `GSET k:u16` | 3 | pop into it |
 | `FREF d:u8 i:u8` | 3 | the **function** namespace — `flet` and `labels` |
@@ -247,6 +248,25 @@ records and nothing distinguishes a record slot from a value slot by looking,
 so the chain is what makes finding the next one down a read rather than a
 search.
 
+### `FSET`, which was missing
+
+Added after the VM was finished, because the compiler asked for it.
+
+`labels` functions can call themselves and each other, so their closures have
+to capture a scope that **already exists** — which means making the scope
+empty and storing the closures into it afterwards. There was `LSET` for a
+variable and `GSET` for a global and nothing at all that writes the function
+namespace.
+
+`flet` does not need one: its functions are made before the scope and cannot
+see it. So nothing in the VM, and nothing in the VM's tests, ever reached a
+case that wanted this — the hole was only visible from the other side of the
+boundary.
+
+Which is a decent argument for the order the work was done in. Writing the
+compiler is what checks whether the instruction set is sufficient, and no
+amount of staring at the specification was going to produce the same answer.
+
 ### Three corrections this made to the paragraphs above
 
 Written while implementing, because the plan was wrong in three ways and the
@@ -300,7 +320,7 @@ no single delivery point:**
 > may leave it set.
 
 The interpreter had one funnel — `deliver` — and clearing there was free. A
-bytecode VM has thirty-six funnels, so this is a rule each one must follow,
+bytecode VM has thirty-seven funnels, so this is a rule each one must follow,
 and forgetting it means a stale second value surfacing in a form a long way
 from the one that set it. It belongs in a test, not only in a sentence.
 

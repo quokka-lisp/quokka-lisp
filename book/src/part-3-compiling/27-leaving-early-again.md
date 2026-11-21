@@ -11,7 +11,8 @@
 > again on a different machine is the interesting part, because what changes
 > and what does not is not what you would guess.
 >
-> **Status: built.** These are the last of the thirty-six opcodes, and the VM
+> **Status: built.** These are the last of the opcodes the specification
+> listed, and the VM
 > now implements all of them.
 
 ## The problem, restated for a stack
@@ -278,8 +279,13 @@ doubt.
 
 ## Tier 0 can now be compiled
 
-All thirty-six instructions are implemented, which means every special
-operator in chapter 13 has somewhere to go.
+Every instruction in the specification is implemented, which means every
+special operator in chapter 13 has somewhere to go.
+
+(Thirty-six of them. A thirty-seventh arrived later, when the compiler wanted
+to write the function namespace and found that nothing could — `flet` does not
+need it and `labels` does, and no amount of working on the VM was going to
+notice. `docs/bytecode.md` records how.)
 
 What that is *not* is a compiler. There is a machine that can run compiled
 code and no compiler to produce it — everything in this chapter was tested

@@ -157,6 +157,20 @@ pub enum Op {
     Mvsave = 34,
     /// Put them back.
     Mvrestore = 35,
+
+    /// Pop into the **function** slot `i`, `d` scopes out.
+    ///
+    /// Appended rather than filed beside `LSET`, because a row's position is
+    /// its byte value and an image stores that. Appending is a format
+    /// addition; moving `LSET` down one would be a breaking change.
+    ///
+    /// It was not in the specification. `labels` is what found the hole:
+    /// its functions can call each other and themselves, so the closures have
+    /// to be made *after* the scope exists, which means storing into a scope
+    /// that is already there. `flet` needs no such thing — its functions are
+    /// made before the scope and do not see it — which is why writing the VM
+    /// never noticed.
+    Fset = 36,
 }
 
 /// Every opcode, in order, which is also the order of their byte values.
@@ -201,6 +215,7 @@ const TABLE: &[(Op, &str, Operands)] = &[
     (Op::Mvcall, "MVCALL", Operands::U8),
     (Op::Mvsave, "MVSAVE", Operands::None),
     (Op::Mvrestore, "MVRESTORE", Operands::None),
+    (Op::Fset, "FSET", Operands::U8U8),
 ];
 
 /// How many opcodes there are. `docs/bytecode.md` quotes this number.
@@ -756,7 +771,7 @@ pub mod verify {
             }
             Op::Pop => plain(1, 0),
             Op::Lref | Op::Fref => plain(0, 1),
-            Op::Lset => plain(1, 1),
+            Op::Lset | Op::Fset => plain(1, 1),
             Op::Gref | Op::Gfref => {
                 constant(d.a)?;
                 plain(0, 1)

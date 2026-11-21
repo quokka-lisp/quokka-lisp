@@ -886,14 +886,21 @@ impl Steppable for Vm<'_, '_> {
                     Err(e) => return self.fail(e),
                 }
             }
-            Op::Lset => match self.slot_of(decoded.a, decoded.b, env::VARIABLE) {
-                Ok((scope, at)) => {
-                    let v = self.pop();
-                    self.mc.set_slot(scope, at, v);
-                    self.push_fresh(v);
+            Op::Lset | Op::Fset => {
+                let namespace = if decoded.op == Op::Lset {
+                    env::VARIABLE
+                } else {
+                    env::FUNCTION
+                };
+                match self.slot_of(decoded.a, decoded.b, namespace) {
+                    Ok((scope, at)) => {
+                        let v = self.pop();
+                        self.mc.set_slot(scope, at, v);
+                        self.push_fresh(v);
+                    }
+                    Err(e) => return self.fail(e),
                 }
-                Err(e) => return self.fail(e),
-            },
+            }
             Op::Gref => match self.symbol(decoded.a) {
                 Ok(s) => {
                     let v = self.mc.slot(s, symbol::VALUE);

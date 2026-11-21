@@ -25,10 +25,11 @@ fn the_table_is_in_opcode_order() {
 }
 
 /// The count `docs/bytecode.md` quotes. Not a law, but a number in prose
-/// that drifts the moment nobody is checking.
+/// that drifts the moment nobody is checking — it has already been wrong
+/// once, when the specification said thirty-four and the enum said thirty-six.
 #[test]
-fn there_are_thirty_six_opcodes() {
-    assert_eq!(OPCODE_COUNT, 36);
+fn there_are_thirty_seven_opcodes() {
+    assert_eq!(OPCODE_COUNT, 37);
 }
 
 /// Every operand shape survives a round trip, including the signed one,

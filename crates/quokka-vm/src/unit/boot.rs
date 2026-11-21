@@ -697,6 +697,66 @@ mod compiler {
         assert_eq!(compile_and_run("(or nil 4)"), "4");
     }
 
+    #[test]
+    fn flet_binds_a_local_function() {
+        assert_eq!(compile_and_run("(flet ((f (x) (+ x 1))) (f 41))"), "42");
+    }
+
+    /// The Lisp-2 made visible: a local *function* named `list` and nothing
+    /// happening to the variable namespace.
+    #[test]
+    fn a_local_function_shadows_a_global_one() {
+        assert_eq!(
+            compile_and_run("(flet ((length (x) 99)) (length 'anything))"),
+            "99"
+        );
+    }
+
+    /// An `flet` function is made before its scope exists, so it cannot see
+    /// itself — which is the whole difference from `labels`, and is why
+    /// calling `f` from inside `f` here reaches the global one and fails.
+    #[test]
+    fn an_flet_function_cannot_see_itself() {
+        let out = compile_and_run("(flet ((f (x) (f x))) (f 1))");
+        assert!(out.contains("undefined") || out.contains("F"), "{out}");
+    }
+
+    /// `labels`, which needed the thirty-seventh opcode: the closures have to
+    /// capture a scope that already exists, so the scope is made empty and
+    /// `FSET` stores them into it.
+    #[test]
+    fn labels_functions_can_see_themselves() {
+        assert_eq!(
+            compile_and_run("(labels ((down (n) (if (= n 0) 'done (down (- n 1))))) (down 5))"),
+            "DONE"
+        );
+    }
+
+    #[test]
+    fn labels_functions_can_see_each_other() {
+        assert_eq!(
+            compile_and_run(
+                "(labels ((evenp (n) (if (= n 0) t (oddp (- n 1))))
+                          (oddp (n) (if (= n 0) nil (evenp (- n 1)))))
+                   (evenp 10))"
+            ),
+            "T"
+        );
+    }
+
+    /// The counting that chapter 26 warns about, compiled: inside `f`, the
+    /// variable `x` is two links out — past `f`'s own parameters and past the
+    /// function scope `flet` pushed, which a variable lookup steps over but
+    /// the compiler must still count.
+    #[test]
+    fn a_function_scope_is_a_link_the_compiler_counts() {
+        assert_eq!(compile_and_run("(let ((x 7)) (flet ((f () x)) (f)))"), "7");
+        assert_eq!(
+            compile_and_run("(let ((x 7)) (labels ((f () x)) (f)))"),
+            "7"
+        );
+    }
+
     /// A lambda list the compiler cannot do yet says so, rather than
     /// producing a function that binds the wrong things.
     #[test]

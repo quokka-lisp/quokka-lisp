@@ -615,7 +615,7 @@ is later, the structure that allows it is now.
 ---
 
 **References.** `docs/bytecode.md` in this repository is the specification —
-all thirty-six opcodes with their operand widths, which this chapter
+all thirty-seven opcodes with their operand widths, which this chapter
 explains rather than repeats. Queinnec, *Lisp in Small Pieces*, chapter 7,
 builds a bytecode machine for Scheme in the same order used here. Goldberg
 and Robson, *Smalltalk-80: The Language and Its Implementation* (1983) — the
