@@ -12,8 +12,9 @@ status=0
 
 for file in tests/lisp/*.lisp; do
   stem=$(basename "$file" .lisp)
-  if ! grep -q "\"$stem\"" "$TEST"; then
-    echo "missing: $file is not listed in $TEST" >&2
+  # Twice: once to be run, and once in the compile leg.
+  if [ "$(grep -c "\"$stem\"" "$TEST")" -lt 2 ]; then
+    echo "missing: $file is not listed in both the run and the compile cases of $TEST" >&2
     status=1
   fi
   if [ ! -f "${file%.lisp}.expected" ]; then

@@ -46,8 +46,8 @@ The compiler compiles **every form of the prelude and every form of itself**
 and installs none of it; chapter 29 says why installing cannot happen in a
 running interpreter.
 
-**322 tests**; **17 differential files agree with SBCL**. The Rust core is
-**12,413** lines of the 15,000 budget.
+**357 tests**; **17 differential files agree with SBCL**. The Rust core is
+**12,447** lines of the 15,000 budget.
 
 ## What is left in phase 1
 
@@ -64,10 +64,14 @@ walked, not bytecode.
 - **step E**: the fourth differential leg, where interpreted and compiled
   results must agree. The verifier cannot see a program that is well-formed
   and computes the wrong thing.
-- **The compiler has no `catch`/`throw`, `unwind-protect` or `tagbody`/`go`.**
-  The VM runs all three and the prelude uses none, which is why compiling the
-  prelude never noticed; the differential tests use them, so step E needs
-  them. (`handler-case` was the fourth, and is compiled since #36.)
+- **The compiler refuses `tagbody`/`go` and `macrolet`.** Every other special
+  operator compiles (#37). `tagbody` is an open design question in #37 — the
+  bytecode spec's plan does not work, and three options are written out;
+  **raise it before writing**. `macrolet` and `defmacro` wait for #33: their
+  expanders must be callable by the compiler, which is interpreted until then.
+  Twelve of seventeen differential files compile completely; the
+  `compile_cases!` list in `tests/differential.rs` says why each other one
+  does not.
 
 Also open: #34 (concurrency — what the code must not foreclose before phase
 3's processes; item 1, the host interface, is done as #35), #29 (build the VM

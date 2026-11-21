@@ -230,6 +230,14 @@ escaped, where no depth is knowable. Treating both cases alike is slower and
 is one mechanism; specialising the local case to a `JMP` plus some unwinding
 is a later pass with a profile attached.
 
+> **Under question — #37.** Implementing the compiler found that neither half
+> of the `tagbody` plan works as written. A local `go` as a bare `JMP` leaves
+> operands, scopes and records behind (`(f a (go top))`, `(let ((x 1)) (go
+> top))`, `(block b (go top))`). And `TAG`/`GO` share `BLOCK`'s code, so a
+> landing pops the record and the next `go` to the same tag finds nothing —
+> a `tagbody` cannot loop. Three options are written out in the issue; none is
+> chosen. Until one is, the compiler refuses `tagbody`.
+
 ### What the records look like
 
 Not objects on a cons list, as the interpreter's frames are — seven slots on
@@ -339,7 +347,7 @@ from the one that set it. It belongs in a test, not only in a sentence.
 | `lambda` | `CLOSURE` |
 | `block` / `return-from` | `BLOCK` / `RETFROM` |
 | `catch` / `throw` | `CATCH` / `THROW` |
-| `tagbody` / `go` | `JMP`, plus `TAG` / `GO` when a tag escapes |
+| `tagbody` / `go` | **undecided — #37**; the compiler refuses it until then |
 | `unwind-protect` | `PROTECT` / `UNPROTECT` |
 | `%handler-case` | `HANDLER` / `UNMARK`, then the clause dispatch as ordinary compiled code ending in a re-signal (#36) |
 | `multiple-value-call` | `MVCALL` |

@@ -1205,11 +1205,19 @@ impl Steppable for Vm<'_, '_> {
                 } else {
                     mark::TAG
                 };
+                // The record first, so that it saves the environment *outside*
+                // the block — which is what both ways out must restore. It
+                // used to be pushed after the block's scope was bound, so
+                // `UNMARK` and the unwinder both put that scope back, and
+                // every compiled `block` left its name bound behind it:
+                // `(let ((x 5)) (block b 1) x)` failed with the chain check.
+                // Nothing noticed until a test read a variable after a block
+                // (#37).
+                let resume = (decoded.next as i64 + decoded.b as i64) as usize;
+                self.push_mark(kind, marker, resume);
                 let parent = self.mc.register(Register::Env);
                 let scope = env::make(self.mc, parent, namespace, &[name], &[marker]);
                 self.mc.set_register(Register::Env, scope);
-                let resume = (decoded.next as i64 + decoded.b as i64) as usize;
-                self.push_mark(kind, marker, resume);
             }
             Op::Retfrom | Op::Go => {
                 let namespace = if decoded.op == Op::Retfrom {

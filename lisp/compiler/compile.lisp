@@ -287,8 +287,8 @@
 ;;; tail position is a property of the source, written into the output where a
 ;;; disassembler can show it.
 ;;;
-;;; What must *cancel* tail position: `block` and `handler-case`, which are
-;;; compiled, and `catch` and `unwind-protect`, which are not yet. Each leaves a record on the
+;;; What must *cancel* tail position: `block`, `catch`, `unwind-protect` and
+;;; `handler-case` — every form that leaves a record on the stack. Each leaves a record on the
 ;;; stack that has to outlive the call, and `TCALL` reuses the frame by
 ;;; dropping everything above it. The verifier refuses a `TCALL` with a record
 ;;; still open, so getting this wrong is a build failure and not a lost
@@ -380,6 +380,93 @@
         (progn (%compile (third form) env nil)
                (%emit (list 'RETFROM (car place) (cdr place))))
         (error "return-from names a block that is not here"))))
+
+;;; Forms evaluated for their effect: each compiled and its value popped.
+(defun %compile-for-effect (forms env)
+  (if (endp forms)
+      nil
+      (progn (%compile (car forms) env nil)
+             (%emit (list 'POP))
+             (%compile-for-effect (cdr forms) env))))
+
+;;; `(catch tag body...)` and `(throw tag value)`
+;;;
+;;; `block` with the identity found at run time instead of in the source:
+;;; `CATCH` pops the tag and pushes a record holding it, and a `THROW`
+;;; anywhere below — in this function or in one it calls, which a
+;;; `return-from` could never reach — unwinds to the nearest record whose tag
+;;; is the same object. The body is not in tail position, for `block`'s
+;;; reason: the record has to outlive what it calls.
+(defun %compile-catch (form env)
+  (let ((done (gensym)))
+    (%compile (second form) env nil)
+    (%emit (list 'CATCH done))
+    (%compile-body (cddr form) env nil)
+    (%emit (list 'UNMARK))
+    (%emit-label done)))
+
+(defun %compile-throw (form env)
+  (%compile (second form) env nil)
+  (%compile (third form) env nil)
+  (%emit (list 'THROW)))
+
+;;; `(unwind-protect protected cleanup...)`
+;;;
+;;; The cleanup must run however the protected form is left, and there are
+;;; two ways out, so **the cleanup is compiled twice** — `docs/bytecode.md`
+;;; chose that over a way of sharing one copy, which would need a return
+;;; address and so a frame:
+;;;
+;;;     PROTECT  ->cleanup
+;;;     <protected>
+;;;     UNMARK                 left normally: drop the record...
+;;;     MVSAVE                 ...keep every value it produced...
+;;;     <cleanup, for effect>  ...run the cleanup...
+;;;     MVRESTORE              ...and give the values back
+;;;     JMP      ->done
+;;;   cleanup:                 left by an unwind passing through
+;;;     <cleanup, for effect>
+;;;     UNPROTECT              carry on unwinding
+;;;   done:
+;;;
+;;; `MVSAVE` and `MVRESTORE` are there because `unwind-protect` returns every
+;;; value of its protected form, and the cleanup in between would otherwise
+;;; overwrite them (chapter 23).
+(defun %compile-unwind-protect (form env)
+  (let ((cleanup (gensym))
+        (done (gensym)))
+    (%emit (list 'PROTECT cleanup))
+    (%compile (second form) env nil)
+    (%emit (list 'UNMARK))
+    (%emit (list 'MVSAVE))
+    (%compile-for-effect (cddr form) env)
+    (%emit (list 'MVRESTORE))
+    (%emit (list 'JMP done))
+    (%emit-label cleanup)
+    (%compile-for-effect (cddr form) env)
+    (%emit (list 'UNPROTECT))
+    (%emit-label done)))
+
+;;; `(multiple-value-prog1 first rest...)`: every value of FIRST, after the
+;;; rest have run for effect. With no rest it is just FIRST, and may be in
+;;; tail position.
+(defun %compile-multiple-value-prog1 (form env tail)
+  (if (endp (cddr form))
+      (%compile (second form) env tail)
+      (progn (%compile (second form) env nil)
+             (%emit (list 'MVSAVE))
+             (%compile-for-effect (cddr form) env)
+             (%emit (list 'MVRESTORE)))))
+
+;;; `(eval-when (situations...) body...)`: the body if the situations include
+;;; `execute`, otherwise `nil`. The interpreter's rule exactly, including the
+;;; three spellings it accepts until there are packages — two evaluators that
+;;; disagree is what #36 cost. Decided here, at compile time, so the output
+;;; contains either the body or a `NIL` and never a test.
+(defun %executes-p (situations)
+  (cond ((endp situations) nil)
+        ((member (car situations) '(execute :execute eval)) t)
+        (t (%executes-p (cdr situations)))))
 
 ;;; `(handler-case form (type (var) body...) ...)`
 ;;;
@@ -502,10 +589,34 @@
           ((eq head 'function) (%compile-callee (second form) env))
           ((eq head 'block) (%compile-block form env))
           ((eq head '%handler-case) (%compile-handler-case form env tail))
+          ((eq head 'catch) (%compile-catch form env))
+          ((eq head 'throw) (%compile-throw form env))
+          ((eq head 'unwind-protect) (%compile-unwind-protect form env))
+          ((eq head 'multiple-value-prog1) (%compile-multiple-value-prog1 form env tail))
+          ;; Declarations the interpreter does not check, so both reduce to
+          ;; their body — the interpreter's rule, and `the` refuses the same
+          ;; malformed form it does.
+          ((eq head 'the)
+           (if (consp (cdr form))
+               (%compile-body (cddr form) env tail)
+               (error "the wants a type and a form")))
+          ((eq head 'locally) (%compile-body (cdr form) env tail))
+          ((eq head 'eval-when)
+           (if (%executes-p (second form))
+               (%compile-body (cddr form) env tail)
+               (%emit (list 'NIL))))
           ((eq head 'return-from) (%compile-return-from form env))
           ((eq head 'multiple-value-call) (%compile-multiple-value-call form env))
           ((eq head 'flet) (%compile-flet form env tail))
           ((eq head 'labels) (%compile-labels form env tail))
+          ;; A special operator with no case above is one this compiler cannot
+          ;; compile, and saying so is the only honest answer. Until #37 it
+          ;; fell through to the call below and became a call to a function
+          ;; named after the operator, which compiled, verified, and failed
+          ;; only when run — `handler-case` hid that way for a week.
+          ((%special-operator-p head)
+           (error (%string-append "the compiler cannot compile the special operator "
+                                  (symbol-name head))))
           (t (multiple-value-bind (expansion expanded) (macroexpand-1 form)
                (if expanded
                    (%compile expansion env tail)

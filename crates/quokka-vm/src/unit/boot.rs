@@ -939,6 +939,206 @@ mod compiler {
         assert_eq!(out.matches("TCALL").count(), 2, "{out}");
     }
 
+    // ---- #37: the special operators the compiler did not have -----------
+
+    #[test]
+    fn a_throw_finds_its_catch() {
+        assert_eq!(compile_and_run("(catch 'done (throw 'done 5) 99)"), "5");
+    }
+
+    #[test]
+    fn a_throw_passes_an_inner_catch_by() {
+        assert_eq!(
+            compile_and_run(
+                "(catch 'outer (catch 'inner (throw 'outer 'skipped-inner)) 'not-here)"
+            ),
+            "SKIPPED-INNER"
+        );
+    }
+
+    /// The difference from `block`: the `throw` is in a function whose
+    /// source has no `catch` in it. Found at run time, by the stack.
+    #[test]
+    fn a_throw_reaches_a_catch_in_its_caller() {
+        assert_eq!(
+            compile_and_run("(flet ((thrower () (throw 'k 3))) (catch 'k (thrower) 'not-here))"),
+            "3"
+        );
+    }
+
+    #[test]
+    fn a_throw_carries_every_value() {
+        assert_eq!(
+            compile_and_run("(multiple-value-call #'list (catch 'v (throw 'v (values 1 2))))"),
+            "(1 2)"
+        );
+    }
+
+    #[test]
+    fn a_throw_with_no_catch_says_so() {
+        let out = compile_and_run("(throw 'nowhere 1)");
+        assert!(out.contains("no exit named NOWHERE"), "{out}");
+    }
+
+    #[test]
+    fn unwind_protect_cleans_up_on_a_normal_exit() {
+        assert_eq!(
+            compile_and_run("(let ((log nil)) (unwind-protect 1 (setq log 'ran)) log)"),
+            "RAN"
+        );
+    }
+
+    /// The inline copy of the cleanup runs between the protected form and
+    /// the end, so without `MVSAVE`/`MVRESTORE` its value would replace the
+    /// protected form's.
+    #[test]
+    fn unwind_protect_keeps_every_value_of_the_protected_form() {
+        assert_eq!(
+            compile_and_run("(multiple-value-call #'list (unwind-protect (values 1 2) 3))"),
+            "(1 2)"
+        );
+    }
+
+    /// The other copy: the fragment the unwinder jumps to.
+    #[test]
+    fn unwind_protect_cleans_up_when_a_throw_passes_through() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((log nil)) (catch 'x (unwind-protect (throw 'x 1) (setq log 'cleaned))) log)"
+            ),
+            "CLEANED"
+        );
+    }
+
+    /// Chapter 20's test, compiled from source this time rather than
+    /// assembled by hand.
+    #[test]
+    fn cleanups_run_innermost_first() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((order nil)) \
+                   (catch 'x \
+                     (unwind-protect \
+                       (unwind-protect (throw 'x 0) (setq order (cons 'inner order))) \
+                       (setq order (cons 'outer order)))) \
+                   order)"
+            ),
+            "(OUTER INNER)"
+        );
+    }
+
+    /// A `block` removes its own scope however it is left. It did not: the
+    /// record saved the environment *inside* the block, so both ways out put
+    /// the block's scope back, and the variable after it was looked up one
+    /// link too deep. A bug from #28 that no test read a variable late
+    /// enough to see.
+    #[test]
+    fn a_block_unbinds_its_name_however_it_is_left() {
+        assert_eq!(compile_and_run("(let ((x 5)) (block b 1) x)"), "5");
+        assert_eq!(
+            compile_and_run("(let ((x 5)) (block b (return-from b 1)) x)"),
+            "5"
+        );
+    }
+
+    #[test]
+    fn a_return_from_runs_a_cleanup_on_its_way_out() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((log nil)) (block b (unwind-protect (return-from b 1) (setq log 'ran))) log)"
+            ),
+            "RAN"
+        );
+    }
+
+    /// #36 and #37 together: an error unwinds to a handler, and the cleanup
+    /// in between runs first.
+    #[test]
+    fn an_error_runs_a_cleanup_on_its_way_to_a_handler() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((log nil)) \
+                   (handler-case (unwind-protect (car 5) (setq log 'ran)) \
+                     (type-error () log)))"
+            ),
+            "RAN"
+        );
+    }
+
+    #[test]
+    fn multiple_value_prog1_keeps_the_first_forms_values() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((x 0)) \
+                   (multiple-value-call #'list \
+                     (multiple-value-prog1 (values 'a 'b) (setq x 1)) \
+                     x))"
+            ),
+            "(A B 1)"
+        );
+    }
+
+    #[test]
+    fn the_and_locally_are_their_bodies() {
+        assert_eq!(compile_and_run("(the fixnum 42)"), "42");
+        assert_eq!(compile_and_run("(locally 1 2 3)"), "3");
+    }
+
+    /// The interpreter's rule, including the three spellings it accepts.
+    #[test]
+    fn eval_when_runs_only_for_execute() {
+        assert_eq!(compile_and_run("(eval-when (:execute) 'ran)"), "RAN");
+        assert_eq!(compile_and_run("(eval-when (execute) 'ran)"), "RAN");
+        assert_eq!(compile_and_run("(eval-when (eval) 'ran)"), "RAN");
+        assert_eq!(
+            compile_and_run("(eval-when (:compile-toplevel) 'never)"),
+            "NIL"
+        );
+    }
+
+    /// The guard. A special operator the compiler has no case for is a
+    /// compile error that names it — not, as before, a call to a function
+    /// named after it that compiled and failed only when run.
+    #[test]
+    fn an_operator_the_compiler_lacks_is_a_compile_error() {
+        for (source, name) in [
+            ("(tagbody top)", "TAGBODY"),
+            ("(macrolet ((m () 1)) (m))", "MACROLET"),
+        ] {
+            let out = compile_and_run(source);
+            assert!(out.starts_with("; compiling:"), "{out}");
+            assert!(out.contains(&format!("special operator {name}")), "{out}");
+        }
+    }
+
+    /// The interpreter's own answer, read from the symbol.
+    #[test]
+    fn special_operator_p_reads_the_symbol() {
+        assert_eq!(
+            compile_and_run(
+                "(list (%special-operator-p 'if) (%special-operator-p 'car) (%special-operator-p 42))"
+            ),
+            "(T NIL NIL)"
+        );
+    }
+
+    /// Every form that leaves a record cancels tail position for what is
+    /// inside it; `multiple-value-prog1` does too when it has forms to run
+    /// after the first, because the first one's values must survive them.
+    #[test]
+    fn records_cancel_tail_position() {
+        for source in [
+            "(lambda (n) (catch 'k (f n)))",
+            "(lambda (n) (unwind-protect (f n) (g n)))",
+            "(lambda (n) (multiple-value-prog1 (f n) (g n)))",
+        ] {
+            let out = compile_instructions(source);
+            assert_eq!(out.matches("TCALL").count(), 0, "{source}: {out}");
+        }
+        let out = compile_instructions("(lambda (n) (multiple-value-prog1 (f n)))");
+        assert_eq!(out.matches("TCALL").count(), 1, "{out}");
+    }
+
     /// The instruction list for a form, as the compiler produces it.
     fn compile_instructions(source: &str) -> String {
         let mut heap = Heap::new();

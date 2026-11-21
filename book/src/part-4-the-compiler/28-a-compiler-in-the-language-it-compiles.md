@@ -438,11 +438,159 @@ leg of the differential tests (step E of #23) exists to close: the same file,
 interpreted and compiled, must print the same thing. Until it exists, every
 feature implemented twice is a feature that can quietly disagree with itself.
 
-The compiler still has no case for `catch`/`throw`, `unwind-protect` or
-`tagbody`/`go`. The VM runs all of them, the prelude uses none of them, and
-the differential tests use all three — so step E will need them, and it will
-also be what proves this section's fixes agree with the interpreter on every
-file and not just on the cases written down here.
+## The rest of the special operators
+
+The section above ended by saying the compiler lacked three more operators.
+It lacked ten. The three had come from a comment in the compiler listing what
+"must cancel tail position, when they are implemented" — a list of the forms
+that leave a record, not a list of what was missing. Checked against the
+interpreter's own table of special operators, `eval::special::ALL`, the
+missing ones were `catch`, `throw`, `unwind-protect`, `multiple-value-prog1`,
+`the`, `locally`, `eval-when`, `tagbody`, `go` and `macrolet`.
+
+The lesson is the one this chapter keeps arriving at: **count against the
+source of truth, not against a description of it.**
+
+### A guard, so it cannot happen again
+
+How had ten operators gone missing without a single failure? Because of what
+the compiler did with a head it did not recognise. It assumed a function call.
+`(tagbody top)` compiled to "call the function `TAGBODY` with the argument
+`top`", which assembled, passed the verifier, and failed only when run — and
+nothing had run it.
+
+The interpreter already knows which symbols are special operators: each one
+carries its code in its `SPECIAL` slot. A new primitive, `%special-operator-p`,
+reads that slot, and the compiler asks it before falling back to a call:
+
+```lisp
+((%special-operator-p head)
+ (error (%string-append "the compiler cannot compile the special operator "
+                        (symbol-name head))))
+```
+
+Now an operator the compiler has no case for is a compile error that names it.
+The name has a `%` because Common Lisp's `special-operator-p` gives SBCL's
+answer, and Quokka's is different — `lambda` and `defmacro` are operators here
+and macros there.
+
+### `unwind-protect`, compiled twice
+
+`(unwind-protect protected cleanup...)` must run its cleanup however the
+protected form is left: by finishing, or by an unwind passing through on its
+way to a `catch`, a `block` or a handler. Two ways out, and the cleanup is
+compiled once for each:
+
+```lisp
+(defun %compile-unwind-protect (form env)
+  (let ((cleanup (gensym))
+        (done (gensym)))
+    (%emit (list 'PROTECT cleanup))
+    (%compile (second form) env nil)
+    (%emit (list 'UNMARK))
+    (%emit (list 'MVSAVE))
+    (%compile-for-effect (cddr form) env)
+    (%emit (list 'MVRESTORE))
+    (%emit (list 'JMP done))
+    (%emit-label cleanup)
+    (%compile-for-effect (cddr form) env)
+    (%emit (list 'UNPROTECT))
+    (%emit-label done)))
+```
+
+The first copy is the normal path. `MVSAVE` and `MVRESTORE` are wrapped round
+it because `unwind-protect` returns *every* value of its protected form
+(chapter 23), and the cleanup forms in between would otherwise leave their own
+values behind. The second copy is the fragment the unwinder jumps to: it runs
+the cleanup and `UNPROTECT` picks the interrupted unwind back up.
+
+Compiling something twice sounds wasteful, and it is a deliberate choice made
+in `docs/bytecode.md`. The alternative is one shared copy that both paths
+call, which needs somewhere to remember where to come back to — a return
+address, which means a frame, which is exactly what the record design was
+built to avoid allocating. Code size was the cheaper thing to spend.
+
+`catch` and `throw` are `block` and `return-from` with the identity found at
+run time instead of in the source. `multiple-value-prog1` is the `MVSAVE` /
+`MVRESTORE` pair on its own. `the`, `locally` and `eval-when` compile to
+nothing of their own: the first two are their bodies, and `eval-when` is
+decided while compiling, so the output holds either the body or a `NIL`, never
+a test. All three follow the interpreter's rules exactly, down to the three
+spellings of `:execute` it accepts until there are packages — because two
+evaluators that disagree is the bug the section above was about.
+
+### A bug that had been there since the start
+
+The test that `return-from` runs an `unwind-protect` cleanup failed, with an
+error about a variable reference that "names a scope that is not there". The
+fault was not in `unwind-protect`. It was in `block`, and it had been there
+since the VM was built.
+
+`BLOCK` binds the block's name in a new scope and pushes a record. It did them
+in that order, so the record saved the environment *including* the block's
+scope. Both ways of leaving a block — `UNMARK` at the end and the unwinder
+landing after a `return-from` — restore the record's environment, so both put
+the block's scope back on. After any compiled `block`, every variable was
+looked up one link too deep.
+
+No test had noticed because none read a variable *after* a block. The fix is
+to push the record first. The lesson is about tests rather than blocks: a
+test that checks a value is returned does not check that everything around it
+was left as it was found.
+
+### `tagbody`: where the specification broke
+
+`docs/bytecode.md` says a `go` to a tag in the same function becomes a plain
+`JMP`, and the `TAG`/`GO` instructions are used only when a closure could `go`
+from outside. Neither half survives being implemented.
+
+A bare `JMP` is not safe, because `go` can appear anywhere. `(f a (go top))`
+has values on the operand stack when it runs. `(let ((x 1)) (go top))` has a
+scope bound. `(block b (go top))` has a record open. A jump leaves all of them
+behind.
+
+And `TAG`/`GO`, as built, cannot loop. They share `BLOCK`'s code, so when a
+`go` lands, the record is popped — and the next `go` to the same tag finds
+nothing. Pushing it again makes a new marker, so a closure made in an earlier
+trip round the loop is holding a marker that no longer has a record. No test
+had ever run them.
+
+Issue #37 lays out three ways forward: build `tagbody` from `catch` and
+`throw` on an object held in a lexical variable, which needs no VM change;
+change `TAG` and `GO` so a record survives a landing; or do what the
+specification says properly, with the compiler tracking stack depth so it can
+unwind explicitly before each jump. **This one is undecided**, and it is the
+right kind of question to leave open until it is decided on purpose: every
+loop in Lisp is a `tagbody` underneath, so whatever is chosen here is chosen
+for every loop.
+
+### `macrolet` waits
+
+A local macro's expander is a function the compiler must *call* while it is
+compiling. The compiler is interpreted until #33, so it can only call
+interpreted functions — and it cannot make one out of a list, because there
+is no `eval`. Once #33 has compiled the compiler, it can compile the expander
+with `compile-form` and call it like anything else. `defmacro` waits for the
+same reason. Building either now would mean building it twice.
+
+### The differential files, compiled
+
+The differential tests now have a second half: every file is compiled, form
+by form, and everything the compiler emits is verified. Twelve of the
+seventeen compile completely. The other five each fail for a reason, and the
+test lists the reason, so that the moment a file starts compiling the test
+fails and says so:
+
+| file | waiting on |
+| --- | --- |
+| `control-flow.lisp` | `tagbody` |
+| `values.lisp` | `macrolet` |
+| `scopes.lisp`, `destructuring.lisp` | nothing — each contains a form that is *meant* to be an error, and the compiler finds it at compile time instead of run time |
+| `structures.lisp` | `defstruct` defines how `setf` works on its accessors when it *runs*, and this test compiles without running anything |
+
+The last three are notes for step E, not bugs: its harness has to count a
+compile-time error as the form's error, and has to compile and run a file one
+form at a time, which is the order a file actually means.
 
 ## Two things that do not work, and should not
 

@@ -101,9 +101,9 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `--compile` compiles each form and runs it on the VM, `--show-code` prints the instructions first |
 
-322 tests, green on native, under wasmtime, and with the GC torture mode on.
+357 tests, green on native, under wasmtime, and with the GC torture mode on.
 Seventeen Common Lisp files produce byte-identical output on Quokka natively,
-Quokka under WebAssembly, and SBCL. The Rust core is 12,413 lines of the
+Quokka under WebAssembly, and SBCL. The Rust core is 12,447 lines of the
 15,000-line budget.
 
 ### What does not exist yet

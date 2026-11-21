@@ -76,6 +76,83 @@ differential_cases! {
     values => "values",
 }
 
+/// The other half of each file: does the **compiler** handle all of it?
+///
+/// Not yet the fourth leg — that is step E of #23, where a file compiled and
+/// run must print what it printed interpreted, and it needs #33's compiled
+/// prelude to run anything. This is its precondition, checked now: every
+/// form of the file compiles, and the verifier accepts every function that
+/// comes out.
+///
+/// Each file is either expected to compile completely (`ok`) or listed with
+/// the reason it cannot yet, as a fragment of the error it gives. The second
+/// kind fails the moment it starts compiling — *"now compiles completely"* —
+/// so this list cannot quietly go stale. #37 has the table this was built
+/// from.
+macro_rules! compile_cases {
+    ($($name:ident => $stem:literal : $why:expr),* $(,)?) => {
+        mod compiles {
+            use super::OK;
+            $(
+                #[test]
+                fn $name() {
+                    let source = include_str!(concat!("../../../tests/lisp/", $stem, ".lisp"));
+                    let mut heap = quokka_vm::heap::Heap::new();
+                    quokka_vm::boot::install(&mut heap).expect("the prelude boots");
+                    quokka_vm::boot::install_compiler(&mut heap).expect("the compiler loads");
+                    let outcome = quokka_vm::boot::compile_source(&mut heap, source);
+                    let why: Option<&str> = $why;
+                    match (why, outcome) {
+                        (None, Ok(_)) => {}
+                        (None, Err(e)) => panic!("{} does not compile: {e}", $stem),
+                        (Some(why), Ok(_)) => panic!(
+                            "{} now compiles completely — mark it `ok` (it was waiting on: {why})",
+                            $stem
+                        ),
+                        (Some(why), Err(e)) => assert!(
+                            e.to_string().contains(why),
+                            "{} failed for a new reason: {e} (expected: {why})",
+                            $stem
+                        ),
+                    }
+                }
+            )*
+        }
+    };
+}
+
+/// Nothing is waiting on this file.
+const OK: Option<&str> = None;
+
+compile_cases! {
+    arithmetic => "arithmetic": OK,
+    lists => "lists": OK,
+    control => "control": OK,
+    functions => "functions": OK,
+    // `(let* 1)` is a deliberate error test, and the compiler meets it at
+    // compile time where the interpreter met it at run time. Step E counts a
+    // compile error as the form's `!! error`.
+    scopes => "scopes": Some("CAR wants a list"),
+    // `tagbody`, which is a design question in #37.
+    control_flow => "control-flow": Some("special operator TAGBODY"),
+    macros => "macros": OK,
+    prelude => "prelude": OK,
+    keywords => "keywords": OK,
+    lambda_lists => "lambda-lists": OK,
+    // `(exactly-two (1))`, a deliberate error test, as in `scopes`.
+    destructuring => "destructuring": Some("missing arguments"),
+    macroexpand => "macroexpand": OK,
+    vectors => "vectors": OK,
+    hash_tables => "hash-tables": OK,
+    conditions => "conditions": OK,
+    // `defstruct` defines its `setf` expanders when it *runs*, and this
+    // compiles without running anything. Step E compiles and runs form by
+    // form, which is the order a file actually means.
+    structures => "structures": Some("SETF does not know"),
+    // `macrolet`, which waits for #33's compiled compiler.
+    values => "values": Some("special operator MACROLET"),
+}
+
 /// Compare line by line, and on a mismatch say which form disagreed.
 ///
 /// A diff of two long outputs is not useful on its own; what a person needs is

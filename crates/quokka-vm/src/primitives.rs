@@ -105,6 +105,7 @@ pub enum Prim {
     Disassemble = 52,
     RewriteLambdaList = 53,
     ReadSource = 54,
+    SpecialOperatorP = 55,
 }
 
 impl Prim {
@@ -338,6 +339,24 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // it is not Common Lisp — `load` will be built on it, in Lisp, once there
     // is `read-from-string` to build it with.
     (Prim::ReadSource, "%READ-SOURCE", Arity::Exactly(1)),
+    // Does the evaluator treat this symbol as a special operator? Read from
+    // the symbol's `SPECIAL` slot, so it is the interpreter's own answer and
+    // cannot drift from it.
+    //
+    // For the compiler, which used to compile any head it did not recognise
+    // as a call — so a special operator it had no case for became a call to
+    // a function that does not exist, and `handler-case` went unnoticed for a
+    // week that way (#36). Now that is a compile error naming the operator.
+    //
+    // A `%` name, not Common Lisp's `special-operator-p`: Quokka's answer
+    // differs from SBCL's — `lambda` and `defmacro` are operators here and
+    // macros there, and `%handler-case` exists only here — and rule 6 says a
+    // CL name must give SBCL's answer.
+    (
+        Prim::SpecialOperatorP,
+        "%SPECIAL-OPERATOR-P",
+        Arity::Exactly(1),
+    ),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -741,6 +760,13 @@ pub fn call_slice<'h>(
             args[0].is_object() && mc.header(args[0]).object_type.is_string(),
         )),
         Prim::Integerp => Ok(truth(args[0].as_fixnum().is_some())),
+        Prim::SpecialOperatorP => Ok(truth(
+            mc.is_symbol(args[0])
+                && mc
+                    .slot(args[0], crate::heap::symbol::SPECIAL)
+                    .as_fixnum()
+                    .is_some(),
+        )),
         // Reached only from the interpreter: the VM intercepts it first. And
         // refused there on purpose. The interpreter is the bootstrap
         // evaluator — it reads its sources from `include_str!`, builds an
