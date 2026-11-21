@@ -429,12 +429,20 @@ thing you do on a development machine, not in a tab.
 
 So: build the browser without it, and ship less code.
 
-The honest arithmetic, measured rather than guessed. The interpreter is about
-**2,300 lines** of the roughly 7,000 non-test lines in the VM crate — a third
-of the source. The whole compiled WebAssembly module is **186 KB** today, and
-compresses to a fraction of that over the wire. Even deleting the interpreter
-entirely would save perhaps a few tens of kilobytes after compression, against
-an *image* that will be measured in megabytes.
+The honest arithmetic, measured rather than guessed. `eval.rs` is **2,340
+lines** of the **8,939** non-test lines in the VM crate — a little over a
+quarter of the source. The whole compiled WebAssembly module is **190,976
+bytes**, which is 186 KB, and compresses to a fraction of that over the wire.
+Even deleting the interpreter entirely would save perhaps a few tens of
+kilobytes after compression, against an *image* that will be measured in
+megabytes.
+
+(Both numbers are as of writing and will drift, which is the hazard of putting
+figures in prose. The wasm one is `cargo build -p quokka-wasm --target
+wasm32-unknown-unknown --release` and the size of what lands in `target`; the
+line counts are each file up to its `#[cfg(test)]`. Re-measure rather than
+trust them — an earlier draft of this paragraph said *a third of seven
+thousand*, which was a guess that read like a measurement.)
 
 So the size argument, which is the obvious one, is the weak one.
 
