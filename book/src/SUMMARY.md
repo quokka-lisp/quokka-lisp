@@ -45,6 +45,10 @@
 - [A compiler in the language it compiles](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md)
 - [Compiling a whole file](part-4-the-compiler/29-compiling-a-whole-file.md)
 
+# Part V · The Image
+
+- [Saving the world](part-5-the-image/30-saving-the-world.md)
+
 ---
 
 [Glossary](glossary.md)

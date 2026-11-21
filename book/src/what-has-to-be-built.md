@@ -267,6 +267,7 @@ Each chapter answers one question.
 | 27 | [Leaving early, again](part-3-compiling/27-leaving-early-again.md) | How does compiled code abandon a computation, and how does a cleanup run in the middle of one? |
 | 28 | [A compiler in the language it compiles](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md) | What does a compiler actually do, and which of its decisions are permanent? |
 | 29 | [Compiling a whole file](part-4-the-compiler/29-compiling-a-whole-file.md) | Why can a compiler compile the whole system and not be allowed to install any of it? |
+| 30 | [Saving the world](part-5-the-image/30-saving-the-world.md) | How does a whole running system become a file, and come back? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

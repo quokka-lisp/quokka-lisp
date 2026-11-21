@@ -581,6 +581,14 @@ struct Storage {
     /// How many collections have happened. Torture mode uses it to vary the
     /// padding, so no object can land where it was.
     collections: u64,
+    /// Which point in this image's history the heap is at.
+    ///
+    /// Saved in the image header and incremented by each save, so two images
+    /// of the same world can be ordered without comparing their contents.
+    /// Required by the design before the format was fixed, because a change
+    /// log (#24) needs to say which snapshot it continues from and a header
+    /// field cannot be added to images that already exist.
+    sequence: u64,
     /// Where the static area ends. Objects below this are never moved.
     static_end: usize,
     /// Where collected objects begin: `static_end`, plus torture padding.
@@ -1121,6 +1129,7 @@ impl Heap {
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
                 collections: 0,
+                sequence: 0,
                 gensym_counter: 0,
                 static_end: 0,
                 dynamic_start: 0,
@@ -1341,6 +1350,31 @@ impl Heap {
     /// more than usual: the wasm32 stack is about a megabyte and fixed at link
     /// time.
     pub fn collect(&mut self) {
+        self.collect_with_padding(self.torture_padding());
+    }
+
+    /// Collect, laying the survivors out with no padding before them.
+    ///
+    /// What [`crate::image::save`] uses. Torture mode pads the front of the
+    /// dynamic area by a varying amount so that no object can land where it
+    /// was, which is exactly the right thing to do to a *running* heap and
+    /// exactly the wrong thing to write to a file: the padding would make two
+    /// saves of one world differ, and the image would carry a few words of
+    /// poison for no reason.
+    ///
+    /// This is not merely cosmetic. It is what lets a loaded heap put its
+    /// `dynamic_start` back at `static_end` without having to be told where
+    /// the objects begin — and the first version, which did not do this,
+    /// produced images that loaded fine in ordinary builds and failed
+    /// verification under torture, with a forwarding pointer apparently left
+    /// behind at word 24. There was no such pointer; the verifier was reading
+    /// padding as an object because the two halves disagreed about where the
+    /// heap started.
+    pub(crate) fn collect_for_image(&mut self) {
+        self.collect_with_padding(0);
+    }
+
+    fn collect_with_padding(&mut self, pad: usize) {
         let mut to = core::mem::take(&mut self.storage.spare);
         to.clear();
 
@@ -1352,7 +1386,6 @@ impl Heap {
         // what went wrong the first time, and showed up as a root pointing one
         // word past the end of the heap.
         let static_end = self.storage.static_end;
-        let pad = self.torture_padding();
         to.extend_from_slice(&self.storage.words[..static_end]);
         to.resize(static_end + pad, POISON);
 
@@ -1564,6 +1597,182 @@ impl Heap {
     #[allow(dead_code)]
     pub(crate) fn header_at(&self, word_index: usize) -> Option<Header> {
         Header::decode(self.storage.words[word_index])
+    }
+
+    /// The live words, for [`crate::image`] to write out.
+    pub(crate) fn words(&self) -> &[u64] {
+        &self.storage.words
+    }
+
+    /// Everything about the heap that is *not* in its words.
+    ///
+    /// The boundary that keeps the image format in one module: `heap` knows
+    /// which fields exist, `image` knows what order they go on disk in, and
+    /// neither knows the other's business. The same arrangement as the
+    /// instruction encoding, where only the assembler and the VM's fetch know
+    /// the byte layout.
+    pub(crate) fn scalars(&self) -> Scalars {
+        let s = &self.storage;
+        Scalars {
+            sequence: s.sequence,
+            root: s.root,
+            obarray: s.obarray,
+            control: s.control,
+            env: s.env,
+            value: s.value,
+            stack: s.stack,
+            unwind: s.unwind,
+            values: s.values,
+            function: s.function,
+            operands: s.operands,
+            pc: s.pc as u64,
+            sp: s.sp as u64,
+            fp: s.fp as u64,
+            mp: s.mp as u64,
+            mode: s.mode as u64,
+            gensym_counter: s.gensym_counter,
+            static_end: s.static_end as u64,
+        }
+    }
+
+    /// Rebuild a heap from an image's words and scalars.
+    ///
+    /// Note what is *not* restored. `soft_limit` and `hard_limit` are the
+    /// host's policy rather than the image's property — an image moved from a
+    /// desktop to a phone should obey the phone's limits, not carry the
+    /// desktop's — so they come from the caller. `collections` starts again at
+    /// zero, because it counts this process's collections. `exhausted` is not
+    /// saved at all: a heap that could not allocate is not a heap worth
+    /// preserving, and restoring the flag would halt the evaluator for a
+    /// reason that no longer applies.
+    ///
+    /// `dynamic_start` becomes `static_end`, deliberately dropping any torture
+    /// padding the saving process had. The padding exists to move objects
+    /// about between collections; it is not part of the world.
+    pub(crate) fn from_image(words: Vec<u64>, s: Scalars, soft_limit: usize) -> Heap {
+        Heap {
+            storage: Storage {
+                words,
+                spare: Vec::new(),
+                root: s.root,
+                obarray: s.obarray,
+                control: s.control,
+                env: s.env,
+                value: s.value,
+                stack: s.stack,
+                unwind: s.unwind,
+                values: s.values,
+                function: s.function,
+                operands: s.operands,
+                pc: s.pc as usize,
+                sp: s.sp as usize,
+                fp: s.fp as usize,
+                mp: s.mp as usize,
+                mode: s.mode as u8,
+                soft_limit,
+                hard_limit: soft_limit.saturating_mul(HARD_LIMIT_MULTIPLE),
+                exhausted: false,
+                collections: 0,
+                sequence: s.sequence,
+                gensym_counter: s.gensym_counter,
+                static_end: s.static_end as usize,
+                dynamic_start: s.static_end as usize,
+            },
+        }
+    }
+
+    /// Which point in the world's history this heap is at.
+    ///
+    /// Incremented by each [`crate::image::save`], so two images of the same
+    /// world can be ordered without comparing their contents.
+    pub fn sequence(&self) -> u64 {
+        self.storage.sequence
+    }
+
+    /// Move to the next point in history. Called by [`crate::image::save`].
+    pub(crate) fn advance_sequence(&mut self) {
+        self.storage.sequence += 1;
+    }
+}
+
+/// Everything about a heap that is not one of its words.
+///
+/// One `u64` per field, in the order [`crate::image`] writes them. A
+/// deliberately dumb struct: adding a field here is adding a field to the
+/// image format, which is exactly the coupling that should be impossible to
+/// do by accident.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Scalars {
+    pub sequence: u64,
+    pub root: u64,
+    pub obarray: u64,
+    pub control: u64,
+    pub env: u64,
+    pub value: u64,
+    pub stack: u64,
+    pub unwind: u64,
+    pub values: u64,
+    pub function: u64,
+    pub operands: u64,
+    pub pc: u64,
+    pub sp: u64,
+    pub fp: u64,
+    pub mp: u64,
+    pub mode: u64,
+    pub gensym_counter: u64,
+    pub static_end: u64,
+}
+
+impl Scalars {
+    /// How many `u64`s a `Scalars` occupies in an image header.
+    pub const WORDS: usize = 18;
+
+    /// In the order they are written. Changing this order changes the format.
+    pub fn to_words(self) -> [u64; Scalars::WORDS] {
+        [
+            self.sequence,
+            self.root,
+            self.obarray,
+            self.control,
+            self.env,
+            self.value,
+            self.stack,
+            self.unwind,
+            self.values,
+            self.function,
+            self.operands,
+            self.pc,
+            self.sp,
+            self.fp,
+            self.mp,
+            self.mode,
+            self.gensym_counter,
+            self.static_end,
+        ]
+    }
+
+    /// The inverse, and the only other place that knows the order.
+    pub fn from_words(w: &[u64]) -> Scalars {
+        Scalars {
+            sequence: w[0],
+            root: w[1],
+            obarray: w[2],
+            control: w[3],
+            env: w[4],
+            value: w[5],
+            stack: w[6],
+            unwind: w[7],
+            values: w[8],
+            function: w[9],
+            operands: w[10],
+            pc: w[11],
+            sp: w[12],
+            fp: w[13],
+            mp: w[14],
+            mode: w[15],
+            gensym_counter: w[16],
+            static_end: w[17],
+        }
     }
 }
 

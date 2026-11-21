@@ -46,6 +46,71 @@ fn main() {
         return;
     }
 
+    // `quokka --save-image FILE` writes the booted world to a file, and
+    // `quokka --image FILE` starts from one instead of booting. Together
+    // they are phase 1's gate, in the form a person can actually hold:
+    // the second start does not interpret the prelude at all.
+    //
+    // The VM produces and consumes bytes; the file is the host's business
+    // (rule 2), which is also what lets the browser put the same bytes in
+    // OPFS or hand them to the user as a download.
+    if args.len() >= 3 && args[1] == "--save-image" {
+        let mut heap = Heap::new();
+        let prepared = quokka_vm::boot::install(&mut heap)
+            .and_then(|()| quokka_vm::boot::install_compiler(&mut heap));
+        if let Err(e) = prepared {
+            eprintln!("quokka: {e}");
+            std::process::exit(1);
+        }
+        // Any further arguments are source files loaded into the world before
+        // it is saved, which is how an image comes to hold work rather than
+        // just a boot. Interpreted, because the prelude in this heap still is.
+        for path in &args[3..] {
+            let source = match std::fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("cannot read {path}: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let mut failed = None;
+            let read = quokka_vm::eval::eval_forms(
+                &mut heap,
+                &source,
+                EVAL_BUDGET,
+                2_000,
+                |_mc, result| match result {
+                    Ok(_) => true,
+                    Err(e) => {
+                        failed = Some(format!("{e}"));
+                        false
+                    }
+                },
+            );
+            if let Err(e) = read {
+                eprintln!("{path}: {e}");
+                std::process::exit(1);
+            }
+            if let Some(e) = failed {
+                eprintln!("{path}: {e}");
+                std::process::exit(1);
+            }
+        }
+        let bytes = quokka_vm::image::save(&mut heap);
+        if let Err(e) = std::fs::write(&args[2], &bytes) {
+            eprintln!("cannot write {}: {e}", args[2]);
+            std::process::exit(1);
+        }
+        println!(
+            "{}: {} bytes, {} words, sequence {}",
+            args[2],
+            bytes.len(),
+            heap.used_words(),
+            heap.sequence()
+        );
+        return;
+    }
+
     // `quokka --compile-file FILE` compiles every form of a file and reports
     // what happened, without installing any of it. That last part is the
     // point rather than a shortcut — see `boot::compile_source` for why
@@ -100,17 +165,49 @@ fn main() {
     }
     host.write_stdout("Ctrl-D to leave.\n");
 
-    let mut heap = Heap::new();
-    if let Err(e) = quokka_vm::boot::install(&mut heap) {
-        eprintln!("quokka: {e}");
-        std::process::exit(1);
-    }
-    if compiling {
-        if let Err(e) = quokka_vm::boot::install_compiler(&mut heap) {
-            eprintln!("quokka: loading the compiler: {e}");
-            std::process::exit(1);
+    // Either load a world or build one. Loading is what a finished Quokka
+    // does always; building from source is the fallback that keeps the
+    // system reproducible from `cargo` alone.
+    let from_image = args.iter().position(|a| a == "--image").map(|i| i + 1);
+    let mut heap = match from_image.and_then(|i| args.get(i)) {
+        Some(path) => {
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("cannot read {path}: {e}");
+                    std::process::exit(1);
+                }
+            };
+            match quokka_vm::image::load(&bytes, DEFAULT_IMAGE_LIMIT) {
+                Ok(h) => {
+                    host.write_stdout(&format!(
+                        "Loaded {path}: {} words, sequence {}.\n",
+                        h.used_words(),
+                        h.sequence()
+                    ));
+                    h
+                }
+                Err(e) => {
+                    eprintln!("quokka: {path}: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
-    }
+        None => {
+            let mut heap = Heap::new();
+            if let Err(e) = quokka_vm::boot::install(&mut heap) {
+                eprintln!("quokka: {e}");
+                std::process::exit(1);
+            }
+            if compiling {
+                if let Err(e) = quokka_vm::boot::install_compiler(&mut heap) {
+                    eprintln!("quokka: loading the compiler: {e}");
+                    std::process::exit(1);
+                }
+            }
+            heap
+        }
+    };
     let stdin = io::stdin();
     loop {
         host.write_stdout("quokka> ");
@@ -156,6 +253,13 @@ fn main() {
 /// rare enough to be worth noticing, and the heap ceiling usually arrives first
 /// anyway.
 const EVAL_BUDGET: u64 = 5_000_000;
+
+/// The soft limit a loaded image is given.
+///
+/// The host's policy, not the image's: see `Heap::from_image`. A native REPL
+/// can afford a large heap; the browser will pass something smaller for the
+/// same image.
+const DEFAULT_IMAGE_LIMIT: usize = 1 << 22;
 
 /// Read every form on the line, evaluate it, and print the result.
 ///
