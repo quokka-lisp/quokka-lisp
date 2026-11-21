@@ -624,6 +624,87 @@ mod compiler {
         assert_eq!(compile_and_run("(if (= 1 1) (+ 1 1) 99)"), "2");
     }
 
+    #[test]
+    fn let_binds_and_reads_back() {
+        assert_eq!(compile_and_run("(let ((a 1) (b 2)) (+ a b))"), "3");
+        assert_eq!(compile_and_run("(let ((a 1)) (let ((b 2)) (- b a)))"), "1");
+    }
+
+    /// Every init is evaluated in the *outer* scope, which is what `let`
+    /// means. Here the inner `a` must not be visible to its own init.
+    #[test]
+    fn a_lets_inits_run_in_the_outer_scope() {
+        assert_eq!(
+            compile_and_run("(let ((a 1)) (let ((a (+ a 10))) a))"),
+            "11"
+        );
+    }
+
+    #[test]
+    fn setq_assigns_and_returns_the_value() {
+        assert_eq!(compile_and_run("(let ((a 1)) (setq a 5) a)"), "5");
+        assert_eq!(compile_and_run("(let ((a 1)) (setq a 5))"), "5");
+        assert_eq!(compile_and_run("(progn (setq *g* 7) *g*)"), "7");
+    }
+
+    #[test]
+    fn progn_keeps_only_the_last_value() {
+        assert_eq!(compile_and_run("(progn 1 2 3)"), "3");
+        assert_eq!(compile_and_run("(progn)"), "NIL");
+    }
+
+    #[test]
+    fn a_lambda_compiles_and_is_callable() {
+        assert_eq!(compile_and_run("((lambda (x) (+ x 1)) 41)"), "42");
+        assert_eq!(compile_and_run("((lambda (x y) (- x y)) 10 4)"), "6");
+        assert_eq!(compile_and_run("((lambda () 7))"), "7");
+    }
+
+    /// The `adder` from the README and chapter 26, compiled: the inner
+    /// lambda reads `n` one scope out, which is `LREF 1 0`.
+    #[test]
+    fn a_closure_captures_the_scope_it_was_made_in() {
+        assert_eq!(
+            compile_and_run("((lambda (n) ((lambda (x) (+ x n)) 5)) 37)"),
+            "42"
+        );
+    }
+
+    /// A lambda is compiled into the enclosing function's constants, so the
+    /// constants being accumulated have to be saved and put back. Two in a
+    /// row is what catches getting that wrong.
+    #[test]
+    fn two_lambdas_do_not_disturb_each_others_constants() {
+        assert_eq!(
+            compile_and_run("(+ ((lambda (x) (+ x 1)) 1) ((lambda (y) (* y 2)) 20))"),
+            "42"
+        );
+    }
+
+    /// Macros are expanded before anything looks at the form as a call, so
+    /// `when` never reaches the call path — and neither does anything a user
+    /// defines with `defmacro`.
+    #[test]
+    fn macros_are_expanded_before_compiling() {
+        assert_eq!(compile_and_run("(when t 1 2)"), "2");
+        assert_eq!(compile_and_run("(when nil 1)"), "NIL");
+        assert_eq!(compile_and_run("(unless nil 'yes)"), "YES");
+        assert_eq!(
+            compile_and_run("(cond ((= 1 2) 'no) ((= 1 1) 'yes))"),
+            "YES"
+        );
+        assert_eq!(compile_and_run("(and 1 2 3)"), "3");
+        assert_eq!(compile_and_run("(or nil 4)"), "4");
+    }
+
+    /// A lambda list the compiler cannot do yet says so, rather than
+    /// producing a function that binds the wrong things.
+    #[test]
+    fn an_unsupported_lambda_list_is_refused() {
+        let out = compile_and_run("((lambda (a &optional b) a) 1)");
+        assert!(out.contains("&optional"), "{out}");
+    }
+
     /// A prelude function — Lisp, interpreted, called from compiled code.
     ///
     /// Which is a thing #25 said must not happen in a *built image*: there,

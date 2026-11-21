@@ -72,6 +72,34 @@
          (list (list 'FIX value)))
         (t (list (list 'CONST (%constant-index value))))))
 
+;;; The compile-time environment
+;;;
+;;; A list of scopes, each a list of names, innermost first. It mirrors the
+;;; chain of `Environment` objects the machine will build, and `LREF d i`
+;;; counts *links* — so the two have to agree link for link.
+;;;
+;;; That is the trap book chapter 26 warns about, and it is worth restating
+;;; where the counting happens: a depth that is off by one does not crash, it
+;;; reads a different variable. Every place below that adds a scope to this
+;;; list is a place the machine must also push one, and the reverse.
+;;;
+;;; Not handled yet: `flet`, which binds in the *function* namespace. Its
+;;; scope is still a link in the chain, so the compiler will have to count it
+;;; while a variable lookup steps over it.
+
+(defun %position (item remaining index)
+  (cond ((null remaining) nil)
+        ((eq (car remaining) item) index)
+        (t (%position item (cdr remaining) (+ index 1)))))
+
+(defun %lookup (name env depth)
+  (if (null env)
+      nil
+      (let ((index (%position name (car env) 0)))
+        (if index
+            (cons depth index)
+            (%lookup name (cdr env) (+ depth 1))))))
+
 ;;; `(if test then else)`
 ;;;
 ;;; There is no branch instruction that yields a value, so `if` is a jump over
@@ -81,22 +109,111 @@
 ;;;
 ;;; Both arms must leave exactly one value, or the verifier refuses the
 ;;; function: the paths meet at DONE and have to agree about the stack.
-(defun %compile-if (form)
+(defun %compile-if (form env)
   (let ((else (gensym))
         (done (gensym)))
-    (append (%compile (second form))
+    (append (%compile (second form) env)
             (list (list 'JMP-NIL else))
-            (%compile (third form))
+            (%compile (third form) env)
             (list (list 'JMP done))
             (list (list ':label else))
-            (%compile (nth 3 form))
+            (%compile (nth 3 form) env)
             (list (list ':label done)))))
 
-(defun %compile-arguments (arguments)
+;;; A body: every form but the last is evaluated for effect, so its value is
+;;; popped. An empty body is `nil`, which is what `(progn)` means.
+(defun %compile-body (forms env)
+  (cond ((null forms) (list (list 'NIL)))
+        ((null (cdr forms)) (%compile (car forms) env))
+        (t (append (%compile (car forms) env)
+                   (list (list 'POP))
+                   (%compile-body (cdr forms) env)))))
+
+(defun %binding-name (binding)
+  (if (consp binding) (car binding) binding))
+
+(defun %binding-init (binding)
+  (if (consp binding) (second binding) nil))
+
+(defun %binding-names (bindings)
+  (if (endp bindings)
+      nil
+      (cons (%binding-name (car bindings))
+            (%binding-names (cdr bindings)))))
+
+(defun %binding-inits (bindings)
+  (if (endp bindings)
+      nil
+      (cons (%binding-init (car bindings))
+            (%binding-inits (cdr bindings)))))
+
+;;; `(let ((a 1) (b 2)) ...)`
+;;;
+;;; Every init is evaluated in the *outer* scope — which is what `let` means,
+;;; and which falls out here rather than being arranged: the inits are
+;;; compiled before `BIND` pushes anything. `let*` would push a scope per
+;;; binding, and is not here yet.
+;;;
+;;; `BIND` takes the names from a constant vector it does not look at for
+;;; anything but their count. They are carried for the debugger, which is the
+;;; only reason a compiled scope knows what its variables are called.
+(defun %compile-let (form env)
+  (let ((names (%binding-names (second form)))
+        (inits (%binding-inits (second form))))
+    (append (%compile-arguments inits env)
+            (list (list 'BIND (%constant-index (apply #'vector names))))
+            (%compile-body (cddr form) (cons names env))
+            (list (list 'UNBIND 1)))))
+
+;;; `(setq x v)` — the value stays on the stack, because `setq` returns it.
+;;; `LSET` and `GSET` pop and push, so that is what they already do.
+(defun %compile-setq (form env)
+  (let ((place (%lookup (second form) env 0)))
+    (append (%compile (third form) env)
+            (if place
+                (list (list 'LSET (car place) (cdr place)))
+                (list (list 'GSET (%constant-index (second form))))))))
+
+;;; `(lambda (x) ...)`
+;;;
+;;; A whole function of its own, compiled into the enclosing one's constants,
+;;; and `CLOSURE` captures the current scope chain at run time.
+;;;
+;;; The constants being accumulated have to be saved and put back, because
+;;; they live in a global and this is the one place that is reentrant. A
+;;; global is cheaper than threading an argument through every function here;
+;;; the cost is exactly this, and it is paid in one place.
+;;;
+;;; Only simple parameter lists for now. `&optional` and `&key` need their
+;;; default forms turned into a `let*` around the body — which the interpreter
+;;; does in `lambda_list::rewrite` and the compiler will have to do for
+;;; itself.
+(defun %compile-lambda (form env)
+  (let ((params (second form)))
+    (if (member '&optional params)
+        (error "the compiler cannot do &optional yet")
+        (if (member '&rest params)
+            (error "the compiler cannot do &rest yet")
+            (if (member '&key params)
+                (error "the compiler cannot do &key yet")
+                (%compile-simple-lambda params (cddr form) env))))))
+
+(defun %compile-simple-lambda (params body env)
+  (let ((outer %constants)
+        (outer-count %constant-count))
+    (%reset-constants)
+    (let ((code (append (%compile-body body (cons params env))
+                        (list (list 'RET)))))
+      (let ((compiled (%assemble code (%constants-vector) params 'lambda)))
+        (setq %constants outer)
+        (setq %constant-count outer-count)
+        (list (list 'CLOSURE (%constant-index compiled)))))))
+
+(defun %compile-arguments (arguments env)
   (if (endp arguments)
       nil
-      (append (%compile (car arguments))
-              (%compile-arguments (cdr arguments)))))
+      (append (%compile (car arguments) env)
+              (%compile-arguments (cdr arguments) env))))
 
 ;;; `(f a b)` — the callee first, then the arguments, then CALL.
 ;;;
@@ -106,30 +223,60 @@
 ;;; and could compile to a PRIM instruction instead. Not yet: the uniform
 ;;; version is the one to get working first, and the inlining decision
 ;;; deserves its own change and its own explanation.
-(defun %compile-call (form)
-  (append (list (list 'GFREF (%constant-index (car form))))
-          (%compile-arguments (cdr form))
+(defun %compile-callee (head env)
+  (cond ((symbolp head) (list (list 'GFREF (%constant-index head))))
+        ;; `((lambda (x) ...) 1)` — a lambda expression in operator position,
+        ;; which is a call like any other once the closure is on the stack.
+        ((and (consp head) (eq (car head) 'lambda)) (%compile-lambda head env))
+        (t (error "a call wants a symbol or a lambda expression as its operator"))))
+
+(defun %compile-call (form env)
+  (append (%compile-callee (car form) env)
+          (%compile-arguments (cdr form) env)
           (list (list 'CALL (length (cdr form))))))
 
-(defun %compile-cons (form)
+;;; A list form: a special operator, a macro call, or a function call.
+;;;
+;;; The order matters and is the standard's. A special operator is not
+;;; shadowable by a macro, and a macro call is expanded before anything looks
+;;; at it as a call — so `when` never reaches `%compile-call`, and neither
+;;; does anything a user defines with `defmacro`.
+(defun %compile-cons (form env)
   (let ((head (car form)))
     (cond ((eq head 'quote) (%compile-value (second form)))
-          ((eq head 'if) (%compile-if form))
-          (t (%compile-call form)))))
+          ((eq head 'if) (%compile-if form env))
+          ((eq head 'progn) (%compile-body (cdr form) env))
+          ((eq head 'let) (%compile-let form env))
+          ((eq head 'setq) (%compile-setq form env))
+          ((eq head 'lambda) (%compile-lambda form env))
+          (t (multiple-value-bind (expansion expanded) (macroexpand-1 form)
+               (if expanded
+                   (%compile expansion env)
+                   (%compile-call form env)))))))
 
 ;;; One form to a list of instructions leaving exactly one value.
-(defun %compile (form)
+;;;
+;;; A symbol is a variable: found in the compile-time environment it is a pair
+;;; of small numbers, and not found it is a global read through its symbol at
+;;; run time. Which is chapter 26's distinction, and the reason for it — a
+;;; lexical binding is created and destroyed by code the compiler can see in
+;;; full, and a global is reachable by anything at any time.
+(defun %compile (form env)
   (cond ((null form) (list (list 'NIL)))
         ((eq form t) (list (list 'T)))
-        ((symbolp form) (list (list 'GREF (%constant-index form))))
-        ((consp form) (%compile-cons form))
+        ((symbolp form)
+         (let ((place (%lookup form env 0)))
+           (if place
+               (list (list 'LREF (car place) (cdr place)))
+               (list (list 'GREF (%constant-index form))))))
+        ((consp form) (%compile-cons form env))
         (t (%compile-value form))))
 
 ;;; Compile FORM into a function of no arguments.
 ;;;
-;;; The entry point, and the only place the constants are reset — which is
-;;; what keeps the global above honest.
+;;; The entry point, and the only place the constants are reset from nothing —
+;;; `%compile-simple-lambda` saves and restores them instead.
 (defun compile-form (form)
   (%reset-constants)
-  (let ((code (append (%compile form) (list (list 'RET)))))
+  (let ((code (append (%compile form nil) (list (list 'RET)))))
     (%assemble code (%constants-vector) nil 'compiled-form)))
