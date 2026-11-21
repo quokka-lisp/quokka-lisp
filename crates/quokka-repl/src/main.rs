@@ -6,12 +6,11 @@
 
 use std::io::{self, BufRead, Write};
 
-use quokka_vm::eval::{eval_now, Machine};
+use quokka_vm::eval::eval_now;
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{Host, HostError};
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
-use quokka_vm::slice::{run_slice, Status};
 use quokka_vm::vm::run_now;
 use quokka_vm::{PHASE, VERSION};
 
@@ -215,7 +214,7 @@ fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Opti
                     let args = mc.cons(quoted, quokka_vm::value::Value::NIL);
                     mc.cons(compile, args)
                 };
-                Machine::start(mc, call, quokka_vm::value::Value::NIL);
+                mc.set_root(call);
                 Some(Ok(()))
             }
         }
@@ -227,32 +226,10 @@ fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Opti
         Some(Ok(())) => {}
     }
 
-    // Drive the compilation, collecting between slices.
-    loop {
-        let outcome = heap.mutate(|mc| {
-            let (status, error, value) = {
-                let mut machine = Machine::resume(mc);
-                let status = run_slice(&mut machine, 2_000);
-                (status, machine.error.take(), machine.result())
-            };
-            if let Some(e) = error {
-                return Some(Err(format!("; compiling: {e}")));
-            }
-            if matches!(status, Status::Done { .. }) {
-                mc.set_root(value);
-                return Some(Ok(()));
-            }
-            None
-        });
-        if heap.wants_collection() || heap.is_exhausted() {
-            heap.collect();
-            heap.clear_exhausted();
-        }
-        match outcome {
-            Some(Err(e)) => return Some(e),
-            Some(Ok(())) => break,
-            None => {}
-        }
+    // Drive the compilation a slice at a time, so the collector can run
+    // between them — compiling allocates far more than evaluating does.
+    if let Err(e) = quokka_vm::eval::eval_root(heap, EVAL_BUDGET, 2_000) {
+        return Some(format!("; compiling: {e}"));
     }
 
     // Run it. The compiled function is the root, so it survives any

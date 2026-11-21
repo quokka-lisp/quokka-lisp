@@ -1293,6 +1293,18 @@ impl Heap {
         // checks it has already passed.
         if TORTURE && self.is_bootstrapped() {
             self.collect();
+        } else if self.is_bootstrapped() && self.wants_collection() {
+            // The end of a mutation is the *only* place a collection may
+            // happen, so it is the only place that can answer the heap's
+            // request. Leaving that to callers made it a rule in prose: the
+            // REPL remembered, `install` did not, and three separate failures
+            // this phase were a mutation that filled the heap because nobody
+            // had collected since the last one.
+            //
+            // Sound for the same reason torture mode is: the mutation is
+            // over, so by the branding in this module no `Value` is alive
+            // outside it.
+            self.collect();
         }
         result
     }

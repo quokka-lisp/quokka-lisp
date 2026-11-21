@@ -546,68 +546,29 @@ fn prelude_recursion_is_bounded_by_the_heap_not_the_stack() {
 /// bytecode, and the VM runs it.
 mod compiler {
     use super::*;
-    use crate::eval::Machine;
-    use crate::value::Value;
     use crate::vm::run_now;
 
-    /// Compile `source` with the Lisp compiler and run the result on the VM,
-    /// **letting the collector run**.
+    /// Read `source` into the root and evaluate it there.
     ///
-    /// Which is the whole reason this is not four lines around `eval_now`.
-    /// Collection cannot happen inside a `mutate` (chapter 4), so anything
-    /// that evaluates a whole form in one mutation can allocate but never
-    /// reclaim. Every test before this one was small enough not to care.
-    ///
-    /// Compiling is not. It allocates an instruction list, a constants list,
-    /// a `gensym` per branch and a fresh `append` for every concatenation,
-    /// and almost all of it is garbage immediately. The first form large
-    /// enough to notice — two mutually recursive functions — exhausted a
-    /// sixty-four megabyte heap and reported "a computation that does not
-    /// finish, perhaps?", which it was not.
-    ///
-    /// So this drives the machine the way a real host does: a slice at a
-    /// time, with the heap free to collect between them.
+    /// A thin wrapper over [`crate::eval::eval_root`], which drives the
+    /// machine a slice at a time so the collector can run between them.
+    /// Compiling allocates far more than evaluating — an instruction list, a
+    /// constants list, a `gensym` per branch, a fresh `append` per
+    /// concatenation — and doing it inside one mutation exhausts the heap.
     fn drive(heap: &mut Heap, source: &str) -> Result<(), String> {
-        use crate::slice::{run_slice, Status};
         let chars = Reader::chars_of(source);
-        let started = heap.mutate(|mc| {
+        heap.mutate(|mc| {
             let mut reader = Reader::new(&chars);
             match reader.read(mc) {
                 Ok(Some(form)) => {
-                    Machine::start(mc, form, Value::NIL);
+                    mc.set_root(form);
                     Ok(())
                 }
                 Ok(None) => Err(String::from("; nothing to read")),
                 Err(e) => Err(format!("; {e:?}")),
             }
-        });
-        started?;
-        for _ in 0..100_000 {
-            let outcome = heap.mutate(|mc| {
-                let (status, error, value) = {
-                    let mut machine = Machine::resume(mc);
-                    let status = run_slice(&mut machine, 500);
-                    (status, machine.error.take(), machine.result())
-                };
-                if let Some(e) = error {
-                    return Some(Err(format!("; {e}")));
-                }
-                if matches!(status, Status::Done { .. }) {
-                    // The answer becomes the root so that it survives the
-                    // collections the next phase may need.
-                    mc.set_root(value);
-                    return Some(Ok(()));
-                }
-                None
-            });
-            if heap.wants_collection() {
-                heap.collect();
-            }
-            if let Some(done) = outcome {
-                return done;
-            }
-        }
-        Err(String::from("; the machine never halted"))
+        })?;
+        crate::eval::eval_root(heap, 10_000_000, 500).map_err(|e| format!("; {e}"))
     }
 
     /// Compile `source` with the Lisp compiler and run the result on the VM.

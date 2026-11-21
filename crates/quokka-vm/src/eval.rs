@@ -70,7 +70,7 @@
 //! No Rust recursion anywhere. Stop between any two rows and the entire state
 //! is four heap values.
 
-use crate::heap::{symbol, Mutation, ObjectType, Register};
+use crate::heap::{symbol, Heap, Mutation, ObjectType, Register};
 use crate::primitives;
 use crate::slice::{Steppable, Transition};
 use crate::value::Value;
@@ -199,7 +199,10 @@ impl core::fmt::Display for EvalError {
             }
             EvalError::HeapExhausted => write!(
                 f,
-                "out of heap — a computation that does not finish, perhaps?"
+                "out of heap: this one mutation allocated more than the heap \
+                 holds, and nothing can be collected until it ends — either \
+                 the computation does not finish, or it needs driving a slice \
+                 at a time"
             ),
             EvalError::BudgetExhausted => write!(
                 f,
@@ -2341,6 +2344,54 @@ pub fn eval_now<'h>(
         },
         Status::Yielded => Err(EvalError::BudgetExhausted),
     }
+}
+
+/// Evaluate the form in the heap's root, leaving the answer in the root.
+///
+/// The difference from [`eval_now`] is where the mutations are. `eval_now`
+/// runs the whole evaluation inside the caller's mutation, which is fine for
+/// a prelude form and wrong for anything that allocates seriously: no
+/// collection can happen inside a mutation, so the heap has to absorb
+/// everything the form touches, garbage included.
+///
+/// This drives the same machine a slice at a time, each slice its own
+/// mutation, so the collector runs in between. That is what `docs/design.md`
+/// means by "one evaluator step per mutation gives fine-grained collection
+/// for free" — which was the design from the start and, until this existed,
+/// was implemented nowhere.
+///
+/// The form goes in and the answer comes out through the **root**, because a
+/// `Value` cannot cross a mutation boundary and this function is made of
+/// boundaries.
+pub fn eval_root(heap: &mut Heap, budget: u64, slice: u64) -> Result<(), EvalError> {
+    use crate::slice::{run_slice, Status};
+    heap.mutate(|mc| {
+        let form = mc.root();
+        Machine::start(mc, form, Value::NIL);
+    });
+    let mut spent = 0u64;
+    while spent < budget {
+        spent += slice;
+        let outcome = heap.mutate(|mc| {
+            let (status, error, value) = {
+                let mut machine = Machine::resume(mc);
+                let status = run_slice(&mut machine, slice);
+                (status, machine.error.take(), machine.result())
+            };
+            if let Some(e) = error {
+                return Some(Err(e));
+            }
+            if matches!(status, Status::Done { .. }) {
+                mc.set_root(value);
+                return Some(Ok(()));
+            }
+            None
+        });
+        if let Some(done) = outcome {
+            return done;
+        }
+    }
+    Err(EvalError::BudgetExhausted)
 }
 
 #[cfg(test)]

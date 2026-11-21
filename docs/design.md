@@ -84,7 +84,9 @@ Cheney needs no auxiliary stack: `scan` trails `free` through the objects alread
 
 The brand must be *invariant* — `PhantomData<fn(&'h ()) -> &'h ()>`, not `PhantomData<&'h ()>`, which is covariant and would silently permit the escape. Heap-reference constructors are crate-private, since the brand stops a value escaping a mutation but not being invented outside one.
 
-*What it costs:* collection can only happen between mutations, so the heap must absorb whatever one allocates. Cheap here, because rule 4 already forbids long mutations — one evaluator step per mutation gives fine-grained collection for free. And it protects callers from the collector, not the collector from itself; tracing bugs still need the torture mode.
+*What it costs:* collection can only happen between mutations, so the heap must absorb whatever one allocates. Cheap **only if mutations stay short** — one evaluator step per mutation gives fine-grained collection for free, and a whole evaluation in one gives none at all.
+
+That sentence was in this document from the start and was implemented nowhere, which phase 1 found three times over: a compiler that looked like it hung, a source file that would not load, a REPL line that died — all one mutation filling the heap with its own garbage. Two things now make it true. `Heap::mutate` collects at the boundary when the heap asks, so no caller has to remember; and `eval::eval_root` drives the machine a slice at a time, each slice its own mutation, passing the form and the answer through the root because a value cannot cross a boundary. `eval_now` keeps the single-mutation shape for prelude forms and anything small. And it protects callers from the collector, not the collector from itself; tracing bugs still need the torture mode.
 
 **Image.** The whole heap can be saved to a file and loaded back ("save world"). Pointers are stored relative to the heap base, so an image loads by relocation or straight `mmap`. Booting means loading an image, not running a build.
 
