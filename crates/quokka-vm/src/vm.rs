@@ -38,6 +38,56 @@ const INITIAL_STACK: usize = 64;
 /// the price of keeping one environment representation for now.
 const FRAME: usize = 4;
 
+/// Unwind records: how a compiled `block`, `catch`, `tagbody`,
+/// `unwind-protect` or `handler-case` leaves something behind to be found.
+///
+/// The interpreter pushes a `Frame` object onto a cons list and walks it
+/// (chapters 14 and 20). A contiguous stack has no cons list, so a record is
+/// seven slots *on the operand stack*, and the records are chained to each
+/// other by index through [`Mutation::mp`]. Pushing one allocates nothing.
+///
+/// Why a chain at all, when the records are already in order on the stack:
+/// because ordinary values sit between them and nothing distinguishes a
+/// record slot from a value slot by looking. The chain is what makes finding
+/// the next one down a read rather than a search.
+pub mod mark {
+    /// `block` — a lexical exit. The datum is a fresh marker object.
+    pub const BLOCK: i64 = 1;
+    /// `catch` — a dynamic exit. The datum is the tag, an ordinary value.
+    pub const CATCH: i64 = 2;
+    /// A `tagbody` tag reachable from a closure that outlived it.
+    pub const TAG: i64 = 3;
+    /// `unwind-protect`. The datum is where the cleanup code starts.
+    pub const PROTECT: i64 = 4;
+    /// `handler-case`. The datum is the clause list.
+    pub const HANDLER: i64 = 5;
+    /// An unwind that has stopped to let a cleanup run, and will carry on
+    /// when it reaches `UNPROTECT`.
+    ///
+    /// It reuses the frame slots for the three pieces of state an unwind is
+    /// carrying, because a pause has no frame of its own to restore: `FP`
+    /// holds the value, `PC` the full list of values, and `DATUM` the target
+    /// still being looked for.
+    pub const PAUSED: i64 = 6;
+
+    /// The index of the next record down, or `usize::MAX` as a fixnum.
+    pub const PREV: usize = 0;
+    /// Which of the kinds above.
+    pub const KIND: usize = 1;
+    /// The marker, tag, clause list or cleanup address.
+    pub const DATUM: usize = 2;
+    /// The frame pointer to restore.
+    pub const FP: usize = 3;
+    /// Where to carry on.
+    pub const PC: usize = 4;
+    /// The function to carry on in.
+    pub const FUNCTION: usize = 5;
+    /// The environment to carry on in.
+    pub const ENV: usize = 6;
+    /// How many slots one record takes.
+    pub const SIZE: usize = 7;
+}
+
 /// The bytecode machine.
 pub struct Vm<'a, 'h> {
     mc: &'a mut Mutation<'h>,
@@ -62,10 +112,13 @@ impl<'a, 'h> Vm<'a, 'h> {
         mc.set_register(Register::Env, env);
         mc.set_register(Register::Value, Value::NIL);
         mc.set_register(Register::Values, Value::UNBOUND);
-        mc.set_register(Register::Unwind, Value::NIL);
+        // UNBOUND, not nil: `(catch nil ...)` is legal, so nil cannot mean
+        // "nothing is unwinding".
+        mc.set_register(Register::Unwind, Value::UNBOUND);
         mc.set_pc(0);
         mc.set_sp(0);
         mc.set_fp(0);
+        mc.set_mp(usize::MAX);
         Vm {
             mc,
             error: None,
@@ -301,19 +354,21 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// frame still being there.
     fn enter(&mut self, callee: Value<'h>, args: &[Value<'h>], tail: bool) -> Transition {
         let Some(code_object) = self.compiled_body(callee) else {
-            let what = if closure::is(self.mc, callee) {
+            if closure::is(self.mc, callee) {
                 // An interpreted closure in a compiled program. Not a user
                 // error and not a missing feature: something has mixed the
                 // two evaluators, which #25 says must not happen.
-                "an interpreted closure reached compiled code, which means the \
-                 bootstrap let an expander be compiled while its caller was not"
-            } else {
-                "is not a compiled function"
-            };
-            return self.fail(EvalError::BadSyntax {
-                operator: "CALL",
-                detail: what,
-            });
+                return self.fail(EvalError::BadSyntax {
+                    operator: "CALL",
+                    detail: "reached an interpreted closure, which means the \
+                             bootstrap let an expander be compiled while its \
+                             caller was not",
+                });
+            }
+            // Say *what* was called. "is not a function" without the value is
+            // a hint; with it, it is usually the whole diagnosis.
+            let what = crate::printer::print(self.mc, callee);
+            return self.fail(EvalError::NotAFunction(what));
         };
         let params = self.mc.slot(code_object, function::PARAMS);
         let captured = self.mc.slot(callee, closure::ENV);
@@ -434,6 +489,9 @@ impl<'a, 'h> Vm<'a, 'h> {
         let args = self.pop_n(n);
         let callee = self.pop();
         if let Some(index) = callee.as_primitive() {
+            if let Some(transition) = self.intercept(index, &args, tail) {
+                return transition;
+            }
             return match primitives::call_slice(self.mc, index, &args) {
                 Ok(v) => {
                     if tail {
@@ -448,6 +506,249 @@ impl<'a, 'h> Vm<'a, 'h> {
             };
         }
         self.enter(callee, &args, tail)
+    }
+
+    /// The primitives the machine has to do itself.
+    ///
+    /// `error` unwinds and `values` sets a register, and a primitive can do
+    /// neither: it is handed arguments and returns one value. The interpreter
+    /// intercepts the same three in its apply path, for the same reason.
+    ///
+    /// Compiled code normally meets `values` as the `VALUES` instruction and
+    /// never gets here; this is the path for `(funcall #'values 1 2)`, where
+    /// the function was a value rather than a name.
+    fn intercept(&mut self, index: u32, args: &[Value<'h>], tail: bool) -> Option<Transition> {
+        if index == primitives::ERROR {
+            let datum = args.first().copied().unwrap_or(Value::NIL);
+            let rest = args.get(1..).unwrap_or(&[]);
+            let condition = self.make_condition(datum, rest);
+            return Some(self.start_unwind(condition, Value::NIL));
+        }
+        if index == primitives::VALUES || index == primitives::VALUES_LIST {
+            let values: Vec<Value<'h>> = if index == primitives::VALUES {
+                args.to_vec()
+            } else {
+                let mut out = Vec::new();
+                let mut cursor = args.first().copied().unwrap_or(Value::NIL);
+                while cursor.is_cons() {
+                    out.push(self.mc.car(cursor));
+                    cursor = self.mc.cdr(cursor);
+                }
+                out
+            };
+            let primary = values.first().copied().unwrap_or(Value::NIL);
+            if values.len() == 1 {
+                self.push_fresh(primary);
+            } else {
+                let mut list = Value::NIL;
+                for v in values.iter().rev() {
+                    list = self.mc.cons(*v, list);
+                }
+                self.mc.set_register(Register::Values, list);
+                self.push(primary);
+            }
+            if tail {
+                let v = self.pop();
+                return Some(self.do_return(v));
+            }
+            return Some(Transition::Continue);
+        }
+        None
+    }
+
+    /// `(error "text")` or `(error 'some-type)`, as a condition object.
+    fn make_condition(&mut self, datum: Value<'h>, rest: &[Value<'h>]) -> Value<'h> {
+        let mut data = Value::NIL;
+        for v in rest.iter().rev() {
+            data = self.mc.cons(*v, data);
+        }
+        if self.mc.is_symbol(datum) {
+            return crate::condition::make(self.mc, datum, Value::NIL, data);
+        }
+        if datum.is_object() && self.mc.header(datum).object_type.is_string() {
+            let simple = self.mc.intern("SIMPLE-ERROR");
+            return crate::condition::make(self.mc, simple, datum, data);
+        }
+        let simple = self.mc.intern("SIMPLE-ERROR");
+        crate::condition::make(self.mc, simple, Value::NIL, data)
+    }
+
+    // ---- unwind records ----------------------------------------------------
+
+    /// Push a record, remembering where to carry on if an unwind finds it.
+    fn push_mark(&mut self, kind: i64, datum: Value<'h>, resume: usize) {
+        self.ensure(mark::SIZE);
+        let at = self.mc.sp();
+        let prev = self.mc.mp();
+        let fp = self.mc.fp();
+        let function = self.mc.register(Register::Function);
+        let env = self.mc.register(Register::Env);
+        self.push(Self::index(prev));
+        self.push(Value::fixnum(kind).expect("a mark kind is small"));
+        self.push(datum);
+        self.push(Self::index(fp));
+        self.push(Self::index(resume));
+        self.push(function);
+        self.push(env);
+        self.mc.set_mp(at);
+    }
+
+    /// A stack or code index as a fixnum, with `usize::MAX` meaning "none".
+    fn index(v: usize) -> Value<'h> {
+        if v == usize::MAX {
+            return Value::fixnum(-1).expect("small");
+        }
+        Value::fixnum(v as i64).expect("a stack index is a fixnum")
+    }
+
+    fn read_index(&self, at: usize, slot: usize) -> usize {
+        let stack = self.mc.register(Register::Operands);
+        match self.mc.slot(stack, at + slot).as_fixnum() {
+            Some(n) if n >= 0 => n as usize,
+            _ => usize::MAX,
+        }
+    }
+
+    fn mark_slot(&self, at: usize, slot: usize) -> Value<'h> {
+        let stack = self.mc.register(Register::Operands);
+        self.mc.slot(stack, at + slot)
+    }
+
+    /// Drop the innermost record without acting on it: what a `block` or
+    /// `catch` that was left normally does.
+    fn pop_mark(&mut self) -> Transition {
+        let at = self.mc.mp();
+        if at == usize::MAX {
+            return self.fail(EvalError::BadSyntax {
+                operator: "UNMARK",
+                detail: "there is no unwind record to drop",
+            });
+        }
+        // The body's value is above the record and has to survive it.
+        let v = self.pop();
+        let prev = self.read_index(at, mark::PREV);
+        let env = self.mark_slot(at, mark::ENV);
+        self.drop_to(at);
+        self.mc.set_mp(prev);
+        self.mc.set_register(Register::Env, env);
+        self.push(v);
+        Transition::Continue
+    }
+
+    /// Begin unwinding towards `target`, carrying `value`.
+    ///
+    /// Unwinding is a mode, not a loop: one record per [`Vm::step`], because
+    /// rule 4 does not stop applying because something went wrong. The
+    /// `Unwind` register is `UNBOUND` when nothing is unwinding — not `nil`,
+    /// which `(catch nil ...)` makes a perfectly good tag.
+    fn start_unwind(&mut self, target: Value<'h>, value: Value<'h>) -> Transition {
+        self.mc.set_register(Register::Unwind, target);
+        self.mc.set_register(Register::Value, value);
+        Transition::Continue
+    }
+
+    fn is_unwinding(&self) -> bool {
+        self.mc.register(Register::Unwind) != Value::UNBOUND
+    }
+
+    /// Does this record want the unwind that is going past it?
+    fn mark_matches(&mut self, at: usize, target: Value<'h>) -> bool {
+        let kind = self.mark_slot(at, mark::KIND).as_fixnum().unwrap_or(0);
+        let datum = self.mark_slot(at, mark::DATUM);
+        match kind {
+            // A block or tag is found by identity: the marker object the
+            // BLOCK instruction made and bound in the environment.
+            mark::BLOCK | mark::TAG => datum == target,
+            // A catch is found by `eql` on the tag, which for everything a
+            // tag may usefully be is the same as identity.
+            mark::CATCH => datum == target,
+            // A handler record stops *any* condition, and the compiled
+            // clause dispatch it resumes into decides whether this one is
+            // wanted — re-signalling if not, which searches further out
+            // because this record has already been popped.
+            //
+            // Which keeps the judgement in Lisp. Deciding here would mean
+            // the VM knowing what a `handler-case` clause looks like, and
+            // rule 1 says that belongs above the primitive table.
+            mark::HANDLER => {
+                let _ = datum;
+                crate::condition::is_condition(self.mc, target)
+            }
+            _ => false,
+        }
+    }
+
+    /// One step of unwinding.
+    fn step_unwind(&mut self) -> Transition {
+        let target = self.mc.register(Register::Unwind);
+        let at = self.mc.mp();
+        if at == usize::MAX {
+            // Nothing wanted it. A throw to a tag nobody is catching, or a
+            // condition nobody is handling.
+            let value = self.mc.register(Register::Value);
+            self.mc.set_register(Register::Unwind, Value::UNBOUND);
+            let _ = value;
+            if crate::condition::is_condition(self.mc, target) {
+                let what = crate::condition::describe(self.mc, target);
+                return self.fail(EvalError::Signalled(what));
+            }
+            let what = crate::printer::print(self.mc, target);
+            return self.fail(EvalError::NoSuchExit(what));
+        }
+        let kind = self.mark_slot(at, mark::KIND).as_fixnum().unwrap_or(0);
+        let prev = self.read_index(at, mark::PREV);
+
+        // A cleanup runs *while* the unwind is in flight, so the unwind has
+        // to be put down and picked up again. Everything it was carrying goes
+        // into a PAUSED record, and `UNPROTECT` at the end of the cleanup
+        // takes it back out.
+        if kind == mark::PROTECT {
+            let cleanup = self.read_index(at, mark::DATUM);
+            let fp = self.read_index(at, mark::FP);
+            let function = self.mark_slot(at, mark::FUNCTION);
+            let env = self.mark_slot(at, mark::ENV);
+            let value = self.mc.register(Register::Value);
+            let values = self.mc.register(Register::Values);
+            self.drop_to(at);
+            self.mc.set_mp(prev);
+            self.mc.set_fp(fp);
+            self.mc.set_register(Register::Function, function);
+            self.mc.set_register(Register::Env, env);
+            self.push_mark(mark::PAUSED, target, 0);
+            let paused = self.mc.mp();
+            let stack = self.mc.register(Register::Operands);
+            self.mc.set_slot(stack, paused + mark::FP, value);
+            self.mc.set_slot(stack, paused + mark::PC, values);
+            self.mc.set_register(Register::Unwind, Value::UNBOUND);
+            self.mc.set_register(Register::Values, Value::UNBOUND);
+            self.mc.set_pc(cleanup);
+            return Transition::Continue;
+        }
+
+        if self.mark_matches(at, target) {
+            let fp = self.read_index(at, mark::FP);
+            let pc = self.read_index(at, mark::PC);
+            let function = self.mark_slot(at, mark::FUNCTION);
+            let env = self.mark_slot(at, mark::ENV);
+            let value = self.mc.register(Register::Value);
+            self.drop_to(at);
+            self.mc.set_mp(prev);
+            self.mc.set_fp(fp);
+            self.mc.set_pc(pc);
+            self.mc.set_register(Register::Function, function);
+            self.mc.set_register(Register::Env, env);
+            self.mc.set_register(Register::Unwind, Value::UNBOUND);
+            // `push`, not `push_fresh`: a `(return-from b (values 1 2))`
+            // carries both values out with it, exactly as chapter 23 says a
+            // block is transparent to them.
+            self.push(value);
+            return Transition::Continue;
+        }
+
+        // Not this one. Drop it and look further out, one step at a time.
+        self.drop_to(at);
+        self.mc.set_mp(prev);
+        Transition::Continue
     }
 
     // ---- stepping ----------------------------------------------------------
@@ -503,6 +804,9 @@ impl Steppable for Vm<'_, '_> {
         if self.mc.is_exhausted() {
             return self.fail(EvalError::HeapExhausted);
         }
+        if self.is_unwinding() {
+            return self.step_unwind();
+        }
 
         let f = self.mc.register(Register::Function);
         let code = self.mc.slot(f, function::CODE);
@@ -547,7 +851,14 @@ impl Steppable for Vm<'_, '_> {
             }
             Op::Prim => {
                 let args = self.pop_n(decoded.b as usize);
-                match primitives::call_slice(self.mc, decoded.a as u32, &args) {
+                let index = decoded.a as u32;
+                // `error` and `values` have to be done by the machine, and
+                // the compiler reaches them through PRIM like any other
+                // primitive, so the interception lives on both paths.
+                if let Some(transition) = self.intercept(index, &args, false) {
+                    return transition;
+                }
+                match primitives::call_slice(self.mc, index, &args) {
                     Ok(v) => self.push_fresh(v),
                     Err(e) => return self.fail(e),
                 }
@@ -667,11 +978,172 @@ impl Steppable for Vm<'_, '_> {
                 let v = self.pop();
                 return self.do_return(v);
             }
-            other => {
-                return self.fail(EvalError::BadSyntax {
-                    operator: other.name(),
-                    detail: "is specified but not implemented in the VM yet",
-                })
+            // ---- leaving early ----
+            Op::Block | Op::Tag => {
+                // A fresh, unforgeable identity. `ObjectType::Instance` with
+                // no slots, which is what chapter 20 made conditions stop
+                // sharing — a marker must never be mistaken for one.
+                let marker = self.mc.alloc(ObjectType::Instance, 0);
+                let name = match self.constant(decoded.a) {
+                    Ok(v) => v,
+                    Err(e) => return self.fail(e),
+                };
+                let namespace = if decoded.op == Op::Block {
+                    env::BLOCK
+                } else {
+                    env::TAG
+                };
+                let kind = if decoded.op == Op::Block {
+                    mark::BLOCK
+                } else {
+                    mark::TAG
+                };
+                let parent = self.mc.register(Register::Env);
+                let scope = env::make(self.mc, parent, namespace, &[name], &[marker]);
+                self.mc.set_register(Register::Env, scope);
+                let resume = (decoded.next as i64 + decoded.b as i64) as usize;
+                self.push_mark(kind, marker, resume);
+            }
+            Op::Retfrom | Op::Go => {
+                let namespace = if decoded.op == Op::Retfrom {
+                    env::BLOCK
+                } else {
+                    env::TAG
+                };
+                let marker = match self.slot_of(decoded.a, decoded.b, namespace) {
+                    Ok((scope, at)) => self.mc.slot(scope, at),
+                    Err(e) => return self.fail(e),
+                };
+                // `go` carries no value; `return-from` carries one.
+                let v = if decoded.op == Op::Retfrom {
+                    self.pop()
+                } else {
+                    Value::NIL
+                };
+                return self.start_unwind(marker, v);
+            }
+            Op::Catch => {
+                let tag = self.pop();
+                let resume = (decoded.next as i64 + decoded.a as i64) as usize;
+                self.push_mark(mark::CATCH, tag, resume);
+            }
+            Op::Throw => {
+                let v = self.pop();
+                let tag = self.pop();
+                return self.start_unwind(tag, v);
+            }
+            Op::Handler => {
+                let clauses = match self.constant(decoded.a) {
+                    Ok(v) => v,
+                    Err(e) => return self.fail(e),
+                };
+                let resume = (decoded.next as i64 + decoded.b as i64) as usize;
+                self.push_mark(mark::HANDLER, clauses, resume);
+            }
+            Op::Protect => {
+                // The datum is where the cleanup starts, so the unwinder can
+                // get to it. The normal path runs the same cleanup code
+                // inline, which the compiler emits twice — one copy for each
+                // way out, rather than a mechanism for sharing one.
+                let cleanup = (decoded.next as i64 + decoded.a as i64) as usize;
+                let at = Self::index(cleanup);
+                self.push_mark(mark::PROTECT, at, decoded.next);
+            }
+            Op::Unmark => return self.pop_mark(),
+            Op::Unprotect => {
+                // A cleanup has finished. Take the unwind back out of the
+                // PAUSED record it was put down in and carry on from where
+                // it had got to.
+                let at = self.mc.mp();
+                if at == usize::MAX
+                    || self.mark_slot(at, mark::KIND).as_fixnum() != Some(mark::PAUSED)
+                {
+                    return self.fail(EvalError::BadSyntax {
+                        operator: "UNPROTECT",
+                        detail: "there is no paused unwind to resume",
+                    });
+                }
+                let target = self.mark_slot(at, mark::DATUM);
+                let value = self.mark_slot(at, mark::FP);
+                let values = self.mark_slot(at, mark::PC);
+                let prev = self.read_index(at, mark::PREV);
+                self.drop_to(at);
+                self.mc.set_mp(prev);
+                self.mc.set_register(Register::Values, values);
+                return self.start_unwind(target, value);
+            }
+
+            // ---- multiple values ----
+            Op::Values => {
+                let n = decoded.a as usize;
+                let vs = self.pop_n(n);
+                // One value is the ordinary case and must cost nothing, so
+                // the register keeps saying UNBOUND for it. Chapter 23.
+                if n == 1 {
+                    self.push_fresh(vs[0]);
+                } else {
+                    let mut list = Value::NIL;
+                    for v in vs.iter().rev() {
+                        list = self.mc.cons(*v, list);
+                    }
+                    let primary = vs.first().copied().unwrap_or(Value::NIL);
+                    self.mc.set_register(Register::Values, list);
+                    self.push(primary);
+                }
+            }
+            Op::Mvsave => {
+                // Everything the last form returned, as a list, *replacing*
+                // the single value it left on the stack.
+                //
+                // Where the two machines genuinely differ. The interpreter
+                // keeps the primary value in a register, so collecting every
+                // value reads two registers and touches nothing else. Here
+                // the primary is on the *stack* and only the extras are in a
+                // register, so this has to pop before it builds. Pushing the
+                // list without popping leaves the primary buried under it,
+                // and the next instruction that pops a fixed number of things
+                // takes the wrong ones — which is how this was found:
+                // `multiple-value-call` tried to call `(1 2)`.
+                let primary = self.pop();
+                let values = self.mc.register(Register::Values);
+                let list = if values == Value::UNBOUND {
+                    self.mc.cons(primary, Value::NIL)
+                } else {
+                    values
+                };
+                self.push_fresh(list);
+            }
+            Op::Mvrestore => {
+                let list = self.pop();
+                let primary = if list.is_cons() {
+                    self.mc.car(list)
+                } else {
+                    Value::NIL
+                };
+                self.mc.set_register(Register::Values, list);
+                self.push(primary);
+            }
+            Op::Mvcall => {
+                let lists = self.pop_n(decoded.a as usize);
+                let callee = self.pop();
+                let mut args = Vec::new();
+                for list in lists {
+                    let mut cursor = list;
+                    while cursor.is_cons() {
+                        args.push(self.mc.car(cursor));
+                        cursor = self.mc.cdr(cursor);
+                    }
+                }
+                if let Some(index) = callee.as_primitive() {
+                    return match primitives::call_slice(self.mc, index, &args) {
+                        Ok(v) => {
+                            self.push_fresh(v);
+                            Transition::Continue
+                        }
+                        Err(e) => self.fail(e),
+                    };
+                }
+                return self.enter(callee, &args, false);
             }
         }
         Transition::Continue
@@ -699,7 +1171,7 @@ pub fn run_now<'h>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code::encode;
+    use crate::code::{encode, OPCODE_COUNT};
     use crate::heap::Heap;
     use crate::slice::{run_slice, Status};
 
@@ -709,6 +1181,82 @@ mod tests {
     const ADD: i32 = 0;
     const SUB: i32 = 1;
     const MUL: i32 = 2;
+
+    /// One item of a hand-written program.
+    ///
+    /// Counting jump offsets by hand is how the first version of
+    /// `a_tail_call_does_not_grow_the_stack` came to jump four bytes over a
+    /// two-byte branch, landing in the *middle* of a later instruction, where
+    /// the machine decoded the high half of an operand as an opcode and ran
+    /// on through nonsense. The error that eventually surfaced was three
+    /// instructions from the cause.
+    ///
+    /// So: labels. This is the assembler the compiler will need anyway, in
+    /// miniature, and it exists because of a bug rather than in anticipation
+    /// of one.
+    enum I {
+        /// An ordinary instruction.
+        Ins(Op, i32, i32),
+        /// Somewhere a jump can aim at. Takes no space.
+        Label(&'static str),
+        /// A jump, by label.
+        To(Op, &'static str),
+        /// A `BLOCK`-shaped instruction: a constant index and a label.
+        Mark(Op, i32, &'static str),
+    }
+    use I::*;
+
+    /// Resolve labels and emit.
+    ///
+    /// One pass to place the labels and one to emit, which is all it takes
+    /// because an instruction's size depends only on its opcode — the whole
+    /// point of fixing operand widths, arriving as a convenience rather than
+    /// as the theory it was argued as.
+    fn assemble(items: &[I]) -> Vec<u8> {
+        let mut at = 0usize;
+        let mut labels = std::collections::HashMap::new();
+        for item in items {
+            match item {
+                Label(name) => {
+                    labels.insert(*name, at);
+                }
+                Ins(op, _, _) | To(op, _) | Mark(op, _, _) => at += op.width(),
+            }
+        }
+        let mut bytes = Vec::new();
+        for item in items {
+            match item {
+                Label(_) => {}
+                Ins(op, a, b) => encode(&mut bytes, *op, *a, *b),
+                To(op, name) => {
+                    let end = bytes.len() + op.width();
+                    let target = labels[name] as i32;
+                    encode(&mut bytes, *op, target - end as i32, 0);
+                }
+                Mark(op, k, name) => {
+                    let end = bytes.len() + op.width();
+                    let target = labels[name] as i32;
+                    encode(&mut bytes, *op, *k, target - end as i32);
+                }
+            }
+        }
+        bytes
+    }
+
+    /// Assemble, wrap in a function, run, print.
+    fn run_asm<'h>(mc: &mut Mutation<'h>, items: &[I], constants: &[Value<'h>]) -> String {
+        let bytes = assemble(items);
+        let table = mc.alloc(ObjectType::Vector, constants.len());
+        for (i, c) in constants.iter().enumerate() {
+            mc.set_slot(table, i, *c);
+        }
+        let name = mc.intern("TEST");
+        let f = code::make_function(mc, &bytes, table, Value::NIL, 16, name);
+        match run_now(mc, f, 100_000) {
+            Ok(v) => crate::printer::print(mc, v),
+            Err(e) => format!("; {e}"),
+        }
+    }
 
     /// Assemble a function with no constants.
     fn asm<'h>(mc: &mut Mutation<'h>, body: &[(Op, i32, i32)]) -> Value<'h> {
@@ -1247,6 +1795,356 @@ mod tests {
         assert!(message.contains("interpreted closure"), "{message}");
     }
 
+    /// `(block out (return-from out 42) 99)` — the 99 is never reached.
+    #[test]
+    fn a_block_can_be_left_early() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let name = mc.intern("OUT");
+            run_asm(
+                mc,
+                &[
+                    Mark(Op::Block, 0, "after"),
+                    Ins(Op::Fix, 42, 0),
+                    Ins(Op::Retfrom, 0, 0),
+                    Ins(Op::Fix, 99, 0), // unreachable
+                    Ins(Op::Unmark, 0, 0),
+                    Label("after"),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[name],
+            )
+        });
+        assert_eq!(out, "42");
+    }
+
+    /// And a block left the ordinary way drops its record and keeps its
+    /// value, which is the path that has nothing to do with unwinding.
+    #[test]
+    fn a_block_left_normally_keeps_its_value() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let name = mc.intern("OUT");
+            run_asm(
+                mc,
+                &[
+                    Mark(Op::Block, 0, "after"),
+                    Ins(Op::Fix, 7, 0),
+                    Ins(Op::Unmark, 0, 0),
+                    Label("after"),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[name],
+            )
+        });
+        assert_eq!(out, "7");
+    }
+
+    /// `catch` and `throw` find each other by tag at run time rather than
+    /// lexically, which is the whole difference from `block`.
+    #[test]
+    fn a_throw_finds_its_catch() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let tag = mc.intern("DONE");
+            run_asm(
+                mc,
+                &[
+                    Ins(Op::Const, 0, 0),
+                    To(Op::Catch, "after"),
+                    Ins(Op::Const, 0, 0),
+                    Ins(Op::Fix, 5, 0),
+                    Ins(Op::Throw, 0, 0),
+                    Ins(Op::Fix, 99, 0),
+                    Ins(Op::Unmark, 0, 0),
+                    Label("after"),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[tag],
+            )
+        });
+        assert_eq!(out, "5");
+    }
+
+    #[test]
+    fn a_throw_with_no_catch_says_so() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let tag = mc.intern("NOWHERE");
+            run_asm(
+                mc,
+                &[
+                    Ins(Op::Const, 0, 0),
+                    Ins(Op::Fix, 1, 0),
+                    Ins(Op::Throw, 0, 0),
+                ],
+                &[tag],
+            )
+        });
+        assert!(out.contains("no exit named NOWHERE"), "{out}");
+    }
+
+    /// A cleanup runs while the unwind is in flight, and the unwind then
+    /// carries on. The value thrown must survive the detour.
+    #[test]
+    fn a_cleanup_runs_during_a_throw_and_the_throw_continues() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let tag = mc.intern("DONE");
+            let flag = mc.intern("*RAN*");
+            run_asm(
+                mc,
+                &[
+                    Ins(Op::Const, 0, 0),
+                    To(Op::Catch, "caught"),
+                    To(Op::Protect, "cleanup"),
+                    Ins(Op::Const, 0, 0),
+                    Ins(Op::Fix, 5, 0),
+                    Ins(Op::Throw, 0, 0),
+                    Label("cleanup"),
+                    Ins(Op::T, 0, 0),
+                    Ins(Op::Gset, 1, 0),
+                    Ins(Op::Pop, 0, 0),
+                    Ins(Op::Unprotect, 0, 0),
+                    Label("caught"),
+                    // The thrown value is on the stack; add the flag to show
+                    // the cleanup ran before the catch was reached.
+                    Ins(Op::Gref, 1, 0),
+                    Ins(Op::Prim, 0, 0), // (+) => 0, just to use the value
+                    Ins(Op::Pop, 0, 0),
+                    Ins(Op::Gref, 1, 0),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[tag, flag],
+            )
+        });
+        assert_eq!(out, "T", "the cleanup did not run");
+    }
+
+    /// Chapter 20's test, compiled: cleanups run innermost first.
+    #[test]
+    fn nested_cleanups_run_innermost_first() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let tag = mc.intern("DONE");
+            let order = mc.intern("*ORDER*");
+            let inner = mc.intern("INNER");
+            let outer = mc.intern("OUTER");
+            run_asm(
+                mc,
+                &[
+                    Ins(Op::Nil, 0, 0),
+                    Ins(Op::Gset, 1, 0),
+                    Ins(Op::Pop, 0, 0),
+                    Ins(Op::Const, 0, 0),
+                    To(Op::Catch, "caught"),
+                    To(Op::Protect, "outer-cleanup"),
+                    To(Op::Protect, "inner-cleanup"),
+                    Ins(Op::Const, 0, 0),
+                    Ins(Op::Fix, 1, 0),
+                    Ins(Op::Throw, 0, 0),
+                    Label("inner-cleanup"),
+                    Ins(Op::Const, 2, 0),
+                    Ins(Op::Gref, 1, 0),
+                    Ins(Op::Prim, 6, 2), // CONS
+                    Ins(Op::Gset, 1, 0),
+                    Ins(Op::Pop, 0, 0),
+                    Ins(Op::Unprotect, 0, 0),
+                    Label("outer-cleanup"),
+                    Ins(Op::Const, 3, 0),
+                    Ins(Op::Gref, 1, 0),
+                    Ins(Op::Prim, 6, 2),
+                    Ins(Op::Gset, 1, 0),
+                    Ins(Op::Pop, 0, 0),
+                    Ins(Op::Unprotect, 0, 0),
+                    Label("caught"),
+                    Ins(Op::Pop, 0, 0),
+                    Ins(Op::Gref, 1, 0),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[tag, order, inner, outer],
+            )
+        });
+        assert_eq!(out, "(OUTER INNER)");
+    }
+
+    /// `(handler-case (error "boom") (error () 'caught))`, with the clause
+    /// dispatch as ordinary compiled code — the VM only knows *that* a
+    /// handler is here, never which conditions it wants.
+    #[test]
+    fn a_handler_catches_a_signalled_error() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let clauses = mc.intern("CLAUSES");
+            let caught = mc.intern("CAUGHT");
+            let boom = mc.alloc_constant_string("boom");
+            run_asm(
+                mc,
+                &[
+                    Mark(Op::Handler, 0, "handle"),
+                    Ins(Op::Const, 2, 0),
+                    Ins(Op::Prim, 40, 1), // ERROR
+                    Ins(Op::Unmark, 0, 0),
+                    To(Op::Jmp, "done"),
+                    Label("handle"),
+                    // The condition arrives on the stack. A real dispatch
+                    // would test its type; this one takes everything.
+                    Ins(Op::Pop, 0, 0),
+                    Ins(Op::Const, 1, 0),
+                    Label("done"),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[clauses, caught, boom],
+            )
+        });
+        assert_eq!(out, "CAUGHT");
+    }
+
+    #[test]
+    fn an_unhandled_error_stops_the_machine() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let boom = mc.alloc_constant_string("boom");
+            run_asm(
+                mc,
+                &[
+                    Ins(Op::Const, 0, 0),
+                    Ins(Op::Prim, 40, 1),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[boom],
+            )
+        });
+        assert!(out.contains("boom"), "{out}");
+    }
+
+    /// `(multiple-value-list (values 1 2))` in instructions: VALUES sets the
+    /// register, MVSAVE turns whatever the last form produced into a list.
+    #[test]
+    fn values_can_be_collected() {
+        assert_eq!(
+            run(&[
+                (Op::Fix, 1, 0),
+                (Op::Fix, 2, 0),
+                (Op::Values, 2, 0),
+                (Op::Mvsave, 0, 0),
+                (Op::Ret, 0, 0),
+            ]),
+            "(1 2)"
+        );
+    }
+
+    /// One value is the ordinary case and must cost nothing: the register
+    /// keeps saying UNBOUND, and MVSAVE builds the list only when asked.
+    #[test]
+    fn one_value_leaves_the_register_alone() {
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let f = asm(mc, &[(Op::Fix, 9, 0), (Op::Values, 1, 0), (Op::Ret, 0, 0)]);
+            let v = run_now(mc, f, 100).expect("runs");
+            assert_eq!(crate::printer::print(mc, v), "9");
+            assert_eq!(mc.register(Register::Values), Value::UNBOUND);
+        });
+    }
+
+    /// Calling a primitive through its function cell, which is what
+    /// `(funcall #'+ 1 2)` compiles to when the function is a value rather
+    /// than a name.
+    #[test]
+    fn a_primitive_can_be_called_through_its_symbol() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            primitives::install(mc);
+            let plus = mc.intern("+");
+            run_asm(
+                mc,
+                &[
+                    Ins(Op::Gfref, 0, 0),
+                    Ins(Op::Fix, 1, 0),
+                    Ins(Op::Fix, 2, 0),
+                    Ins(Op::Call, 2, 0),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[plus],
+            )
+        });
+        assert_eq!(out, "3");
+    }
+
+    /// `(multiple-value-call #'+ (values 1 2) (values 3 4))` => 10.
+    #[test]
+    fn multiple_value_call_spreads_every_value() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            primitives::install(mc);
+            let plus = mc.intern("+");
+            run_asm(
+                mc,
+                &[
+                    Ins(Op::Gfref, 0, 0),
+                    Ins(Op::Fix, 1, 0),
+                    Ins(Op::Fix, 2, 0),
+                    Ins(Op::Values, 2, 0),
+                    Ins(Op::Mvsave, 0, 0),
+                    Ins(Op::Fix, 3, 0),
+                    Ins(Op::Fix, 4, 0),
+                    Ins(Op::Values, 2, 0),
+                    Ins(Op::Mvsave, 0, 0),
+                    Ins(Op::Mvcall, 2, 0),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[plus],
+            )
+        });
+        assert_eq!(out, "10");
+    }
+
+    /// `multiple-value-prog1`: hold the first form's values across the rest.
+    #[test]
+    fn prog1_holds_its_values_across_what_follows() {
+        assert_eq!(
+            run(&[
+                (Op::Fix, 1, 0),
+                (Op::Fix, 2, 0),
+                (Op::Values, 2, 0),
+                (Op::Mvsave, 0, 0),
+                // something else happens, producing one value
+                (Op::Fix, 99, 0),
+                (Op::Pop, 0, 0),
+                (Op::Mvrestore, 0, 0),
+                (Op::Mvsave, 0, 0),
+                (Op::Ret, 0, 0),
+            ]),
+            "(1 2)"
+        );
+    }
+
+    /// Chapter 23's transparency, now a property of the unwinder: a block
+    /// left early carries every value out, not just the first.
+    #[test]
+    fn a_block_is_transparent_to_multiple_values() {
+        let mut heap = Heap::new();
+        let out = heap.mutate(|mc| {
+            let name = mc.intern("OUT");
+            run_asm(
+                mc,
+                &[
+                    Mark(Op::Block, 0, "after"),
+                    Ins(Op::Fix, 1, 0),
+                    Ins(Op::Fix, 2, 0),
+                    Ins(Op::Values, 2, 0),
+                    Ins(Op::Retfrom, 0, 0),
+                    Ins(Op::Unmark, 0, 0),
+                    Label("after"),
+                    Ins(Op::Mvsave, 0, 0),
+                    Ins(Op::Ret, 0, 0),
+                ],
+                &[name],
+            )
+        });
+        assert_eq!(out, "(1 2)");
+    }
+
     #[test]
     fn a_byte_that_is_not_an_instruction_halts_rather_than_running_on() {
         let mut heap = Heap::new();
@@ -1280,12 +2178,14 @@ mod tests {
         assert!(message.contains("without returning"), "{message}");
     }
 
-    /// Everything specified but not yet built says so by name, rather than
-    /// doing nothing and leaving a wrong answer to be explained later.
+    /// There is no "not implemented" arm left to test. The `match` on `Op`
+    /// in `step` is exhaustive, so the compiler is what now guarantees every
+    /// opcode in the table does something — which is a better test than this
+    /// one was.
     #[test]
-    fn an_unimplemented_opcode_names_itself() {
-        let message = run(&[(Op::Mvcall, 1, 0)]);
-        assert!(message.contains("MVCALL"), "{message}");
-        assert!(message.contains("not implemented"), "{message}");
+    fn every_opcode_is_implemented() {
+        for byte in 0..OPCODE_COUNT {
+            assert!(Op::from_u8(byte as u8).is_some());
+        }
     }
 }

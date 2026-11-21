@@ -558,6 +558,9 @@ struct Storage {
     pc: usize,
     sp: usize,
     fp: usize,
+    /// Where the innermost unwind record sits on the operand stack, or
+    /// `usize::MAX` for none. See `crate::vm::mark`.
+    mp: usize,
     /// Which half of the evaluator's cycle it is in. Not a `Value` — it is VM
     /// state rather than Lisp data, so the collector does not touch it.
     ///
@@ -999,6 +1002,16 @@ impl<'h> Mutation<'h> {
         self.storage.fp = fp;
     }
 
+    /// Where the innermost unwind record sits, or `usize::MAX` for none.
+    pub fn mp(&self) -> usize {
+        self.storage.mp
+    }
+
+    /// Set it.
+    pub fn set_mp(&mut self, mp: usize) {
+        self.storage.mp = mp;
+    }
+
     /// Every interned symbol, as a list. A root.
     pub fn obarray(&self) -> Value<'h> {
         Value::from_bits(self.storage.obarray)
@@ -1102,6 +1115,7 @@ impl Heap {
                 pc: 0,
                 sp: 0,
                 fp: 0,
+                mp: usize::MAX,
                 mode: 0,
                 soft_limit: words,
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),

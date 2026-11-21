@@ -217,9 +217,9 @@ an interpreter structurally cannot.
 | `CATCH o:s16` | 3 | pop a tag, push a catch record; a `THROW` to it resumes at `here + o` |
 | `THROW` | 1 | pop a value and a tag, unwind |
 | `PROTECT o:s16` | 3 | push an unwind-protect record whose cleanup is at `here + o` |
-| `UNPROTECT` | 1 | pop it and run the cleanup |
-| `HANDLER k:u16 o:s16` | 5 | push a handler record with the clauses `constants[k]` |
-| `UNHANDLER` | 1 | pop it |
+| `UNPROTECT` | 1 | a cleanup has finished: take the paused unwind back out and carry on |
+| `HANDLER k:u16 o:s16` | 5 | push a handler record; `constants[k]` is the clause list, for the debugger |
+| `UNMARK` | 1 | drop the innermost record — what a `block`, `catch`, `tagbody` or `handler-case` left normally does |
 | `TAG k:u16 o:s16` | 5 | a `tagbody` marker, emitted **only** when a closure could `go` to it from outside |
 | `GO d:u8 i:u8` | 3 | the non-local case |
 
@@ -229,14 +229,68 @@ escaped, where no depth is knowable. Treating both cases alike is slower and
 is one mechanism; specialising the local case to a `JMP` plus some unwinding
 is a later pass with a profile attached.
 
+### What the records look like
+
+Not objects on a cons list, as the interpreter's frames are — seven slots on
+the operand stack, chained to each other by index through the `mp` register.
+Pushing one allocates nothing.
+
+| slot | |
+| --- | --- |
+| `PREV` | the index of the next record down, or −1 |
+| `KIND` | block, catch, tag, protect, handler, or paused |
+| `DATUM` | the marker, the tag, the clause list, or the cleanup's address |
+| `FP` `PC` `FUNCTION` `ENV` | enough to carry on from, which is a frame by another name |
+
+The chain is not redundant with the stack order. Ordinary values sit between
+records and nothing distinguishes a record slot from a value slot by looking,
+so the chain is what makes finding the next one down a read rather than a
+search.
+
+### Three corrections this made to the paragraphs above
+
+Written while implementing, because the plan was wrong in three ways and the
+book says to record that rather than quietly fix it.
+
+**`UNHANDLER` became `UNMARK`.** It was specified for `handler-case` alone.
+Block, catch and tagbody turn out to need exactly the same instruction —
+*drop the innermost record, keeping the value above it* — so there is one
+rather than four.
+
+**A `HANDLER` record stops every condition**, and the compiled clause
+dispatch it resumes into decides whether this one was wanted, re-signalling
+if not. The alternative was teaching the VM what a `handler-case` clause
+looks like, which rule 1 puts above the primitive table, not below it. The
+datum is kept for the debugger and is not consulted.
+
+**`unwind-protect` compiles its cleanup twice.** Once inline for the normal
+path, once as the fragment the unwinder jumps to. When an unwind meets a
+`PROTECT` record it puts everything it is carrying — target, value, values —
+into a `PAUSED` record and jumps to the cleanup; the fragment ends in
+`UNPROTECT`, which takes it all back out and carries on. Sharing one copy
+would have needed a return address for the cleanup, which is a frame, which
+is what this design is trying not to allocate.
+
 ### Multiple values
 
 | | bytes | |
 | --- | --- | --- |
 | `VALUES n:u8` | 2 | pop *n*, push the primary (or `nil`), set the `Values` register |
 | `MVCALL n:u8` | 2 | `multiple-value-call` over *n* argument forms |
-| `MVSAVE` | 1 | hold the current values across what follows |
-| `MVRESTORE` | 1 | put them back — the two halves of `multiple-value-prog1` |
+| `MVSAVE` | 1 | **replace** the value on the stack with the list of every value the last form produced |
+| `MVRESTORE` | 1 | pop such a list and make it the current values again |
+
+`MVSAVE` has to pop before it pushes, and that is the one place the two
+machines differ in kind rather than in speed. The interpreter keeps the
+primary value in a register, so collecting every value reads two registers.
+Here the primary is on the *stack* and only the extras are in a register.
+Pushing the list without popping leaves the primary buried underneath, and
+the next instruction that pops a fixed number of things takes the wrong ones:
+`multiple-value-call` tried to call `(1 2)`.
+
+Both halves of `multiple-value-prog1` are `MVSAVE` and `MVRESTORE`, and
+`multiple-value-call` uses `MVSAVE` after each argument form. One instruction,
+two jobs, because both want the same thing.
 
 **The invariant, which is the whole of chapter 23 restated for a machine with
 no single delivery point:**

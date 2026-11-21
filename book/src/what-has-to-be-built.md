@@ -262,6 +262,7 @@ Each chapter answers one question.
 | 24 | [Why compile at all](part-3-compiling/24-why-compile-at-all.md) | The interpreter works — so what is a compiler actually for? |
 | 25 | [A machine made of instructions](part-3-compiling/25-a-machine-made-of-instructions.md) | What does compiled code actually look like, and what runs it? |
 | 26 | [Where is the variable?](part-3-compiling/26-where-is-the-variable.md) | How does an instruction say which value it means — and where does the speed come from? |
+| 27 | [Leaving early, again](part-3-compiling/27-leaving-early-again.md) | How does compiled code abandon a computation, and how does a cleanup run in the middle of one? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

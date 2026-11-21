@@ -135,8 +135,13 @@ pub enum Op {
     Unprotect = 27,
     /// Push a handler record with the clauses `constants[k]`.
     Handler = 28,
-    /// Pop it.
-    Unhandler = 29,
+    /// Drop the innermost unwind record: what a `block`, `catch`,
+    /// `tagbody` or `handler-case` that was left normally does.
+    ///
+    /// Specified as `UNHANDLER`, for `handler-case` alone. Writing the VM
+    /// showed that block, catch and tagbody need exactly the same
+    /// instruction and nothing else, so there is one rather than four.
+    Unmark = 29,
     /// A `tagbody` marker, emitted only when a tag can be reached from a
     /// closure that outlived it.
     Tag = 30,
@@ -189,7 +194,7 @@ const TABLE: &[(Op, &str, Operands)] = &[
     (Op::Protect, "PROTECT", Operands::S16),
     (Op::Unprotect, "UNPROTECT", Operands::None),
     (Op::Handler, "HANDLER", Operands::U16S16),
-    (Op::Unhandler, "UNHANDLER", Operands::None),
+    (Op::Unmark, "UNMARK", Operands::None),
     (Op::Tag, "TAG", Operands::U16S16),
     (Op::Go, "GO", Operands::U8U8),
     (Op::Values, "VALUES", Operands::U8),
