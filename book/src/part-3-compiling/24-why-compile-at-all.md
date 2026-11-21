@@ -192,9 +192,12 @@ a `for` loop. Lua does exactly this with 32-bit words and is not a slow
 language.
 
 The argument against it is memory, and it is specifically a **wasm32**
-argument. Packed bytes average a little under two bytes against eight, which
-is nothing at phase 1 — a few hundred kilobytes — and about six megabytes for
-a mature image with the environment in it. Three things make that worth
+argument. Packed bytes average **2.6 bytes against eight** — measured, once
+the instruction set was actually written out and a real function compiled by
+hand; the guess while deciding was two, which was optimistic and is corrected
+in `docs/bytecode.md`. So roughly three times smaller rather than four, which
+is nothing at phase 1 — a couple of hundred kilobytes — and a few megabytes
+for a mature image with the environment in it. Three things make that worth
 having: wasm32 is a 32-bit address space, so the ceiling is real rather than
 theoretical; a copying collector needs two semispaces, so every figure
 doubles; and `docs/design.md` has the whole image being *downloaded* in a
