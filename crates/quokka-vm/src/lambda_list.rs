@@ -16,7 +16,7 @@
 //!
 //! # Why this is a rewrite and not a new machine state
 //!
-//! Binding happens in `eval::Machine::bind_lambda_list`, which is ordinary
+//! Binding happens in [`bind`] below, which is ordinary
 //! Rust with no evaluator in reach. Calling the evaluator from inside it would
 //! put Lisp evaluation back on the Rust call stack, which chapter 2 and rule 4
 //! exist to prevent.
@@ -137,7 +137,7 @@ fn bad(detail: &'static str) -> EvalError {
 ///
 /// The returned lambda list contains only bare symbols, `&optional`, `&rest`,
 /// `&key` with `(keyword variable)` pairs, and `&allow-other-keys` —
-/// everything `bind_lambda_list` knows how to do without evaluating anything.
+/// everything [`bind`] knows how to do without evaluating anything.
 pub fn rewrite<'h>(
     mc: &mut Mutation<'h>,
     params: Value<'h>,
@@ -581,6 +581,203 @@ fn list_of<'h>(mc: &mut Mutation<'h>, items: &[Value<'h>]) -> Value<'h> {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Binding, which is the other half of a lambda list.
+//
+// `rewrite` above turns a lambda list into a simple one at closure-creation
+// time; this matches arguments against that simple form at call time. It
+// lives here rather than in `crate::eval` because **both machines need it**:
+// the interpreter when it applies a closure, and the bytecode VM when it
+// executes a CALL. They never run at the same time (#25), but they bind
+// parameters identically, and a second implementation would be a second
+// chance to disagree about `&key`.
+// ---------------------------------------------------------------------------
+
+/// Match arguments to a **simple** lambda list: bare symbols, `&optional`,
+/// `&rest`, and `&key` as `(keyword variable)` pairs.
+///
+/// Nothing here evaluates anything, which is the point —
+/// [`crate::lambda_list::rewrite`] has already turned every default form
+/// into a `let*` around the body, so this only has to decide *which* value
+/// each name gets, never *compute* one.
+///
+/// A parameter with no argument is bound to the unsupplied marker rather
+/// than to nil, because `(f)` and `(f nil)` have to be able to differ. The
+/// `let*` upstream turns the marker into the default.
+pub fn bind<'h>(
+    mc: &mut Mutation<'h>,
+    params: Value<'h>,
+    arguments: Value<'h>,
+) -> Result<(Vec<Value<'h>>, Vec<Value<'h>>), EvalError> {
+    let mut names = Vec::new();
+    let mut values = Vec::new();
+    let mut param = params;
+    let mut arg = arguments;
+    let mut required = 0usize;
+    let mut supplied = 0usize;
+    let mut section = 0u8; // 0 required, 1 optional, 2 rest, 3 key
+                           // `&rest` swallows everything left, so leftover arguments stop being
+                           // an error once one has been bound. `&key` still scans the same tail,
+                           // which is what CLHS says the two do together.
+    let mut has_rest = false;
+    let mut keys: Vec<(Value<'h>, Value<'h>)> = Vec::new();
+    let mut allow_other_keys = false;
+    let marker = mc.intern(crate::lambda_list::UNSUPPLIED);
+
+    while param.is_cons() {
+        let name = mc.car(param);
+        param = mc.cdr(param);
+
+        if mc.is_symbol(name) {
+            if mc.symbol_is(name, "&OPTIONAL") {
+                section = 1;
+                continue;
+            }
+            if mc.symbol_is(name, "&REST") || mc.symbol_is(name, "&BODY") {
+                let Some(rest_name) = (param.is_cons()).then(|| mc.car(param)) else {
+                    return Err(EvalError::BadSyntax {
+                        operator: "a lambda list",
+                        detail: "&rest wants a name after it",
+                    });
+                };
+                param = mc.cdr(param);
+                names.push(rest_name);
+                values.push(arg);
+                has_rest = true;
+                section = 2;
+                continue;
+            }
+            if mc.symbol_is(name, "&KEY") {
+                section = 3;
+                continue;
+            }
+            if mc.symbol_is(name, "&ALLOW-OTHER-KEYS") {
+                allow_other_keys = true;
+                continue;
+            }
+        }
+
+        if section == 3 {
+            // `(keyword variable)`, which is what the rewrite emits.
+            if !name.is_cons() {
+                return Err(EvalError::BadSyntax {
+                    operator: "a lambda list",
+                    detail: "&key wants (keyword variable) pairs here",
+                });
+            }
+            let keyword = mc.car(name);
+            let variable = mc.car(mc.cdr(name));
+            keys.push((keyword, variable));
+            continue;
+        }
+
+        if !mc.is_symbol(name) {
+            return Err(EvalError::BadSyntax {
+                operator: "a lambda list",
+                detail: "wants symbols for parameters",
+            });
+        }
+
+        if section == 0 {
+            required += 1;
+        }
+        if arg.is_cons() {
+            names.push(name);
+            values.push(mc.car(arg));
+            arg = mc.cdr(arg);
+            supplied += 1;
+        } else if section == 1 {
+            names.push(name);
+            values.push(marker);
+        } else {
+            return Err(EvalError::WrongArgumentCount {
+                name: "this function",
+                wanted: required,
+                got: supplied,
+            });
+        }
+    }
+
+    if !keys.is_empty() || allow_other_keys {
+        bind_keys(
+            mc,
+            &keys,
+            arg,
+            marker,
+            allow_other_keys,
+            &mut names,
+            &mut values,
+        )?;
+        return Ok((names, values));
+    }
+
+    if arg.is_cons() && !has_rest {
+        let mut extra = 0;
+        let mut cursor = arg;
+        while cursor.is_cons() {
+            extra += 1;
+            cursor = mc.cdr(cursor);
+        }
+        return Err(EvalError::WrongArgumentCount {
+            name: "this function",
+            wanted: names.len(),
+            got: names.len() + extra,
+        });
+    }
+    Ok((names, values))
+}
+
+/// Scan what is left of the argument list as `:keyword value` pairs.
+///
+/// CLHS says the *leftmost* occurrence of a keyword wins, which is why
+/// this takes the first match rather than the last, and that unknown
+/// keywords are an error unless `&allow-other-keys` was declared.
+fn bind_keys<'h>(
+    mc: &mut Mutation<'h>,
+    keys: &[(Value<'h>, Value<'h>)],
+    mut arg: Value<'h>,
+    marker: Value<'h>,
+    allow_other_keys: bool,
+    names: &mut Vec<Value<'h>>,
+    values: &mut Vec<Value<'h>>,
+) -> Result<(), EvalError> {
+    let mut given: Vec<(Value<'h>, Value<'h>)> = Vec::new();
+    while arg.is_cons() {
+        let keyword = mc.car(arg);
+        let rest = mc.cdr(arg);
+        if !rest.is_cons() {
+            return Err(EvalError::BadSyntax {
+                operator: "a function call",
+                detail: "odd number of keyword arguments",
+            });
+        }
+        given.push((keyword, mc.car(rest)));
+        arg = mc.cdr(rest);
+    }
+
+    if !allow_other_keys {
+        for (keyword, _) in &given {
+            if !keys.iter().any(|(k, _)| k == keyword) {
+                return Err(EvalError::BadSyntax {
+                    operator: "a function call",
+                    detail: "unknown keyword argument",
+                });
+            }
+        }
+    }
+
+    for (keyword, variable) in keys {
+        let found = given
+            .iter()
+            .find(|(k, _)| k == keyword)
+            .map(|(_, v)| *v)
+            .unwrap_or(marker);
+        names.push(*variable);
+        values.push(found);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,7 +810,7 @@ mod tests {
     }
 
     /// A default becomes a `let*` binding, and the parameter list left behind
-    /// is one `bind_lambda_list` can match without evaluating anything.
+    /// is one [`bind`] can match without evaluating anything.
     #[test]
     fn a_default_becomes_a_let_star() {
         assert_eq!(
