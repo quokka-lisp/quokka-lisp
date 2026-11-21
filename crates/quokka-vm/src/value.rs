@@ -519,5 +519,5 @@ impl fmt::Debug for Value<'_> {
 }
 
 #[cfg(test)]
-#[path = "tests/value.rs"]
+#[path = "unit/value.rs"]
 mod tests;

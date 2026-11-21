@@ -97,5 +97,5 @@ pub fn run_forms(source: &str, budget: u64) -> String {
 }
 
 #[cfg(test)]
-#[path = "tests/lib.rs"]
+#[path = "unit/lib.rs"]
 mod tests;

@@ -1556,5 +1556,5 @@ impl Heap {
 }
 
 #[cfg(test)]
-#[path = "tests/heap.rs"]
+#[path = "unit/heap.rs"]
 mod tests;

@@ -614,5 +614,5 @@ fn parse_fixnum(text: &str) -> Option<i64> {
 }
 
 #[cfg(test)]
-#[path = "tests/reader.rs"]
+#[path = "unit/reader.rs"]
 mod tests;

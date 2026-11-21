@@ -828,5 +828,5 @@ fn to_vec<'h>(mc: &Mutation<'h>, list: Value<'h>) -> Vec<Value<'h>> {
 }
 
 #[cfg(test)]
-#[path = "tests/primitives.rs"]
+#[path = "unit/primitives.rs"]
 mod tests;

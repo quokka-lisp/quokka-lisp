@@ -129,7 +129,9 @@ build it as a site, but mdBook is not required for anything and is not in CI.
 4. **The VM must be able to yield.** The interpreter runs in slices and returns control to its caller (the browser event loop). No unbounded blocking loops in the core. Execution state therefore lives in our heap as explicit frames, never on the Rust call stack — no recursive `eval`. The caller decides when a slice ends by passing a step budget to `run_slice`; the VM has no clock and no yield callback. Slicing must stay semantically invisible: collect on allocation rather than on slice boundaries, and never expose the remaining budget to Lisp. See `crates/quokka-vm/src/slice.rs`.
 5. **The tier 0 rule.** Lisp sources for the compiler and core library use only tier 0 of the CL subset: no `loop`, no CLOS, only basic `format`, no `progv`, `load-time-value` or `symbol-macrolet`. The phase 0 interpreter only needs to support tier 0.
 6. **Common Lisp semantics.** Quokka is a CL subset (a Lisp-2), not a new dialect. Where Quokka implements a CL feature, behaviour must match SBCL. Quokka-specific extensions go in their own packages, never in `COMMON-LISP`.
-7. **Stay comprehensible.** Budget: the Rust core stays under 15k lines. Prefer clear code over clever code, keep dependencies few and permissively licensed, and justify every `unsafe` block with a comment explaining why it is sound.
+7. **Stay comprehensible.** Budget: the Rust core stays under **15,000 lines**, which `scripts/check-budget.sh` enforces in CI. Prefer clear code over clever code, keep dependencies few and permissively licensed, and justify every `unsafe` block with a comment explaining why it is sound.
+
+   **Tests do not count, and live in directories of their own.** The budget is about how much of the system a person must read to understand it; a test is evidence that it works, not part of how it works. A `#[test]` outside the two directories in *Where tests live* fails the build.
 8. **Licence.** MIT. Do not add dependencies or copied code with incompatible (e.g. copyleft) licences.
 9. **Primitives are bounded.** A step budget only bounds time if a single step is short, and once control is inside a Rust primitive nothing can interrupt it. Every primitive must either complete quickly or be chunked so it can be resumed across slices. A primitive whose cost grows with the size of its argument — sorting, searching, big-number arithmetic, hashing a large string — needs a plan for this before it is added.
 
@@ -140,6 +142,22 @@ build it as a site, but mdBook is not required for anything and is not in CI.
 - **GC torture mode:** a build or runtime flag that collects on every allocation. Run it in CI.
 - **WASM:** run the same tests under wasmtime (WASI) and in a headless browser.
 - Before Quokka has file hosts, Lisp source files are loaded through a single host primitive (`std::fs` natively, WASI in WASM tests, bundled files in the browser).
+
+## Where tests live
+
+Two directories with confusingly similar names, and they are different things
+rather than a duplication:
+
+| | | |
+| --- | --- | --- |
+| `crates/*/src/unit/` | **unit tests** | Pulled into their module by `#[cfg(test)] #[path = "unit/<name>.rs"] mod tests;`, so each file is still a child of what it tests and **sees private items**. That is why they are a separate *file* and not a separate crate: a separate crate reaches only the public API, and making `TABLE`, `Vm`'s fields and the heap's internals public to allow that would widen the public surface — which is itself part of what a reader has to understand. |
+| `crates/*/tests/` | **integration tests** | Cargo's own directory, compiled as a separate crate that reaches **only the public API**. That is the point of it: `differential.rs` drives the whole system through `run_forms` alone, exactly as a host does. |
+
+They are not merged, and the directory that could be renamed was. `src/unit/`
+was `src/tests/` until two directories called `tests` in one crate proved
+confusing to read. The integration test could technically move in beside the
+unit tests, since it happens to use a single public function — but that would
+give up the only check that the public entry point is sufficient on its own.
 
 ## Proposed layout (adjust if a better one emerges, and update this file)
 

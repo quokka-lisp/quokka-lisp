@@ -152,5 +152,5 @@ pub fn install_in<'h>(mc: &mut Mutation<'h>) -> Result<(), BootError> {
 }
 
 #[cfg(test)]
-#[path = "tests/boot.rs"]
+#[path = "unit/boot.rs"]
 mod tests;

@@ -77,5 +77,5 @@ impl Host for NullHost {
 }
 
 #[cfg(test)]
-#[path = "tests/host.rs"]
+#[path = "unit/host.rs"]
 mod tests;

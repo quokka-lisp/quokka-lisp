@@ -3,6 +3,9 @@
 //! A child module of it, included with `#[path]`, so it still sees the
 //! module's private items. That is why these are a separate *file* and not
 //! a separate crate — see CLAUDE.md for what the alternative would cost.
+//!
+//! `src/unit/` and `tests/` are different things: these see everything, and
+//! cargo's `tests/` is a separate crate that sees only the public API.
 
 use super::*;
 

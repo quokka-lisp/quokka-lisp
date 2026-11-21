@@ -108,5 +108,5 @@ impl Quokka {
 }
 
 #[cfg(test)]
-#[path = "tests/lib.rs"]
+#[path = "unit/lib.rs"]
 mod tests;

@@ -825,5 +825,5 @@ pub mod verify {
 }
 
 #[cfg(test)]
-#[path = "tests/code.rs"]
+#[path = "unit/code.rs"]
 mod tests;

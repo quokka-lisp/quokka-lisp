@@ -2344,7 +2344,7 @@ pub fn eval_now<'h>(
 }
 
 #[cfg(test)]
-#[path = "tests/eval.rs"]
+#[path = "unit/eval.rs"]
 mod tests;
 
 /// Lexical environments: a chain of scopes.

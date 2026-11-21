@@ -779,5 +779,5 @@ fn bind_keys<'h>(
 }
 
 #[cfg(test)]
-#[path = "tests/lambda_list.rs"]
+#[path = "unit/lambda_list.rs"]
 mod tests;

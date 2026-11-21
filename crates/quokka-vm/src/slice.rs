@@ -125,5 +125,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "tests/slice.rs"]
+#[path = "unit/slice.rs"]
 mod tests;

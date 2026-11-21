@@ -1184,5 +1184,5 @@ pub fn run_now<'h>(
 }
 
 #[cfg(test)]
-#[path = "tests/vm.rs"]
+#[path = "unit/vm.rs"]
 mod tests;
