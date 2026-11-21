@@ -238,9 +238,10 @@ learns to save itself to a file and start from one, and where two decisions
 made in Part I for unrelated reasons turn out to be what makes it possible.
 
 Phase 1's gate is met — an image saves, reloads and resumes a computation it
-stopped in the middle of — but phase 1 is **not finished**: the world inside
-an image is still interpreted. Chapter 29 says why installing compiled code
-into a running interpreter cannot work, and chapter 30 says where it can.
+stopped in the middle of — and since chapter 32 the world inside that image is
+compiled, with nothing interpreted left in it. What phase 1 still lacks is the
+check that the compiled world agrees with the interpreted one on every test
+file.
 
 Each chapter answers one question.
 
@@ -277,6 +278,7 @@ Each chapter answers one question.
 | 29 | [Compiling a whole file](part-4-the-compiler/29-compiling-a-whole-file.md) | Why can a compiler compile the whole system and not be allowed to install any of it? |
 | 30 | [Saving the world](part-5-the-image/30-saving-the-world.md) | How does a whole running system become a file, and come back? |
 | 31 | [Asking the outside world](part-5-the-image/31-asking-the-outside-world.md) | How does a program read a file when the VM may never wait? |
+| 32 | [A world made of bytecode](part-5-the-image/32-a-world-made-of-bytecode.md) | How does a system built by an interpreter end up with no interpreted code in it? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

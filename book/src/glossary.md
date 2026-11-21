@@ -564,6 +564,11 @@ so latent bugs fail on the first test run rather than the thousandth.
 characters, which are not references.
 ([3](part-1-substrate/03-what-is-alive.md))
 
+**Trampoline.** A small piece of code whose only job is to jump into
+something else. Quokka's host uses a four-instruction one to call a compiled
+Lisp function on the VM, so that a compiled image never needs the interpreter.
+([32](part-5-the-image/32-a-world-made-of-bytecode.md))
+
 **Unbound.** The marker a [symbol](#symbol)'s value or function cell holds before anything is assigned. Distinct from `nil`: the difference between "this variable does not exist" and "this variable holds the empty list", which Lisp signals an error about. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 **Uninterned symbol.** A symbol that is not in the [obarray](#obarray), so

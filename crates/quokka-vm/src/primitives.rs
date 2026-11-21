@@ -106,6 +106,8 @@ pub enum Prim {
     RewriteLambdaList = 53,
     ReadSource = 54,
     SpecialOperatorP = 55,
+    RewriteMacroLambdaList = 56,
+    MakeMacro = 57,
 }
 
 impl Prim {
@@ -357,6 +359,20 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         "%SPECIAL-OPERATOR-P",
         Arity::Exactly(1),
     ),
+    // `%rewrite-lambda-list` for a macro's parameters, which may destructure
+    // — `((a b) c)` — and may be dotted. The same rewrite the interpreter's
+    // `defmacro` does, so a compiled macro and an interpreted one take their
+    // arguments apart identically (#33).
+    (
+        Prim::RewriteMacroLambdaList,
+        "%REWRITE-MACRO-LAMBDA-LIST",
+        Arity::Exactly(2),
+    ),
+    // A closure, or a bare compiled function, as a **macro**: the same three
+    // slots, a different type — exactly what the interpreter's `defmacro`
+    // makes, with a compiled body. What a compiled `defmacro` stores in the
+    // function cell, and what `macrolet` holds for its body's extent (#33).
+    (Prim::MakeMacro, "%MAKE-MACRO", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -464,6 +480,25 @@ pub fn call<'h>(
 ) -> Result<Value<'h>, EvalError> {
     let args = to_vec(mc, arguments);
     call_slice(mc, index, &args)
+}
+
+/// `(params body)` in, `(simple-params rewritten-body names)` out, for the
+/// compiler — the rewrite the interpreter does on the way into a call, done
+/// once at compile time instead. See the table entries for why it lives here.
+fn rewrite_for_compiler<'h>(
+    mc: &mut Mutation<'h>,
+    args: &[Value<'h>],
+    kind: crate::lambda_list::Kind,
+) -> Result<Value<'h>, EvalError> {
+    let (params, body) = crate::lambda_list::rewrite(mc, args[0], args[1], kind)?;
+    let names = crate::lambda_list::names(mc, params)?;
+    let mut name_list = Value::NIL;
+    for n in names.iter().rev() {
+        name_list = mc.cons(*n, name_list);
+    }
+    let tail = mc.cons(name_list, Value::NIL);
+    let middle = mc.cons(body, tail);
+    Ok(mc.cons(params, middle))
 }
 
 /// Call primitive `index` with arguments already in a row.
@@ -780,20 +815,30 @@ pub fn call_slice<'h>(
                      the interpreter is the bootstrap evaluator and has no I/O",
         }),
         Prim::RewriteLambdaList => {
-            let (params, body) = crate::lambda_list::rewrite(
-                mc,
-                args[0],
-                args[1],
-                crate::lambda_list::Kind::Ordinary,
-            )?;
-            let names = crate::lambda_list::names(mc, params)?;
-            let mut name_list = Value::NIL;
-            for n in names.iter().rev() {
-                name_list = mc.cons(*n, name_list);
+            rewrite_for_compiler(mc, args, crate::lambda_list::Kind::Ordinary)
+        }
+        Prim::RewriteMacroLambdaList => {
+            rewrite_for_compiler(mc, args, crate::lambda_list::Kind::Macro)
+        }
+        Prim::MakeMacro => {
+            use crate::eval::closure;
+            let f = args[0];
+            if closure::is(mc, f) {
+                let params = mc.slot(f, closure::PARAMS);
+                let body = mc.slot(f, closure::BODY);
+                let env = mc.slot(f, closure::ENV);
+                return Ok(closure::make_macro(mc, params, body, env));
             }
-            let tail = mc.cons(name_list, Value::NIL);
-            let middle = mc.cons(body, tail);
-            Ok(mc.cons(params, middle))
+            if f.is_object() && mc.header(f).object_type == ObjectType::Function {
+                // A function compiled on its own, with nothing to capture:
+                // what `macrolet` makes at compile time.
+                let params = mc.slot(f, crate::code::function::PARAMS);
+                return Ok(closure::make_macro(mc, params, f, Value::NIL));
+            }
+            Err(EvalError::WrongType {
+                name: "%MAKE-MACRO",
+                wanted: "a closure or a compiled function",
+            })
         }
         Prim::Disassemble => {
             // A closure or the function inside one, so that both

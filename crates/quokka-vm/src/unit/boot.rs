@@ -1096,22 +1096,47 @@ mod compiler {
         );
     }
 
-    /// The guard. A special operator the compiler has no case for is a
-    /// compile error that names it — not, as before, a call to a function
-    /// named after it that compiled and failed only when run.
+    /// The guard, which can no longer be shown failing on a real operator:
+    /// since #33 the compiler has a case for every special operator the
+    /// interpreter has. So this checks that — each name in the interpreter's
+    /// own table, `eval::special::ALL`, reaches a case in the compiler rather
+    /// than the guard. A new special operator added to the interpreter and
+    /// not the compiler fails here, by name.
     #[test]
-    fn an_operator_the_compiler_lacks_is_a_compile_error() {
-        // `tagbody` was the first example here, until #37 compiled it. These
-        // two wait for #33, where the compiler is compiled and can call an
-        // expander it has just made.
-        for (source, name) in [
-            ("(macrolet ((m () 1)) (m))", "MACROLET"),
-            ("(defmacro m () 1)", "DEFMACRO"),
-        ] {
-            let out = compile_and_run(source);
-            assert!(out.starts_with("; compiling:"), "{out}");
-            assert!(out.contains(&format!("special operator {name}")), "{out}");
+    fn the_compiler_has_a_case_for_every_special_operator() {
+        // One heap for all of them: booting the compiler per operator made
+        // this the slowest test in the suite for no gain.
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        install_compiler(&mut heap).expect("the compiler loads");
+        for (name, _) in crate::eval::special::ALL {
+            let out = drive(&mut heap, &format!("(compile-form '({name}))")).err();
+            let out = out.unwrap_or_default();
+            assert!(
+                !out.contains("cannot compile the special operator"),
+                "{name}: {out}"
+            );
         }
+    }
+
+    /// `defmacro` compiles. Run by this *interpreted* compiler it defines a
+    /// compiled macro — and using that macro from interpreted code is then
+    /// refused, which is the one-evaluator rule doing its job; the compiled
+    /// image is where it is used.
+    #[test]
+    fn defmacro_compiles() {
+        assert_eq!(
+            compile_and_run("(defmacro twice (x) (list 'progn x x))"),
+            "TWICE"
+        );
+    }
+
+    /// And `macrolet` waits for a compiled compiler: this one is interpreted,
+    /// so it cannot call the expander it just compiled.
+    #[test]
+    fn macrolet_needs_a_compiled_compiler() {
+        let out = compile_and_run("(macrolet ((m () 1)) (m))");
+        assert!(out.contains("compiled closure"), "{out}");
     }
 
     /// The interpreter's own answer, read from the symbol.
@@ -1629,4 +1654,167 @@ fn the_compiler_compiles_itself() {
             .unwrap_or_else(|e| panic!("{file} does not compile: {e}"));
         assert!(tally.compiled > 0, "{file}: {tally:?}");
     }
+}
+
+/// **#33's build.** The prelude and the compiler, compiled and installed in
+/// two passes, with nothing interpreted left in the heap afterwards.
+#[test]
+fn a_world_can_be_built_with_nothing_interpreted_in_it() {
+    let mut heap = Heap::new();
+    let built = build_image(&mut heap).unwrap_or_else(|e| panic!("{e}"));
+    assert!(built.forms > 90, "{built:?}");
+    assert_eq!(heap.interpreted_code().count, 0);
+}
+
+/// The compiled world, built once and kept as image bytes; each test loads
+/// its own copy. Loading is cheap and building is not — and going through an
+/// image every time means every test below also tests saving and loading.
+fn compiled_image() -> &'static [u8] {
+    static IMAGE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    IMAGE.get_or_init(|| {
+        let mut heap = Heap::new();
+        build_image(&mut heap).unwrap_or_else(|e| panic!("{e}"));
+        crate::image::save(&mut heap)
+    })
+}
+
+fn compiled_world() -> Heap {
+    crate::image::load(compiled_image(), 1 << 22).expect("the compiled image loads")
+}
+
+/// Run `source` in a compiled world — compiled by the world's own compiler,
+/// on the VM — and print what each form gave.
+fn in_compiled_world(heap: &mut Heap, source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut host = crate::host::NullHost::default();
+    crate::vm::compile_and_run_forms(heap, source, 10_000_000, 2_000, &mut host, |mc, r| {
+        out.push(match r {
+            Ok(v) => print(mc, v),
+            Err(e) => format!("; {e}"),
+        });
+        true
+    })
+    .expect("reads");
+    out
+}
+
+/// **The phase 1 gate, in the compiled world.** An image built from compiled
+/// code is saved, loaded into a fresh heap, and used — and nothing in that
+/// heap is interpreted, nor does the interpreter run: every form goes through
+/// the image's compiled `compile-form` and the VM.
+#[test]
+fn a_compiled_world_loads_and_runs() {
+    let mut heap = compiled_world();
+    assert_eq!(heap.interpreted_code().count, 0);
+    assert_eq!(
+        in_compiled_world(
+            &mut heap,
+            "(length '(1 2 3)) \
+             (reverse '(a b c)) \
+             (defun sq (x) (* x x)) (sq 12) \
+             (when (> 3 2) 'yes) \
+             (handler-case (car 5) (type-error () 'caught)) \
+             (let ((n 0)) (tagbody top (setq n (+ n 1)) (if (< n 10) (go top))) n)"
+        ),
+        ["3", "(C B A)", "SQ", "144", "YES", "CAUGHT", "10"]
+    );
+}
+
+/// What a compiled compiler can do that an interpreted one could not: call
+/// expanders it compiled itself, for a user's `defmacro` and for `macrolet`.
+#[test]
+fn a_compiled_world_compiles_its_own_macros() {
+    let mut heap = compiled_world();
+    assert_eq!(
+        in_compiled_world(
+            &mut heap,
+            "(defmacro twice (f) (list 'progn f f)) \
+             (let ((n 0)) (twice (setq n (+ n 1))) n) \
+             (macrolet ((cube (x) (list '* x x x))) (cube 3)) \
+             (defstruct point x y) \
+             (let ((p (make-point :x 1 :y 2))) (setf (point-x p) 42) (point-x p))"
+        ),
+        ["TWICE", "2", "27", "POINT", "42"]
+    );
+}
+
+/// The world stays compiled as it is worked in: defining a function and a
+/// macro leaves no interpreted code behind, because the image's compiler
+/// compiled both.
+#[test]
+fn working_in_a_compiled_world_keeps_it_compiled() {
+    let mut heap = compiled_world();
+    in_compiled_world(
+        &mut heap,
+        "(defun add1 (x) (+ x 1)) (defmacro swap-args (f a b) (list f b a))",
+    );
+    heap.collect();
+    let left = heap.interpreted_code();
+    assert_eq!(left.count, 0, "{left:?}");
+}
+
+/// Chapter 28 ended on two things that did not work, and said they would
+/// stop being errors once the prelude and the compiler were compiled. They
+/// have: compiled code calls `length`, and compiled code calls the compiler.
+#[test]
+fn the_two_refusals_of_chapter_28_are_gone() {
+    let mut heap = compiled_world();
+    let out = in_compiled_world(&mut heap, "(length '(1 2 3)) (compile-form '(+ 1 2))");
+    assert_eq!(out[0], "3");
+    assert_eq!(out[1], "#<compiled COMPILED-FORM>");
+}
+
+/// And the other side of #25's rule: the interpreter, handed a compiled
+/// world, cannot quietly run in it. It is refused at the first compiled
+/// function it meets — which in this world is all of them.
+#[test]
+fn the_interpreter_cannot_run_in_a_compiled_world() {
+    let mut heap = compiled_world();
+    let e = heap.mutate(|mc| {
+        let chars = Reader::chars_of("(length '(1 2))");
+        let mut reader = Reader::new(&chars);
+        let form = reader.read(mc).expect("reads").expect("a form");
+        crate::eval::eval_now(mc, form, 100_000).map(|_| ())
+    });
+    let text = format!("{}", e.expect_err("refused"));
+    assert!(text.contains("compiled closure"), "{text}");
+}
+
+/// "Resumes where it left off", in the compiled world: a compiled loop is
+/// stopped part-way, saved in an image, and finished in another heap.
+#[test]
+fn a_compiled_computation_resumes_from_an_image() {
+    use crate::heap::Register;
+    use crate::slice::{run_slice, Status};
+
+    let mut heap = compiled_world();
+    let mut host = crate::host::NullHost::default();
+    heap.mutate(|mc| {
+        let chars = Reader::chars_of(
+            "(let ((n 0)) (tagbody top (setq n (+ n 1)) (if (< n 500) (go top))) n)",
+        );
+        let mut reader = Reader::new(&chars);
+        let form = reader.read(mc).expect("reads").expect("a form");
+        mc.set_register(Register::Value, form);
+    });
+    crate::vm::call_global(&mut heap, "COMPILE-FORM", 10_000_000, 2_000, &mut host)
+        .expect("compiles");
+    heap.mutate(|mc| {
+        let f = mc.register(Register::Value);
+        crate::vm::Vm::start(mc, f, crate::value::Value::NIL);
+    });
+    let status = heap.mutate(|mc| run_slice(&mut crate::vm::Vm::resume(mc), 300));
+    assert_eq!(
+        status,
+        Status::Yielded,
+        "300 steps should not finish 500 trips"
+    );
+
+    let bytes = crate::image::save(&mut heap);
+    drop(heap);
+    let mut reloaded = crate::image::load(&bytes, 1 << 22).expect("loads");
+    let status = reloaded.mutate(|mc| run_slice(&mut crate::vm::Vm::resume(mc), 1_000_000));
+    assert!(matches!(status, Status::Done { .. }), "{status:?}");
+    let n = reloaded.mutate(|mc| print(mc, mc.register(Register::Value)));
+    assert_eq!(n, "500");
 }

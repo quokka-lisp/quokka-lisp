@@ -166,8 +166,10 @@ compile_cases! {
     // compiles without running anything. Step E compiles and runs form by
     // form, which is the order a file actually means.
     structures => "structures": Some("SETF does not know"),
-    // `macrolet`, which waits for #33's compiled compiler.
-    values => "values": Some("special operator MACROLET"),
+    // `macrolet`: this leg runs the *interpreted* bootstrap compiler, which
+    // cannot call an expander it has just compiled. The compiled compiler in
+    // a built image can (#33), and step E runs these files there.
+    values => "values": Some("reached a compiled closure"),
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.

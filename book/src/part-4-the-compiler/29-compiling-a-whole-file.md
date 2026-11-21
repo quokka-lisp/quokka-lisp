@@ -228,25 +228,23 @@ position again. The interpreter does not have to be able to call compiled code
 Built and tested. `--compile-file` works on any tier-0 file; the prelude and
 the compiler both compile clean and verify clean.
 
-Steps 4 and 5 of the sequence above are built too — chapter 30 is the image,
-and it saves, reloads and resumes. **Step 3 is not**, which means the world
-inside an image is still the interpreted one: an image is a faithful snapshot
-of whatever heap it is handed, and the only heap that exists is one built by
-interpreting `prelude.lisp`.
+Steps 3, 4 and 5 are built too. Chapter 30 is the image; chapter 32 is
+step 3, compiling the prelude and the compiler *and keeping the results*, in
+exactly the heap this chapter said it belonged in — one that is saved and
+abandoned straight afterwards.
 
-So the compiler's output is still proved correct by the verifier rather than
-by being executed. Closing that is
-[#33](https://github.com/quokka-lisp/quokka-lisp/issues/33), and after it the
-fourth leg of the differential tests — where an interpreted result and a
-compiled result must agree — is what will catch the cases the verifier cannot
-see, because a program can be perfectly well-formed and still compute the
-wrong thing.
+What is still missing is the fourth leg of the differential tests, where an
+interpreted result and a compiled result must agree across every test file.
+That is what will catch the cases the verifier cannot see, because a program
+can be perfectly well-formed and still compute the wrong thing.
 
 ---
 
-**References.** Queinnec, *Lisp in Small Pieces*, chapter 10, on the
-bootstrapping of a Lisp compiler written in Lisp, and what has to be true
-before the system can stand on its own output. Steele and Gabriel, *The
+**References.** Queinnec, *Lisp in Small Pieces*, chapter 9, on macros
+and the separation between the world a compiler expands in and the world its
+output runs in — the root of the bootstrap rule. Hart and Levin, *The New
+Compiler*, MIT AI Memo 39 (1962), for the first compiler brought up by
+running it in the interpreter of the language it compiles. Steele and Gabriel, *The
 Evolution of Lisp* (1993), §2.9, for how real Lisps have drawn the compile
 time / run time line and what `eval-when` exists to say about it. The CLHS
 entry for `compile-file`, §3.2.3, on *literal objects in compiled code* and

@@ -297,20 +297,13 @@ a process that never read a line of Lisp.
 
 Built, and phase 1's gate is met: images save, reload, and resume mid-computation.
 
-**Not built: the world in that image is still interpreted.** `prelude.lisp`
-was interpreted into it, so `length` in `world.qi` is a tree being walked, not
-bytecode. Chapter 29's second half — compiling the prelude and the compiler
-*and keeping the results* — is now possible, because a heap that is about to
-be written to a file and abandoned is exactly the heap where installing
-compiled code is safe. Nothing runs in it afterwards, so there is never a
-moment when half the system is compiled and something is still executing.
-
-That build is [#33](https://github.com/quokka-lisp/quokka-lisp/issues/33),
-and it has one genuine decision in it that a later chapter will have to make. It cannot be a single pass — compiling form 2 uses the interpreted
-`length` that compiling form 1 would have replaced — so it has to be two: compile
-everything first, then install everything. And the macros have to be installed
-*twice*, once interpreted so the compiler can expand with them and once
-compiled so that code in the finished image can.
+**When this chapter was written, the world in that image was still
+interpreted**: `prelude.lisp` had been interpreted into it, so `length` in
+`world.qi` was a tree being walked, not bytecode. Installing compiled code
+became possible here — a heap about to be written to a file and abandoned is
+exactly where it is safe — and chapter 32 does it, in two passes, with a scan
+that proves nothing interpreted survives. `--save-image` now builds that
+compiled world.
 
 ---
 

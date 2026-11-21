@@ -731,6 +731,10 @@ what was compiled — cannot be done here at all, and belongs to the image.
 Until then they are the right failure: a rule enforced from the day it is
 made, rather than one observed until something needs breaking it.
 
+*Since chapter 32 they are not errors any more.* In a built image the prelude
+and the compiler are compiled, and both forms above work — from compiled code,
+with the interpreter nowhere in the loop.
+
 ---
 
 **References.** Queinnec, *Lisp in Small Pieces*, chapters 6 and 7, for a

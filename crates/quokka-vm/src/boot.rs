@@ -94,6 +94,14 @@ const BOOT_BUDGET: u64 = 10_000_000;
 pub enum BootError {
     /// The prelude did not parse.
     Read(ReadError),
+    /// A built image still contains interpreted code: closures or macros
+    /// whose bodies are not compiled. See [`build_image`].
+    Interpreted {
+        /// How many.
+        count: usize,
+        /// The symbols whose function cell holds one.
+        names: Vec<String>,
+    },
     /// A prelude form signalled.
     Eval {
         /// Which form, counting from 1, so the file can be found by eye.
@@ -110,6 +118,15 @@ impl core::fmt::Display for BootError {
             BootError::Eval { form, error } => {
                 write!(f, "prelude form {form} failed: {error}")
             }
+            BootError::Interpreted { count, names } => write!(
+                f,
+                "the built image still holds {count} interpreted closures or macros{}",
+                if names.is_empty() {
+                    String::new()
+                } else {
+                    format!(", in the function cells of {}", names.join(", "))
+                }
+            ),
         }
     }
 }
@@ -270,9 +287,34 @@ pub enum Handled {
 /// baseline says it is an error (#37).
 ///
 /// `each` returns whether to carry on.
-pub fn compile_each<F>(
+pub fn compile_each<F>(heap: &mut crate::heap::Heap, source: &str, each: F) -> Result<(), ReadError>
+where
+    F: FnMut(usize, Result<Handled, EvalError>) -> bool,
+{
+    compile_each_in(heap, source, Mode::Check, each)
+}
+
+/// What a pass over a file is for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// Compile and verify, keep nothing, and evaluate each `defmacro` so the
+    /// forms after it can use it — `--compile-file` and the tests.
+    Check,
+    /// Compile *everything*, `defmacro` included, and keep every function on
+    /// `%BUILT` for [`build_image`] to run. The macros the compiler expands
+    /// with already exist, interpreted, from the boot.
+    Build,
+}
+
+/// The symbol whose value holds the functions pass 1 compiled, while pass 2
+/// waits to run them. A global so that it is a root: the list must survive
+/// the collections that compiling a hundred forms causes.
+const BUILT: &str = "%BUILT";
+
+fn compile_each_in<F>(
     heap: &mut crate::heap::Heap,
     source: &str,
+    mode: Mode,
     mut each: F,
 ) -> Result<(), ReadError>
 where
@@ -301,7 +343,7 @@ where
             Err(e) => Next::Unreadable(e),
             Ok(None) => Next::Done,
             Ok(Some(form)) => {
-                if form.is_cons() && mc.symbol_is(mc.car(form), "DEFMACRO") {
+                if mode == Mode::Check && form.is_cons() && mc.symbol_is(mc.car(form), "DEFMACRO") {
                     mc.set_register(Register::Value, form);
                     return Next::Interpret;
                 }
@@ -351,14 +393,128 @@ where
                     )));
                 }
                 crate::code::verify::function(mc, f)
-                    .map(|_| Handled::Compiled)
-                    .map_err(|e| EvalError::Malformed(format!("{e:?}")))
+                    .map_err(|e| EvalError::Malformed(format!("{e:?}")))?;
+                if mode == Mode::Build {
+                    let built = mc.intern(BUILT);
+                    let kept = mc.slot(built, crate::heap::symbol::VALUE);
+                    let kept = if kept == Value::UNBOUND {
+                        Value::NIL
+                    } else {
+                        kept
+                    };
+                    let kept = mc.cons(f, kept);
+                    mc.set_slot(built, crate::heap::symbol::VALUE, kept);
+                }
+                Ok(Handled::Compiled)
             }),
         };
         if !each(form_number, outcome) {
             return Ok(());
         }
     }
+}
+
+/// What [`build_image`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Built {
+    /// Forms compiled in pass 1 and run in pass 2.
+    pub forms: usize,
+}
+
+/// Build a world in which **everything is compiled**: the prelude, its
+/// macros, and the compiler itself (#33).
+///
+/// The bootstrap's last step, the one chapter 29 said could not happen in a
+/// running interpreter and could happen in a heap that is about to be saved.
+///
+/// 1. Boot as usual: interpret the prelude and the compiler. Every function
+///    and macro now exists, interpreted.
+/// 2. **Pass 1**: compile every form of both, keeping each verified function.
+///    `defmacro` is compiled this time; the interpreted macros from step 1
+///    are what the compiler expands with meanwhile.
+/// 3. **Pass 2**: run every kept function on the VM, in file order. That is
+///    what installs — a compiled `(defun length ...)` stores a compiled
+///    closure. Nothing interpreted runs once this begins, and file order
+///    means a top-level form only calls what earlier forms have replaced.
+/// 4. **Prove it**: collect, then scan the heap. Any closure or macro whose
+///    body is not compiled code is a build failure naming who holds it.
+///
+/// Two passes rather than one because the compiler is itself interpreted Lisp
+/// that calls prelude functions: installing a compiled `length` part-way
+/// through pass 1 would hand the interpreter a compiled closure on the next
+/// form, which it refuses.
+pub fn build_image(heap: &mut crate::heap::Heap) -> Result<Built, BootError> {
+    use crate::heap::{symbol, Register};
+    use crate::value::Value;
+
+    install(heap)?;
+    install_compiler(heap)?;
+
+    heap.mutate(|mc| {
+        let built = mc.intern(BUILT);
+        mc.set_slot(built, symbol::VALUE, Value::NIL);
+    });
+
+    // Pass 1. The prelude, then the compiler, in the order they were loaded.
+    let mut sources = vec![PRELUDE];
+    sources.extend(COMPILER.iter().map(|(_, source)| *source));
+    let mut forms = 0usize;
+    for source in sources {
+        let mut failure = None;
+        let read = compile_each_in(heap, source, Mode::Build, |form, outcome| match outcome {
+            Ok(_) => {
+                forms += 1;
+                true
+            }
+            Err(error) => {
+                failure = Some(BootError::Eval { form, error });
+                false
+            }
+        });
+        read.map_err(BootError::Read)?;
+        if let Some(e) = failure {
+            return Err(e);
+        }
+    }
+
+    // Pass 2. The list was built by consing, so it is backwards.
+    heap.mutate(|mc| {
+        let built = mc.intern(BUILT);
+        let mut cursor = mc.slot(built, symbol::VALUE);
+        let mut in_order = Value::NIL;
+        while cursor.is_cons() {
+            in_order = mc.cons(mc.car(cursor), in_order);
+            cursor = mc.cdr(cursor);
+        }
+        mc.set_slot(built, symbol::VALUE, in_order);
+    });
+    let mut host = crate::host::NullHost::default();
+    for form in 1..=forms {
+        heap.mutate(|mc| {
+            let built = mc.intern(BUILT);
+            let list = mc.slot(built, symbol::VALUE);
+            mc.set_register(Register::Value, mc.car(list));
+            mc.set_slot(built, symbol::VALUE, mc.cdr(list));
+        });
+        crate::vm::run_sliced(heap, BOOT_BUDGET, 2_000, &mut host)
+            .map_err(|error| BootError::Eval { form, error })?;
+    }
+
+    // Leave nothing of the build behind, and then look.
+    heap.mutate(|mc| {
+        let built = mc.intern(BUILT);
+        mc.set_slot(built, symbol::VALUE, Value::UNBOUND);
+        mc.set_register(Register::Value, Value::NIL);
+    });
+    heap.collect();
+    let left = heap.interpreted_code();
+    if left.count > 0 {
+        return Err(BootError::Interpreted {
+            count: left.count,
+            names: left.names,
+        });
+    }
+    Ok(Built { forms })
 }
 
 #[cfg(test)]

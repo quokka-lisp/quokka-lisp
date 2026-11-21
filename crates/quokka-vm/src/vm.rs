@@ -347,7 +347,11 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// of #25's "one evaluator at a time", and the check below is where the
     /// decision stops being a plan and starts being enforced.
     fn compiled_body(&self, callee: Value<'h>) -> Option<Value<'h>> {
-        if !closure::is(self.mc, callee) {
+        // A macro as well as a closure: `macroexpand-1` is prelude Lisp that
+        // calls an expander with `apply`, and the interpreter has always let
+        // it (`closure::is_callable`). Once macros are compiled (#33), the VM
+        // must agree, or a compiled compiler could not expand anything.
+        if !closure::is_callable(self.mc, callee) {
             return None;
         }
         let body = self.mc.slot(callee, closure::BODY);
@@ -363,7 +367,7 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// frame still being there.
     fn enter(&mut self, callee: Value<'h>, args: &[Value<'h>], tail: bool) -> Transition {
         let Some(code_object) = self.compiled_body(callee) else {
-            if closure::is(self.mc, callee) {
+            if closure::is_callable(self.mc, callee) {
                 // An interpreted closure in a compiled program. Not a user
                 // error and not a missing feature: something has mixed the
                 // two evaluators, which #25 says must not happen.
@@ -1517,6 +1521,103 @@ pub fn run_sliced(
         }
     }
     Err(EvalError::BudgetExhausted)
+}
+
+/// Call the global function `name` with one argument — whatever is in the
+/// `Value` register — on the bytecode VM, and leave its result there.
+///
+/// How a host calls Lisp without an interpreter. The REPL used to compile a
+/// form by having the *interpreter* evaluate `(compile-form 'FORM)`, which
+/// cannot work once `compile-form` is compiled: the interpreter refuses to
+/// call compiled code, by design. So this assembles a four-instruction
+/// function by hand — a **trampoline**, the usual name for a small piece of
+/// code whose only job is to jump into something else —
+///
+/// ```text
+///     GFREF  0      the function cell of `name`
+///     CONST  1      the argument
+///     CALL   1
+///     RET
+/// ```
+///
+/// and runs it with [`run_sliced`]. The trampoline is verified like any other
+/// function before it runs.
+pub fn call_global(
+    heap: &mut crate::heap::Heap,
+    name: &str,
+    budget: u64,
+    slice: u64,
+    host: &mut dyn crate::host::Host,
+) -> Result<(), EvalError> {
+    heap.mutate(|mc| {
+        let argument = mc.register(Register::Value);
+        let symbol = mc.intern(name);
+        let constants = mc.alloc(ObjectType::Vector, 2);
+        mc.set_slot(constants, 0, symbol);
+        mc.set_slot(constants, 1, argument);
+        let mut bytes = Vec::new();
+        code::encode(&mut bytes, Op::Gfref, 0, 0);
+        code::encode(&mut bytes, Op::Const, 1, 0);
+        code::encode(&mut bytes, Op::Call, 1, 0);
+        code::encode(&mut bytes, Op::Ret, 0, 0);
+        let label = mc.intern("CALL-FROM-HOST");
+        let trampoline = code::make_function(mc, &bytes, constants, Value::NIL, 2, label);
+        mc.set_register(Register::Value, trampoline);
+    });
+    run_sliced(heap, budget, slice, host)
+}
+
+/// Read every form in `source`, compile it with the image's own compiler,
+/// run it, and hand the result to `each`.
+///
+/// The evaluator of a compiled image, and the bytecode VM's
+/// `eval::eval_forms`. Each form is compiled by calling the compiled
+/// `compile-form` through [`call_global`] and run with [`run_sliced`]; the
+/// interpreter is not involved at any point, which is #25's rule finally
+/// true of a running system rather than of a plan (#33).
+///
+/// A compile error is a condition signalled inside `compile-form`, so it
+/// arrives here as that form's error, like any other.
+pub fn compile_and_run_forms<F>(
+    heap: &mut crate::heap::Heap,
+    source: &str,
+    budget: u64,
+    slice: u64,
+    host: &mut dyn crate::host::Host,
+    mut each: F,
+) -> Result<(), crate::reader::ReadError>
+where
+    F: for<'h> FnMut(&mut Mutation<'h>, Result<Value<'h>, EvalError>) -> bool,
+{
+    let chars = crate::reader::Reader::chars_of(source);
+    let mut reader = crate::reader::Reader::new(&chars);
+    loop {
+        let read = heap.mutate(|mc| match reader.read(mc) {
+            Err(e) => Some(Err(e)),
+            Ok(None) => None,
+            Ok(Some(form)) => {
+                mc.set_register(Register::Value, form);
+                Some(Ok(()))
+            }
+        });
+        match read {
+            None => return Ok(()),
+            Some(Err(e)) => return Err(e),
+            Some(Ok(())) => {}
+        }
+        let outcome = call_global(heap, "COMPILE-FORM", budget, slice, host)
+            .and_then(|()| run_sliced(heap, budget, slice, host));
+        let carry_on = heap.mutate(|mc| {
+            let result = match &outcome {
+                Ok(()) => Ok(mc.register(Register::Value)),
+                Err(e) => Err(e.clone()),
+            };
+            each(mc, result)
+        });
+        if !carry_on {
+            return Ok(());
+        }
+    }
 }
 
 #[cfg(test)]

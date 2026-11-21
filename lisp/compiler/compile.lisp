@@ -258,6 +258,13 @@
                                env)))
 
 (defun %compile-rewritten-lambda (params body names env)
+  (%emit (list 'CLOSURE (%constant-index (%assemble-lambda params body names env)))))
+
+;;; Compile a function body on its own and hand back the verified function,
+;;; saving and restoring the accumulators of whatever was being compiled
+;;; around it. Split out of the above so that `macrolet` can have a function
+;;; *now*, at compile time, rather than an instruction that makes one later.
+(defun %assemble-lambda (params body names env)
   (let ((outer-code %code)
         (outer %constants)
         (outer-count %constant-count))
@@ -270,7 +277,7 @@
       (setq %code outer-code)
       (setq %constants outer)
       (setq %constant-count outer-count)
-      (%emit (list 'CLOSURE (%constant-index compiled))))))
+      compiled)))
 
 (defun %compile-arguments (arguments env)
   (if (endp arguments)
@@ -479,6 +486,77 @@
              (%emit (list 'MVSAVE))
              (%compile-for-effect (cddr form) env)
              (%emit (list 'MVRESTORE)))))
+
+;;; `(defmacro name lambda-list body...)`
+;;;
+;;; Until #33 this was refused: while the compiler is interpreted, a compiled
+;;; expander is one it could never call, so the bootstrap rule (#25) had the
+;;; interpreter evaluate every `defmacro`. Building a compiled image ends
+;;; that, because the compiler that will call these expanders is compiled
+;;; too.
+;;;
+;;; It compiles to what the interpreter's `defmacro` does by hand:
+;;;
+;;;     (progn (%set-symbol-function 'name (%make-macro <the expander>))
+;;;            'name)
+;;;
+;;; The expander is an ordinary compiled closure over the macro's argument
+;;; forms, its parameters rewritten in *macro* mode — destructuring, `&body`,
+;;; a dotted rest — by the same Rust the interpreter uses, so the two take a
+;;; call apart identically. `%make-macro` gives it the macro type, which is
+;;; what `macroexpand-1` looks for.
+(defun %compile-defmacro (form env)
+  (let ((name (second form))
+        (rewritten (%rewrite-macro-lambda-list (third form) (cdr (cddr form)))))
+    (%compile-callee '%set-symbol-function env)
+    (%compile-value name)
+    (%compile-callee '%make-macro env)
+    (%compile-rewritten-lambda (first rewritten) (second rewritten) (third rewritten) env)
+    (%emit (list 'CALL 1))
+    (%emit (list 'CALL 2))
+    (%emit (list 'POP))
+    (%compile-value name)))
+
+;;; `(macrolet ((name lambda-list body...) ...) body...)`
+;;;
+;;; Local macros, which exist only while the body is being *compiled*: the
+;;; expanders run in the compiler and nothing of them reaches the output.
+;;; Each is compiled here and now into a function, made a macro, and held in
+;;; `%local-macros` for the body's extent, where `%compile-cons` consults it
+;;; before any global macro.
+;;;
+;;; Only a compiled compiler can do this, because the expanders it makes are
+;;; compiled and it has to call them. Run by the interpreted compiler, the
+;;; first use is refused by the one-evaluator rule — which is the right
+;;; answer, and the reason this waited for #33.
+(setq %local-macros nil)
+
+(defun %compile-macrolet (form env tail)
+  (let ((outer %local-macros))
+    (setq %local-macros (%local-expanders (second form) outer))
+    (%compile-body (cddr form) env tail)
+    (setq %local-macros outer)))
+
+(defun %local-expanders (definitions macros)
+  (if (endp definitions)
+      macros
+      (%local-expanders (cdr definitions)
+                        (cons (cons (car (car definitions))
+                                    (%local-expander (car definitions)))
+                              macros))))
+
+(defun %local-expander (definition)
+  (let ((rewritten (%rewrite-macro-lambda-list (second definition) (cddr definition))))
+    (%make-macro (%assemble-lambda (first rewritten) (second rewritten) (third rewritten) nil))))
+
+;;; The local macro named HEAD, innermost first, or nil.
+(defun %local-macro (head)
+  (%find-macro head %local-macros))
+
+(defun %find-macro (head macros)
+  (cond ((endp macros) nil)
+        ((eq (car (car macros)) head) (cdr (car macros)))
+        (t (%find-macro head (cdr macros)))))
 
 ;;; `(tagbody tag-or-form...)` and `(go tag)`
 ;;;
@@ -722,6 +800,8 @@
           ((eq head '%handler-case) (%compile-handler-case form env tail))
           ((eq head 'tagbody) (%compile-tagbody form env))
           ((eq head 'go) (%compile-go form env))
+          ((eq head 'defmacro) (%compile-defmacro form env))
+          ((eq head 'macrolet) (%compile-macrolet form env tail))
           ((eq head 'catch) (%compile-catch form env))
           ((eq head 'throw) (%compile-throw form env))
           ((eq head 'unwind-protect) (%compile-unwind-protect form env))
@@ -747,6 +827,9 @@
           ;; fell through to the call below and became a call to a function
           ;; named after the operator, which compiled, verified, and failed
           ;; only when run — `handler-case` hid that way for a week.
+          ;; A local macro shadows a global one, so it is asked first.
+          ((and (symbolp head) (%local-macro head))
+           (%compile (apply (%local-macro head) (cdr form)) env tail))
           ((%special-operator-p head)
            (error (%string-append "the compiler cannot compile the special operator "
                                   (symbol-name head))))
@@ -784,6 +867,7 @@
 (defun compile-form (form)
   (setq %code nil)
   (setq %open nil)
+  (setq %local-macros nil)
   (%reset-constants)
   (%compile form nil t)
   (%emit (list 'RET))

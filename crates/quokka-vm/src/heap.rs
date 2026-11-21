@@ -1614,6 +1614,80 @@ impl Heap {
         Header::decode(self.storage.words[word_index])
     }
 
+    /// Every closure and macro whose body is **not** compiled code: what a
+    /// built image must not contain (#33).
+    ///
+    /// A linear walk of the whole heap, the way [`Heap::verify`] walks it.
+    /// Run after a collection, everything it finds is live — a copying
+    /// collector leaves nothing else behind — so a count of zero means the
+    /// world has no interpreted code left in it, reachable or otherwise.
+    ///
+    /// The names are the symbols whose *function cell* holds one, which is
+    /// where the bootstrap would have left it; an interpreted closure held
+    /// somewhere else counts but has no name to give.
+    pub fn interpreted_code(&self) -> InterpretedCode {
+        let words = &self.storage.words;
+        let type_of = |word: u64| -> Option<ObjectType> {
+            let target = Value::from_bits(word).word_index()?;
+            Header::decode(*words.get(target)?).map(|h| h.object_type)
+        };
+        let interpreted = |at: usize| -> bool {
+            match Header::decode(words[at]) {
+                Some(h) if matches!(h.object_type, ObjectType::Closure | ObjectType::Macro) => {
+                    let body = words[at + HEADER_WORDS + crate::eval::closure::BODY];
+                    type_of(body) != Some(ObjectType::Function)
+                }
+                _ => false,
+            }
+        };
+        let mut found = InterpretedCode::default();
+        let mut at = 0usize;
+        while at < words.len() {
+            if at == self.storage.static_end {
+                at = self.storage.dynamic_start;
+                if at >= words.len() {
+                    break;
+                }
+            }
+            let size = match Header::decode(words[at]) {
+                Some(header) => {
+                    if interpreted(at) {
+                        found.count += 1;
+                    }
+                    if header.object_type == ObjectType::Symbol {
+                        let cell = Value::from_bits(words[at + HEADER_WORDS + symbol::FUNCTION]);
+                        if let Some(target) = cell.word_index() {
+                            if target < words.len() && interpreted(target) {
+                                found.names.push(self.symbol_name_at(at));
+                            }
+                        }
+                    }
+                    HEADER_WORDS + header.slots
+                }
+                None => CONS_WORDS,
+            };
+            at += size;
+        }
+        found.names.sort();
+        found
+    }
+
+    /// A symbol's name, read straight out of the words — for reports made
+    /// outside a mutation, where there is no `Value` to ask.
+    fn symbol_name_at(&self, at: usize) -> String {
+        let words = &self.storage.words;
+        let Some(name) = Value::from_bits(words[at + HEADER_WORDS + symbol::NAME]).word_index()
+        else {
+            return String::from("?");
+        };
+        let Some(header) = Header::decode(words[name]) else {
+            return String::from("?");
+        };
+        (0..header.slots)
+            .filter_map(|i| char::from_u32(words[name + HEADER_WORDS + i] as u32))
+            .collect()
+    }
+
     /// The live words, for [`crate::image`] to write out.
     pub(crate) fn words(&self) -> &[u64] {
         &self.storage.words
@@ -1710,6 +1784,15 @@ impl Heap {
     pub(crate) fn advance_sequence(&mut self) {
         self.storage.sequence += 1;
     }
+}
+
+/// What [`Heap::interpreted_code`] found.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct InterpretedCode {
+    /// Closures and macros with a body that is not compiled code.
+    pub count: usize,
+    /// The symbols whose function cell holds one.
+    pub names: Vec<String>,
 }
 
 /// Everything about a heap that is not one of its words.

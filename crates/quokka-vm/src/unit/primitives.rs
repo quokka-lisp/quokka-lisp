@@ -89,7 +89,9 @@ fn the_table_order_is_pinned() {
             "%DISASSEMBLE",
             "%REWRITE-LAMBDA-LIST",
             "%READ-SOURCE",
-            "%SPECIAL-OPERATOR-P"
+            "%SPECIAL-OPERATOR-P",
+            "%REWRITE-MACRO-LAMBDA-LIST",
+            "%MAKE-MACRO"
         ]
     );
 }

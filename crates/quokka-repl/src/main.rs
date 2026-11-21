@@ -54,16 +54,18 @@ fn main() {
     // (rule 2), which is also what lets the browser put the same bytes in
     // OPFS or hand them to the user as a download.
     if args.len() >= 3 && args[1] == "--save-image" {
+        // The compiled world: prelude, macros and compiler all bytecode, and
+        // a heap scan to prove nothing interpreted survived (#33).
         let mut heap = Heap::new();
-        let prepared = quokka_vm::boot::install(&mut heap)
-            .and_then(|()| quokka_vm::boot::install_compiler(&mut heap));
-        if let Err(e) = prepared {
-            eprintln!("quokka: {e}");
+        if let Err(e) = quokka_vm::boot::build_image(&mut heap) {
+            eprintln!("quokka: building the image: {e}");
             std::process::exit(1);
         }
         // Any further arguments are source files loaded into the world before
         // it is saved, which is how an image comes to hold work rather than
-        // just a boot. Interpreted, because the prelude in this heap still is.
+        // just a boot. Compiled, by the image's own compiler — the
+        // interpreter has nothing left to run in here.
+        let mut native = NativeHost;
         for path in &args[3..] {
             let source = match std::fs::read_to_string(path) {
                 Ok(s) => s,
@@ -73,11 +75,12 @@ fn main() {
                 }
             };
             let mut failed = None;
-            let read = quokka_vm::eval::eval_forms(
+            let read = quokka_vm::vm::compile_and_run_forms(
                 &mut heap,
                 &source,
                 EVAL_BUDGET,
                 2_000,
+                &mut native,
                 |_mc, result| match result {
                     Ok(_) => true,
                     Err(e) => {
@@ -217,7 +220,9 @@ fn main() {
                 return;
             }
             Ok(_) => {
-                let output = if compiling {
+                let output = if from_image.is_some() {
+                    image_print(&mut heap, &line, &mut host)
+                } else if compiling {
                     compile_and_print(&mut heap, &line, showing, &mut host)
                 } else {
                     read_and_print(&mut heap, &line)
@@ -239,6 +244,30 @@ fn main() {
             }
         }
     }
+}
+
+/// Evaluate a line in a compiled image: every form compiled by the image's
+/// own compiler and run on the VM, `defmacro` included, and the interpreter
+/// not involved at all. There is no bootstrap rule here, because there is
+/// nothing left to bootstrap.
+fn image_print(heap: &mut Heap, line: &str, host: &mut NativeHost) -> String {
+    let mut out = String::new();
+    let read =
+        quokka_vm::vm::compile_and_run_forms(heap, line, EVAL_BUDGET, 2_000, host, |mc, result| {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            match result {
+                Ok(v) => out.push_str(&print(mc, v)),
+                Err(e) => out.push_str(&format!("; {e}")),
+            }
+            true
+        });
+    if let Err(e) = read {
+        out.push_str(&format!("; {e}"));
+    }
+    out.push('\n');
+    out
 }
 
 /// How many evaluator steps one line may take before giving up.

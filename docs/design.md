@@ -138,7 +138,7 @@ Decided: a subset of Common Lisp — a Lisp-2 with CL's names and semantics, gro
 **Bootstrap path**
 
 1. **Interpreter (phase 0):** a small tree-walking interpreter in Rust, grown just far enough to run the compiler's source: macros, closures, special variables, a minimal condition system.
-2. **First build:** the interpreter runs the CL compiler, which compiles itself and the core library to bytecode and saves the first image. Slow, but it happens once.
+2. **First build:** the interpreter runs the CL compiler, which compiles itself and the core library to bytecode and saves the first image. Slow, but it happens once. *Built: `boot::build_image` (#33) — two passes, compile everything with the interpreted compiler and then run the results on the VM, followed by a heap scan proving nothing interpreted survived.*
 3. **Fixpoint:** the compiled compiler, now running in the image, rebuilds itself. When its output matches the first build byte for byte, the system is self-hosting.
 4. **Afterwards:** the image rebuilds itself, in the browser too. The interpreter stays as a debugging fallback and a way to rebuild from source with nothing but `cargo`.
 
@@ -293,6 +293,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 - [x] **One evaluator at a time:** the interpreter bootstraps and is then cold; everything a running image evaluates is compiled first. Chosen over a mixed image, which would have bought an earlier running system with a boundary that every unwinding path had to understand. See #25.
 - [x] **Host interface:** requests in the heap, answered between slices — not a synchronous trait, not Rust `async`, not callbacks. Chosen before anything was built on the synchronous shape, and because it is the only one of the four an image can save. The interpreter has no I/O. See #35.
 - [x] **`tagbody` and `go`:** a `TAG` record that survives a `go` and resumes through a jump table, plus `JMP-TAG`, a one-step jump for a local `go` whose tagbody's record is innermost. Chosen over building `tagbody` from `catch`/`throw` (no VM change, about ten steps a `go`, and the opcodes left unused) and over local jumps with explicit unwinding computed by the compiler (which would need the compiler to track stack depth, where `JMP-TAG` lets the record do it). The bytecode specification's original plan did not survive implementation, and says so. See #37.
+- [x] **The image build is Rust, for now:** `boot::build_image` runs during the one moment the system is half built and neither evaluator is fully in charge, and phase 2's self-rebuilding image replaces it. Writing it in Lisp would still need a Rust driver to call it. See #33.
 - [x] **Compiled frames:** a contiguous stack in the heap, which the previous point makes free of boundary problems. See #25.
 - [x] **Variables:** the environment chain with `(depth, index)`, not flat closures. Deferred rather than rejected — it is compiler work, and the instruction set will change when it lands. See #25.
 - [x] **Literals are immutable:** source strings and symbol names are a separate heap type and refuse mutation, rather than relying on CLHS 3.7.1's "undefined". Chosen because undefined behaviour permits sharing without making it debuggable. See #26.

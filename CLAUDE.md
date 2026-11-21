@@ -39,6 +39,7 @@ wrappers — Lisp, not Rust.
 | `src/vm.rs` | the machine; implements `Steppable`, so `run_slice` drives it and rule 4 holds by construction |
 | `lisp/compiler/compile.lisp` | the compiler, 464 lines of tier-0 Lisp (#31) |
 | `src/image.rs` | save and load a whole heap, mid-computation included |
+| `boot::build_image` | the compiled world: two passes, then a heap scan proving nothing interpreted survives (#33) |
 | `src/host.rs` | **host requests**: a program asks the outside world by leaving a request in the heap and blocking; the host answers between slices (#35). First caller: `%read-source`. The interpreter has no I/O |
 
 The compiler compiles **every form of the prelude and every form of itself**
@@ -46,31 +47,27 @@ The compiler compiles **every form of the prelude and every form of itself**
 and installs none of it; chapter 29 says why installing cannot happen in a
 running interpreter.
 
-**374 tests**; **17 differential files agree with SBCL**. The Rust core is
-**12,688** lines of the 15,000 budget.
+**383 tests**; **17 differential files agree with SBCL**. The Rust core is
+**13,102** lines of the 15,000 budget.
 
 ## What is left in phase 1
 
-**The world inside an image is still interpreted.** `image::save` writes
-whatever heap it is given, and the only heap that exists is one built by
-interpreting the prelude — so `length` in a saved image is a tree being
-walked, not bytecode.
+**The image is compiled (#33).** `boot::build_image` boots, compiles the
+prelude and the compiler (pass 1), runs the results on the VM (pass 2), and
+scans the heap to prove no interpreted closure or macro survives.
+`defmacro` and `macrolet` compile; every special operator does. An image is
+used through `vm::compile_and_run_forms`, which calls the image's own
+`compile-form` with a trampoline (`vm::call_global`) and never touches the
+interpreter. `tagbody` is a `TAG` record that survives a `go` plus a jump
+table, and a local `go` is one `JMP-TAG` (38 opcodes).
 
-- **#33 · step D**: compile the world and *keep* the results. Two passes
-  (compile everything, then run everything on the VM, which is what installs),
-  and macros installed twice — interpreted so the compiler can expand with
-  them, compiled so the finished image can call them. **One decision is open:
-  whether the build driver lives in Rust or in Lisp. Raise it before writing.**
-- **step E**: the fourth differential leg, where interpreted and compiled
-  results must agree. The verifier cannot see a program that is well-formed
-  and computes the wrong thing.
-- **The compiler refuses `macrolet` and `defmacro`**, and compiles every
-  other special operator (#37). Those two wait for #33: their expanders must be
-  callable by the compiler, which is interpreted until then. `tagbody`
-  compiles to a `TAG` record that survives a `go` plus a jump table, and a
-  local `go` is one `JMP-TAG` (38 opcodes). Fifteen of seventeen differential
-  files compile completely; the `compile_cases!` list in
-  `tests/differential.rs` says what the other two wait on.
+- **step E**: the fourth differential leg — run every file in a compiled world
+  and compare with the baselines. The last piece of phase 1. Until it exists,
+  nothing checks the compiled world agrees with the interpreted one across the
+  suite, which is how #36's `error` drift went unnoticed. The compile leg in
+  `tests/differential.rs` still runs the *interpreted* bootstrap compiler; that
+  is why `values.lisp` is listed as waiting on a compiled closure (its
+  `macrolet`), and `structures.lisp` on being run, not just compiled.
 
 Also open: #34 (concurrency — what the code must not foreclose before phase
 3's processes; item 1, the host interface, is done as #35), #29 (build the VM
@@ -246,8 +243,8 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | REPL, compiling | `cargo run -p quokka-repl -- --compile` — loads `lisp/compiler/`, compiles each form and runs it on the bytecode VM |
 | REPL, showing the code | `cargo run -p quokka-repl -- --show-code` — the same, printing each form's instructions first |
 | Compile a file | `cargo run -p quokka-repl -- --compile-file lisp/prelude.lisp` — compiles and verifies every form, installing none of it (see `boot::compile_source`) |
-| Save an image | `cargo run -p quokka-repl -- --save-image world.qi [SRC...]` — boots, loads any sources, writes the world |
-| Start from an image | `cargo run -p quokka-repl -- --image world.qi` — does not interpret the prelude at all |
+| Save an image | `cargo run -p quokka-repl -- --save-image world.qi [SRC...]` — builds the **compiled** world (`boot::build_image`), runs any sources through it, writes it |
+| Start from an image | `cargo run -p quokka-repl -- --image world.qi` — every form compiled by the image's own compiler and run on the VM; the interpreter is never used |
 | GC torture | `cargo test -p quokka-vm --features gc-torture` — collects at every mutation boundary and verifies the heap afterwards |
 | Differential tests | `cargo test -p quokka-vm --test differential` (Quokka) · `./scripts/oracle.sh` (SBCL) |
 | Regenerate a baseline | `cargo run -p quokka-repl -- --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |

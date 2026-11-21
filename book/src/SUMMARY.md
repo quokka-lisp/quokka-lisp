@@ -49,6 +49,7 @@
 
 - [Saving the world](part-5-the-image/30-saving-the-world.md)
 - [Asking the outside world](part-5-the-image/31-asking-the-outside-world.md)
+- [A world made of bytecode](part-5-the-image/32-a-world-made-of-bytecode.md)
 
 ---
 

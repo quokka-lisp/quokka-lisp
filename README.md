@@ -63,7 +63,9 @@ quokka> (reverse '(1 2 3))
 
 That second start did not read `prelude.lisp`. It read a file of numbers into
 a vector and began — which is what the design means by *booting means loading
-an image, not running a build*.
+an image, not running a build*. And the world in that file is **compiled**: the
+prelude, every macro and the compiler are bytecode, every form typed is
+compiled by the image's own compiler, and the interpreter never runs.
 
 "Resumes where it left off" is the strong part, and it means what it says: a
 sixty-deep recursion stopped after forty steps, saved, loaded into a
@@ -101,27 +103,20 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `--compile` compiles each form and runs it on the VM, `--show-code` prints the instructions first |
 
-374 tests, green on native, under wasmtime, and with the GC torture mode on.
+383 tests, green on native, under wasmtime, and with the GC torture mode on.
 Seventeen Common Lisp files produce byte-identical output on Quokka natively,
-Quokka under WebAssembly, and SBCL. The Rust core is 12,688 lines of the
+Quokka under WebAssembly, and SBCL. The Rust core is 13,102 lines of the
 15,000-line budget.
 
 ### What does not exist yet
 
-**The world inside an image is still interpreted.** An image is a faithful
-snapshot of whatever heap it is handed, and the only heap that exists is one
-built by *interpreting* `prelude.lisp` — so `length` in a saved image is a
-tree being walked, not bytecode. The compiler can compile all of it, and is
-deliberately not allowed to install any of it: the compiler is itself
-interpreted Lisp that calls `length`, so replacing `length` mid-compile breaks
-the compiler on its next form.
-
-The way out is to compile into a heap that is immediately written to a file
-and abandoned, which needs two passes and is
-[#33](https://github.com/quokka-lisp/quokka-lisp/issues/33). After that the
-language is defined by a Lisp file rather than by
-`crates/quokka-vm/src/eval.rs`, and phase 1
-([#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)) is done.
+**Nothing yet runs the whole test suite in a compiled world.** An image built
+by `--save-image` is compiled through and through — the prelude, every macro,
+the compiler itself — and a heap scan proves nothing interpreted is left in
+it. What remains of phase 1
+([#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)) is the fourth
+leg of the differential tests: the seventeen files that agree with SBCL when
+interpreted must also agree when compiled.
 
 No packages — keywords exist, the rest is phase 2
 ([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why), which
@@ -137,7 +132,7 @@ condition system, and the rest is phase 3. No renderer and no editor — phases
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Thirty-seven chapters in five parts — the substrate, reading and
+afterwards. Thirty-eight chapters in five parts — the substrate, reading and
 running, the machine, the compiler, and the image — assuming no prior
 knowledge of language implementation, including what a garbage collector is,
 what `car` and `cdr` are, what an opcode is, and why a program would want to
