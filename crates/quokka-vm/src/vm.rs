@@ -524,14 +524,16 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// never gets here; this is the path for `(funcall #'values 1 2)`, where
     /// the function was a value rather than a name.
     fn intercept(&mut self, index: u32, args: &[Value<'h>], tail: bool) -> Option<Transition> {
-        if index == primitives::ERROR {
+        if index == primitives::index(primitives::Prim::Error) {
             let datum = args.first().copied().unwrap_or(Value::NIL);
             let rest = args.get(1..).unwrap_or(&[]);
             let condition = self.make_condition(datum, rest);
             return Some(self.start_unwind(condition, Value::NIL));
         }
-        if index == primitives::VALUES || index == primitives::VALUES_LIST {
-            let values: Vec<Value<'h>> = if index == primitives::VALUES {
+        if index == primitives::index(primitives::Prim::Values)
+            || index == primitives::index(primitives::Prim::ValuesList)
+        {
+            let values: Vec<Value<'h>> = if index == primitives::index(primitives::Prim::Values) {
                 args.to_vec()
             } else {
                 let mut out = Vec::new();

@@ -1686,7 +1686,7 @@ impl<'a, 'h> Machine<'a, 'h> {
         let mut function = function;
         let mut arguments = arguments;
         loop {
-            if function.as_primitive() == Some(primitives::FUNCALL) {
+            if function.as_primitive() == Some(primitives::index(primitives::Prim::Funcall)) {
                 if !arguments.is_cons() {
                     return self.fail(EvalError::WrongArgumentCount {
                         name: "FUNCALL",
@@ -1700,10 +1700,10 @@ impl<'a, 'h> Machine<'a, 'h> {
             }
             // `(values ...)` returns however many it was given, which is
             // the Values register and so the machine's business.
-            if function.as_primitive() == Some(primitives::VALUES) {
+            if function.as_primitive() == Some(primitives::index(primitives::Prim::Values)) {
                 return self.deliver_values(arguments);
             }
-            if function.as_primitive() == Some(primitives::VALUES_LIST) {
+            if function.as_primitive() == Some(primitives::index(primitives::Prim::ValuesList)) {
                 if !arguments.is_cons() {
                     return self.fail(EvalError::WrongArgumentCount {
                         name: "VALUES-LIST",
@@ -1717,7 +1717,7 @@ impl<'a, 'h> Machine<'a, 'h> {
             // `(error datum ...)` signals rather than returning, so it
             // unwinds the stack — which a primitive cannot do, for the same
             // reason one cannot make a call.
-            if function.as_primitive() == Some(primitives::ERROR) {
+            if function.as_primitive() == Some(primitives::index(primitives::Prim::Error)) {
                 let condition = match self.build_condition(arguments) {
                     Ok(c) => c,
                     Err(e) => return self.fail(e),
@@ -1728,7 +1728,7 @@ impl<'a, 'h> Machine<'a, 'h> {
             // Intercepted here for the same reason as funcall: the call itself
             // is the machine's business, and a primitive that wanted to make
             // one would have to run the evaluator from inside Rust.
-            if function.as_primitive() == Some(primitives::APPLY) {
+            if function.as_primitive() == Some(primitives::index(primitives::Prim::Apply)) {
                 match self.spread(arguments) {
                     Ok((f, args)) => {
                         function = f;

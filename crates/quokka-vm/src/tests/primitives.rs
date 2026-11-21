@@ -6,27 +6,28 @@
 
 use super::*;
 
-/// Both intercepted indices, not just one.
+/// The enum's discriminant is the table index, which is what every `Prim::X
+/// as u32` relies on — and what an image's stored primitive references mean.
 ///
-/// `APPLY` was first written as 25 — counted by eye, and the eye counted
-/// the `name:` fields of some error constructors too. The interception
-/// silently did not fire and `apply` reported that it should never have
-/// been called. A constant that names a table slot needs a test that it
-/// still names it.
+/// This replaces a test that pinned five hand-counted constants. It existed
+/// because `APPLY` was once written as 25, was really 21, and the
+/// interception silently never fired. There is nothing left to miscount, but
+/// the correspondence between a variant and its row is still an invariant and
+/// still worth checking.
 #[test]
-fn the_intercepted_indices_are_still_right() {
-    assert_eq!(TABLE[FUNCALL as usize].name, "FUNCALL");
-    assert_eq!(TABLE[APPLY as usize].name, "APPLY");
-    assert_eq!(TABLE[ERROR as usize].name, "ERROR");
-    assert_eq!(TABLE[VALUES as usize].name, "VALUES");
-    assert_eq!(TABLE[VALUES_LIST as usize].name, "VALUES-LIST");
+fn the_table_is_in_enum_order() {
+    for (index, (prim, name, _)) in TABLE.iter().enumerate() {
+        assert_eq!(*prim as usize, index, "{name} is out of place");
+        assert_eq!(Prim::from_u32(index as u32), Some(*prim));
+    }
+    assert_eq!(Prim::from_u32(TABLE.len() as u32), None);
 }
 
 /// Table order is part of the image format. This does not stop a reorder,
 /// but it makes one a deliberate act with a failing test attached.
 #[test]
 fn the_table_order_is_pinned() {
-    let names: Vec<&str> = TABLE.iter().map(|p| p.name).collect();
+    let names: Vec<&str> = TABLE.iter().map(|e| e.1).collect();
     assert_eq!(
         names,
         [
