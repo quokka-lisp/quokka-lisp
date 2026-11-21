@@ -283,6 +283,145 @@ So the standard's rule about not redefining `car`, which reads like
 bureaucracy, is precisely what makes it legal for arithmetic to compile to
 three instructions instead of a function-cell read and a call.
 
+## The two tables
+
+A question that comes up on first reading the source, and the answer is not
+obvious from either file: **where, exactly, does a compiled program meet the
+Rust?**
+
+There are two numbered tables in the system, and they are unrelated.
+
+| | what it is | how many | where |
+| --- | --- | --- | --- |
+| `Op` | the instructions the VM executes | 36 | `code.rs` |
+| the primitive table | Rust functions Lisp can call | 50 | `primitives.rs` |
+
+Nothing in the first table is callable from Lisp. Nothing in the second is
+executable by the VM. They are different layers, numbered separately, and the
+only thing joining them is **one instruction**:
+
+```
+  PRIM p, n
+```
+
+whose first operand is an index into the *second* table. That instruction is
+the entire door. In the VM it is nine lines:
+
+```rust
+Op::Prim => {
+    let args = self.pop_n(decoded.b as usize);
+    let index = decoded.a as u32;
+    ...
+    match primitives::call_slice(self.mc, index, &args) {
+        Ok(v) => self.push_fresh(v),
+        Err(e) => return self.fail(e),
+    }
+}
+```
+
+Pop *n* values, hand them and an index to `primitives::call_slice`, push what
+comes back. `(+ 2 3)` is `PRIM 0, 2`, because `+` is entry 0.
+
+### The second way in, which is the one that is easy to miss
+
+A primitive is also a **value**:
+
+```rust
+pub(crate) const fn primitive(index: u32) -> Value<'h> {
+    Value(((index as u64) << IMM_PAYLOAD_SHIFT) | SUBTAG_PRIMITIVE | TAG_IMMEDIATE, ...)
+}
+```
+
+An immediate (chapter 1) carrying the table index in its payload. Which is why
+a symbol's function cell can hold one, why `#'car` is a thing you can pass
+around, and why this works with no `PRIM` instruction anywhere in it:
+
+```
+  GFREF 0        ; push the function cell of +
+  FIX 1
+  FIX 2
+  CALL 2
+```
+
+`CALL` finds that the callee is not a compiled closure but a primitive value,
+pulls the index back out with `as_primitive()`, and ends up in the same
+`call_slice`. Same destination, two routes: **by name at compile time**, or
+**as a value at run time**.
+
+The compiler uses the first whenever it can, which is whenever the name is a
+`COMMON-LISP` symbol — the package-lock argument above. The second is what
+`(apply #'+ xs)` has to use, because there the function is a value nobody knew
+at compile time.
+
+### The third layer, which is most of the language
+
+Neither table holds `length`, `member`, `reverse` or `defstruct`. Those are in
+`lisp/prelude.lisp` — **55 definitions**, written in Lisp, compiled to
+instructions like anything else. So `(length v)` on a vector goes:
+
+```
+      (length v)         Lisp         a compiled function
+           │
+           ▼
+  (%sequence-length v)   primitive    PRIM 27, 1
+           │
+           ▼
+      header.slots       Rust
+```
+
+and `(length xs)` on a *list* does not reach Rust at all — the prelude walks
+the conses itself, in Lisp, and only the vector case needs the primitive:
+
+```lisp
+(defun length (sequence)
+  (cond ((null sequence) 0)
+        ((consp sequence)
+         (labels ((walk (rest n)
+                    (if (endp rest) n (walk (cdr rest) (+ n 1)))))
+           (walk sequence 0)))
+        (t (%sequence-length sequence))))
+```
+
+One function, one of whose two branches crosses into Rust and the other of
+which never leaves Lisp. That is rule 1 at the granularity of a single
+`cond`.
+
+Three layers, and only the middle one is a table of Rust functions. Rule 1 is
+the shape of this diagram: the primitive table is "the only door from Lisp
+into the host", and it has fifty entries because everything else was built
+above it instead.
+
+And **special operators are in neither table**. `if` is two jumps, `let` is a
+`BIND`, `block` is a record on the stack — the VM implements them as
+instructions and `primitives.rs` has never heard of them. Which is why
+"twenty-two special operators" and "fifty primitives" are not comparable
+numbers: they count different kinds of thing, and the first is a claim about
+the language where the second is a claim about the implementation.
+
+### One wart, since you have the file open
+
+`call_slice` uses the index to find the entry, checks the arity from it, and
+then dispatches like this:
+
+```rust
+match p.name {
+    "+" => fold(p.name, args, 0, |a, b| a.checked_add(b)),
+    "*" => fold(p.name, args, 1, |a, b| a.checked_mul(b)),
+    ...
+```
+
+**On the name.** A string comparison, after an index lookup that had already
+identified the entry uniquely. The table carries a name and an arity and no
+function pointer, so the index gets you the metadata and then the dispatch
+starts again from scratch.
+
+It has not mattered — the whole thing was reached from a tree-walking
+interpreter where this was lost in the noise. With a bytecode VM in front of
+it, it is the most obviously wasteful thing on the path, and the fix is to put
+a function pointer in the table beside the name. Written down here rather than
+done, because the honest reason to do it is a measurement nobody has taken
+yet.
+
 ## Three operators that compile to nothing
 
 The last thing worth seeing before the next chapter, because it is the
