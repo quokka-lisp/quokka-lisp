@@ -70,42 +70,9 @@ pub const COMPILER: &[(&str, &str)] = &[(
 ///
 /// Separate from [`install`] on purpose: see [`COMPILER`]. A REPL does not
 /// call this unless asked to; the image builder and the tests do.
-///
-/// **One `mutate` per form, and a collection between them when the heap asks
-/// for one.** Not a detail: collection cannot happen inside a mutation, and
-/// loading this file in a single one exhausted the heap the moment the
-/// compiler grew past a few hundred lines. The reader holds an offset into
-/// the text and no values, so it is free to live across the boundary.
 pub fn install_compiler(heap: &mut crate::heap::Heap) -> Result<(), BootError> {
-    for (file, source) in COMPILER {
-        let chars = Reader::chars_of(source);
-        let mut reader = Reader::new(&chars);
-        let mut form_number = 0usize;
-        loop {
-            form_number += 1;
-            let outcome = heap.mutate(|mc| match reader.read(mc) {
-                Err(e) => Some(Err(BootError::Read(e))),
-                Ok(None) => None,
-                Ok(Some(form)) => match eval_now(mc, form, BOOT_BUDGET) {
-                    Ok(_) => Some(Ok(())),
-                    Err(error) => {
-                        let _ = file;
-                        Some(Err(BootError::Eval {
-                            form: form_number,
-                            error,
-                        }))
-                    }
-                },
-            });
-            if heap.wants_collection() {
-                heap.collect();
-            }
-            match outcome {
-                None => break,
-                Some(Ok(())) => {}
-                Some(Err(e)) => return Err(e),
-            }
-        }
+    for (_file, source) in COMPILER {
+        load(heap, source)?;
     }
     Ok(())
 }
@@ -146,43 +113,38 @@ impl core::fmt::Display for BootError {
     }
 }
 
-/// Install the primitives and evaluate the prelude.
+/// Read the prelude and evaluate every form, in order.
 ///
-/// This is what every host calls: the REPL, the WASM console, and the tests.
-/// Afterwards the system is the one users see.
-///
-/// Forms are evaluated in order, each in its own `mutate`, which is what lets
-/// the collector run *between* them — a single `mutate` spanning the whole
-/// prelude would be one long allocation with no collection possible, which is
-/// exactly what rule 4 is against.
+/// Sliced, so the collector runs during a form as well as between them —
+/// see [`crate::eval::eval_forms`] and issue #32.
 pub fn install(heap: &mut crate::heap::Heap) -> Result<(), BootError> {
     heap.mutate(primitives::install);
+    load(heap, PRELUDE)
+}
 
-    let chars = Reader::chars_of(PRELUDE);
-    let mut reader = Reader::new(&chars);
+/// Load one source text, stopping at the first form that fails.
+fn load(heap: &mut crate::heap::Heap, source: &str) -> Result<(), BootError> {
     let mut form_number = 0usize;
-
-    loop {
+    let mut failure = None;
+    let read = crate::eval::eval_forms(heap, source, BOOT_BUDGET, 2_000, |_mc, result| {
         form_number += 1;
-        // Read and evaluate inside one `mutate`, because a `Value` cannot
-        // leave one. The reader itself holds no values — only an offset into
-        // the text — so it is free to live across the boundary.
-        let outcome = heap.mutate(|mc| match reader.read(mc) {
-            Err(e) => Some(Err(BootError::Read(e))),
-            Ok(None) => None,
-            Ok(Some(form)) => match eval_now(mc, form, BOOT_BUDGET) {
-                Ok(_) => Some(Ok(())),
-                Err(error) => Some(Err(BootError::Eval {
+        match result {
+            Ok(_) => true,
+            Err(error) => {
+                failure = Some(BootError::Eval {
                     form: form_number,
                     error,
-                })),
-            },
-        });
-        match outcome {
-            None => return Ok(()),
-            Some(Ok(())) => {}
-            Some(Err(e)) => return Err(e),
+                });
+                false
+            }
         }
+    });
+    if let Err(e) = read {
+        return Err(BootError::Read(e));
+    }
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(()),
     }
 }
 

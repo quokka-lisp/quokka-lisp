@@ -280,7 +280,7 @@ compiler is a pile of judgements, and most of today's will not survive.
 | --- | --- | --- |
 | Calls go through `GFREF` | uniform, correct, obviously right | inlining `COMMON-LISP` functions to `PRIM`, which is a measurable win on every arithmetic expression |
 | ~~No tail calls~~ | **done.** The compiler threads a tail flag and emits `TCALL`, so a loop written as recursion runs in constant space | — |
-| Instructions accumulated with `append` | it is the obvious thing and the lists are short | `append` is O(n) and the compiler will eventually compile itself, which is thousands of instructions |
+| ~~Instructions accumulated with `append`~~ | **done.** They accumulate reversed in a global and are turned round once; `append` copies its first argument, so joining n of them copied n, then n−1, then n−2 | — |
 | Constants found by scanning a list | fifty constants, scanned linearly | a hash table, when a function has enough constants for it to matter |
 | One global for the constants being built | threading it through every function would be most of the code | special variables, when there are any |
 | `if` emits a `JMP` even when the then-branch cannot fall through | simple and always correct | noticing that a branch ending in `RET` needs no jump after it |

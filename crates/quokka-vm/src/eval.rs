@@ -2346,52 +2346,97 @@ pub fn eval_now<'h>(
     }
 }
 
-/// Evaluate the form in the heap's root, leaving the answer in the root.
+/// Evaluate the form in the `Value` register, leaving the answer there.
 ///
 /// The difference from [`eval_now`] is where the mutations are. `eval_now`
-/// runs the whole evaluation inside the caller's mutation, which is fine for
-/// a prelude form and wrong for anything that allocates seriously: no
-/// collection can happen inside a mutation, so the heap has to absorb
-/// everything the form touches, garbage included.
+/// runs the whole evaluation inside the caller's mutation, so no collection
+/// can happen during it and the heap must absorb everything the form touches,
+/// garbage included. This drives the same machine a slice at a time, each
+/// slice its own mutation, so the collector runs in between — which is what
+/// `docs/design.md` means by "one evaluator step per mutation gives
+/// fine-grained collection for free", and what nothing implemented until
+/// issue #32.
 ///
-/// This drives the same machine a slice at a time, each slice its own
-/// mutation, so the collector runs in between. That is what `docs/design.md`
-/// means by "one evaluator step per mutation gives fine-grained collection
-/// for free" — which was the design from the start and, until this existed,
-/// was implemented nowhere.
-///
-/// The form goes in and the answer comes out through the **root**, because a
-/// `Value` cannot cross a mutation boundary and this function is made of
-/// boundaries.
-pub fn eval_root(heap: &mut Heap, budget: u64, slice: u64) -> Result<(), EvalError> {
+/// The form arrives and the answer leaves through the **`Value` register**,
+/// because a `Value` cannot cross a mutation boundary and this function is
+/// made of boundaries. The register rather than the heap's root, which is the
+/// *image* root: using that as a scratch channel would mean an image saved
+/// after an evaluation had the wrong root in it.
+pub fn eval_sliced(heap: &mut Heap, budget: u64, slice: u64) -> Result<(), EvalError> {
     use crate::slice::{run_slice, Status};
     heap.mutate(|mc| {
-        let form = mc.root();
+        let form = mc.register(Register::Value);
         Machine::start(mc, form, Value::NIL);
     });
     let mut spent = 0u64;
     while spent < budget {
         spent += slice;
         let outcome = heap.mutate(|mc| {
-            let (status, error, value) = {
+            let (status, error) = {
                 let mut machine = Machine::resume(mc);
                 let status = run_slice(&mut machine, slice);
-                (status, machine.error.take(), machine.result())
+                (status, machine.error.take())
             };
             if let Some(e) = error {
                 return Some(Err(e));
             }
-            if matches!(status, Status::Done { .. }) {
-                mc.set_root(value);
-                return Some(Ok(()));
-            }
-            None
+            matches!(status, Status::Done { .. }).then_some(Ok(()))
         });
         if let Some(done) = outcome {
             return done;
         }
     }
     Err(EvalError::BudgetExhausted)
+}
+
+/// Read every form in `source`, evaluate it, and hand the result to `each`.
+///
+/// The shape every driver in this system wanted and three of them wrote out
+/// by hand: the prelude loader, the differential-test runner and the REPL.
+/// Each form is read in its own mutation, evaluated across as many as it
+/// needs, and delivered inside a final one — where a `Value` is valid, which
+/// is why `each` is a callback rather than a return.
+///
+/// `each` returns whether to carry on, so a loader can stop at the first
+/// error and a REPL can print it and continue.
+pub fn eval_forms<F>(
+    heap: &mut Heap,
+    source: &str,
+    budget: u64,
+    slice: u64,
+    mut each: F,
+) -> Result<(), crate::reader::ReadError>
+where
+    F: for<'h> FnMut(&mut Mutation<'h>, Result<Value<'h>, EvalError>) -> bool,
+{
+    let chars = crate::reader::Reader::chars_of(source);
+    let mut reader = crate::reader::Reader::new(&chars);
+    loop {
+        let read = heap.mutate(|mc| match reader.read(mc) {
+            Err(e) => Some(Err(e)),
+            Ok(None) => None,
+            Ok(Some(form)) => {
+                mc.set_register(Register::Value, form);
+                Some(Ok(()))
+            }
+        });
+        match read {
+            None => return Ok(()),
+            Some(Err(e)) => return Err(e),
+            Some(Ok(())) => {}
+        }
+        let failure = eval_sliced(heap, budget, slice).err();
+        let carry_on = heap.mutate(|mc| {
+            let result = match &failure {
+                Some(e) => Err(e.clone()),
+                None => Ok(mc.register(Register::Value)),
+            };
+            each(mc, result)
+        });
+        if !carry_on {
+            return Ok(());
+        }
+    }
 }
 
 #[cfg(test)]

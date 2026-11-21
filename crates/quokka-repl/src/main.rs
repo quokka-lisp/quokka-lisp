@@ -6,8 +6,7 @@
 
 use std::io::{self, BufRead, Write};
 
-use quokka_vm::eval::eval_now;
-use quokka_vm::heap::Heap;
+use quokka_vm::heap::{Heap, Register};
 use quokka_vm::host::{Host, HostError};
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
@@ -124,34 +123,27 @@ const EVAL_BUDGET: u64 = 5_000_000;
 
 /// Read every form on the line, evaluate it, and print the result.
 ///
-/// All of it happens inside one `mutate`, which is what makes holding the
-/// values safe: no collection can happen part-way through. Only the finished
-/// text leaves, because a `Value` cannot.
+/// Sliced rather than one `mutate` for the whole line, so the collector can
+/// run during a form as well as between them. A line that builds something
+/// large would otherwise have to fit in the heap with all of its garbage,
+/// which is issue #32 and cost this project three separate debugging
+/// sessions before anyone looked at the mechanism.
 fn read_and_print(heap: &mut Heap, line: &str) -> String {
-    let chars = Reader::chars_of(line);
-    heap.mutate(|mc| {
-        let mut reader = Reader::new(&chars);
-        let mut out = String::new();
-        loop {
-            match reader.read(mc) {
-                Ok(None) => break,
-                Ok(Some(form)) => match eval_now(mc, form, EVAL_BUDGET) {
-                    Ok(value) => {
-                        out.push_str(&print(mc, value));
-                        out.push('\n');
-                    }
-                    Err(e) => {
-                        out.push_str(&format!("; {e}\n"));
-                    }
-                },
-                Err(e) => {
-                    out.push_str(&format!("; {e}\n"));
-                    break;
-                }
+    let mut out = String::new();
+    let read = quokka_vm::eval::eval_forms(heap, line, EVAL_BUDGET, 2_000, |mc, result| {
+        match result {
+            Ok(value) => {
+                out.push_str(&print(mc, value));
+                out.push('\n');
             }
+            Err(e) => out.push_str(&format!("; {e}\n")),
         }
-        out
-    })
+        true
+    });
+    if let Err(e) = read {
+        out.push_str(&format!("; {e}\n"));
+    }
+    out
 }
 
 /// Evaluate every form on the line by compiling it and running the result.
@@ -214,7 +206,7 @@ fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Opti
                     let args = mc.cons(quoted, quokka_vm::value::Value::NIL);
                     mc.cons(compile, args)
                 };
-                mc.set_root(call);
+                mc.set_register(Register::Value, call);
                 Some(Ok(()))
             }
         }
@@ -228,14 +220,14 @@ fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Opti
 
     // Drive the compilation a slice at a time, so the collector can run
     // between them — compiling allocates far more than evaluating does.
-    if let Err(e) = quokka_vm::eval::eval_root(heap, EVAL_BUDGET, 2_000) {
+    if let Err(e) = quokka_vm::eval::eval_sliced(heap, EVAL_BUDGET, 2_000) {
         return Some(format!("; compiling: {e}"));
     }
 
     // Run it. The compiled function is the root, so it survives any
     // collection the run itself needs.
     Some(heap.mutate(|mc| {
-        let function = mc.root();
+        let function = mc.register(Register::Value);
         let mut out = String::new();
         if showing {
             out.push_str(&quokka_vm::code::disassemble_function(mc, function));

@@ -546,6 +546,7 @@ fn prelude_recursion_is_bounded_by_the_heap_not_the_stack() {
 /// bytecode, and the VM runs it.
 mod compiler {
     use super::*;
+    use crate::heap::Register;
     use crate::vm::run_now;
 
     /// Read `source` into the root and evaluate it there.
@@ -561,14 +562,14 @@ mod compiler {
             let mut reader = Reader::new(&chars);
             match reader.read(mc) {
                 Ok(Some(form)) => {
-                    mc.set_root(form);
+                    mc.set_register(Register::Value, form);
                     Ok(())
                 }
                 Ok(None) => Err(String::from("; nothing to read")),
                 Err(e) => Err(format!("; {e:?}")),
             }
         })?;
-        crate::eval::eval_root(heap, 10_000_000, 500).map_err(|e| format!("; {e}"))
+        crate::eval::eval_sliced(heap, 10_000_000, 500).map_err(|e| format!("; {e}"))
     }
 
     /// Compile `source` with the Lisp compiler and run the result on the VM.
@@ -582,7 +583,7 @@ mod compiler {
         // The compiled function is the root, so it survives the collections
         // the run below may need.
         let outcome = heap.mutate(|mc| {
-            let f = mc.root();
+            let f = mc.register(Register::Value);
             match run_now(mc, f, 1_000_000) {
                 Ok(v) => Ok(print(mc, v)),
                 Err(e) => Err(format!("; running: {e}")),
@@ -603,7 +604,7 @@ mod compiler {
         install_compiler(&mut heap).expect("the compiler loads");
         drive(&mut heap, "(compile-form '(+ 1 2))").expect("compiles");
         let printed = heap.mutate(|mc| {
-            let f = mc.root();
+            let f = mc.register(Register::Value);
             print(mc, f)
         });
         assert_eq!(printed, "#<compiled COMPILED-FORM>");
@@ -830,7 +831,7 @@ mod compiler {
             return e;
         }
         heap.mutate(|mc| {
-            let v = mc.root();
+            let v = mc.register(Register::Value);
             print(mc, v)
         })
     }
@@ -847,7 +848,7 @@ mod compiler {
         install_compiler(&mut heap).expect("the compiler loads");
         drive(&mut heap, "(compile-form '((lambda (x) (+ x 1)) 41))").expect("compiles");
         let text = heap.mutate(|mc| {
-            let f = mc.root();
+            let f = mc.register(Register::Value);
             crate::code::disassemble_function(mc, f)
         });
         assert_eq!(
@@ -878,7 +879,7 @@ mod compiler {
         install_compiler(&mut heap).expect("the compiler loads");
         drive(&mut heap, "(compile-form '(if t 1 2))").expect("compiles");
         let text = heap.mutate(|mc| {
-            let f = mc.root();
+            let f = mc.register(Register::Value);
             crate::code::disassemble_function(mc, f)
         });
         assert!(text.contains("JMP-NIL"), "{text}");

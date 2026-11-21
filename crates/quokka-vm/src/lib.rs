@@ -48,50 +48,35 @@ pub const PHASE: &str = "1 · Bytecode and image";
 /// testing format: one line per top-level form.
 ///
 /// ```text
-/// => 42          the form's value, printed as the reader would want it back
+/// => 42          the form's value
 /// !! error       the form signalled
 /// ```
-///
-/// Errors are flattened to a single token deliberately. Quokka says "the
-/// function NOPE is undefined" and SBCL says something else entirely, with a
-/// condition class and a restart list; the text will never agree. Comparing
-/// condition *classes* would be stronger and is a refinement for when the
-/// condition system exists — for now this still catches the large case, which
-/// is one implementation signalling where the other does not.
 pub fn run_forms(source: &str, budget: u64) -> String {
-    use crate::eval::eval_now;
     use crate::heap::Heap;
     use crate::printer::print;
-    use crate::reader::Reader;
 
     let mut heap = Heap::new();
     // The prelude is part of the system under test: `defun` is one of its
     // macros now, and SBCL has it too.
     crate::boot::install(&mut heap).expect("the prelude boots");
-    let chars = Reader::chars_of(source);
-    let mut out = heap.mutate(|mc| {
-        let mut reader = Reader::new(&chars);
-        let mut out = String::new();
-        loop {
-            match reader.read(mc) {
-                Ok(None) => break,
-                Ok(Some(form)) => match eval_now(mc, form, budget) {
-                    Ok(value) => {
-                        out.push_str("=> ");
-                        out.push_str(&print(mc, value));
-                        out.push('\n');
-                    }
-                    Err(_) => out.push_str("!! error\n"),
-                },
-                // A malformed file is a fault in the test, not a result worth
-                // comparing, so it is loud rather than recorded.
-                Err(e) => panic!("could not read the test file: {e}"),
+    let mut out = String::new();
+    // Sliced, so the collector runs between slices. A test file that built a
+    // large structure in one form would otherwise have to fit in the heap
+    // with all of its garbage (#32).
+    let read = crate::eval::eval_forms(&mut heap, source, budget, 2_000, |mc, result| {
+        match result {
+            Ok(value) => {
+                out.push_str("=> ");
+                out.push_str(&print(mc, value));
+                out.push('\n');
             }
+            Err(_) => out.push_str("!! error\n"),
         }
-        out
+        true
     });
-    if heap.is_exhausted() {
-        out.push_str("!! heap exhausted\n");
+    // A malformed file is a fault in the test, not a result worth comparing.
+    if read.is_err() {
+        out.push_str("!! read error\n");
     }
     out
 }
