@@ -66,6 +66,34 @@ pub const COMPILER: &[(&str, &str)] = &[(
     include_str!("../../../lisp/compiler/compile.lisp"),
 )];
 
+/// Load the compiler into a heap that already has the prelude.
+///
+/// Separate from [`install`] on purpose: see [`COMPILER`]. A REPL does not
+/// call this; the image builder and the tests do.
+pub fn install_compiler<'h>(mc: &mut Mutation<'h>) -> Result<(), BootError> {
+    for (_file, source) in COMPILER {
+        let chars = Reader::chars_of(source);
+        let mut reader = Reader::new(&chars);
+        let mut form_number = 0usize;
+        loop {
+            form_number += 1;
+            match reader.read(mc) {
+                Err(e) => return Err(BootError::Read(e)),
+                Ok(None) => break,
+                Ok(Some(form)) => {
+                    if let Err(error) = eval_now(mc, form, BOOT_BUDGET) {
+                        return Err(BootError::Eval {
+                            form: form_number,
+                            error,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// How many evaluator steps one prelude form may take.
 ///
 /// Generous, and bounded anyway. A prelude form that does not finish is a bug

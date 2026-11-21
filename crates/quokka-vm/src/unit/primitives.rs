@@ -84,7 +84,8 @@ fn the_table_order_is_pinned() {
             "VALUES",
             "VALUES-LIST",
             "%MAKE-STRING",
-            "%ASSEMBLE"
+            "%ASSEMBLE",
+            "INTEGERP"
         ]
     );
 }

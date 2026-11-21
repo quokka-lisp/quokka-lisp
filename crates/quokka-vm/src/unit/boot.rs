@@ -541,3 +541,108 @@ fn prelude_recursion_is_bounded_by_the_heap_not_the_stack() {
         "10000"
     );
 }
+
+/// The compiler, loaded and used: a Lisp function compiles a Lisp form into
+/// bytecode, and the VM runs it.
+mod compiler {
+    use super::*;
+    use crate::vm::run_now;
+
+    /// Compile `source` with the Lisp compiler and run the result on the VM.
+    fn compile_and_run(source: &str) -> String {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        let chars = Reader::chars_of(&format!("(compile-form '{source})"));
+        heap.mutate(|mc| {
+            install_compiler(mc).expect("the compiler loads");
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).expect("reads").expect("a form");
+            let function = match eval_now(mc, form, BOOT_BUDGET) {
+                Ok(f) => f,
+                Err(e) => return format!("; compiling: {e}"),
+            };
+            match run_now(mc, function, 100_000) {
+                Ok(v) => print(mc, v),
+                Err(e) => format!("; running: {e}"),
+            }
+        })
+    }
+
+    /// **The first Lisp-compiled Quokka program.**
+    ///
+    /// Nothing in Rust decided what these instructions should be. A Lisp
+    /// function read the form, chose `GFREF`, `FIX`, `FIX`, `CALL`, `RET`,
+    /// and handed them to `%assemble`.
+    #[test]
+    fn a_call_compiles_and_runs() {
+        assert_eq!(compile_and_run("(+ 1 2)"), "3");
+    }
+
+    #[test]
+    fn nested_calls_compile() {
+        assert_eq!(compile_and_run("(+ (* 2 3) 4)"), "10");
+        assert_eq!(compile_and_run("(- 10 4)"), "6");
+    }
+
+    #[test]
+    fn constants_compile() {
+        assert_eq!(compile_and_run("7"), "7");
+        assert_eq!(compile_and_run("nil"), "NIL");
+        assert_eq!(compile_and_run("t"), "T");
+        assert_eq!(compile_and_run("(quote hello)"), "HELLO");
+        assert_eq!(compile_and_run("\"text\""), "\"text\"");
+    }
+
+    /// Beyond a `FIX` operand, so it has to become a constant instead.
+    #[test]
+    fn a_large_integer_becomes_a_constant() {
+        assert_eq!(compile_and_run("1000000"), "1000000");
+        assert_eq!(compile_and_run("(+ 100000 1)"), "100001");
+    }
+
+    #[test]
+    fn if_compiles_to_jumps() {
+        assert_eq!(compile_and_run("(if t 1 2)"), "1");
+        assert_eq!(compile_and_run("(if nil 1 2)"), "2");
+        assert_eq!(compile_and_run("(if (= 1 1) (+ 1 1) 99)"), "2");
+    }
+
+    /// A prelude function — Lisp, interpreted, called from compiled code.
+    ///
+    /// Which is a thing #25 said must not happen in a *built image*: there,
+    /// everything is compiled and the interpreter is cold. During the
+    /// bootstrap it is exactly what happens, because the prelude has not been
+    /// compiled yet — and `CALL` refuses it, by design.
+    #[test]
+    fn calling_an_interpreted_closure_is_refused() {
+        let out = compile_and_run("(length (quote (1 2 3)))");
+        assert!(out.contains("interpreted closure"), "{out}");
+    }
+
+    /// The compiler's output is verified like anything else, so a compiler
+    /// bug that produced a malformed function would be caught at assembly
+    /// rather than becoming a wrong answer somewhere later.
+    ///
+    /// `(FIX 1) (FIX 2) (RET)` is *not* an example, which is worth saying
+    /// because it was this test's first guess. Leaving a value under the one
+    /// being returned is harmless: `RET` restores the stack pointer to the
+    /// frame base, so the leftover is dropped. The JVM's verifier does not
+    /// require an empty stack at return either. What is refused is a `RET`
+    /// with nothing to return at all.
+    #[test]
+    fn the_compilers_output_is_verified() {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        let chars = Reader::chars_of("(%assemble '((POP) (RET)) #() nil 'bad)");
+        let out = heap.mutate(|mc| {
+            install_compiler(mc).expect("the compiler loads");
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).expect("reads").expect("a form");
+            match eval_now(mc, form, BOOT_BUDGET) {
+                Ok(_) => String::from("assembled, which it should not have"),
+                Err(e) => format!("{e}"),
+            }
+        });
+        assert!(out.contains("verifier refused"), "{out}");
+    }
+}

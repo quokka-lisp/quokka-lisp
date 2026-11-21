@@ -101,6 +101,7 @@ pub enum Prim {
     ValuesList = 48,
     MakeString = 49,
     Assemble = 50,
+    Integerp = 51,
 }
 
 impl Prim {
@@ -293,6 +294,15 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // of the program. The same note as %MAKE-VECTOR, and more defensible —
     // this runs once per function compiled, not once per call.
     (Prim::Assemble, "%ASSEMBLE", Arity::Exactly(4)),
+    // Appended rather than filed next to the other predicates, because a row's
+    // position *is* its discriminant and an image stores that number. Adding
+    // at the end is a format addition; moving CHARACTERP down one to make room
+    // would be a breaking change, and `the_table_is_in_enum_order` would say so.
+    //
+    // The compiler wants it, to ask whether a constant fits in a FIX
+    // instruction. Common Lisp's name and meaning; there was no numeric
+    // predicate at all until now, which nothing in the prelude had needed.
+    (Prim::Integerp, "INTEGERP", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -695,6 +705,7 @@ pub fn call_slice<'h>(
         Prim::Stringp => Ok(boolean(
             args[0].is_object() && mc.header(args[0]).object_type.is_string(),
         )),
+        Prim::Integerp => Ok(truth(args[0].as_fixnum().is_some())),
         Prim::Characterp => Ok(if args[0].as_character().is_some() {
             Value::T
         } else {
