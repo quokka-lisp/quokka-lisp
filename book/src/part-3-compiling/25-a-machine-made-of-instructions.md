@@ -308,7 +308,7 @@ something smaller.
 ---
 
 **References.** `docs/bytecode.md` in this repository is the specification —
-all thirty-four opcodes with their operand widths, which this chapter
+all thirty-six opcodes with their operand widths, which this chapter
 explains rather than repeats. Queinnec, *Lisp in Small Pieces*, chapter 7,
 builds a bytecode machine for Scheme in the same order used here. Smith's
 *Smalltalk-80: The Language and its Implementation* (the "Blue Book"), part

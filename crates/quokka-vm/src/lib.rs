@@ -21,6 +21,7 @@
 #![warn(missing_docs)]
 
 pub mod boot;
+pub mod code;
 pub mod condition;
 pub mod eval;
 pub mod hash;
@@ -32,6 +33,7 @@ pub mod printer;
 pub mod reader;
 pub mod slice;
 pub mod value;
+pub mod vm;
 
 /// The Quokka version string, as reported by the REPL banner and the dev console.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

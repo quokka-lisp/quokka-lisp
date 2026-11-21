@@ -436,16 +436,30 @@ pub fn install(mc: &mut Mutation<'_>) {
 }
 
 /// Call primitive `index` with `arguments`, a Lisp list.
+///
+/// What the interpreter uses, because it has collected the arguments into a
+/// list already. The bytecode VM has them in a row on its operand stack and
+/// calls [`call_slice`] instead, so that a call does not have to build a list
+/// only for this function to take it apart again.
 pub fn call<'h>(
     mc: &mut Mutation<'h>,
     index: u32,
     arguments: Value<'h>,
 ) -> Result<Value<'h>, EvalError> {
+    let args = to_vec(mc, arguments);
+    call_slice(mc, index, &args)
+}
+
+/// Call primitive `index` with arguments already in a row.
+pub fn call_slice<'h>(
+    mc: &mut Mutation<'h>,
+    index: u32,
+    args: &[Value<'h>],
+) -> Result<Value<'h>, EvalError> {
     let Some(p) = TABLE.get(index as usize) else {
         return Err(EvalError::NotAFunction(String::from("#<bad primitive>")));
     };
 
-    let args = to_vec(mc, arguments);
     let got = args.len();
     let ok = match p.arity {
         Arity::Exactly(n) => got == n,
@@ -463,8 +477,8 @@ pub fn call<'h>(
     }
 
     match p.name {
-        "+" => fold(p.name, &args, 0, |a, b| a.checked_add(b)),
-        "*" => fold(p.name, &args, 1, |a, b| a.checked_mul(b)),
+        "+" => fold(p.name, args, 0, |a, b| a.checked_add(b)),
+        "*" => fold(p.name, args, 1, |a, b| a.checked_mul(b)),
         "-" => {
             let first = fixnum(p.name, args[0])?;
             if got == 1 {
@@ -478,9 +492,9 @@ pub fn call<'h>(
             }
             make(Some(acc))
         }
-        "=" => compare(p.name, &args, |a, b| a == b),
-        "<" => compare(p.name, &args, |a, b| a < b),
-        ">" => compare(p.name, &args, |a, b| a > b),
+        "=" => compare(p.name, args, |a, b| a == b),
+        "<" => compare(p.name, args, |a, b| a < b),
+        ">" => compare(p.name, args, |a, b| a > b),
         "CONS" => Ok(mc.cons(args[0], args[1])),
         "CAR" => list_part(mc, p.name, args[0], true),
         "CDR" => list_part(mc, p.name, args[0], false),

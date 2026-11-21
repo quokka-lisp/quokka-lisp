@@ -284,6 +284,8 @@ pub enum ObjectType {
     Instance = 4,
     /// Buckets and metadata.
     HashTable = 5,
+    /// A compiled function: code, constants, parameters. See `crate::code`.
+    Function = 10,
     /// A signalled condition: type, message, data. See `crate::condition`.
     ///
     /// Its own type rather than an `Instance`, which it was at first — and
@@ -374,6 +376,7 @@ impl ObjectType {
             7 => Environment,
             8 => Macro,
             9 => Condition,
+            10 => Function,
             64 => String,
             65 => Code,
             66 => Bignum,
@@ -471,6 +474,16 @@ pub enum Register {
     /// `multiple-value-prog1` look. Anything else takes the primary and the
     /// rest are dropped, which is what makes `(+ (values 1 2) 3)` equal 4.
     Values,
+    /// The compiled [`crate::code`] function the bytecode VM is executing,
+    /// which is where its constants come from. `nil` while the interpreter
+    /// is the thing running.
+    Function,
+    /// The bytecode VM's operand stack: one vector, grown as needed.
+    ///
+    /// A heap object rather than a Rust `Vec`, for the same reason as every
+    /// other register — the collector must trace it, and an image must be
+    /// able to save a computation half-finished.
+    Operands,
 }
 
 /// An object header word, as stored in the heap.
@@ -532,6 +545,19 @@ struct Storage {
     /// All the values the last step produced, or `UNBOUND` for "just one".
     /// A root like the rest.
     values: u64,
+    /// The compiled function the bytecode VM is running. A root like the rest.
+    function: u64,
+    /// Its operand stack, a vector. A root like the rest.
+    operands: u64,
+    /// The bytecode VM's program counter, stack pointer and frame pointer.
+    ///
+    /// Numbers rather than `Value`s, so the collector leaves them alone — the
+    /// same arrangement as `mode`. They still live here rather than in a Rust
+    /// local, because a slice may end between any two instructions and an
+    /// image may be saved there.
+    pc: usize,
+    sp: usize,
+    fp: usize,
     /// Which half of the evaluator's cycle it is in. Not a `Value` — it is VM
     /// state rather than Lisp data, so the collector does not touch it.
     ///
@@ -690,6 +716,38 @@ impl<'h> Mutation<'h> {
     pub fn set_raw_slot(&mut self, v: Value<'h>, index: usize, word: u64) {
         let at = self.slot_at(v, index, false);
         self.storage.words[at] = word;
+    }
+
+    /// Read one byte of a raw object, counting from its first word.
+    ///
+    /// Bytes are packed eight to a word, least significant first. The packing
+    /// is written as shifts rather than as a transmute, so it means the same
+    /// thing on every target and an image written by one is readable by
+    /// another — rule 3's concern, arriving a second time.
+    pub fn raw_byte(&self, v: Value<'h>, index: usize) -> u8 {
+        let word = self.raw_slot(v, index / 8);
+        (word >> ((index % 8) * 8)) as u8
+    }
+
+    /// Write one byte of a raw object. See [`Self::raw_byte`].
+    pub fn set_raw_byte(&mut self, v: Value<'h>, index: usize, byte: u8) {
+        let at = index / 8;
+        let shift = (index % 8) * 8;
+        let word = self.raw_slot(v, at) & !(0xFFu64 << shift);
+        self.set_raw_slot(v, at, word | ((byte as u64) << shift));
+    }
+
+    /// Allocate a raw object holding `bytes` bytes, rounded up to whole words.
+    ///
+    /// The header counts *words*, so the byte length is not recoverable from
+    /// the object and whoever allocated it has to remember — for bytecode,
+    /// that is the `Function` that owns the `Code`.
+    pub fn alloc_bytes(&mut self, object_type: ObjectType, bytes: &[u8]) -> Value<'h> {
+        let v = self.alloc(object_type, bytes.len().div_ceil(8));
+        for (i, b) in bytes.iter().enumerate() {
+            self.set_raw_byte(v, i, *b);
+        }
+        v
     }
 
     /// Allocate a string.
@@ -880,6 +938,8 @@ impl<'h> Mutation<'h> {
             Register::Stack => self.storage.stack,
             Register::Unwind => self.storage.unwind,
             Register::Values => self.storage.values,
+            Register::Function => self.storage.function,
+            Register::Operands => self.storage.operands,
         })
     }
 
@@ -892,6 +952,8 @@ impl<'h> Mutation<'h> {
             Register::Stack => &mut self.storage.stack,
             Register::Unwind => &mut self.storage.unwind,
             Register::Values => &mut self.storage.values,
+            Register::Function => &mut self.storage.function,
+            Register::Operands => &mut self.storage.operands,
         };
         *slot = v.bits();
     }
@@ -904,6 +966,37 @@ impl<'h> Mutation<'h> {
     /// Set the half-cycle marker.
     pub fn set_mode(&mut self, mode: u8) {
         self.storage.mode = mode;
+    }
+
+    /// The bytecode VM's program counter: a byte offset into its function's
+    /// code. Meaning is `crate::vm`'s business.
+    pub fn pc(&self) -> usize {
+        self.storage.pc
+    }
+
+    /// Set it.
+    pub fn set_pc(&mut self, pc: usize) {
+        self.storage.pc = pc;
+    }
+
+    /// How deep the operand stack is, in slots.
+    pub fn sp(&self) -> usize {
+        self.storage.sp
+    }
+
+    /// Set it.
+    pub fn set_sp(&mut self, sp: usize) {
+        self.storage.sp = sp;
+    }
+
+    /// Where the current frame begins.
+    pub fn fp(&self) -> usize {
+        self.storage.fp
+    }
+
+    /// Set it.
+    pub fn set_fp(&mut self, fp: usize) {
+        self.storage.fp = fp;
     }
 
     /// Every interned symbol, as a list. A root.
@@ -1004,6 +1097,11 @@ impl Heap {
                 stack: Value::NIL.bits(),
                 unwind: Value::NIL.bits(),
                 values: Value::UNBOUND.bits(),
+                function: Value::NIL.bits(),
+                operands: Value::NIL.bits(),
+                pc: 0,
+                sp: 0,
+                fp: 0,
                 mode: 0,
                 soft_limit: words,
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
@@ -1246,6 +1344,8 @@ impl Heap {
         self.storage.stack = forward(from, &mut to, static_end, self.storage.stack);
         self.storage.unwind = forward(from, &mut to, static_end, self.storage.unwind);
         self.storage.values = forward(from, &mut to, static_end, self.storage.values);
+        self.storage.function = forward(from, &mut to, static_end, self.storage.function);
+        self.storage.operands = forward(from, &mut to, static_end, self.storage.operands);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has

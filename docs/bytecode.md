@@ -109,7 +109,12 @@ depend on their operands.
 
 ## 5 · The instructions
 
-Thirty-four. Grouped by what they are for, not by number.
+**Thirty-six.** Grouped by what they are for, not by number.
+
+(This document said thirty-four until the enum was written and the rows were
+counted by a compiler rather than by me. `code::OPCODE_COUNT` is the number
+now, and a test pins it, because a count in prose drifts the moment nobody is
+checking.)
 
 ### Pushing a value
 
@@ -241,7 +246,7 @@ no single delivery point:**
 > may leave it set.
 
 The interpreter had one funnel — `deliver` — and clearing there was free. A
-bytecode VM has thirty-four funnels, so this is a rule each one must follow,
+bytecode VM has thirty-six funnels, so this is a rule each one must follow,
 and forgetting it means a stale second value surfacing in a form a long way
 from the one that set it. It belongs in a test, not only in a sentence.
 
