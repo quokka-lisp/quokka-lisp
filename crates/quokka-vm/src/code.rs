@@ -485,6 +485,345 @@ pub fn code_bytes<'h>(mc: &Mutation<'h>, f: Value<'h>) -> Vec<u8> {
     (0..len).map(|i| mc.raw_byte(code, i)).collect()
 }
 
+/// What a function has to satisfy before the VM will run it.
+///
+/// # Why this exists
+///
+/// A stack machine is an agreement about what is where, and at run time
+/// nothing enforces it. An instruction that leaves one item too many does not
+/// fail — it makes every instruction after it quietly wrong, and the symptom
+/// surfaces somewhere else entirely. Twice while building the VM a hand-
+/// written program was wrong in exactly this way, and both times the error
+/// named something several instructions from the cause:
+///
+/// - a jump of four bytes over a two-byte branch landed in the *middle* of a
+///   later instruction, where the machine read the high half of an operand as
+///   an opcode and ran on through nonsense;
+/// - `MVSAVE` pushed where it should have replaced, so `multiple-value-call`
+///   popped a fixed number of things off a stack with one too many on it and
+///   reported that `(1 2)` is not a function.
+///
+/// Both are decidable **before the program runs**, by walking it once and
+/// tracking how deep the stack would be. That is what this does, and it is
+/// the JVM's answer to the same problem — one pass when a class is loaded
+/// rather than a check on every pop. See the specification's §4.10.
+///
+/// # What it does not check
+///
+/// Types. A verified function will not corrupt the machine, but it may still
+/// add a symbol to a string. Chapter 26's miscounted scope depth is also out
+/// of reach: both the depth and the slot are in range, they just name the
+/// wrong variable, and only the namespace check at run time notices.
+pub mod verify {
+    use super::*;
+
+    /// Why a function was refused.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Error {
+        /// The instruction stream itself is malformed.
+        Malformed(CodeError),
+        /// A jump lands somewhere that is not the start of an instruction —
+        /// including past the end, and including the middle of one.
+        JumpIntoNowhere {
+            /// The jump.
+            at: usize,
+            /// Where it would have gone.
+            target: usize,
+        },
+        /// An instruction would pop more than is there.
+        Underflow {
+            /// Where.
+            at: usize,
+            /// How deep the stack was.
+            depth: usize,
+            /// How much it wanted.
+            wanted: usize,
+        },
+        /// Two paths reach the same instruction with the stack at different
+        /// depths, so there is no one answer to "what is on the stack here".
+        Inconsistent {
+            /// Where they meet.
+            at: usize,
+            /// What one path said.
+            had: usize,
+            /// What the other said.
+            then: usize,
+        },
+        /// The function needs a deeper stack than it declared, so a call
+        /// would reserve too little.
+        TooDeep {
+            /// What it actually needs.
+            needs: usize,
+            /// What `max-stack` claims.
+            declared: usize,
+        },
+        /// Control runs past the last instruction instead of leaving.
+        FallsOffTheEnd {
+            /// The last instruction reached.
+            at: usize,
+        },
+        /// An instruction names a constant the function does not have.
+        BadConstant {
+            /// Where.
+            at: usize,
+            /// Which index it asked for.
+            index: usize,
+        },
+        /// A `BIND` names a constant that is not a vector of names.
+        BadBinding {
+            /// Where.
+            at: usize,
+        },
+    }
+
+    /// How many stack slots an unwind record takes. Must agree with
+    /// `crate::vm::mark::SIZE`, which `the_record_size_agrees` checks.
+    pub const RECORD: usize = 7;
+
+    /// What one instruction does to the stack, and where control can go next.
+    struct Effect {
+        /// Slots popped before anything is pushed.
+        pops: usize,
+        /// Slots pushed after.
+        pushes: usize,
+        /// Does the next instruction run?
+        falls_through: bool,
+        /// A jump target, and how deep the stack is on arrival **relative to
+        /// the depth before this instruction**.
+        ///
+        /// Relative, not absolute, because the depth is not known here —
+        /// which was worth getting wrong once: writing these as absolute
+        /// made every jump claim to arrive at depth zero, and the first
+        /// program with a jump in it was reported inconsistent at a label
+        /// that was perfectly consistent.
+        branch: Option<(usize, i32)>,
+    }
+
+    /// Check `function`, and every function among its constants.
+    ///
+    /// Returns the deepest the operand stack gets, which is what `max-stack`
+    /// should have said.
+    pub fn function<'h>(mc: &Mutation<'h>, f: Value<'h>) -> Result<usize, Error> {
+        let bytes = code_bytes(mc, f);
+        let constants = mc.slot(f, super::function::CONSTANTS);
+        let count = if constants.is_object() {
+            mc.header(constants).slots
+        } else {
+            0
+        };
+        let declared = mc
+            .slot(f, super::function::MAX_STACK)
+            .as_fixnum()
+            .unwrap_or(0)
+            .max(0) as usize;
+
+        let needs = walk(mc, &bytes, constants, count)?;
+        if needs > declared {
+            return Err(Error::TooDeep { needs, declared });
+        }
+
+        // Nested functions are reached through CLOSURE, so verifying the
+        // outermost one is not enough: a closure made at run time would
+        // otherwise be the first thing nobody checked.
+        for i in 0..count {
+            let c = mc.slot(constants, i);
+            if c.is_object() && mc.header(c).object_type == ObjectType::Function {
+                self::function(mc, c)?;
+            }
+        }
+        Ok(needs)
+    }
+
+    fn walk<'h>(
+        mc: &Mutation<'h>,
+        bytes: &[u8],
+        constants: Value<'h>,
+        count: usize,
+    ) -> Result<usize, Error> {
+        // Every instruction start, found by reading the stream once. A jump
+        // may only land on one of these — which is the check that would have
+        // caught a jump into the middle of an operand.
+        let mut starts = std::collections::HashSet::new();
+        let mut at = 0;
+        while at < bytes.len() {
+            starts.insert(at);
+            at = decode(bytes, at).map_err(Error::Malformed)?.next;
+        }
+
+        let mut depth_at: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+        let mut work = vec![(0usize, 0usize)];
+        let mut deepest = 0usize;
+
+        while let Some((at, depth)) = work.pop() {
+            if at >= bytes.len() {
+                // Reached by falling off the end of the last instruction.
+                return Err(Error::FallsOffTheEnd { at });
+            }
+            if let Some(&known) = depth_at.get(&at) {
+                if known != depth {
+                    return Err(Error::Inconsistent {
+                        at,
+                        had: known,
+                        then: depth,
+                    });
+                }
+                continue;
+            }
+            depth_at.insert(at, depth);
+
+            let d = decode(bytes, at).map_err(Error::Malformed)?;
+            let effect = effect_of(mc, &d, at, constants, count)?;
+            if depth < effect.pops {
+                return Err(Error::Underflow {
+                    at,
+                    depth,
+                    wanted: effect.pops,
+                });
+            }
+            let after = depth - effect.pops + effect.pushes;
+            deepest = deepest.max(depth.max(after));
+
+            if let Some((target, relative)) = effect.branch {
+                if !starts.contains(&target) {
+                    return Err(Error::JumpIntoNowhere { at, target });
+                }
+                let arrives = depth as i32 + relative;
+                if arrives < 0 {
+                    return Err(Error::Underflow {
+                        at,
+                        depth,
+                        wanted: (-relative) as usize,
+                    });
+                }
+                work.push((target, arrives as usize));
+            }
+            if effect.falls_through {
+                work.push((d.next, after));
+            }
+        }
+        Ok(deepest)
+    }
+
+    fn effect_of<'h>(
+        mc: &Mutation<'h>,
+        d: &Decoded,
+        at: usize,
+        constants: Value<'h>,
+        count: usize,
+    ) -> Result<Effect, Error> {
+        let plain = |pops: usize, pushes: usize| Effect {
+            pops,
+            pushes,
+            falls_through: true,
+            branch: None,
+        };
+        let terminator = Effect {
+            pops: 0,
+            pushes: 0,
+            falls_through: false,
+            branch: None,
+        };
+        let constant = |index: i32| -> Result<usize, Error> {
+            let i = index as usize;
+            if index < 0 || i >= count {
+                return Err(Error::BadConstant { at, index: i });
+            }
+            Ok(i)
+        };
+        // Where a jump operand lands: offsets are from the end of the
+        // instruction, which is the convention the assembler relies on.
+        let target = |offset: i32| (d.next as i64 + offset as i64).max(0) as usize;
+
+        Ok(match d.op {
+            Op::Nil | Op::T | Op::Fix => plain(0, 1),
+            Op::Const | Op::Closure => {
+                constant(d.a)?;
+                plain(0, 1)
+            }
+            Op::Pop => plain(1, 0),
+            Op::Lref | Op::Fref => plain(0, 1),
+            Op::Lset => plain(1, 1),
+            Op::Gref | Op::Gfref => {
+                constant(d.a)?;
+                plain(0, 1)
+            }
+            Op::Gset => {
+                constant(d.a)?;
+                plain(1, 1)
+            }
+            Op::Bind | Op::Bindf => {
+                let i = constant(d.a)?;
+                let names = mc.slot(constants, i);
+                if !names.is_object() || mc.header(names).object_type != ObjectType::Vector {
+                    return Err(Error::BadBinding { at });
+                }
+                plain(mc.header(names).slots, 0)
+            }
+            Op::Unbind => plain(0, 0),
+            // A call pops its arguments and the callee beneath them.
+            Op::Call | Op::Mvcall => plain(d.a as usize + 1, 1),
+            Op::Prim => plain(d.b as usize, 1),
+            Op::Values => plain(d.a as usize, 1),
+            Op::Mvsave | Op::Mvrestore => plain(1, 1),
+            // Control leaves and does not come back here.
+            Op::Ret | Op::Tcall | Op::Unprotect | Op::Go => terminator,
+            Op::Retfrom => Effect {
+                pops: 1,
+                ..terminator
+            },
+            Op::Throw => Effect {
+                pops: 2,
+                ..terminator
+            },
+            // Unchanged depth: a jump moves control, not the stack.
+            Op::Jmp => Effect {
+                falls_through: false,
+                branch: Some((target(d.a), 0)),
+                ..plain(0, 0)
+            },
+            // Both paths have popped the test by the time they get anywhere.
+            Op::JmpNil | Op::JmpNotNil => Effect {
+                pops: 1,
+                pushes: 0,
+                falls_through: true,
+                branch: Some((target(d.a), -1)),
+            },
+            // A record occupies the stack, and the label it names is reached
+            // by an unwind that drops the record and pushes one value — so
+            // control arrives there one deeper than it was before the
+            // instruction, not after it.
+            Op::Block | Op::Tag | Op::Handler => {
+                constant(d.a)?;
+                Effect {
+                    pops: 0,
+                    pushes: RECORD,
+                    falls_through: true,
+                    branch: Some((target(d.b), 1)),
+                }
+            }
+            // Pops the tag, and an unwind that finds it pushes one value in
+            // its place — so the label is reached at the depth before this.
+            Op::Catch => Effect {
+                pops: 1,
+                pushes: RECORD,
+                falls_through: true,
+                branch: Some((target(d.a), 0)),
+            },
+            // The cleanup fragment is only ever entered by the unwinder,
+            // which leaves a paused record where the protect record was — the
+            // same size, so the same depth.
+            Op::Protect => Effect {
+                pops: 0,
+                pushes: RECORD,
+                falls_through: true,
+                branch: Some((target(d.a), RECORD as i32)),
+            },
+            Op::Unmark => plain(RECORD + 1, 1),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -602,6 +941,152 @@ mod tests {
             disassemble(&bytes),
             "   0  LREF 0 0\n   3  JMP-NIL +1 -> 7\n   6  POP\n   7  RET\n"
         );
+    }
+
+    /// Verify a hand-written program, returning the depth it needs or the
+    /// reason it was refused.
+    fn check(body: &[(Op, i32, i32)], constants: usize) -> Result<usize, verify::Error> {
+        let mut bytes = Vec::new();
+        for (op, a, b) in body {
+            encode(&mut bytes, *op, *a, *b);
+        }
+        let mut heap = Heap::new();
+        heap.mutate(|mc| {
+            let table = mc.alloc(ObjectType::Vector, constants);
+            let name = mc.intern("TEST");
+            let f = make_function(mc, &bytes, table, Value::NIL, 1024, name);
+            verify::function(mc, f)
+        })
+    }
+
+    /// `fact`'s body, which chapter 25 prints and says needs a depth of four.
+    #[test]
+    fn the_verifier_computes_what_fact_needs() {
+        assert_eq!(
+            check(
+                &[
+                    (Op::Lref, 0, 0),
+                    (Op::Fix, 0, 0),
+                    (Op::Prim, 3, 2),
+                    (Op::JmpNil, 4, 0),
+                    (Op::Fix, 1, 0),
+                    (Op::Ret, 0, 0),
+                    (Op::Lref, 0, 0),
+                    (Op::Gfref, 0, 0),
+                    (Op::Lref, 0, 0),
+                    (Op::Fix, 1, 0),
+                    (Op::Prim, 1, 2),
+                    (Op::Call, 1, 0),
+                    (Op::Prim, 2, 2),
+                    (Op::Ret, 0, 0),
+                ],
+                1
+            ),
+            Ok(4),
+            "chapter 25 says four, and a book that quotes a number should have \
+             something checking it"
+        );
+    }
+
+    /// **The bug this exists for.** A jump of four bytes over a branch that is
+    /// two lands inside a later instruction, where the machine reads the high
+    /// half of an operand as an opcode and runs on happily. It cost twenty
+    /// minutes to find at run time; it is a load-time error now.
+    #[test]
+    fn a_jump_into_the_middle_of_an_instruction_is_refused() {
+        let out = check(
+            &[
+                (Op::Lref, 0, 0),
+                (Op::Fix, 0, 0),
+                (Op::Prim, 3, 2),
+                (Op::JmpNil, 4, 0), // over T and RET, which are one byte each
+                (Op::T, 0, 0),
+                (Op::Ret, 0, 0),
+                (Op::Gfref, 0, 0),
+                (Op::Ret, 0, 0),
+            ],
+            1,
+        );
+        assert!(
+            matches!(
+                out,
+                Err(verify::Error::JumpIntoNowhere { at: 9, target: 16 })
+            ),
+            "{out:?}"
+        );
+    }
+
+    /// The other half: the same program with the offset the compiler should
+    /// have worked out.
+    #[test]
+    fn the_same_jump_with_the_right_offset_verifies() {
+        assert!(check(
+            &[
+                (Op::Lref, 0, 0),
+                (Op::Fix, 0, 0),
+                (Op::Prim, 3, 2),
+                (Op::JmpNil, 2, 0),
+                (Op::T, 0, 0),
+                (Op::Ret, 0, 0),
+                (Op::Gfref, 0, 0),
+                (Op::Ret, 0, 0),
+            ],
+            1,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn popping_more_than_is_there_is_refused() {
+        assert!(matches!(
+            check(&[(Op::Fix, 1, 0), (Op::Prim, 0, 3), (Op::Ret, 0, 0)], 0),
+            Err(verify::Error::Underflow { .. })
+        ));
+    }
+
+    /// The second bug this exists for, in miniature: an instruction that
+    /// leaves one item too many. Both paths to the `RET` must agree about how
+    /// deep the stack is, and here they do not.
+    #[test]
+    fn two_paths_that_disagree_about_the_stack_are_refused() {
+        let out = check(
+            &[
+                (Op::Nil, 0, 0),
+                (Op::JmpNil, 3, 0), // skip the FIX: arrives with nothing
+                (Op::Fix, 1, 0),    // the other path arrives with one
+                (Op::Ret, 0, 0),
+            ],
+            0,
+        );
+        assert!(
+            matches!(out, Err(verify::Error::Inconsistent { .. })),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn a_constant_the_function_does_not_have_is_refused() {
+        assert!(matches!(
+            check(&[(Op::Const, 7, 0), (Op::Ret, 0, 0)], 2),
+            Err(verify::Error::BadConstant { index: 7, .. })
+        ));
+    }
+
+    /// Unreachable code is not an error — it is what the instruction after an
+    /// unconditional `RET` is, and a compiler emits it without meaning to.
+    #[test]
+    fn unreachable_code_is_allowed() {
+        assert_eq!(
+            check(&[(Op::Fix, 1, 0), (Op::Ret, 0, 0), (Op::Pop, 0, 0)], 0),
+            Ok(1)
+        );
+    }
+
+    /// The verifier's idea of how much stack a record takes has to be the
+    /// VM's idea, and they live in different modules.
+    #[test]
+    fn the_record_size_agrees_with_the_machine() {
+        assert_eq!(verify::RECORD, crate::vm::mark::SIZE);
     }
 
     /// Bytes are packed eight to a word, so the interesting cases are the

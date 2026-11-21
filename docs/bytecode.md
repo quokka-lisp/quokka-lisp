@@ -440,7 +440,45 @@ The code-size limit has a precedent worth knowing: a JVM method may not exceed
 65,535 bytes, for the same reason and with the same consequence (generated
 code occasionally hits it, and the generator has to split).
 
-## 10 · Open
+## 10 · The verifier
+
+One pass over a function before it runs, in `code::verify`. It walks every
+reachable instruction, tracking how deep the operand stack would be, and
+refuses the function if:
+
+| | |
+| --- | --- |
+| an opcode is unknown, or an instruction is cut short | the stream is not a program |
+| a jump lands anywhere but the start of an instruction | including the middle of one |
+| an instruction would pop more than is there | |
+| two paths reach the same instruction at different depths | there is then no answer to "what is on the stack here" |
+| the function needs a deeper stack than its `max-stack` | a call would reserve too little |
+| control runs past the last instruction | a function with no `RET` |
+| an instruction names a constant that is not there | |
+
+It returns the depth actually needed, which is what an assembler should write
+into `max-stack` rather than guessing — and the test helpers now do exactly
+that, having previously declared sixteen for a function that needed
+twenty-three. Nothing had noticed, because the stack grows on demand and
+`max-stack` was decorative.
+
+**Why a pass rather than a check on every pop.** A stack machine is an
+agreement about what is where, enforced by nothing at run time; an instruction
+that leaves one item too many does not fail, it makes every instruction after
+it quietly wrong. Both bugs that argued for this were of that shape, and both
+reported something several instructions from the cause. Checking once, when
+the function arrives, is the JVM's answer — see its specification §4.10.
+
+**What it does not check.** Types: a verified function will not corrupt the
+machine, but it may still add a symbol to a string. Nor can it see a
+miscounted scope depth (chapter 26), where both numbers are in range and
+simply name the wrong variable; only the run-time namespace check catches
+that.
+
+Nested functions are verified too, reached through the constants, because a
+closure made at run time would otherwise be the one thing nobody checked.
+
+## 11 · Open
 
 - **Where macroexpansion happens** once there are two evaluators that both
   need it (#23).
@@ -449,3 +487,6 @@ code occasionally hits it, and the generator has to split).
 - **Whether `BIND` should carry names.** Kept here for the debugger, at one
   constant slot per scope.
 - **Specialised opcodes** (§8), deliberately not now.
+- **Verifying on image load.** `run_now` verifies what it is given; an image
+  arrives with functions nobody has checked since they were written, possibly
+  by a different build.

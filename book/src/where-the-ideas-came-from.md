@@ -52,7 +52,7 @@ is three words that lead somewhere.
 | Packed bytes, **operand widths fixed per opcode** | The JVM and CPython both pack ([24](part-3-compiling/24-why-compile-at-all.md), `docs/bytecode.md`) | CPython's variable-width operands and `EXTENDED_ARG`. Variable widths make an instruction's size depend on its operands, which makes jump distances depend on sizes, which makes an assembler iterate to a fixpoint — *branch relaxation*. Fixing the widths avoids it entirely. Lua's fixed 32-bit instruction word was the other option and lost on size |
 | `max-stack` in a compiled function | The JVM class file's `max_stack`, checked once at call time instead of bounds-checking every push | — |
 | Ceilings are compiler errors — 64 KB of code per function | The JVM's identical per-method limit, for the identical reason | — |
-| A **verifier**: one pass at load, checking stack discipline | Lindholm & Yellin, *The Java Virtual Machine Specification*, §4.10 ([27](part-3-compiling/27-leaving-early-again.md)) | Not built yet, and two bugs have now argued for it |
+| A **verifier**: one pass at load, checking stack discipline | Lindholm & Yellin, *The Java Virtual Machine Specification*, §4.10 ([27](part-3-compiling/27-leaving-early-again.md)) | Built, after two bugs argued for it. It checks stack discipline and jump targets, not types |
 | Lexical addressing — `(depth, index)` instead of a name | Queinnec, *Lisp in Small Pieces*, chapter 5 ([26](part-3-compiling/26-where-is-the-variable.md)) | — |
 | Keeping the environment chain | — | Flat closures and stack-allocated locals: Dybvig, *Three Implementation Models for Scheme* (1987). Deferred rather than rejected, with the cost written down: the instruction set changes when they arrive |
 | Not adding `LREF0`, `CONST8`, `CALL1` | The JVM's `iload_0` and CPython's `LOAD_FAST` are exactly these | Deliberately not taken. Each is a second spelling of an instruction that already exists, and rule 7 says the readable version goes first |
@@ -93,9 +93,12 @@ list rather than an argument.
    at every mutation boundary.** Not a weakening: the rooting discipline makes
    the bug the classical version hunts unrepresentable, so what is left to
    hunt is the collector's own mistakes.
-5. **The JVM verifies bytecode before running it. We do not, yet.** This one
-   is not a considered departure, it is a gap — and it is in this list so that
-   it stays visible rather than becoming a habit.
+5. **The JVM verifies bytecode before running it.** So do we, now — this
+   entry was "we do not, yet, and it is a gap rather than a decision" until
+   two bugs of exactly the shape a verifier catches made the case. Left in the
+   list because what it does *not* check is the part worth remembering: it
+   proves a function cannot corrupt the machine, and says nothing about
+   whether it is correct.
 
 ## A note on the early chapters
 

@@ -122,6 +122,10 @@ impl Mode {
 /// a REPL.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalError {
+    /// A compiled function the verifier refused. Not a fault in the program
+    /// being run — a fault in whatever produced the bytecode, which after
+    /// phase 1 means the compiler.
+    Malformed(String),
     /// A symbol with no value.
     UnboundVariable(String),
     /// A symbol with no function.
@@ -179,6 +183,7 @@ impl core::fmt::Display for EvalError {
             EvalError::UnboundVariable(n) => write!(f, "the variable {n} is unbound"),
             EvalError::UndefinedFunction(n) => write!(f, "the function {n} is undefined"),
             EvalError::NotAFunction(n) => write!(f, "{n} is not a function"),
+            EvalError::Malformed(what) => write!(f, "this compiled function is malformed: {what}"),
             EvalError::NoSuchExit(n) => write!(f, "there is no exit named {n} here"),
             EvalError::BadSyntax { operator, detail } => write!(f, "bad {operator}: {detail}"),
             EvalError::WrongArgumentCount { name, wanted, got } => {

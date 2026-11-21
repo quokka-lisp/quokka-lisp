@@ -115,7 +115,14 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
         // loop. It reaches here only after the stack has been exhausted.
         EvalError::Signalled(_) => return None,
         // Not the program's fault, so not the program's to catch.
-        EvalError::HeapExhausted | EvalError::BudgetExhausted => return None,
+        //
+        // `Malformed` is here for a sharper reason than the other two: a
+        // function the verifier refused was produced by the compiler, and a
+        // `handler-case` quietly swallowing that would hide a compiler bug
+        // behind whatever the program does about errors.
+        EvalError::Malformed(_) | EvalError::HeapExhausted | EvalError::BudgetExhausted => {
+            return None
+        }
     };
     let type_name = mc.intern(type_name);
     let message = mc.alloc_string(&message);

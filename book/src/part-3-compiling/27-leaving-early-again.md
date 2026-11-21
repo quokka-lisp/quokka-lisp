@@ -252,10 +252,29 @@ to do with it.
 Which is the shape of nearly every bug in a stack machine. The stack is an
 agreement about what is where, enforced by nothing at run time, and an
 instruction that leaves one item too many does not fail — it makes every
-instruction after it quietly wrong. That is an argument for a **verifier**:
-one pass over a function, at the moment it is loaded, checking that every
-path through it leaves the stack where it claims. The JVM has had one since
-1995 for exactly this reason, and Quokka has not got one yet.
+instruction after it quietly wrong.
+
+That was the second such bug in two days, and both were decidable *before the
+program ran*. So there is now a **verifier**: one pass over a function when it
+arrives, walking every reachable instruction and tracking how deep the stack
+would be. It refuses a jump that lands anywhere but the start of an
+instruction, a pop with nothing to pop, two paths that reach the same place
+disagreeing about the depth, a function that runs off its end, and one that
+needs more stack than it reserved. The JVM has done this since 1995, and its
+specification's §4.10 is the fullest published description.
+
+It found something immediately. The test helper had been declaring sixteen
+slots for a program that needed twenty-three, and nothing had noticed, because
+the stack grows on demand — `max-stack` was decorative. It is computed now,
+by the verifier, which is what an assembler should do and what the compiler
+will do.
+
+What it cannot check is worth saying too. Types: a verified function will not
+corrupt the machine, but it may still add a symbol to a string. And the
+miscounted scope depth from chapter 26 is out of reach, because both numbers
+are in range and simply name the wrong variable — only the run-time namespace
+check sees that one. A verifier removes a class of bug, not a feeling of
+doubt.
 
 ## Tier 0 can now be compiled
 

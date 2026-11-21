@@ -100,6 +100,10 @@ pub struct Vm<'a, 'h> {
 impl<'a, 'h> Vm<'a, 'h> {
     /// Prepare to run `function` in `env`, discarding whatever was in
     /// progress.
+    ///
+    /// Does **not** verify. [`run_now`] does, and so should anything that
+    /// loads an image; this is the raw entry point, kept separate so that a
+    /// test can run deliberately malformed bytecode and watch what happens.
     pub fn start(mc: &'a mut Mutation<'h>, function: Value<'h>, env: Value<'h>) -> Vm<'a, 'h> {
         let wanted = mc
             .slot(function, function::MAX_STACK)
@@ -206,7 +210,9 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// `max-stack` accounting is what rules it out. The JVM draws the line in
     /// the same place and calls the thing that draws it a *verifier*: one
     /// pass over the code when it is loaded, rather than a test on every pop.
-    /// Quokka has no verifier yet and should; #28 carries it.
+    /// [`crate::code::verify`] is that pass, and `run_now` runs it — so for
+    /// anything that got that far this assertion cannot fire. It stays as a
+    /// belt, because `Vm::start` deliberately does not verify.
     fn pop(&mut self) -> Value<'h> {
         let sp = self.mc.sp();
         debug_assert!(sp > 0, "popped an empty operand stack");
@@ -1158,6 +1164,13 @@ pub fn run_now<'h>(
     budget: u64,
 ) -> Result<Value<'h>, EvalError> {
     use crate::slice::{run_slice, Status};
+    // Once, before anything runs, exactly as the JVM verifies a class when it
+    // is loaded rather than checking on every pop. A function that gets past
+    // this cannot underflow the stack, cannot jump into the middle of an
+    // instruction, and cannot need a deeper stack than it reserved.
+    if let Err(e) = code::verify::function(mc, function) {
+        return Err(EvalError::Malformed(format!("{e:?}")));
+    }
     let mut vm = Vm::start(mc, function, Value::NIL);
     match run_slice(&mut vm, budget) {
         Status::Done { .. } => match vm.error.take() {
@@ -1251,11 +1264,34 @@ mod tests {
             mc.set_slot(table, i, *c);
         }
         let name = mc.intern("TEST");
-        let f = code::make_function(mc, &bytes, table, Value::NIL, 16, name);
+        let f = verified(mc, &bytes, table, Value::NIL, name);
         match run_now(mc, f, 100_000) {
             Ok(v) => crate::printer::print(mc, v),
             Err(e) => format!("; {e}"),
         }
+    }
+
+    /// Build a function whose `max-stack` is **computed**, not guessed.
+    ///
+    /// The verifier works out how deep the stack really gets, which is what
+    /// the assembler should be doing — and what the compiler will do. Until
+    /// this existed every hand-written test declared a number it had made up,
+    /// and `nested_cleanups_run_innermost_first` declared sixteen where it
+    /// needed twenty-three. Nothing noticed at run time, because `ensure`
+    /// grows the stack when a frame asks for more than is left; `max-stack`
+    /// was decorative.
+    fn verified<'h>(
+        mc: &mut Mutation<'h>,
+        bytes: &[u8],
+        constants: Value<'h>,
+        params: Value<'h>,
+        name: Value<'h>,
+    ) -> Value<'h> {
+        // Declared generously so the first verification can only fail for a
+        // real reason, then rebuilt with the answer.
+        let draft = code::make_function(mc, bytes, constants, params, usize::MAX >> 4, name);
+        let needs = code::verify::function(mc, draft).expect("the test program verifies");
+        code::make_function(mc, bytes, constants, params, needs, name)
     }
 
     /// Assemble a function with no constants.
@@ -1277,7 +1313,7 @@ mod tests {
             mc.set_slot(table, i, *c);
         }
         let name = mc.intern("TEST");
-        code::make_function(mc, &bytes, table, Value::NIL, 8, name)
+        verified(mc, &bytes, table, Value::NIL, name)
     }
 
     fn run(body: &[(Op, i32, i32)]) -> String {
@@ -2145,8 +2181,11 @@ mod tests {
         assert_eq!(out, "(1 2)");
     }
 
+    /// Caught before anything runs, which is the verifier's whole point: a
+    /// byte that is not an opcode is a fault in whatever produced the
+    /// bytecode, and there is no reason to find that out halfway through.
     #[test]
-    fn a_byte_that_is_not_an_instruction_halts_rather_than_running_on() {
+    fn a_byte_that_is_not_an_instruction_is_refused_at_load() {
         let mut heap = Heap::new();
         let message = heap.mutate(|mc| {
             let code = mc.alloc_bytes(ObjectType::Code, &[200]);
@@ -2160,22 +2199,28 @@ mod tests {
                 Err(e) => format!("{e}"),
             }
         });
-        assert!(message.contains("is not an instruction"), "{message}");
+        assert!(message.contains("malformed"), "{message}");
+        assert!(message.contains("UnknownOpcode"), "{message}");
     }
 
-    /// A function with no `RET` is a bug in whoever produced it. Running off
-    /// the end must say so rather than reading whatever is next in the heap.
+    /// A function with no `RET` is a bug in whoever produced it, and the
+    /// verifier can see that without running a single instruction.
     #[test]
-    fn running_off_the_end_is_an_error_not_an_adventure() {
+    fn a_function_that_does_not_return_is_refused_at_load() {
         let mut heap = Heap::new();
         let message = heap.mutate(|mc| {
-            let f = asm(mc, &[(Op::Fix, 1, 0)]);
+            // Built raw rather than through `verified`, which would refuse it
+            // before the test got a chance to.
+            let mut bytes = Vec::new();
+            encode(&mut bytes, Op::Fix, 1, 0);
+            let name = mc.intern("TEST");
+            let f = code::make_function(mc, &bytes, Value::NIL, Value::NIL, 4, name);
             match run_now(mc, f, 100) {
                 Ok(_) => String::from("ran, which it should not have"),
                 Err(e) => format!("{e}"),
             }
         });
-        assert!(message.contains("without returning"), "{message}");
+        assert!(message.contains("FallsOffTheEnd"), "{message}");
     }
 
     /// There is no "not implemented" arm left to test. The `match` on `Op`
