@@ -129,7 +129,19 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
         ObjectType::Closure => {
             // Common Lisp prints functions unreadably, since there is no text
             // that reads back as this closure with its captured scope.
-            out.push_str("#<function>");
+            //
+            // The name is worth printing when there is one: a backtrace of
+            // `#<function>` six times tells you nothing, and a compiled
+            // closure knows what it was called.
+            let body = mc.slot(v, crate::eval::closure::BODY);
+            if body.is_object() && mc.header(body).object_type == ObjectType::Function {
+                let _ = write!(out, "#<function {}>", name_of_function(mc, body));
+            } else {
+                out.push_str("#<function>");
+            }
+        }
+        ObjectType::Function => {
+            let _ = write!(out, "#<compiled {}>", name_of_function(mc, v));
         }
         // A macro is a closure that is called at a different time, and like
         // any closure there is no text that reads back as this one.
@@ -157,5 +169,15 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
         other => {
             let _ = write!(out, "#<{other:?} {} slots>", header.slots);
         }
+    }
+}
+
+/// A compiled function's name, or a placeholder.
+fn name_of_function<'h>(mc: &Mutation<'h>, f: Value<'h>) -> String {
+    let name = mc.slot(f, crate::code::function::NAME);
+    if mc.is_symbol(name) {
+        mc.symbol_name(name)
+    } else {
+        String::from("(anonymous)")
     }
 }

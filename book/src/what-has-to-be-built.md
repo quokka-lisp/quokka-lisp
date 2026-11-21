@@ -229,8 +229,10 @@ text into behaviour, and ends by asking whether any of it is correct. Together
 they are **phase 0 and tier 0**, which are finished: `(fact 20)` runs, the
 collector survives being run at every opportunity, and seventeen files of
 Common Lisp agree with a real one. Part III starts **phase 1**, where the
-language stops being defined in Rust — and it starts before the work does, so
-its chapters are a plan rather than a report, and say so at the top.
+language stops being defined in Rust; its first chapters were written before
+the work and say so at the top. Part IV is the compiler, which is a Lisp
+program rather than a piece of the runtime — a different kind of thing, and
+the place where most of the decisions are still provisional.
 
 Each chapter answers one question.
 
@@ -263,6 +265,7 @@ Each chapter answers one question.
 | 25 | [A machine made of instructions](part-3-compiling/25-a-machine-made-of-instructions.md) | What does compiled code actually look like, and what runs it? |
 | 26 | [Where is the variable?](part-3-compiling/26-where-is-the-variable.md) | How does an instruction say which value it means — and where does the speed come from? |
 | 27 | [Leaving early, again](part-3-compiling/27-leaving-early-again.md) | How does compiled code abandon a computation, and how does a cleanup run in the middle of one? |
+| 28 | [A compiler in the language it compiles](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md) | What does a compiler actually do, and which of its decisions are permanent? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

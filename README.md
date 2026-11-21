@@ -101,16 +101,19 @@ condition system, and the rest is phase 3. No renderer and no editor — phases
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Twenty-six chapters in three parts — the substrate, reading and
-running, and now compiling — assuming no prior knowledge of language
-implementation, including what a garbage collector is, what `car` and `cdr`
-are, what an opcode is, and why a program would want to rewrite itself.
+afterwards. Twenty-eight chapters in four parts — the substrate, reading and
+running, the machine, and the compiler — assuming no prior knowledge of
+language implementation, including what a garbage collector is, what `car`
+and `cdr` are, what an opcode is, and why a program would want to rewrite
+itself.
 
 It records what decisions cost, not only which were chosen — including several
 occasions where a rule was written down and then broken by the person who wrote
 it, which is the part a book written afterwards would quietly omit. Part III
 begins before the thing it describes exists, and says so: its first chapter is
-a plan, kept so that what actually happens can correct it.
+a plan, kept so that what actually happens can correct it. Part IV is the
+compiler, and ends on a list of the decisions in it that are expected to
+change.
 
 ```
 mdbook serve book --open     # needs `cargo install mdbook`; optional

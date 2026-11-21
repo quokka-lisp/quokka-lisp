@@ -72,6 +72,10 @@ makes an instruction's size a function of its opcode alone. ([24](part-3-compili
 
 **Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built; chapter 24 is the plan. ([24](part-3-compiling/24-why-compile-at-all.md))
 
+**Code generation.** The part of a compiler that turns an analysed form into
+instructions — the dispatch on the shape of a form that most of a compiler
+turns out to be. ([28](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md))
+
 **Addressing mode.** How an instruction says *where* its operand is, rather
 than what it is. Quokka's are: on the stack, written into the instruction, an
 index into the function's constants, a `(depth, index)` pair into the scope
@@ -223,6 +227,11 @@ where it was. Booting means loading one rather than running a build.
 a character, `nil`, `t`. Contrast a *reference*, which points into the heap.
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
+**Instruction selection.** Choosing *which* instructions express a form, when
+several would work. `(+ 1 2)` can be a function-cell read and a call, or a
+single `PRIM`; both are correct and one is faster. Where most of a compiler's
+judgement lives, and most of what changes as one improves. ([28](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md))
+
 **Literal operand.** An operand that *is* the value rather than directions for
 finding it — the `7` in `FIX 7`. Machine-code writing usually calls this an
 *immediate*, which this book avoids here because
@@ -232,6 +241,11 @@ Two unrelated meanings, one word. ([25](part-3-compiling/25-a-machine-made-of-in
 **Implicit progn.** A body that is a sequence of forms yielding the last — the bodies of `lambda`, `defun`, `let` and most else. Nobody writes the `progn`; it is what a body means. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Interning.** Keeping one object per name, so that two reads of `foo` produce the *same* [symbol](#symbol) rather than two equal ones. Without it, `eq` on symbols fails and every variable lookup becomes a string comparison. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Label.** A name standing for a position in a function's instructions, so
+that the compiler can emit a jump before knowing how far it goes. The
+assembler resolves them; the compiler uses `gensym` for them, so that a nested
+`if` does not collide with itself. ([28](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md))
 
 **Opcode.** Short for *operation code*: the number at the start of an
 instruction saying which operation it is. `CONST`, `LREF` and `JMP` are names

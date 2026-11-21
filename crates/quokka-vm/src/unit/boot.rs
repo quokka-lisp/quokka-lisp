@@ -568,6 +568,23 @@ mod compiler {
         })
     }
 
+    /// What `compile-form` hands back, printed. Book chapter 28 shows this
+    /// transcript, so something had better check it.
+    #[test]
+    fn a_compiled_function_prints_its_name() {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        let chars = Reader::chars_of("(compile-form '(+ 1 2))");
+        let printed = heap.mutate(|mc| {
+            install_compiler(mc).expect("the compiler loads");
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).expect("reads").expect("a form");
+            let f = eval_now(mc, form, BOOT_BUDGET).expect("compiles");
+            print(mc, f)
+        });
+        assert_eq!(printed, "#<compiled COMPILED-FORM>");
+    }
+
     /// **The first Lisp-compiled Quokka program.**
     ///
     /// Nothing in Rust decided what these instructions should be. A Lisp

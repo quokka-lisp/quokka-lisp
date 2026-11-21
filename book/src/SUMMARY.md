@@ -33,12 +33,16 @@
 - [The names with a percent sign](part-2-reading-and-running/22-the-percent-names.md)
 - [More than one answer](part-2-reading-and-running/23-more-than-one-answer.md)
 
-# Part III · Compiling
+# Part III · The Machine
 
 - [Why compile at all](part-3-compiling/24-why-compile-at-all.md)
 - [A machine made of instructions](part-3-compiling/25-a-machine-made-of-instructions.md)
 - [Where is the variable?](part-3-compiling/26-where-is-the-variable.md)
 - [Leaving early, again](part-3-compiling/27-leaving-early-again.md)
+
+# Part IV · The Compiler
+
+- [A compiler in the language it compiles](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md)
 
 ---
 
