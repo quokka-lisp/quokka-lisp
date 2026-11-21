@@ -1822,6 +1822,25 @@ impl<'a, 'h> Machine<'a, 'h> {
         let body = self.mc.slot(function, closure::BODY);
         let captured = self.mc.slot(function, closure::ENV);
 
+        // The other half of #25's rule, and the half that was missing. The VM
+        // refuses an interpreted closure loudly; this would have accepted a
+        // *compiled* one and done something far worse than fail — a `Function`
+        // is a heap object, so `begin` would evaluate it as a body, it would
+        // self-evaluate, and `(length xs)` would quietly return
+        // `#<compiled LAMBDA>` instead of a number.
+        //
+        // One evaluator at a time means neither may call the other, and a
+        // rule enforced in one direction only is enforced where it happened
+        // to be tested.
+        if body.is_object() && self.mc.header(body).object_type == ObjectType::Function {
+            return self.fail(EvalError::BadSyntax {
+                operator: "a call",
+                detail: "reached a compiled closure — the interpreter cannot \
+                         run compiled code, and after the image is built it \
+                         does not have to",
+            });
+        }
+
         let (names, values) = match crate::lambda_list::bind(self.mc, params, arguments) {
             Ok(pair) => pair,
             Err(e) => return self.fail(e),

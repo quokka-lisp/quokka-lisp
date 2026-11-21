@@ -324,6 +324,8 @@ reason.
 
 Both stop being errors when the prelude and the compiler are themselves
 compiled, which is the next piece of work and most of what phase 1 has left.
+Chapter 29 compiles both of them, and finds that the second half — installing
+what was compiled — cannot be done here at all, and belongs to the image.
 Until then they are the right failure: a rule enforced from the day it is
 made, rather than one observed until something needs breaking it.
 

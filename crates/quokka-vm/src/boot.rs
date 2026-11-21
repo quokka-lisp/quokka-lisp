@@ -39,6 +39,7 @@
 use crate::eval::eval_now;
 use crate::eval::EvalError;
 use crate::heap::Mutation;
+use crate::heap::ObjectType;
 use crate::primitives;
 use crate::reader::{ReadError, Reader};
 
@@ -172,6 +173,150 @@ pub fn install_in<'h>(mc: &mut Mutation<'h>) -> Result<(), BootError> {
                 }
             }
         }
+    }
+}
+
+/// What [`compile_source`] found in a file.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Tally {
+    /// Forms handed to `compile-form`, verified, and thrown away.
+    pub compiled: usize,
+    /// Forms evaluated by the interpreter instead — the macro definitions.
+    pub interpreted: usize,
+}
+
+/// Compile every form of `source`, without installing any of the results.
+///
+/// This is the file compiler of #31, and the thing to understand about it is
+/// what it deliberately does *not* do.
+///
+/// # Why nothing is installed
+///
+/// The obvious file compiler compiles a file and installs what it produces,
+/// so that `(defun length ...)` leaves a *compiled* `length` behind. Doing
+/// that to the prelude would break the system in the same breath, because the
+/// compiler is itself interpreted Lisp and it calls `length`, `reverse`,
+/// `second`, `cddr`, `member`, `append` and `apply` — all of them prelude
+/// functions. Installing a compiled `length` would hand the interpreter a
+/// compiled closure the first time the compiler asked how long a list was,
+/// and [`crate::eval`] now refuses one, loudly, by design.
+///
+/// That is not a limitation to work around. It is #25's rule holding: one
+/// evaluator at a time. The way out is not to install into a running
+/// interpreter at all, but to compile everything, write the results into an
+/// image, and start the *next* session from that image with the bytecode VM
+/// already in charge. Installing therefore belongs to phase 1's step D, not
+/// here.
+///
+/// So what this proves is narrower and still worth proving: that the compiler
+/// can compile every form of a real file, and that the verifier accepts
+/// everything it emits. A compiler that handles the prelude handles something
+/// nobody wrote to flatter it.
+///
+/// # Why macros are evaluated
+///
+/// A `defmacro` is interpreted rather than compiled, which looks like a
+/// special case and is really the same rule again. The compiler expands
+/// macros while it compiles, which means it *calls* the expander — from
+/// interpreted code. An expander compiled here could not be called, so the
+/// next form that used the macro would fail. The expander has to exist, in
+/// the interpreter, before the forms that use it are compiled.
+///
+/// This is the bootstrap rule, and it is the host's job only until the image
+/// exists. The REPL was doing it by hand; now there is one copy.
+pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tally, BootError> {
+    use crate::heap::Register;
+    use crate::value::Value;
+
+    /// What the reader left behind, and what to do about it.
+    enum Next {
+        Done,
+        Unreadable(ReadError),
+        /// `(compile-form 'FORM)` is in the register.
+        Compile,
+        /// The form itself is in the register.
+        Interpret,
+    }
+
+    let chars = Reader::chars_of(source);
+    let mut reader = Reader::new(&chars);
+    let mut tally = Tally::default();
+    let mut form_number = 0usize;
+
+    loop {
+        form_number += 1;
+        let next = heap.mutate(|mc| match reader.read(mc) {
+            Err(e) => Next::Unreadable(e),
+            Ok(None) => Next::Done,
+            Ok(Some(form)) => {
+                if form.is_cons() && mc.symbol_is(mc.car(form), "DEFMACRO") {
+                    mc.set_register(Register::Value, form);
+                    return Next::Interpret;
+                }
+                // `(compile-form 'FORM)`. The quote matters: `compile-form`
+                // takes the form as data, and without it the form would be
+                // evaluated on the way in.
+                let quoted = {
+                    let quote = mc.intern("QUOTE");
+                    let inner = mc.cons(form, Value::NIL);
+                    mc.cons(quote, inner)
+                };
+                let call = {
+                    let compile = mc.intern("COMPILE-FORM");
+                    let args = mc.cons(quoted, Value::NIL);
+                    mc.cons(compile, args)
+                };
+                mc.set_register(Register::Value, call);
+                Next::Compile
+            }
+        });
+
+        let compiling = match next {
+            Next::Done => return Ok(tally),
+            Next::Unreadable(e) => return Err(BootError::Read(e)),
+            Next::Compile => true,
+            Next::Interpret => false,
+        };
+
+        // Sliced either way, so the collector runs *during* a form as well as
+        // between them. Compiling allocates far more than evaluating does,
+        // and #32 is what happens when it cannot — see [`crate::eval`].
+        if let Err(error) = crate::eval::eval_sliced(heap, BOOT_BUDGET, 2_000) {
+            return Err(BootError::Eval {
+                form: form_number,
+                error,
+            });
+        }
+
+        if !compiling {
+            tally.interpreted += 1;
+            continue;
+        }
+
+        // The verifier is the point. "It compiled" only means the compiler
+        // did not signal; "it verifies" means the bytes are a program the
+        // machine can run — no jump into the middle of an instruction, no
+        // path that underflows, no constant that is not there. Checking here
+        // makes the whole prelude a test of the compiler's output and not
+        // merely of its temper.
+        if let Some(bad) = heap.mutate(|mc| {
+            let f = mc.register(Register::Value);
+            if !f.is_object() || mc.header(f).object_type != ObjectType::Function {
+                return Some(format!(
+                    "compile-form returned {}",
+                    crate::printer::print(mc, f)
+                ));
+            }
+            crate::code::verify::function(mc, f)
+                .err()
+                .map(|e| format!("{e:?}"))
+        }) {
+            return Err(BootError::Eval {
+                form: form_number,
+                error: EvalError::Malformed(bad),
+            });
+        }
+        tally.compiled += 1;
     }
 }
 

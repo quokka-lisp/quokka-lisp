@@ -899,6 +899,39 @@ mod compiler {
         );
     }
 
+    /// The interpreter refuses a compiled closure, which is the half of #25's
+    /// rule that was missing. Accepting one would not have failed — a
+    /// `Function` self-evaluates, so the call would have returned the
+    /// function object instead of calling it.
+    #[test]
+    fn the_interpreter_refuses_a_compiled_closure() {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        install_compiler(&mut heap).expect("the compiler loads");
+        // Compile a function and put it in a symbol's function cell, then
+        // call it from the interpreter.
+        drive(&mut heap, "(compile-form '(lambda (x) x))").expect("compiles");
+        let out = heap.mutate(|mc| {
+            let compiled = mc.register(Register::Value);
+            // `compile-form` makes a function of no arguments whose body is
+            // the lambda; running it would give the closure. For this test
+            // the function object itself is enough: wrap it as a closure and
+            // install it.
+            let name = mc.intern("COMPILED-THING");
+            let nil = crate::value::Value::NIL;
+            let c = crate::eval::closure::make(mc, nil, compiled, nil);
+            mc.set_slot(name, crate::heap::symbol::FUNCTION, c);
+            let chars = Reader::chars_of("(compiled-thing)");
+            let mut reader = Reader::new(&chars);
+            let form = reader.read(mc).expect("reads").expect("a form");
+            match eval_now(mc, form, BOOT_BUDGET) {
+                Ok(v) => format!("returned {}", print(mc, v)),
+                Err(e) => format!("{e}"),
+            }
+        });
+        assert!(out.contains("compiled closure"), "{out}");
+    }
+
     /// The disassembly of a compiled function, as `--show-code` prints it.
     ///
     /// Pinned because it is a tool for reading the compiler's output, and a
@@ -1048,5 +1081,52 @@ mod compiler {
             }
         });
         assert!(out.contains("verifier refused"), "{out}");
+    }
+}
+
+/// **The file compiler's gate.** Every form of the real prelude compiles,
+/// and the verifier accepts every function that comes out.
+///
+/// Six hundred lines of Lisp nobody wrote to flatter the compiler: `defstruct`
+/// with its generated accessors, `handler-case`, the sequence functions,
+/// `setf` and its expanders. If the compiler can do this it can do the
+/// compiler, which is what phase 1's image needs it to do.
+#[test]
+fn the_whole_prelude_compiles() {
+    let mut heap = Heap::new();
+    install(&mut heap).expect("the prelude boots");
+    install_compiler(&mut heap).expect("the compiler loads");
+    let tally = compile_source(&mut heap, PRELUDE).expect("the prelude compiles");
+    // `Ok` is the gate: `compile_source` stops at the first form that fails
+    // to compile or fails to verify, so reaching the end means all of them
+    // did. The counts are evidence of scale rather than a second check, and
+    // a floor rather than an equality so that adding a prelude function is
+    // not a test failure.
+    assert!(tally.compiled >= 40, "{tally:?}");
+    assert!(
+        tally.interpreted >= 10,
+        "the prelude defines macros, and those are evaluated rather than \
+         compiled — see compile_source: {tally:?}"
+    );
+}
+
+/// **The one that matters for phase 1.** The compiler compiles its own
+/// source.
+///
+/// Not self-hosting yet — the output is thrown away, so this is the compiler
+/// *interpreted* compiling the compiler, not the compiler running itself.
+/// But it is the precondition: an image that holds a compiled compiler can
+/// only be built if the compiler can compile the text of the compiler, and
+/// that is a harder test than the prelude because `compile.lisp` is the
+/// densest tier-0 Lisp in the repository.
+#[test]
+fn the_compiler_compiles_itself() {
+    let mut heap = Heap::new();
+    install(&mut heap).expect("the prelude boots");
+    install_compiler(&mut heap).expect("the compiler loads");
+    for (file, source) in COMPILER {
+        let tally = compile_source(&mut heap, source)
+            .unwrap_or_else(|e| panic!("{file} does not compile: {e}"));
+        assert!(tally.compiled > 0, "{file}: {tally:?}");
     }
 }

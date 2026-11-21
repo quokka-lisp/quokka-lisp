@@ -46,6 +46,42 @@ fn main() {
         return;
     }
 
+    // `quokka --compile-file FILE` compiles every form of a file and reports
+    // what happened, without installing any of it. That last part is the
+    // point rather than a shortcut — see `boot::compile_source` for why
+    // installing into a running interpreter cannot work, and why it has to
+    // wait for the image.
+    if args.len() == 3 && args[1] == "--compile-file" {
+        let source = match std::fs::read_to_string(&args[2]) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("cannot read {}: {e}", args[2]);
+                std::process::exit(1);
+            }
+        };
+        let mut heap = Heap::new();
+        let prepared = quokka_vm::boot::install(&mut heap)
+            .and_then(|()| quokka_vm::boot::install_compiler(&mut heap));
+        if let Err(e) = prepared {
+            eprintln!("quokka: {e}");
+            std::process::exit(1);
+        }
+        match quokka_vm::boot::compile_source(&mut heap, &source) {
+            Ok(tally) => {
+                println!(
+                    "{}: {} forms compiled and verified, {} macro definitions \
+                     evaluated",
+                    args[2], tally.compiled, tally.interpreted
+                );
+            }
+            Err(e) => {
+                eprintln!("{}: {e}", args[2]);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     // `quokka --compile` loads the compiler and evaluates by *compiling*:
     // each form becomes a function and the bytecode VM runs it. The ordinary
     // REPL interprets, and does not load the compiler at all.
