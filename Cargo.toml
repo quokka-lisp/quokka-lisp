@@ -23,3 +23,24 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 # No panic = "abort": it breaks `cargo test --release`, and the size win is small.
+
+# Tests run optimised, and they are the only thing that does.
+#
+# CI spent its time *running* tests rather than compiling them: `cargo test
+# --workspace` took 128 seconds against 14 to build it, and the wasip1 job
+# took 281. The reason is what this project is — an interpreter running a
+# six-hundred-line prelude, sixty-seven times in `boot.rs` alone, in a debug
+# build where every tagged-word accessor is a real function call.
+#
+# `quokka-vm` has no dependencies, so compiling it optimised costs well under
+# a second and the test run drops about eightfold. There is no `unsafe` in the
+# workspace, so optimisation cannot change behaviour; and the assertions that
+# would otherwise be lost are turned back on explicitly below rather than left
+# to a default, since `debug_assert!` is load-bearing here — it is what says a
+# compiled program popped an empty stack.
+#
+# `cargo build` and the REPL keep the ordinary dev profile. Only tests pay.
+[profile.test]
+opt-level = 2
+debug-assertions = true
+overflow-checks = true

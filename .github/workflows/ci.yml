@@ -64,17 +64,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - uses: bytecodealliance/actions/wasmtime/setup@v1
-      - name: Run the core VM tests under wasmtime
+      # One step, not two. `cargo test -p` builds and runs every test target
+      # in the package, so this already runs tests/differential.rs — which a
+      # second step naming `--test differential` then ran again, for twenty
+      # seconds, looking like extra coverage.
+      #
+      # It is still the portability half of the differential tests: the same
+      # Lisp files and the same baselines, on a 32-bit target with a
+      # different pointer story. The correctness half is the sbcl-oracle job.
+      - name: Core VM and differential tests under wasmtime
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir=.
         run: cargo test -p quokka-vm --target wasm32-wasip1
-      # The portability half of the differential tests: the same Lisp files,
-      # the same baselines, on a 32-bit target with a different float and
-      # pointer story. The correctness half is the sbcl-oracle job.
-      - name: Differential tests under wasmtime
-        env:
-          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir=.
-        run: cargo test -p quokka-vm --test differential --target wasm32-wasip1
 
   # SBCL is the differential-test oracle, never a build dependency. This job
   # is the only place it is installed, and nothing else needs it.

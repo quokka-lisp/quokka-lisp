@@ -158,7 +158,13 @@ scripts/check.sh      everything CI runs, in one command
 ## Commands
 
 `./scripts/check.sh` runs everything CI runs. Use it before every commit — it is
-the cheapest way to honour rule 2.
+the cheapest way to honour rule 2. It takes about ten seconds.
+
+**Tests run optimised** (`[profile.test]` in the workspace `Cargo.toml`), because
+the time goes into *running* them rather than compiling them: this is an
+interpreter booting a six-hundred-line prelude dozens of times, and a debug
+build made that eight times slower. `cargo build` and the REPL keep the
+ordinary unoptimised profile.
 
 **Honour its exit code.** Piping it through `grep` for the success line hides a
 failure, because `grep | tail` exits 0 whether or not `grep` matched, and an
