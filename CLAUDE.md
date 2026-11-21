@@ -189,6 +189,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Dev console bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |
 | Serve the dev console | `python3 -m http.server -d crates/quokka-wasm/www 8080` |
 | Format and lint | `cargo fmt --all` · `cargo clippy --workspace --all-targets -- -D warnings` |
+| Line budget | `./scripts/check-budget.sh` — rule 7, counting core and tests separately |
 | Docs | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --open` |
 | Preview the book | `mdbook serve book --open` (needs `cargo install mdbook`; optional) |
 

@@ -31,6 +31,9 @@ cargo test --workspace
 say "book structure"
 ./scripts/check-book.sh
 
+say "line budget"
+./scripts/check-budget.sh
+
 say "differential test coverage"
 ./scripts/check-differential.sh
 

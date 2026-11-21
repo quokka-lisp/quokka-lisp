@@ -77,17 +77,5 @@ impl Host for NullHost {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn null_host_collects_output_and_has_no_files() {
-        let mut host = NullHost::default();
-        host.write_stdout("hello");
-        assert_eq!(host.output, "hello");
-        assert_eq!(
-            host.read_source("boot.lisp"),
-            Err(HostError::NotFound("boot.lisp".to_string()))
-        );
-    }
-}
+#[path = "tests/host.rs"]
+mod tests;
