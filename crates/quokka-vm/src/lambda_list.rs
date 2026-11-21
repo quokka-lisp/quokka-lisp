@@ -593,6 +593,58 @@ fn list_of<'h>(mc: &mut Mutation<'h>, items: &[Value<'h>]) -> Value<'h> {
 // chance to disagree about `&key`.
 // ---------------------------------------------------------------------------
 
+/// The names a simple lambda list binds, in the order [`bind`] binds them.
+///
+/// The compiler needs this and must not work it out for itself. Its idea of a
+/// scope has to match the one the machine builds *slot for slot*, and a
+/// second traversal of the same syntax is a second chance to disagree — about
+/// where `&rest` goes, or whether a `&key` pair binds its keyword or its
+/// variable. `the_names_match_what_bind_binds` checks the two against each
+/// other rather than trusting that they read alike.
+pub fn names<'h>(mc: &Mutation<'h>, params: Value<'h>) -> Result<Vec<Value<'h>>, EvalError> {
+    let mut out = Vec::new();
+    let mut cursor = params;
+    let mut section = 0u8; // 0 required/optional, 2 rest, 3 key
+    while cursor.is_cons() {
+        let item = mc.car(cursor);
+        cursor = mc.cdr(cursor);
+        if mc.is_symbol(item) {
+            if mc.symbol_is(item, "&OPTIONAL") {
+                continue;
+            }
+            if mc.symbol_is(item, "&REST") || mc.symbol_is(item, "&BODY") {
+                section = 2;
+                continue;
+            }
+            if mc.symbol_is(item, "&KEY") {
+                section = 3;
+                continue;
+            }
+            if mc.symbol_is(item, "&ALLOW-OTHER-KEYS") {
+                continue;
+            }
+            out.push(item);
+            if section == 2 {
+                // `&rest` takes exactly one name and then the list is over as
+                // far as positional binding goes.
+                section = 0;
+            }
+            continue;
+        }
+        if section == 3 && item.is_cons() {
+            // `(keyword variable)`, and it is the *variable* that is bound.
+            let after = mc.cdr(item);
+            if !after.is_cons() {
+                return Err(bad("&key wants (keyword variable) pairs here"));
+            }
+            out.push(mc.car(after));
+            continue;
+        }
+        return Err(bad("a simple lambda list wants symbols here"));
+    }
+    Ok(out)
+}
+
 /// Match arguments to a **simple** lambda list: bare symbols, `&optional`,
 /// `&rest`, and `&key` as `(keyword variable)` pairs.
 ///

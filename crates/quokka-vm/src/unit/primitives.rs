@@ -86,7 +86,8 @@ fn the_table_order_is_pinned() {
             "%MAKE-STRING",
             "%ASSEMBLE",
             "INTEGERP",
-            "%DISASSEMBLE"
+            "%DISASSEMBLE",
+            "%REWRITE-LAMBDA-LIST"
         ]
     );
 }

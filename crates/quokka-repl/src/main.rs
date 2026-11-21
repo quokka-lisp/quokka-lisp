@@ -72,8 +72,7 @@ fn main() {
         std::process::exit(1);
     }
     if compiling {
-        let loaded = heap.mutate(quokka_vm::boot::install_compiler);
-        if let Err(e) = loaded {
+        if let Err(e) = quokka_vm::boot::install_compiler(&mut heap) {
             eprintln!("quokka: loading the compiler: {e}");
             std::process::exit(1);
         }

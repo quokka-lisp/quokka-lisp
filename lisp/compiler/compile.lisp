@@ -177,6 +177,30 @@
             (%compile-body (cddr form) (cons (%scope ':variable names) env) tail)
             (list (list 'UNBIND 1)))))
 
+;;; `(let* ((a 1) (b (+ a 1))) ...)`
+;;;
+;;; A scope per binding, because each init can see the ones before it. That is
+;;; the whole difference from `let`, and it is why `let` exists at all: one
+;;; scope for all the bindings is cheaper, and most bindings do not need to
+;;; see each other.
+;;;
+;;; It is here because `%rewrite-lambda-list` emits one. A lambda list with
+;;; `&optional` or `&key` becomes a simple list plus a `let*` that turns each
+;;; unsupplied marker into its default — so the compiler cannot do `&optional`
+;;; without doing `let*` first, which is a dependency the specification did
+;;; not mention and the work found.
+(defun %compile-let* (bindings body env tail)
+  (if (endp bindings)
+      (%compile-body body env tail)
+      (let ((name (%binding-name (car bindings))))
+        (append (%compile (%binding-init (car bindings)) env nil)
+                (list (list 'BIND (%constant-index (vector name))))
+                (%compile-let* (cdr bindings)
+                               body
+                               (cons (%scope ':variable (list name)) env)
+                               tail)
+                (list (list 'UNBIND 1))))))
+
 ;;; `(setq x v)` — the value stays on the stack, because `setq` returns it.
 ;;; `LSET` and `GSET` pop and push, so that is what they already do.
 (defun %compile-setq (form env)
@@ -196,25 +220,25 @@
 ;;; global is cheaper than threading an argument through every function here;
 ;;; the cost is exactly this, and it is paid in one place.
 ;;;
-;;; Only simple parameter lists for now. `&optional` and `&key` need their
-;;; default forms turned into a `let*` around the body — which the interpreter
-;;; does in `lambda_list::rewrite` and the compiler will have to do for
-;;; itself.
+;;; `&optional`, `&key` and `&rest` are not handled here and must not be.
+;;; `%rewrite-lambda-list` turns the lambda list into a simple one plus a
+;;; `let*` around the body — the same rewrite the interpreter uses, because
+;;; writing it again in Lisp would be two implementations of `&key` that have
+;;; to agree. It also hands back the names the simple list binds, in the order
+;;; the binder binds them, so the compile-time scope matches the machine's
+;;; slot for slot rather than by a second reading of the same syntax.
 (defun %compile-lambda (form env)
-  (let ((params (second form)))
-    (if (member '&optional params)
-        (error "the compiler cannot do &optional yet")
-        (if (member '&rest params)
-            (error "the compiler cannot do &rest yet")
-            (if (member '&key params)
-                (error "the compiler cannot do &key yet")
-                (%compile-simple-lambda params (cddr form) env))))))
+  (let ((rewritten (%rewrite-lambda-list (second form) (cddr form))))
+    (%compile-rewritten-lambda (first rewritten)
+                               (second rewritten)
+                               (third rewritten)
+                               env)))
 
-(defun %compile-simple-lambda (params body env)
+(defun %compile-rewritten-lambda (params body names env)
   (let ((outer %constants)
         (outer-count %constant-count))
     (%reset-constants)
-    (let ((code (append (%compile-body body (cons (%scope ':variable params) env) t)
+    (let ((code (append (%compile-body body (cons (%scope ':variable names) env) t)
                         (list (list 'RET)))))
       (let ((compiled (%assemble code (%constants-vector) params 'lambda)))
         (setq %constants outer)
@@ -332,6 +356,7 @@
           ((eq head 'if) (%compile-if form env tail))
           ((eq head 'progn) (%compile-body (cdr form) env tail))
           ((eq head 'let) (%compile-let form env tail))
+          ((eq head 'let*) (%compile-let* (second form) (cddr form) env tail))
           ((eq head 'setq) (%compile-setq form env))
           ((eq head 'lambda) (%compile-lambda form env))
           ((eq head 'flet) (%compile-flet form env tail))
@@ -365,7 +390,7 @@
 ;;; Compile FORM into a function of no arguments.
 ;;;
 ;;; The entry point, and the only place the constants are reset from nothing —
-;;; `%compile-simple-lambda` saves and restores them instead.
+;;; `%compile-rewritten-lambda` saves and restores them instead.
 (defun compile-form (form)
   (%reset-constants)
   (let ((code (append (%compile form nil t) (list (list 'RET)))))

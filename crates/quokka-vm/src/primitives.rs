@@ -103,6 +103,7 @@ pub enum Prim {
     Assemble = 50,
     Integerp = 51,
     Disassemble = 52,
+    RewriteLambdaList = 53,
 }
 
 impl Prim {
@@ -313,6 +314,23 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // returns the text and the REPL prints it. When there are streams it can
     // become the real one; chapter 22 is the convention.
     (Prim::Disassemble, "%DISASSEMBLE", Arity::Exactly(1)),
+    // `(params body)` in, `(simple-params rewritten-body names)` out.
+    //
+    // The compiler needs what `lambda_list::rewrite` already does for the
+    // interpreter: default forms turned into a `let*` around the body, so
+    // that binding never has to evaluate anything. Writing that again in Lisp
+    // would be two implementations of `&key` that must agree, which is #30's
+    // lesson and #28's boundary — the parts with no judgement in them stay
+    // here.
+    //
+    // The third answer is the names the simple list binds, in the order the
+    // binder binds them, because the compiler's scope must match the
+    // machine's slot for slot and working it out twice is a way to disagree.
+    (
+        Prim::RewriteLambdaList,
+        "%REWRITE-LAMBDA-LIST",
+        Arity::Exactly(2),
+    ),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -716,6 +734,22 @@ pub fn call_slice<'h>(
             args[0].is_object() && mc.header(args[0]).object_type.is_string(),
         )),
         Prim::Integerp => Ok(truth(args[0].as_fixnum().is_some())),
+        Prim::RewriteLambdaList => {
+            let (params, body) = crate::lambda_list::rewrite(
+                mc,
+                args[0],
+                args[1],
+                crate::lambda_list::Kind::Ordinary,
+            )?;
+            let names = crate::lambda_list::names(mc, params)?;
+            let mut name_list = Value::NIL;
+            for n in names.iter().rev() {
+                name_list = mc.cons(*n, name_list);
+            }
+            let tail = mc.cons(name_list, Value::NIL);
+            let middle = mc.cons(body, tail);
+            Ok(mc.cons(params, middle))
+        }
         Prim::Disassemble => {
             // A closure or the function inside one, so that both
             // `(%disassemble (compile-form ...))` and a closure work.

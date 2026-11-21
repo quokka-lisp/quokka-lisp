@@ -69,25 +69,41 @@ pub const COMPILER: &[(&str, &str)] = &[(
 /// Load the compiler into a heap that already has the prelude.
 ///
 /// Separate from [`install`] on purpose: see [`COMPILER`]. A REPL does not
-/// call this; the image builder and the tests do.
-pub fn install_compiler<'h>(mc: &mut Mutation<'h>) -> Result<(), BootError> {
-    for (_file, source) in COMPILER {
+/// call this unless asked to; the image builder and the tests do.
+///
+/// **One `mutate` per form, and a collection between them when the heap asks
+/// for one.** Not a detail: collection cannot happen inside a mutation, and
+/// loading this file in a single one exhausted the heap the moment the
+/// compiler grew past a few hundred lines. The reader holds an offset into
+/// the text and no values, so it is free to live across the boundary.
+pub fn install_compiler(heap: &mut crate::heap::Heap) -> Result<(), BootError> {
+    for (file, source) in COMPILER {
         let chars = Reader::chars_of(source);
         let mut reader = Reader::new(&chars);
         let mut form_number = 0usize;
         loop {
             form_number += 1;
-            match reader.read(mc) {
-                Err(e) => return Err(BootError::Read(e)),
-                Ok(None) => break,
-                Ok(Some(form)) => {
-                    if let Err(error) = eval_now(mc, form, BOOT_BUDGET) {
-                        return Err(BootError::Eval {
+            let outcome = heap.mutate(|mc| match reader.read(mc) {
+                Err(e) => Some(Err(BootError::Read(e))),
+                Ok(None) => None,
+                Ok(Some(form)) => match eval_now(mc, form, BOOT_BUDGET) {
+                    Ok(_) => Some(Ok(())),
+                    Err(error) => {
+                        let _ = file;
+                        Some(Err(BootError::Eval {
                             form: form_number,
                             error,
-                        });
+                        }))
                     }
-                }
+                },
+            });
+            if heap.wants_collection() {
+                heap.collect();
+            }
+            match outcome {
+                None => break,
+                Some(Ok(())) => {}
+                Some(Err(e)) => return Err(e),
             }
         }
     }

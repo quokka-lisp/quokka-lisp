@@ -614,7 +614,7 @@ mod compiler {
     fn compile_and_run(source: &str) -> String {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
-        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        install_compiler(&mut heap).expect("the compiler loads");
         if let Err(e) = drive(&mut heap, &format!("(compile-form '{source})")) {
             return format!("; compiling: {e}");
         }
@@ -639,12 +639,10 @@ mod compiler {
     fn a_compiled_function_prints_its_name() {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
-        let chars = Reader::chars_of("(compile-form '(+ 1 2))");
+        install_compiler(&mut heap).expect("the compiler loads");
+        drive(&mut heap, "(compile-form '(+ 1 2))").expect("compiles");
         let printed = heap.mutate(|mc| {
-            install_compiler(mc).expect("the compiler loads");
-            let mut reader = Reader::new(&chars);
-            let form = reader.read(mc).expect("reads").expect("a form");
-            let f = eval_now(mc, form, BOOT_BUDGET).expect("compiles");
+            let f = mc.root();
             print(mc, f)
         });
         assert_eq!(printed, "#<compiled COMPILED-FORM>");
@@ -864,7 +862,7 @@ mod compiler {
     fn compile_instructions(source: &str) -> String {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
-        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        install_compiler(&mut heap).expect("the compiler loads");
         // The body of the lambda, not the CLOSURE that wraps it.
         let form = format!("(%compile-body (cddr '{source}) (list (list ':variable 'n)) t)");
         if let Err(e) = drive(&mut heap, &form) {
@@ -885,7 +883,7 @@ mod compiler {
     fn a_disassembly_names_what_the_operands_mean() {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
-        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        install_compiler(&mut heap).expect("the compiler loads");
         drive(&mut heap, "(compile-form '((lambda (x) (+ x 1)) 41))").expect("compiles");
         let text = heap.mutate(|mc| {
             let f = mc.root();
@@ -916,7 +914,7 @@ mod compiler {
     fn a_disassembly_resolves_jumps_and_primitives() {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
-        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        install_compiler(&mut heap).expect("the compiler loads");
         drive(&mut heap, "(compile-form '(if t 1 2))").expect("compiles");
         let text = heap.mutate(|mc| {
             let f = mc.root();
@@ -926,12 +924,67 @@ mod compiler {
         assert!(text.contains("; -> "), "{text}");
     }
 
-    /// A lambda list the compiler cannot do yet says so, rather than
-    /// producing a function that binds the wrong things.
+    /// Lambda lists with `&optional`, `&key` and `&rest`, which the compiler
+    /// does not implement — `%rewrite-lambda-list` hands it a simple list and
+    /// a `let*`, the same rewrite the interpreter gets.
     #[test]
-    fn an_unsupported_lambda_list_is_refused() {
-        let out = compile_and_run("((lambda (a &optional b) a) 1)");
-        assert!(out.contains("&optional"), "{out}");
+    fn optional_parameters_compile() {
+        assert_eq!(
+            compile_and_run("((lambda (a &optional b) (list a b)) 1 2)"),
+            "(1 2)"
+        );
+        assert_eq!(
+            compile_and_run("((lambda (a &optional b) (list a b)) 1)"),
+            "(1 NIL)"
+        );
+        assert_eq!(
+            compile_and_run("((lambda (a &optional (b 9)) (list a b)) 1)"),
+            "(1 9)"
+        );
+    }
+
+    #[test]
+    fn keyword_parameters_compile() {
+        assert_eq!(
+            compile_and_run("((lambda (a &key b) (list a b)) 1 :b 2)"),
+            "(1 2)"
+        );
+        assert_eq!(
+            compile_and_run("((lambda (a &key b) (list a b)) 1)"),
+            "(1 NIL)"
+        );
+        assert_eq!(compile_and_run("((lambda (&key (b 7)) b))"), "7");
+    }
+
+    #[test]
+    fn rest_parameters_compile() {
+        assert_eq!(compile_and_run("((lambda (a &rest r) r) 1 2 3)"), "(2 3)");
+        assert_eq!(compile_and_run("((lambda (&rest r) r))"), "NIL");
+    }
+
+    /// A supplied-p variable, which is the whole reason an unsupplied
+    /// argument gets a marker rather than nil (chapter 18).
+    #[test]
+    fn supplied_p_compiles() {
+        assert_eq!(
+            compile_and_run("((lambda (&optional (b nil given)) given) 1)"),
+            "T"
+        );
+        assert_eq!(
+            compile_and_run("((lambda (&optional (b nil given)) given))"),
+            "NIL"
+        );
+    }
+
+    /// `let*`, which the compiler needed before it could do `&optional` —
+    /// the rewrite emits one.
+    #[test]
+    fn let_star_binds_one_at_a_time() {
+        assert_eq!(
+            compile_and_run("(let* ((a 1) (b (+ a 1))) (list a b))"),
+            "(1 2)"
+        );
+        assert_eq!(compile_and_run("(let* () 7)"), "7");
     }
 
     /// A prelude function — Lisp, interpreted, called from compiled code.
@@ -962,7 +1015,6 @@ mod compiler {
         install(&mut heap).expect("the prelude boots");
         let chars = Reader::chars_of("(%assemble '((POP) (RET)) #() nil 'bad)");
         let out = heap.mutate(|mc| {
-            install_compiler(mc).expect("the compiler loads");
             let mut reader = Reader::new(&chars);
             let form = reader.read(mc).expect("reads").expect("a form");
             match eval_now(mc, form, BOOT_BUDGET) {

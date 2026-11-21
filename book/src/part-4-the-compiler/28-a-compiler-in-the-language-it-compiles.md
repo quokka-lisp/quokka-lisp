@@ -284,6 +284,7 @@ compiler is a pile of judgements, and most of today's will not survive.
 | Constants found by scanning a list | fifty constants, scanned linearly | a hash table, when a function has enough constants for it to matter |
 | One global for the constants being built | threading it through every function would be most of the code | special variables, when there are any |
 | `if` emits a `JMP` even when the then-branch cannot fall through | simple and always correct | noticing that a branch ending in `RET` needs no jump after it |
+| Lambda lists are rewritten by a primitive | the interpreter already has that rewrite, and a second one in Lisp is a second `&key` to keep in step | nothing — the rewrite has no judgement in it, which is why it is on the Rust side of #28's boundary |
 | `labels` makes a scope of `nil`s and fills it in | the closures must capture a scope that exists | nothing — this is what `labels` *is*, and the instruction it needed (`FSET`) is the thirty-seventh opcode |
 
 One is already struck out, which is the table doing its job: tail calls were

@@ -143,3 +143,53 @@ fn a_malformed_lambda_list_is_an_error() {
         assert!(rewrite(mc, params, body, Kind::Ordinary).is_err());
     });
 }
+
+/// `names` and `bind` must agree about which names a lambda list binds and in
+/// what order — the compiler builds its scope from the first and the machine
+/// fills it with the second, so a disagreement is one variable reading
+/// another's value.
+///
+/// Each case carries arguments that supply everything, so `bind` takes every
+/// branch that pushes a name. The first draft used one argument list for all
+/// of them and `(a b c)` refused it, which is the test being stricter than
+/// its author.
+#[test]
+fn the_names_match_what_bind_binds() {
+    let cases = [
+        ("(a b c)", "(1 2 3)"),
+        ("(a &optional b)", "(1 2)"),
+        ("(a &optional b)", "(1)"),
+        ("(a &rest r)", "(1 2 3)"),
+        ("(&rest r)", "()"),
+        ("(a &key (:k k))", "(1 :k 2)"),
+        ("(a &key (:k k))", "(1)"),
+        (
+            "(a &optional b &rest r &key (:k k) (:j j))",
+            "(1 2 :k 3 :j 4)",
+        ),
+        ("(&key (:k k) &allow-other-keys)", "(:k 1 :other 2)"),
+        ("()", "()"),
+    ];
+    let mut heap = Heap::new();
+    for (params_source, args_source) in cases {
+        let chars = Reader::chars_of(&format!("{params_source} {args_source}"));
+        heap.mutate(|mc| {
+            let mut reader = Reader::new(&chars);
+            let params = reader.read(mc).expect("reads").expect("a lambda list");
+            let args = reader.read(mc).expect("reads").expect("arguments");
+            let expected = names(mc, params).expect("names");
+            let (bound, _) = bind(mc, params, args).expect("binds");
+            let mut a = String::new();
+            for v in &expected {
+                a.push_str(&crate::printer::print(mc, *v));
+                a.push(' ');
+            }
+            let mut b = String::new();
+            for v in &bound {
+                b.push_str(&crate::printer::print(mc, *v));
+                b.push(' ');
+            }
+            assert_eq!(a, b, "for {params_source} with {args_source}");
+        });
+    }
+}
