@@ -81,14 +81,19 @@ differential_cases! {
 /// Not yet the fourth leg — that is step E of #23, where a file compiled and
 /// run must print what it printed interpreted, and it needs #33's compiled
 /// prelude to run anything. This is its precondition, checked now: every
-/// form of the file compiles, and the verifier accepts every function that
-/// comes out.
+/// form compiles, and the verifier accepts every function that comes out.
 ///
-/// Each file is either expected to compile completely (`ok`) or listed with
-/// the reason it cannot yet, as a fragment of the error it gives. The second
-/// kind fails the moment it starts compiling — *"now compiles completely"* —
-/// so this list cannot quietly go stale. #37 has the table this was built
-/// from.
+/// **Except a form that is meant to be an error.** A file like
+/// `control-flow.lisp` contains `(return-from nowhere 1)` on purpose, and its
+/// baseline says `!! error`; the compiler finds that at compile time where
+/// the interpreter found it at run time, and either way it is an error. So a
+/// form may fail to compile *only* where its baseline line is `!! error`.
+/// The first version stopped at the first failure, which left every form
+/// after a deliberate error unchecked.
+///
+/// A file still waiting on something is listed with a fragment of the error
+/// it gives. It fails the moment it starts compiling — *"now compiles"* — so
+/// the list cannot quietly go stale. #37 has the table this was built from.
 macro_rules! compile_cases {
     ($($name:ident => $stem:literal : $why:expr),* $(,)?) => {
         mod compiles {
@@ -97,24 +102,8 @@ macro_rules! compile_cases {
                 #[test]
                 fn $name() {
                     let source = include_str!(concat!("../../../tests/lisp/", $stem, ".lisp"));
-                    let mut heap = quokka_vm::heap::Heap::new();
-                    quokka_vm::boot::install(&mut heap).expect("the prelude boots");
-                    quokka_vm::boot::install_compiler(&mut heap).expect("the compiler loads");
-                    let outcome = quokka_vm::boot::compile_source(&mut heap, source);
-                    let why: Option<&str> = $why;
-                    match (why, outcome) {
-                        (None, Ok(_)) => {}
-                        (None, Err(e)) => panic!("{} does not compile: {e}", $stem),
-                        (Some(why), Ok(_)) => panic!(
-                            "{} now compiles completely — mark it `ok` (it was waiting on: {why})",
-                            $stem
-                        ),
-                        (Some(why), Err(e)) => assert!(
-                            e.to_string().contains(why),
-                            "{} failed for a new reason: {e} (expected: {why})",
-                            $stem
-                        ),
-                    }
+                    let expected = include_str!(concat!("../../../tests/lisp/", $stem, ".expected"));
+                    super::compile_file($stem, source, expected, $why);
                 }
             )*
         }
@@ -124,23 +113,51 @@ macro_rules! compile_cases {
 /// Nothing is waiting on this file.
 const OK: Option<&str> = None;
 
+fn compile_file(stem: &str, source: &str, expected: &str, why: Option<&str>) {
+    let baseline: Vec<&str> = expected.lines().collect();
+    let mut heap = quokka_vm::heap::Heap::new();
+    quokka_vm::boot::install(&mut heap).expect("the prelude boots");
+    quokka_vm::boot::install_compiler(&mut heap).expect("the compiler loads");
+    let mut waiting = false;
+    let mut unexpected = Vec::new();
+    let read = quokka_vm::boot::compile_each(&mut heap, source, |form, outcome| {
+        if let Err(e) = outcome {
+            let meant = baseline.get(form - 1).is_some_and(|l| l.starts_with("!!"));
+            let known = why.is_some_and(|w| e.to_string().contains(w));
+            if known {
+                waiting = true;
+            } else if !meant {
+                unexpected.push(format!("form {form}: {e}"));
+            }
+        }
+        true
+    });
+    read.unwrap_or_else(|e| panic!("{stem} does not read: {e}"));
+    assert!(
+        unexpected.is_empty(),
+        "{stem}: forms that should compile and do not:\n  {}",
+        unexpected.join("\n  ")
+    );
+    if let Some(why) = why {
+        assert!(
+            waiting,
+            "{stem} now compiles — mark it `OK` (it was waiting on: {why})"
+        );
+    }
+}
+
 compile_cases! {
     arithmetic => "arithmetic": OK,
     lists => "lists": OK,
     control => "control": OK,
     functions => "functions": OK,
-    // `(let* 1)` is a deliberate error test, and the compiler meets it at
-    // compile time where the interpreter met it at run time. Step E counts a
-    // compile error as the form's `!! error`.
-    scopes => "scopes": Some("CAR wants a list"),
-    // `tagbody`, which is a design question in #37.
-    control_flow => "control-flow": Some("special operator TAGBODY"),
+    scopes => "scopes": OK,
+    control_flow => "control-flow": OK,
     macros => "macros": OK,
     prelude => "prelude": OK,
     keywords => "keywords": OK,
     lambda_lists => "lambda-lists": OK,
-    // `(exactly-two (1))`, a deliberate error test, as in `scopes`.
-    destructuring => "destructuring": Some("missing arguments"),
+    destructuring => "destructuring": OK,
     macroexpand => "macroexpand": OK,
     vectors => "vectors": OK,
     hash_tables => "hash-tables": OK,

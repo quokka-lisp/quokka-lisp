@@ -225,6 +225,59 @@ pub struct Tally {
 /// This is the bootstrap rule, and it is the host's job only until the image
 /// exists. The REPL was doing it by hand; now there is one copy.
 pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tally, BootError> {
+    let mut tally = Tally::default();
+    let mut failure = None;
+    let read = compile_each(heap, source, |form, outcome| match outcome {
+        Ok(Handled::Compiled) => {
+            tally.compiled += 1;
+            true
+        }
+        Ok(Handled::Evaluated) => {
+            tally.interpreted += 1;
+            true
+        }
+        Err(error) => {
+            failure = Some(BootError::Eval { form, error });
+            false
+        }
+    });
+    if let Err(e) = read {
+        return Err(BootError::Read(e));
+    }
+    match failure {
+        Some(e) => Err(e),
+        None => Ok(tally),
+    }
+}
+
+/// What [`compile_each`] did with one form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Handled {
+    /// Compiled, and the verifier accepted every function that came out.
+    Compiled,
+    /// A macro definition, evaluated by the interpreter instead — see
+    /// [`compile_source`] for why.
+    Evaluated,
+}
+
+/// Compile every form of `source`, handing each outcome to `each` with the
+/// form's number, counting from 1.
+///
+/// [`compile_source`] stops at the first failure, which is right for the
+/// prelude and wrong for a test file that contains *deliberate* errors:
+/// stopping there leaves every form after it unchecked. The differential
+/// tests use this, and require that a form fails to compile only where its
+/// baseline says it is an error (#37).
+///
+/// `each` returns whether to carry on.
+pub fn compile_each<F>(
+    heap: &mut crate::heap::Heap,
+    source: &str,
+    mut each: F,
+) -> Result<(), ReadError>
+where
+    F: FnMut(usize, Result<Handled, EvalError>) -> bool,
+{
     use crate::heap::Register;
     use crate::value::Value;
 
@@ -240,7 +293,6 @@ pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tall
 
     let chars = Reader::chars_of(source);
     let mut reader = Reader::new(&chars);
-    let mut tally = Tally::default();
     let mut form_number = 0usize;
 
     loop {
@@ -272,8 +324,8 @@ pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tall
         });
 
         let compiling = match next {
-            Next::Done => return Ok(tally),
-            Next::Unreadable(e) => return Err(BootError::Read(e)),
+            Next::Done => return Ok(()),
+            Next::Unreadable(e) => return Err(e),
             Next::Compile => true,
             Next::Interpret => false,
         };
@@ -281,42 +333,31 @@ pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tall
         // Sliced either way, so the collector runs *during* a form as well as
         // between them. Compiling allocates far more than evaluating does,
         // and #32 is what happens when it cannot — see [`crate::eval`].
-        if let Err(error) = crate::eval::eval_sliced(heap, BOOT_BUDGET, 2_000) {
-            return Err(BootError::Eval {
-                form: form_number,
-                error,
-            });
+        let outcome = match crate::eval::eval_sliced(heap, BOOT_BUDGET, 2_000) {
+            Err(error) => Err(error),
+            Ok(()) if !compiling => Ok(Handled::Evaluated),
+            // The verifier is the point. "It compiled" only means the
+            // compiler did not signal; "it verifies" means the bytes are a
+            // program the machine can run — no jump into the middle of an
+            // instruction, no path that underflows, no constant that is not
+            // there. Checking here makes a whole file a test of the
+            // compiler's output and not merely of its temper.
+            Ok(()) => heap.mutate(|mc| {
+                let f = mc.register(Register::Value);
+                if !f.is_object() || mc.header(f).object_type != ObjectType::Function {
+                    return Err(EvalError::Malformed(format!(
+                        "compile-form returned {}",
+                        crate::printer::print(mc, f)
+                    )));
+                }
+                crate::code::verify::function(mc, f)
+                    .map(|_| Handled::Compiled)
+                    .map_err(|e| EvalError::Malformed(format!("{e:?}")))
+            }),
+        };
+        if !each(form_number, outcome) {
+            return Ok(());
         }
-
-        if !compiling {
-            tally.interpreted += 1;
-            continue;
-        }
-
-        // The verifier is the point. "It compiled" only means the compiler
-        // did not signal; "it verifies" means the bytes are a program the
-        // machine can run — no jump into the middle of an instruction, no
-        // path that underflows, no constant that is not there. Checking here
-        // makes the whole prelude a test of the compiler's output and not
-        // merely of its temper.
-        if let Some(bad) = heap.mutate(|mc| {
-            let f = mc.register(Register::Value);
-            if !f.is_object() || mc.header(f).object_type != ObjectType::Function {
-                return Some(format!(
-                    "compile-form returned {}",
-                    crate::printer::print(mc, f)
-                ));
-            }
-            crate::code::verify::function(mc, f)
-                .err()
-                .map(|e| format!("{e:?}"))
-        }) {
-            return Err(BootError::Eval {
-                form: form_number,
-                error: EvalError::Malformed(bad),
-            });
-        }
-        tally.compiled += 1;
     }
 }
 

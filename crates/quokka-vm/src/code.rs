@@ -172,6 +172,21 @@ pub enum Op {
     /// made before the scope and do not see it — which is why writing the VM
     /// never noticed.
     Fset = 36,
+
+    /// Jump to a tag of the **innermost** record's tagbody, in one step.
+    ///
+    /// The fast path of `go` (#37's option C), for the common case: the `go`
+    /// is in the same function as its tagbody and no other record is open in
+    /// between. Then the tagbody's record is the innermost one, and it
+    /// already holds everything a `go` has to restore — the stack is dropped
+    /// to the record's top, the environment saved in it is put back, and
+    /// control jumps. No unwind, no jump table, and no counting by the
+    /// compiler: whatever was pushed or bound since the tagbody began is
+    /// undone by the record, not by instructions the compiler worked out.
+    ///
+    /// The verifier checks statically that the innermost record is a `TAG`,
+    /// and the machine checks again at run time.
+    JmpTag = 37,
 }
 
 /// Every opcode, in order, which is also the order of their byte values.
@@ -217,6 +232,7 @@ const TABLE: &[(Op, &str, Operands)] = &[
     (Op::Mvsave, "MVSAVE", Operands::None),
     (Op::Mvrestore, "MVRESTORE", Operands::None),
     (Op::Fset, "FSET", Operands::U8U8),
+    (Op::JmpTag, "JMP-TAG", Operands::S16),
 ];
 
 /// How many opcodes there are. `docs/bytecode.md` quotes this number.
@@ -521,7 +537,7 @@ fn render<'h>(mc: &Mutation<'h>, f: Value<'h>, indent: usize, out: &mut String) 
             },
             // A jump says where it lands, because an offset alone is not
             // something a person can follow.
-            Op::Jmp | Op::JmpNil | Op::JmpNotNil => {
+            Op::Jmp | Op::JmpNil | Op::JmpNotNil | Op::JmpTag => {
                 format!("  ; -> {}", d.next as i32 + d.a)
             }
             Op::Catch | Op::Protect => format!("  ; -> {}", d.next as i32 + d.a),
@@ -718,6 +734,21 @@ pub mod verify {
             /// Where.
             at: usize,
         },
+        /// A `JMP-TAG` where the innermost open record is not a tagbody's —
+        /// so dropping the stack to its top and jumping would leave the
+        /// wrong record behind, or none.
+        NoTagRecord {
+            /// The `JMP-TAG`.
+            at: usize,
+        },
+        /// An entry of a `TAG`'s jump table is not a `JMP`. A `go` landing
+        /// there would run whatever happened to be at that address.
+        BadTable {
+            /// The `TAG`.
+            at: usize,
+            /// The entry that is not a jump.
+            entry: usize,
+        },
     }
 
     /// How many stack slots an unwind record takes. Must agree with
@@ -739,6 +770,11 @@ pub mod verify {
         /// the block-like operators: the record is gone by the time an
         /// unwind arrives at their label.
         branch_marks: i32,
+        /// A `TAG`'s jump table: where it starts and how many entries. Every
+        /// entry is reached only by a `go` landing, never by falling through,
+        /// so without this the verifier would check the first entry and
+        /// never see the rest.
+        table: Option<(usize, usize)>,
         /// A jump target, and how deep the stack is on arrival **relative to
         /// the depth before this instruction**.
         ///
@@ -802,34 +838,63 @@ pub mod verify {
         }
 
         // Each reachable instruction is visited with how deep the stack is
-        // and how many unwind records are open. Both have to be the same on
-        // every path that reaches it.
-        let mut seen: std::collections::HashMap<usize, (usize, i32)> =
+        // and **which unwind records are open**: for each, the depth it starts
+        // at and the instruction that opened it. All of it has to be the same
+        // on every path that reaches an instruction.
+        //
+        // A count of records was enough until `JMP-TAG` (#37), which drops the
+        // stack to the top of the innermost record and so needs to know where
+        // that is — and that it is a tagbody's.
+        type Records = Vec<(usize, Op)>;
+        let mut seen: std::collections::HashMap<usize, (usize, Records)> =
             std::collections::HashMap::new();
-        let mut work = vec![(0usize, 0usize, 0i32)];
+        let mut work: Vec<(usize, usize, Records)> = vec![(0, 0, Vec::new())];
         let mut deepest = 0usize;
 
-        while let Some((at, depth, marks)) = work.pop() {
+        while let Some((at, depth, records)) = work.pop() {
             if at >= bytes.len() {
                 // Reached by falling off the end of the last instruction.
                 return Err(Error::FallsOffTheEnd { at });
             }
-            if let Some(&(known, known_marks)) = seen.get(&at) {
-                if known != depth {
+            if let Some((known, known_records)) = seen.get(&at) {
+                if *known != depth {
                     return Err(Error::Inconsistent {
                         at,
-                        had: known,
+                        had: *known,
                         then: depth,
                     });
                 }
-                if known_marks != marks {
-                    return Err(Error::MarksNotBalanced { at, open: marks });
+                if *known_records != records {
+                    return Err(Error::MarksNotBalanced {
+                        at,
+                        open: records.len() as i32,
+                    });
                 }
                 continue;
             }
-            seen.insert(at, (depth, marks));
+            seen.insert(at, (depth, records.clone()));
 
             let d = decode(bytes, at).map_err(Error::Malformed)?;
+
+            // The one instruction whose arrival depth is not a fixed offset
+            // from the depth before it: `JMP-TAG` drops the stack to the top
+            // of the innermost record, wherever that is. Which is why the
+            // state above is a list of records and not a count of them.
+            if d.op == Op::JmpTag {
+                let Some(&(base, kind)) = records.last() else {
+                    return Err(Error::NoTagRecord { at });
+                };
+                if kind != Op::Tag {
+                    return Err(Error::NoTagRecord { at });
+                }
+                let target = (d.next as i64 + d.a as i64).max(0) as usize;
+                if !starts.contains(&target) {
+                    return Err(Error::JumpIntoNowhere { at, target });
+                }
+                work.push((target, base + RECORD, records.clone()));
+                continue;
+            }
+
             let effect = effect_of(mc, &d, at, constants, count)?;
             if depth < effect.pops {
                 return Err(Error::Underflow {
@@ -841,18 +906,48 @@ pub mod verify {
             // Leaving the function with a record still open would strand the
             // mark pointer — and for a tail call, which reuses the frame by
             // dropping everything above it, aim it at reclaimed space.
-            if matches!(d.op, Op::Ret | Op::Tcall) && marks != 0 {
-                return Err(Error::MarksNotBalanced { at, open: marks });
-            }
-            let after = depth - effect.pops + effect.pushes;
-            let marks_after = marks + effect.marks;
-            if marks_after < 0 {
+            if matches!(d.op, Op::Ret | Op::Tcall) && !records.is_empty() {
                 return Err(Error::MarksNotBalanced {
                     at,
-                    open: marks_after,
+                    open: records.len() as i32,
                 });
             }
+            let after = depth - effect.pops + effect.pushes;
+            let mut records_after = records.clone();
+            match effect.marks {
+                // A record starts where the stack was once its instruction had
+                // popped what it pops — the catch tag, for `CATCH`.
+                1 => records_after.push((depth - effect.pops, d.op)),
+                -1 => {
+                    records_after
+                        .pop()
+                        .ok_or(Error::MarksNotBalanced { at, open: -1 })?;
+                }
+                _ => {}
+            }
             deepest = deepest.max(depth.max(after));
+
+            // Where a branch arrives, records are as they were *before* this
+            // instruction unless the record outlives the unwind that lands
+            // there — `PROTECT`'s, replaced by a paused record of the same
+            // size, and `TAG`'s, which a `go` keeps.
+            let branch_records = if effect.branch_marks == 0 {
+                records.clone()
+            } else {
+                records_after.clone()
+            };
+
+            if let Some((start, entries)) = effect.table {
+                for entry in 0..entries {
+                    let address = start + entry * Op::Jmp.width();
+                    let is_jump = starts.contains(&address)
+                        && decode(bytes, address).map(|e| e.op) == Ok(Op::Jmp);
+                    if !is_jump {
+                        return Err(Error::BadTable { at, entry: address });
+                    }
+                    work.push((address, after, records_after.clone()));
+                }
+            }
 
             if let Some((target, relative)) = effect.branch {
                 if !starts.contains(&target) {
@@ -866,10 +961,10 @@ pub mod verify {
                         wanted: (-relative) as usize,
                     });
                 }
-                work.push((target, arrives as usize, marks + effect.branch_marks));
+                work.push((target, arrives as usize, branch_records));
             }
             if effect.falls_through {
-                work.push((d.next, after, marks_after));
+                work.push((d.next, after, records_after));
             }
         }
         Ok(deepest)
@@ -888,6 +983,7 @@ pub mod verify {
             marks: 0,
             falls_through: true,
             branch_marks: 0,
+            table: None,
             branch: None,
         };
         let terminator = Effect {
@@ -896,6 +992,7 @@ pub mod verify {
             marks: 0,
             falls_through: false,
             branch_marks: 0,
+            table: None,
             branch: None,
         };
         let constant = |index: i32| -> Result<usize, Error> {
@@ -942,6 +1039,10 @@ pub mod verify {
             Op::Mvsave | Op::Mvrestore => plain(1, 1),
             // Control leaves and does not come back here.
             Op::Ret | Op::Tcall | Op::Go => terminator,
+            // Never reached: `walk` handles it before asking, because where it
+            // lands depends on the records and not on this table. Listed so
+            // that this match stays exhaustive.
+            Op::JmpTag => terminator,
             Op::Unprotect => Effect {
                 marks: -1,
                 ..terminator
@@ -967,13 +1068,14 @@ pub mod verify {
                 marks: 0,
                 falls_through: true,
                 branch_marks: 0,
+                table: None,
                 branch: Some((target(d.a), -1)),
             },
             // A record occupies the stack, and the label it names is reached
             // by an unwind that drops the record and pushes one value — so
             // control arrives there one deeper than it was before the
             // instruction, not after it.
-            Op::Block | Op::Tag | Op::Handler => {
+            Op::Block | Op::Handler => {
                 constant(d.a)?;
                 Effect {
                     pops: 0,
@@ -983,7 +1085,28 @@ pub mod verify {
                     // An unwind that finds this record pops it on the way, so
                     // the label is reached with it already gone.
                     branch_marks: 0,
+                    table: None,
                     branch: Some((target(d.b), 1)),
+                }
+            }
+            // A tagbody's record, and a `go` that finds it **keeps** it and
+            // pushes nothing, so every entry of the jump table is reached
+            // with the record in place and the stack at its top. One entry
+            // per tag, so the number of tags is the number of entries.
+            Op::Tag => {
+                let i = constant(d.a)?;
+                let tags = mc.slot(constants, i);
+                if !tags.is_object() || mc.header(tags).object_type != ObjectType::Vector {
+                    return Err(Error::BadBinding { at });
+                }
+                Effect {
+                    pops: 0,
+                    pushes: RECORD,
+                    marks: 1,
+                    falls_through: true,
+                    branch_marks: 1,
+                    table: Some((target(d.b), mc.header(tags).slots)),
+                    branch: None,
                 }
             }
             // Pops the tag, and an unwind that finds it pushes one value in
@@ -994,6 +1117,7 @@ pub mod verify {
                 marks: 1,
                 falls_through: true,
                 branch_marks: 0,
+                table: None,
                 branch: Some((target(d.a), 0)),
             },
             // The cleanup fragment is only ever entered by the unwinder,
@@ -1008,6 +1132,7 @@ pub mod verify {
                 marks: 1,
                 falls_through: true,
                 branch_marks: 1,
+                table: None,
                 branch: Some((target(d.a), RECORD as i32)),
             },
             Op::Unmark => Effect {

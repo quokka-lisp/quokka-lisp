@@ -27,9 +27,10 @@ fn the_table_is_in_opcode_order() {
 /// The count `docs/bytecode.md` quotes. Not a law, but a number in prose
 /// that drifts the moment nobody is checking — it has already been wrong
 /// once, when the specification said thirty-four and the enum said thirty-six.
+/// Thirty-eight since `JMP-TAG` (#37).
 #[test]
-fn there_are_thirty_seven_opcodes() {
-    assert_eq!(OPCODE_COUNT, 37);
+fn there_are_thirty_eight_opcodes() {
+    assert_eq!(OPCODE_COUNT, 38);
 }
 
 /// Every operand shape survives a round trip, including the signed one,
@@ -261,6 +262,62 @@ fn unreachable_code_is_allowed() {
     assert_eq!(
         check(&[(Op::Fix, 1, 0), (Op::Ret, 0, 0), (Op::Pop, 0, 0)], 0),
         Ok(1)
+    );
+}
+
+/// Verify a hand-written program whose constant 0 is a vector of `tags`
+/// tag names, which is what `TAG` needs.
+fn check_with_tags(body: &[(Op, i32, i32)], tags: usize) -> Result<usize, verify::Error> {
+    let mut bytes = Vec::new();
+    for (op, a, b) in body {
+        encode(&mut bytes, *op, *a, *b);
+    }
+    let mut heap = Heap::new();
+    heap.mutate(|mc| {
+        let names = mc.alloc(ObjectType::Vector, tags);
+        let table = mc.alloc(ObjectType::Vector, 1);
+        mc.set_slot(table, 0, names);
+        let name = mc.intern("TEST");
+        let f = make_function(mc, &bytes, table, Value::NIL, 1024, name);
+        verify::function(mc, f)
+    })
+}
+
+/// `JMP-TAG` drops the stack to the innermost record's top, so with no
+/// record open there is nowhere for it to go.
+#[test]
+fn a_jmp_tag_with_no_record_is_refused() {
+    assert_eq!(
+        check(&[(Op::JmpTag, 0, 0), (Op::Ret, 0, 0)], 0),
+        Err(verify::Error::NoTagRecord { at: 0 })
+    );
+}
+
+/// And the innermost record must be a tagbody's — dropping to a `block`'s
+/// would leave the block's record standing where a tagbody's should be.
+#[test]
+fn a_jmp_tag_inside_a_block_is_refused() {
+    assert_eq!(
+        check(
+            &[
+                (Op::Block, 0, 3), // its label is the RET at 8
+                (Op::JmpTag, 0, 0),
+                (Op::Ret, 0, 0),
+            ],
+            1
+        ),
+        Err(verify::Error::NoTagRecord { at: 5 })
+    );
+}
+
+/// Every entry of a tagbody's jump table is reached only by a `go`
+/// landing, so the verifier checks each one is a `JMP` — here the table
+/// "starts" at a `NIL`.
+#[test]
+fn a_jump_table_entry_that_is_not_a_jump_is_refused() {
+    assert_eq!(
+        check_with_tags(&[(Op::Tag, 0, 0), (Op::Nil, 0, 0), (Op::Ret, 0, 0)], 1),
+        Err(verify::Error::BadTable { at: 0, entry: 5 })
     );
 }
 

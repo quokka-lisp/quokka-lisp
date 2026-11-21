@@ -1101,9 +1101,12 @@ mod compiler {
     /// named after it that compiled and failed only when run.
     #[test]
     fn an_operator_the_compiler_lacks_is_a_compile_error() {
+        // `tagbody` was the first example here, until #37 compiled it. These
+        // two wait for #33, where the compiler is compiled and can call an
+        // expander it has just made.
         for (source, name) in [
-            ("(tagbody top)", "TAGBODY"),
             ("(macrolet ((m () 1)) (m))", "MACROLET"),
+            ("(defmacro m () 1)", "DEFMACRO"),
         ] {
             let out = compile_and_run(source);
             assert!(out.starts_with("; compiling:"), "{out}");
@@ -1137,6 +1140,184 @@ mod compiler {
         }
         let out = compile_instructions("(lambda (n) (multiple-value-prog1 (f n)))");
         assert_eq!(out.matches("TCALL").count(), 1, "{out}");
+    }
+
+    // ---- #37: tagbody and go, by B (TAG/GO) and C (JMP-TAG) ------------
+
+    #[test]
+    fn a_tagbody_is_a_loop() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((i 0) (acc nil)) \
+                   (tagbody top \
+                     (if (= i 3) (go end)) \
+                     (setq acc (cons i acc)) \
+                     (setq i (+ i 1)) \
+                     (go top) \
+                    end) \
+                   acc)"
+            ),
+            "(2 1 0)"
+        );
+    }
+
+    /// A thousand trips: the record survives every `go`, which `TAG` as
+    /// first built — sharing `BLOCK`'s pop-on-landing — could not do twice.
+    #[test]
+    fn a_tagbody_can_be_gone_to_again_and_again() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((n 0)) (tagbody again (setq n (+ n 1)) (if (< n 1000) (go again))) n)"
+            ),
+            "1000"
+        );
+    }
+
+    /// A tagbody yields `nil`; one with no tags is just its statements.
+    #[test]
+    fn a_tagbody_yields_nil() {
+        assert_eq!(compile_and_run("(tagbody 1 2 3)"), "NIL");
+        assert_eq!(
+            compile_and_run("(let ((x 0)) (list (tagbody (setq x 1) (setq x 2)) x))"),
+            "(NIL 2)"
+        );
+    }
+
+    /// Any atom is a tag — the interpreter's rule — integers included.
+    #[test]
+    fn an_integer_is_a_tag() {
+        assert_eq!(
+            compile_and_run("(let ((n 0)) (tagbody 10 (setq n (+ n 1)) (if (< n 3) (go 10))) n)"),
+            "3"
+        );
+    }
+
+    /// The case only B can do: a `go` from inside a closure, made on the
+    /// first trip and called on later ones. The marker is the same object on
+    /// every trip, so the closure's lookup still finds the record.
+    #[test]
+    fn a_closure_made_on_an_earlier_trip_can_still_go() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((f nil) (n 0)) \
+                   (tagbody top \
+                     (setq n (+ n 1)) \
+                     (if (= n 1) (setq f (lambda () (go top)))) \
+                     (if (< n 3) (funcall f))) \
+                   n)"
+            ),
+            "3"
+        );
+    }
+
+    #[test]
+    fn a_go_through_an_unwind_protect_runs_the_cleanup() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((log nil)) \
+                   (tagbody top \
+                     (unwind-protect (if (null log) (go top)) (setq log (cons 'x log)))) \
+                   log)"
+            ),
+            "(X X)"
+        );
+    }
+
+    /// A `go` out of a `block` crosses its record and must use the unwinder;
+    /// and the block's scope must be gone afterwards, which is the `block`
+    /// bug of the section above seen from another side.
+    #[test]
+    fn a_go_out_of_a_block_leaves_no_scope_behind() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((n 0)) (tagbody top (setq n (+ n 1)) (block b (if (< n 3) (go top)))) n)"
+            ),
+            "3"
+        );
+    }
+
+    /// The two things `JMP-TAG` undoes by itself: a scope bound since the
+    /// tagbody began, and values left on the operand stack by a call that
+    /// was in the middle of collecting its arguments.
+    #[test]
+    fn a_local_go_undoes_scopes_and_stack_by_itself() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((x 5)) (tagbody a (let ((y 1)) (if (= x 5) (progn (setq x 6) (go a))))) x)"
+            ),
+            "6"
+        );
+        assert_eq!(
+            compile_and_run(
+                "(let ((n 0)) (tagbody top (setq n (+ n 1)) (list 1 2 (if (< n 5) (go top) 3))) n)"
+            ),
+            "5"
+        );
+    }
+
+    #[test]
+    fn an_inner_tagbody_can_go_to_an_outer_one() {
+        assert_eq!(
+            compile_and_run(
+                "(let ((n 0)) \
+                   (tagbody outer (setq n (+ n 1)) (tagbody inner (if (< n 3) (go outer)))) \
+                   n)"
+            ),
+            "3"
+        );
+    }
+
+    /// Going to a tagbody that has finished is an error, not a jump into
+    /// nothing: its record has gone, and the unwinder says so.
+    #[test]
+    fn going_to_a_finished_tagbody_is_an_error() {
+        let out = compile_and_run(
+            "(let ((f nil)) (tagbody (setq f (lambda () (go top))) top) (funcall f))",
+        );
+        assert!(out.contains("no exit named"), "{out}");
+    }
+
+    #[test]
+    fn a_go_to_a_tag_that_is_not_there_is_a_compile_error() {
+        let out = compile_and_run("(tagbody top (go elsewhere))");
+        assert!(out.contains("go names a tag that is not here"), "{out}");
+    }
+
+    /// C's choice. Nothing between the `go` and its tagbody but a `let` and
+    /// a call's arguments: one `JMP-TAG`, no `GO`.
+    #[test]
+    fn a_local_go_is_one_jmp_tag() {
+        let out = compile_instructions("(lambda (n) (tagbody top (let ((x n)) (f x (go top)))))");
+        assert!(out.contains("(JMP-TAG"), "{out}");
+        assert!(!out.contains("(GO "), "{out}");
+    }
+
+    /// And where it must not: a record between — a `block`, an
+    /// `unwind-protect`, an inner tagbody — means `GO` and the unwinder.
+    #[test]
+    fn a_go_across_a_record_is_an_unwind() {
+        for source in [
+            "(lambda (n) (tagbody top (block b (go top))))",
+            "(lambda (n) (tagbody top (unwind-protect (go top) (f n))))",
+            "(lambda (n) (tagbody outer (tagbody inner (go outer))))",
+        ] {
+            let out = compile_instructions(source);
+            assert!(out.contains("(GO "), "{source}: {out}");
+        }
+        // The inner tagbody's own tag is local to it.
+        let out = compile_instructions("(lambda (n) (tagbody outer (tagbody inner (go inner))))");
+        assert!(out.contains("(JMP-TAG"), "{out}");
+    }
+
+    /// From inside a closure it is always `GO`: the closure may be running
+    /// several frames deeper, where no jump can reach. The closure is a
+    /// separate function, so this looks at the disassembly of both.
+    #[test]
+    fn a_go_from_a_closure_is_an_unwind() {
+        let out =
+            compile_and_run("(%disassemble (lambda (n) (tagbody top (f (lambda () (go top))))))");
+        assert!(out.contains("GO 1 0"), "{out}");
+        assert!(!out.contains("JMP-TAG"), "{out}");
     }
 
     /// The instruction list for a form, as the compiler produces it.

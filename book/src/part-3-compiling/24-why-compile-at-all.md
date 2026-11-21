@@ -14,8 +14,9 @@
 >
 > It is now all built — the VM, the compiler, the image — and the plan held
 > better than it deserved to. Three things it did not know: the instruction
-> set needed thirty-seven opcodes rather than thirty-four, the thirty-seventh
-> being found by the *compiler* and not the VM (chapter 28); the compiler
+> set needed thirty-eight opcodes rather than thirty-four — the thirty-seventh
+> found by the *compiler* and not the VM, the thirty-eighth when `tagbody`
+> wanted a one-step `go` (chapter 28); the compiler
 > would be able to compile itself before anything could run it (chapter 29);
 > and the hardest problem of the phase would be none of this, but the fact
 > that a garbage collection cannot happen inside a mutation (chapter 28's

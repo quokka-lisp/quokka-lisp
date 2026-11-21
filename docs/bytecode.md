@@ -109,11 +109,12 @@ depend on their operands.
 
 ## 5 · The instructions
 
-**Thirty-seven.** Grouped by what they are for, not by number.
+**Thirty-eight.** Grouped by what they are for, not by number.
 
 (This document said thirty-four until the enum was written and the rows were
 counted by a compiler rather than by me; then thirty-six until the compiler
-asked for `FSET`. `code::OPCODE_COUNT` is the number, and a test pins it,
+asked for `FSET`; then thirty-seven until `tagbody` wanted a one-step `go`
+and got `JMP-TAG` (#37). `code::OPCODE_COUNT` is the number, and a test pins it,
 because a count in prose drifts the moment nobody is checking.)
 
 ### Pushing a value
@@ -221,8 +222,9 @@ an interpreter structurally cannot.
 | `UNPROTECT` | 1 | a cleanup has finished: take the paused unwind back out and carry on |
 | `HANDLER k:u16 o:s16` | 5 | push a handler record; `constants[k]` is the clause list, for the debugger |
 | `UNMARK` | 1 | drop the innermost record — what a `block`, `catch`, `tagbody` or `handler-case` left normally does |
-| `TAG k:u16 o:s16` | 5 | a `tagbody` marker, emitted **only** when a closure could `go` to it from outside |
-| `GO d:u8 i:u8` | 3 | the non-local case |
+| `TAG k:u16 o:s16` | 5 | bind every tag in `constants[k]` (a vector) to one fresh marker, then push a tagbody record whose jump table starts at `here + o`. **The record survives a `go`** |
+| `GO d:u8 i:u8` | 3 | find the marker `d` scopes out, slot `i`, and unwind to it carrying `i`; the landing keeps the record and resumes at table entry `i` |
+| `JMP-TAG o:s16` | 3 | the one-step local `go`: drop the stack to the top of the innermost record, which must be a tagbody's, restore the environment it saved, and jump to `here + o` |
 
 `block` and `tagbody` go through the environment rather than through a known
 stack depth because a `return-from` or a `go` can be inside a closure that has
@@ -230,13 +232,30 @@ escaped, where no depth is knowable. Treating both cases alike is slower and
 is one mechanism; specialising the local case to a `JMP` plus some unwinding
 is a later pass with a profile attached.
 
-> **Under question — #37.** Implementing the compiler found that neither half
-> of the `tagbody` plan works as written. A local `go` as a bare `JMP` leaves
-> operands, scopes and records behind (`(f a (go top))`, `(let ((x 1)) (go
-> top))`, `(block b (go top))`). And `TAG`/`GO` share `BLOCK`'s code, so a
-> landing pops the record and the next `go` to the same tag finds nothing —
-> a `tagbody` cannot loop. Three options are written out in the issue; none is
-> chosen. Until one is, the compiler refuses `tagbody`.
+> **Decided in #37, after the plan above failed on contact.** Neither half of
+> it worked as written. A local `go` as a bare `JMP` leaves operands, scopes and
+> records behind — `(f a (go top))`, `(let ((x 1)) (go top))`, `(block b (go
+> top))`. And `TAG`/`GO` shared `BLOCK`'s code, so a landing popped the record
+> and the next `go` to the same tag found nothing: a tagbody could not loop.
+>
+> What replaced it is two mechanisms, the second a fast path over the first:
+>
+> - **`TAG`/`GO`, for every case.** One marker for all of a tagbody's tags, as
+>   the interpreter does; `GO` carries the tag's index; landing on a `TAG`
+>   record *keeps* it and resumes through a **jump table** — one `JMP` per tag,
+>   entry `i` at `table + 3·i`. Through the unwinder, so it works from inside a
+>   closure and runs `unwind-protect` cleanups on the way. The record saves the
+>   environment *inside* the tagbody, the opposite of `BLOCK`, because a `go`
+>   resumes inside; the normal exit is `UNMARK` then `UNBIND 1`. Three steps.
+> - **`JMP-TAG`, when the tagbody's record is the innermost.** The compiler
+>   emits it when no function boundary and no other record lie between the
+>   `go` and its tagbody. The record already holds the stack base and the
+>   environment, so the compiler counts nothing — whatever was pushed or bound
+>   since is undone by the record. One step.
+>
+> The verifier checks both: every jump-table entry must be a `JMP`, and a
+> `JMP-TAG` must have a `TAG` record innermost. For the second its state grew
+> from *how many* records are open to *where each starts and what kind it is*.
 
 ### What the records look like
 
@@ -328,7 +347,7 @@ no single delivery point:**
 > may leave it set.
 
 The interpreter had one funnel — `deliver` — and clearing there was free. A
-bytecode VM has thirty-seven funnels, so this is a rule each one must follow,
+bytecode VM has thirty-eight funnels, so this is a rule each one must follow,
 and forgetting it means a stale second value surfacing in a form a long way
 from the one that set it. It belongs in a test, not only in a sentence.
 
@@ -347,7 +366,7 @@ from the one that set it. It belongs in a test, not only in a sentence.
 | `lambda` | `CLOSURE` |
 | `block` / `return-from` | `BLOCK` / `RETFROM` |
 | `catch` / `throw` | `CATCH` / `THROW` |
-| `tagbody` / `go` | **undecided — #37**; the compiler refuses it until then |
+| `tagbody` / `go` | `TAG` and a jump table; `JMP-TAG` for a local `go`, `GO` for any other (#37) |
 | `unwind-protect` | `PROTECT` / `UNPROTECT` |
 | `%handler-case` | `HANDLER` / `UNMARK`, then the clause dispatch as ordinary compiled code ending in a re-signal (#36) |
 | `multiple-value-call` | `MVCALL` |

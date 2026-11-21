@@ -28,6 +28,24 @@
 (setq %constants nil)
 (setq %constant-count 0)
 
+;;; What is open around the form being compiled, innermost first: `:record`
+;;; for a form whose unwind record is on the stack while its body runs,
+;;; `:function` for the edge of a nested function, and an entry per
+;;; `tagbody`. A `go` reads it to decide whether it may be a one-step
+;;; `JMP-TAG` — only if its own tagbody is the innermost thing open (#37).
+;;;
+;;; Not part of the environment, because the environment mirrors the run-time
+;;; chain of scopes link for link, and most of these leave no scope behind.
+(setq %open nil)
+
+;;; Compile with ENTRY open, by calling THUNK. The save and restore are by
+;;; hand because tier 0 has no special variables to bind.
+(defun %with-open (entry thunk)
+  (let ((outer %open))
+    (setq %open (cons entry %open))
+    (funcall thunk)
+    (setq %open outer)))
+
 (defun %reset-constants ()
   (setq %constants nil)
   (setq %constant-count 0))
@@ -245,7 +263,8 @@
         (outer-count %constant-count))
     (setq %code nil)
     (%reset-constants)
-    (%compile-body body (cons (%scope ':variable names) env) t)
+    (%with-open ':function
+                (lambda () (%compile-body body (cons (%scope ':variable names) env) t)))
     (%emit (list 'RET))
     (let ((compiled (%assemble (reverse %code) (%constants-vector) params 'lambda)))
       (setq %code outer-code)
@@ -370,7 +389,8 @@
   (let ((done (gensym))
         (name (second form)))
     (%emit (list 'BLOCK (%constant-index name) done))
-    (%compile-body (cddr form) (cons (%scope ':block (list name)) env) nil)
+    (%with-open ':record
+                (lambda () (%compile-body (cddr form) (cons (%scope ':block (list name)) env) nil)))
     (%emit (list 'UNMARK))
     (%emit-label done)))
 
@@ -401,7 +421,7 @@
   (let ((done (gensym)))
     (%compile (second form) env nil)
     (%emit (list 'CATCH done))
-    (%compile-body (cddr form) env nil)
+    (%with-open ':record (lambda () (%compile-body (cddr form) env nil)))
     (%emit (list 'UNMARK))
     (%emit-label done)))
 
@@ -436,14 +456,16 @@
   (let ((cleanup (gensym))
         (done (gensym)))
     (%emit (list 'PROTECT cleanup))
-    (%compile (second form) env nil)
+    (%with-open ':record (lambda () (%compile (second form) env nil)))
     (%emit (list 'UNMARK))
     (%emit (list 'MVSAVE))
     (%compile-for-effect (cddr form) env)
     (%emit (list 'MVRESTORE))
     (%emit (list 'JMP done))
     (%emit-label cleanup)
-    (%compile-for-effect (cddr form) env)
+    ;; This copy runs with a paused record on the stack; the inline one above
+    ;; runs after `UNMARK`, with none.
+    (%with-open ':record (lambda () (%compile-for-effect (cddr form) env)))
     (%emit (list 'UNPROTECT))
     (%emit-label done)))
 
@@ -457,6 +479,115 @@
              (%emit (list 'MVSAVE))
              (%compile-for-effect (cddr form) env)
              (%emit (list 'MVRESTORE)))))
+
+;;; `(tagbody tag-or-form...)` and `(go tag)`
+;;;
+;;; Every loop in Lisp is one of these underneath, so whatever this compiles
+;;; to, every loop pays for. #37 has the argument; the shape is:
+;;;
+;;;     TAG    #(tag...) ->table   bind every tag to one marker, push a record
+;;;   tag0:
+;;;     <statement> POP ...
+;;;   tag1:
+;;;     <statement> POP ...
+;;;     NIL                        fell off the end: a tagbody yields nil
+;;;     UNMARK
+;;;     UNBIND 1
+;;;     JMP    ->done
+;;;   table:                       a go lands here, plus 3 x its tag's index
+;;;     JMP    ->tag0
+;;;     JMP    ->tag1
+;;;   done:
+;;;
+;;; `(go tag)` is `GO depth index`: found through the environment like any
+;;; variable, so it works from inside a closure, and carried out by the
+;;; unwinder, so the stack, the scopes and any `unwind-protect` cleanups in
+;;; between are all dealt with. The record survives the landing, so the
+;;; tagbody can be gone to again.
+;;;
+;;; Which items are tags is the interpreter's rule: **anything that is not a
+;;; list**. A tagbody with no tags at all is just its statements and a `nil`.
+(defun %tagbody-tags (items)
+  (cond ((endp items) nil)
+        ((consp (car items)) (%tagbody-tags (cdr items)))
+        (t (cons (car items) (%tagbody-tags (cdr items))))))
+
+(defun %labels-for (tags)
+  (if (endp tags)
+      nil
+      (cons (gensym) (%labels-for (cdr tags)))))
+
+(defun %compile-tagbody-items (items tags labels env)
+  (cond ((endp items) nil)
+        ((consp (car items))
+         (%compile (car items) env nil)
+         (%emit (list 'POP))
+         (%compile-tagbody-items (cdr items) tags labels env))
+        (t (%emit-label (nth (%position (car items) tags 0) labels))
+           (%compile-tagbody-items (cdr items) tags labels env))))
+
+(defun %emit-jumps (labels)
+  (if (endp labels)
+      nil
+      (progn (%emit (list 'JMP (car labels)))
+             (%emit-jumps (cdr labels)))))
+
+(defun %compile-tagbody (form env)
+  (let ((tags (%tagbody-tags (cdr form))))
+    (if (endp tags)
+        (progn (%compile-for-effect (cdr form) env)
+               (%emit (list 'NIL)))
+        (let ((labels (%labels-for tags))
+              (table (gensym))
+              (done (gensym))
+              (scope (%scope ':tag tags)))
+          (%emit (list 'TAG (%constant-index (apply #'vector tags)) table))
+          (%with-open (list ':tagbody scope tags labels)
+                      (lambda ()
+                        (%compile-tagbody-items (cdr form) tags labels (cons scope env))))
+          (%emit (list 'NIL))
+          (%emit (list 'UNMARK))
+          (%emit (list 'UNBIND 1))
+          (%emit (list 'JMP done))
+          (%emit-label table)
+          (%emit-jumps labels)
+          (%emit-label done)))))
+
+;;; `(go tag)`: one step if it can be, an unwind if it must be.
+;;;
+;;; `JMP-TAG` needs the tagbody's record to be the innermost one, so it is
+;;; used only when the tagbody is the innermost thing open — no nested
+;;; function between (a closure may run anywhere, and only the unwinder can
+;;; get back from there), no other record (a `block` or `catch` to drop, an
+;;; `unwind-protect` cleanup to run), and no inner tagbody. Everything else
+;;; between — values on the stack, `let` scopes — the record undoes by
+;;; itself. Otherwise it is `GO`, found through the environment and carried
+;;; out by the unwinder, which is always right and three steps instead of one.
+(defun %compile-go (form env)
+  (let ((place (%lookup (second form) env 0 ':tag)))
+    (if (null place)
+        (error "go names a tag that is not here")
+        (let ((entry (%innermost-tagbody (%tag-scope (second form) env))))
+          (if entry
+              (%emit (list 'JMP-TAG
+                           (nth (%position (second form) (third entry) 0)
+                                (nth 3 entry))))
+              (%emit (list 'GO (car place) (cdr place))))))))
+
+;;; The scope a tag lives in: the innermost `:tag` scope that names it, which
+;;; is the one `%lookup` found.
+(defun %tag-scope (tag env)
+  (cond ((null env) nil)
+        ((and (eq (car (car env)) ':tag) (%position tag (cdr (car env)) 0)) (car env))
+        (t (%tag-scope tag (cdr env)))))
+
+;;; The open entry for the tagbody whose scope is SCOPE — but only if it is
+;;; the innermost thing open, which is exactly when `JMP-TAG` is safe.
+(defun %innermost-tagbody (scope)
+  (let ((innermost (car %open)))
+    (if (and (consp innermost) (eq (second innermost) scope))
+        innermost
+        nil)))
 
 ;;; `(eval-when (situations...) body...)`: the body if the situations include
 ;;; `execute`, otherwise `nil`. The interpreter's rule exactly, including the
@@ -502,7 +633,7 @@
         (done (gensym))
         (condition (gensym)))
     (%emit (list 'HANDLER (%constant-index (cddr form)) handler))
-    (%compile (second form) env nil)
+    (%with-open ':record (lambda () (%compile (second form) env nil)))
     (%emit (list 'UNMARK))
     (%emit (list 'JMP done))
     (%emit-label handler)
@@ -589,6 +720,8 @@
           ((eq head 'function) (%compile-callee (second form) env))
           ((eq head 'block) (%compile-block form env))
           ((eq head '%handler-case) (%compile-handler-case form env tail))
+          ((eq head 'tagbody) (%compile-tagbody form env))
+          ((eq head 'go) (%compile-go form env))
           ((eq head 'catch) (%compile-catch form env))
           ((eq head 'throw) (%compile-throw form env))
           ((eq head 'unwind-protect) (%compile-unwind-protect form env))
@@ -650,6 +783,7 @@
 ;;; nothing — `%compile-rewritten-lambda` saves and restores them instead.
 (defun compile-form (form)
   (setq %code nil)
+  (setq %open nil)
   (%reset-constants)
   (%compile form nil t)
   (%emit (list 'RET))

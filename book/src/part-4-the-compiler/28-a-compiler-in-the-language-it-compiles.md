@@ -273,7 +273,7 @@ when somebody breaks a rule deserves its own change and its own paragraph.
 ## The decisions that are provisional
 
 Which is the real reason this is a part of its own. The machine is nearly
-settled — thirty-seven instructions, and changing one is a format change. The
+settled — thirty-eight instructions, and changing one is a format change. The
 compiler is a pile of judgements, and most of today's will not survive.
 
 | decision | why it is that way now | what changes it |
@@ -538,31 +538,135 @@ to push the record first. The lesson is about tests rather than blocks: a
 test that checks a value is returned does not check that everything around it
 was left as it was found.
 
-### `tagbody`: where the specification broke
+### `tagbody`: where the specification broke, and what replaced it
 
-`docs/bytecode.md` says a `go` to a tag in the same function becomes a plain
-`JMP`, and the `TAG`/`GO` instructions are used only when a closure could `go`
-from outside. Neither half survives being implemented.
+`docs/bytecode.md` said a `go` to a tag in the same function becomes a plain
+`JMP`, and the `TAG`/`GO` instructions are for when a closure could `go` from
+outside. Neither half survived being implemented.
 
 A bare `JMP` is not safe, because `go` can appear anywhere. `(f a (go top))`
 has values on the operand stack when it runs. `(let ((x 1)) (go top))` has a
-scope bound. `(block b (go top))` has a record open. A jump leaves all of them
-behind.
+scope bound. `(block b (go top))` has a record open. A jump leaves all of
+them behind.
 
-And `TAG`/`GO`, as built, cannot loop. They share `BLOCK`'s code, so when a
-`go` lands, the record is popped — and the next `go` to the same tag finds
-nothing. Pushing it again makes a new marker, so a closure made in an earlier
-trip round the loop is holding a marker that no longer has a record. No test
-had ever run them.
+And `TAG`/`GO`, as first built, could not loop. They shared `BLOCK`'s code,
+so when a `go` landed, the record was popped — and the next `go` to the same
+tag found nothing. Pushing it again made a new marker, so a closure made on
+an earlier trip round the loop would be holding a marker with no record. No
+test had ever run them.
 
-Issue #37 lays out three ways forward: build `tagbody` from `catch` and
-`throw` on an object held in a lexical variable, which needs no VM change;
-change `TAG` and `GO` so a record survives a landing; or do what the
-specification says properly, with the compiler tracking stack depth so it can
-unwind explicitly before each jump. **This one is undecided**, and it is the
-right kind of question to leave open until it is decided on purpose: every
-loop in Lisp is a `tagbody` underneath, so whatever is chosen here is chosen
-for every loop.
+There were three ways forward, and the choice mattered more than most,
+because **every loop in Lisp is a `tagbody` underneath** — `dotimes`,
+`dolist`, `do` and `loop` all expand into one — so whatever is chosen here is
+chosen for every loop. Carsten's question, when the choice was first laid out,
+was the right one: *why not the fastest, just because it is more work?* Work
+is not a reason. The real reason turned out to be that the fastest option
+could not stand alone.
+
+**A `go` from inside a closure can only be done by unwinding.**
+
+```lisp
+(tagbody
+ retry
+   (mapc (lambda (x) (when (bad-p x) (go retry))) items))
+```
+
+The `lambda` runs inside `mapc`, several frames deeper than the `tagbody`.
+No jump reaches back there. So a general mechanism is needed whatever else is
+built, and a fast path can only ever sit on top of it. Both were built.
+
+#### The general mechanism: a record that survives
+
+The interpreter already had the shape. Its `tagbody` binds **every tag to one
+marker**, keeps its frame on the stack across `go`s, and carries *which* tag
+in a register. The VM now does the same:
+
+```text
+    TAG    #(tag0 tag1) ->table   bind both tags to one marker, push a record
+  tag0:
+    ...statements...
+  tag1:
+    ...statements...
+    NIL                           fell off the end: a tagbody yields nil
+    UNMARK
+    UNBIND 1
+    JMP    ->done
+  table:                          a go lands at table + 3 × its tag's index
+    JMP    ->tag0
+    JMP    ->tag1
+  done:
+```
+
+`(go tag1)` is `GO depth index`, found through the environment like a
+variable. The unwinder carries the index to the `TAG` record, and there —
+unlike every other landing — **the record stays**. Everything above it is
+dropped, the environment it saved is put back, and control resumes at
+`table + 3 × index`.
+
+That last part is a **jump table**: a row of jumps, one per tag, all the same
+size, so that "go to the *i*th tag" becomes "go to the *i*th row". It is the
+classic way to compile a computed goto, and the same thing a C compiler does
+with a `switch` on small integers. The verifier had to learn about it,
+because every row after the first is reached *only* by a `go` landing, never
+by falling through — without being told, it would have checked the first row
+and never looked at the rest. Now it checks that every row is a `JMP`, and
+follows each one.
+
+One detail went the opposite way from `block`. A `block`'s record saves the
+environment *outside* the block, because a `return-from` resumes after it. A
+`tagbody`'s record saves the environment *inside*, because a `go` resumes
+among the statements, which can see the tags. So the normal way out is
+`UNMARK` and then `UNBIND 1` to drop the tags' scope.
+
+A `go` costs three steps this way: the `GO`, the landing, and the table's
+`JMP`.
+
+#### The fast path: `JMP-TAG`
+
+When the `go` is in the same function as its tagbody and nothing with a
+record of its own lies in between, the tagbody's record is the innermost one
+on the stack. And that record already knows the two things a `go` must
+restore: where the stack was when the tagbody began, and the environment
+inside it. So the thirty-eighth instruction, `JMP-TAG`, simply drops the stack
+to the top of the innermost record, puts back the environment saved in it,
+and jumps. One step.
+
+The insight that made it small: **the compiler does not count anything.**
+The obvious way to do option C was for the compiler to track how many values
+are on the stack and how many scopes are bound at every `go`, and emit the
+right number of `POP`s and an `UNBIND`. The compiler does not track stack
+depth, and teaching it to would have meant a second copy of what every
+instruction does to the stack, which must agree with the verifier's — the
+exact duplication issue #30 removed. Using the record makes the question
+disappear: whatever was pushed or bound since the tagbody began, the record
+undoes.
+
+What the compiler does decide is *when* `JMP-TAG` is safe. It keeps a list of
+what is open around the form it is compiling — a nested function, a form
+whose record is on the stack, a tagbody — and a `go` uses `JMP-TAG` only when
+its own tagbody is the innermost thing on that list. Otherwise, `GO`.
+
+```lisp
+(defun %innermost-tagbody (scope)
+  (let ((innermost (car %open)))
+    (if (and (consp innermost) (eq (second innermost) scope))
+        innermost
+        nil)))
+```
+
+And the verifier checks it statically. Until now it tracked *how many*
+records were open at each instruction. `JMP-TAG` needs to know *where* the
+innermost one starts and *what kind* it is, so its state became a list of
+records rather than a count — the Rust side of the boundary this chapter has
+been drawing all along: decisions in Lisp, stack accounting in Rust. The
+machine checks again at run time, because a wrong record would leave it in a
+state nothing else would notice.
+
+| | steps per local `go` | |
+| --- | --- | --- |
+| built from `catch`/`throw` (rejected) | about 10+ | and more with every tag |
+| `TAG`/`GO` | 3 | works from anywhere |
+| `JMP-TAG` | 1 | only when its tagbody's record is innermost |
 
 ### `macrolet` waits
 
@@ -576,21 +680,25 @@ same reason. Building either now would mean building it twice.
 ### The differential files, compiled
 
 The differential tests now have a second half: every file is compiled, form
-by form, and everything the compiler emits is verified. Twelve of the
-seventeen compile completely. The other five each fail for a reason, and the
-test lists the reason, so that the moment a file starts compiling the test
-fails and says so:
+by form, and everything the compiler emits is verified. The rule is the one
+step E will use: **a form may fail to compile only if its baseline says it is
+an error.** Several files contain forms that are *meant* to fail —
+`(return-from nowhere 1)`, `(let* 1)` — and the compiler finds those at compile
+time where the interpreter found them at run time; either way, an error.
+
+The first version of this test stopped at the first failure, which quietly
+left every form after a deliberate error unchecked. It now compiles every
+form and compares each failure with the baseline.
+
+**Fifteen of the seventeen files compile completely.** The other two are each
+listed with what they are waiting on, and the test fails the moment either
+starts compiling, so the list cannot go stale:
 
 | file | waiting on |
 | --- | --- |
-| `control-flow.lisp` | `tagbody` |
 | `values.lisp` | `macrolet` |
-| `scopes.lisp`, `destructuring.lisp` | nothing — each contains a form that is *meant* to be an error, and the compiler finds it at compile time instead of run time |
-| `structures.lisp` | `defstruct` defines how `setf` works on its accessors when it *runs*, and this test compiles without running anything |
+| `structures.lisp` | `defstruct` defines how `setf` works on its accessors when it *runs*, and this test compiles without running anything — a note for step E, which compiles and runs one form at a time |
 
-The last three are notes for step E, not bugs: its harness has to count a
-compile-time error as the form's error, and has to compile and run a file one
-form at a time, which is the order a file actually means.
 
 ## Two things that do not work, and should not
 

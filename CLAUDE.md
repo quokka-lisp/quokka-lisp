@@ -34,7 +34,7 @@ wrappers — Lisp, not Rust.
 
 | | |
 | --- | --- |
-| `docs/bytecode.md` | the instruction set on paper: 37 opcodes, frame layout, every ceiling (#27) |
+| `docs/bytecode.md` | the instruction set on paper: 38 opcodes, frame layout, every ceiling (#27) |
 | `src/code.rs` | encoding, the `Function` object, disassembler, assembler, **verifier** (#28) |
 | `src/vm.rs` | the machine; implements `Steppable`, so `run_slice` drives it and rule 4 holds by construction |
 | `lisp/compiler/compile.lisp` | the compiler, 464 lines of tier-0 Lisp (#31) |
@@ -46,8 +46,8 @@ The compiler compiles **every form of the prelude and every form of itself**
 and installs none of it; chapter 29 says why installing cannot happen in a
 running interpreter.
 
-**357 tests**; **17 differential files agree with SBCL**. The Rust core is
-**12,447** lines of the 15,000 budget.
+**374 tests**; **17 differential files agree with SBCL**. The Rust core is
+**12,688** lines of the 15,000 budget.
 
 ## What is left in phase 1
 
@@ -64,14 +64,13 @@ walked, not bytecode.
 - **step E**: the fourth differential leg, where interpreted and compiled
   results must agree. The verifier cannot see a program that is well-formed
   and computes the wrong thing.
-- **The compiler refuses `tagbody`/`go` and `macrolet`.** Every other special
-  operator compiles (#37). `tagbody` is an open design question in #37 — the
-  bytecode spec's plan does not work, and three options are written out;
-  **raise it before writing**. `macrolet` and `defmacro` wait for #33: their
-  expanders must be callable by the compiler, which is interpreted until then.
-  Twelve of seventeen differential files compile completely; the
-  `compile_cases!` list in `tests/differential.rs` says why each other one
-  does not.
+- **The compiler refuses `macrolet` and `defmacro`**, and compiles every
+  other special operator (#37). Those two wait for #33: their expanders must be
+  callable by the compiler, which is interpreted until then. `tagbody`
+  compiles to a `TAG` record that survives a `go` plus a jump table, and a
+  local `go` is one `JMP-TAG` (38 opcodes). Fifteen of seventeen differential
+  files compile completely; the `compile_cases!` list in
+  `tests/differential.rs` says what the other two wait on.
 
 Also open: #34 (concurrency — what the code must not foreclose before phase
 3's processes; item 1, the host interface, is done as #35), #29 (build the VM

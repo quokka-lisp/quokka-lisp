@@ -95,15 +95,15 @@ cannot reach.
 | **`defstruct`** | one line generating a constructor, a predicate, a copier and a settable accessor per slot |
 | **Multiple values** | `values`, `multiple-value-bind`, `multiple-value-call`, `multiple-value-prog1` — and every form that should pass them through does |
 | **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or`, `setf`, `defstruct`, `handler-case`, the list and sequence functions — about six hundred lines of **Lisp**, compiled into the binary and interpreted at boot |
-| **A bytecode VM** | thirty-seven opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
+| **A bytecode VM** | thirty-eight opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
 | **A compiler, in Lisp** | [`lisp/compiler/compile.lisp`](lisp/compiler/compile.lisp): 464 lines of tier-0 Common Lisp that compiles **every form of the prelude and every form of itself** — 85 functions, all accepted by the verifier |
 | **Images** | the whole heap to a file and back, *including a computation stopped in mid-air*. Saving is `to_le_bytes` and loading is the inverse, with no pointer patching, because rule 3 made references word indices rather than addresses |
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `--compile` compiles each form and runs it on the VM, `--show-code` prints the instructions first |
 
-357 tests, green on native, under wasmtime, and with the GC torture mode on.
+374 tests, green on native, under wasmtime, and with the GC torture mode on.
 Seventeen Common Lisp files produce byte-identical output on Quokka natively,
-Quokka under WebAssembly, and SBCL. The Rust core is 12,447 lines of the
+Quokka under WebAssembly, and SBCL. The Rust core is 12,688 lines of the
 15,000-line budget.
 
 ### What does not exist yet

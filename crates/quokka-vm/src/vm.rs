@@ -839,6 +839,38 @@ impl<'a, 'h> Vm<'a, 'h> {
             return Transition::Continue;
         }
 
+        if self.mark_matches(at, target) && kind == mark::TAG {
+            // A `go` has arrived, and unlike every other landing **the record
+            // stays**: the tagbody is still running, and the next `go` — the
+            // next trip round the loop — needs it, with the same marker, so a
+            // closure made on an earlier trip still finds it. Before #37 this
+            // shared the code below, popped the record, and so a tagbody could
+            // not loop.
+            //
+            // Everything above the record goes; the record's PC is the start
+            // of a jump table, one `JMP` per tag, and the index the `GO`
+            // carried picks the entry. A computed goto, done the classic way.
+            let index = self
+                .mc
+                .register(Register::Value)
+                .as_fixnum()
+                .unwrap_or(0)
+                .max(0) as usize;
+            let fp = self.read_index(at, mark::FP);
+            let table = self.read_index(at, mark::PC);
+            let function = self.mark_slot(at, mark::FUNCTION);
+            let env = self.mark_slot(at, mark::ENV);
+            self.drop_to(at + mark::SIZE);
+            self.mc.set_mp(at);
+            self.mc.set_fp(fp);
+            self.mc.set_pc(table + index * Op::Jmp.width());
+            self.mc.set_register(Register::Function, function);
+            self.mc.set_register(Register::Env, env);
+            self.mc.set_register(Register::Unwind, Value::UNBOUND);
+            self.mc.set_register(Register::Values, Value::UNBOUND);
+            return Transition::Continue;
+        }
+
         if self.mark_matches(at, target) {
             let fp = self.read_index(at, mark::FP);
             let pc = self.read_index(at, mark::PC);
@@ -1186,7 +1218,7 @@ impl Steppable for Vm<'_, '_> {
                 return self.do_return(v);
             }
             // ---- leaving early ----
-            Op::Block | Op::Tag => {
+            Op::Block => {
                 // A fresh, unforgeable identity. `ObjectType::Instance` with
                 // no slots, which is what chapter 20 made conditions stop
                 // sharing — a marker must never be mistaken for one.
@@ -1194,16 +1226,6 @@ impl Steppable for Vm<'_, '_> {
                 let name = match self.constant(decoded.a) {
                     Ok(v) => v,
                     Err(e) => return self.fail(e),
-                };
-                let namespace = if decoded.op == Op::Block {
-                    env::BLOCK
-                } else {
-                    env::TAG
-                };
-                let kind = if decoded.op == Op::Block {
-                    mark::BLOCK
-                } else {
-                    mark::TAG
                 };
                 // The record first, so that it saves the environment *outside*
                 // the block — which is what both ways out must restore. It
@@ -1214,10 +1236,40 @@ impl Steppable for Vm<'_, '_> {
                 // Nothing noticed until a test read a variable after a block
                 // (#37).
                 let resume = (decoded.next as i64 + decoded.b as i64) as usize;
-                self.push_mark(kind, marker, resume);
+                self.push_mark(mark::BLOCK, marker, resume);
                 let parent = self.mc.register(Register::Env);
-                let scope = env::make(self.mc, parent, namespace, &[name], &[marker]);
+                let scope = env::make(self.mc, parent, env::BLOCK, &[name], &[marker]);
                 self.mc.set_register(Register::Env, scope);
+            }
+            Op::Tag => {
+                // One marker for **every** tag of the tagbody, bound under each
+                // tag's name, so a `go` to any of them finds this tagbody and
+                // its slot index says which tag. The interpreter's
+                // `eval_tagbody` does the same, and that settled the shape.
+                let marker = self.mc.alloc(ObjectType::Instance, 0);
+                let names = match self.constant(decoded.a) {
+                    Ok(v) => v,
+                    Err(e) => return self.fail(e),
+                };
+                if !names.is_object() || self.mc.header(names).object_type != ObjectType::Vector {
+                    return self.fail(EvalError::BadSyntax {
+                        operator: "TAG",
+                        detail: "names a constant that is not a vector of tags",
+                    });
+                }
+                let count = self.mc.header(names).slots;
+                let tags: Vec<_> = (0..count).map(|i| self.mc.slot(names, i)).collect();
+                let markers = vec![marker; count];
+                let parent = self.mc.register(Register::Env);
+                let scope = env::make(self.mc, parent, env::TAG, &tags, &markers);
+                self.mc.set_register(Register::Env, scope);
+                // The record *after* the scope — the opposite of `BLOCK`, and
+                // for the opposite reason. A `return-from` resumes outside its
+                // block; a `go` resumes inside its tagbody, among the forms
+                // that can see the tags. So the record saves the inside, and
+                // the normal way out is `UNMARK` and then `UNBIND 1`.
+                let table = (decoded.next as i64 + decoded.b as i64) as usize;
+                self.push_mark(mark::TAG, marker, table);
             }
             Op::Retfrom | Op::Go => {
                 let namespace = if decoded.op == Op::Retfrom {
@@ -1229,11 +1281,13 @@ impl Steppable for Vm<'_, '_> {
                     Ok((scope, at)) => self.mc.slot(scope, at),
                     Err(e) => return self.fail(e),
                 };
-                // `go` carries no value; `return-from` carries one.
+                // `return-from` carries a value. `go` carries **which tag**:
+                // its slot index in the tagbody's scope, which the landing
+                // turns into an entry of the jump table.
                 let v = if decoded.op == Op::Retfrom {
                     self.pop()
                 } else {
-                    Value::NIL
+                    Value::fixnum(decoded.b as i64).expect("a u8 operand is a fixnum")
                 };
                 return self.start_unwind(marker, v);
             }
@@ -1265,6 +1319,27 @@ impl Steppable for Vm<'_, '_> {
                 self.push_mark(mark::PROTECT, at, decoded.next);
             }
             Op::Unmark => return self.pop_mark(),
+            Op::JmpTag => {
+                // The fast path of `go`: the innermost record is the tagbody's
+                // own, and it holds the stack base and the environment to
+                // return to. See `Op::JmpTag` for why the compiler need count
+                // nothing. Checked here as well as by the verifier, because a
+                // wrong record would leave the machine in a state nothing else
+                // would notice.
+                let at = self.mc.mp();
+                if at == usize::MAX || self.mark_slot(at, mark::KIND).as_fixnum() != Some(mark::TAG)
+                {
+                    return self.fail(EvalError::BadSyntax {
+                        operator: "JMP-TAG",
+                        detail: "the innermost record is not a tagbody's",
+                    });
+                }
+                let env = self.mark_slot(at, mark::ENV);
+                self.drop_to(at + mark::SIZE);
+                self.mc.set_register(Register::Env, env);
+                self.mc.set_register(Register::Values, Value::UNBOUND);
+                return self.jump(decoded.next, decoded.a);
+            }
             Op::Unprotect => {
                 // A cleanup has finished. Take the unwind back out of the
                 // PAUSED record it was put down in and carry on from where

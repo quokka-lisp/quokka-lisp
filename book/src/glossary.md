@@ -283,6 +283,12 @@ be invariant or the guarantee evaporates while everything still compiles.
 
 **lambda.** Makes a function with no name. Its body is not evaluated when the `lambda` is — that happens when the function is called, which is why it must be a [special operator](#special-operator). ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
+**Jump table.** A row of jumps, all the same size, one per destination, so
+that "go to the *i*th place" becomes "jump to the *i*th row" — arithmetic
+instead of a search. The classic way to compile a computed goto, or a `switch`
+on small integers. A `tagbody`'s `go` lands on one.
+([28](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md))
+
 **Keyword.** A symbol written with a leading colon — `:foo` — that evaluates
 to itself. The colon is punctuation, not part of the name: `(symbol-name :foo)`
 is `"FOO"`, and `:foo` is a *different symbol* from `foo` with the same name.
