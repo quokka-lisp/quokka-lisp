@@ -255,29 +255,85 @@ properly, and flat closures are his. The answer interacts with mutation — if a
 captured variable can be `setq`'d, a copied value and the original have to stay
 in step, which usually means boxing the ones that are assigned.
 
-**The chain won**, and for a reason that is not about speed. The two
-evaluators have to call each other in both directions for a long time, and
-sharing one environment representation means a compiled function and an
-interpreted one can close over the same scope with nothing converting between
-them. `ObjectType::Environment` was already shaped for this: its doc comment
-says, of a decision made chapters ago, *"this is the layout lexical addressing
-uses, so when the compiler arrives it replaces the name scan with an index and
-the data structure does not change"*.
+**The chain won**, but the first reason given for it was wrong, and that is
+worth following because it is the most instructive thing in this chapter.
 
-The same reasoning settled the frames. A compiled call pushes a `Frame` onto
-the stack the interpreter already uses, rather than onto a second contiguous
-one — which is slower, since it allocates per call, and which means
-`unwind-protect`, `catch` and a signalled condition walk a stack that is half
-compiled and half interpreted **without knowing it is mixed**. A contiguous
-stack is where most of a bytecode VM's remaining speed lives, and it is named
-in the design as the next step rather than left as a regret.
+### A decision made on a premise nobody had checked
 
-There is a pattern in both answers worth naming, because it will come up
-again: when two designs differ mostly in speed, the one that keeps a single
-mechanism beats the one that adds a second. Two stacks means every unwinding
-path learns about boundaries; two environment representations means every call
-across the line converts. Those costs are paid by code that has nothing to do
-with the optimisation.
+The original argument was interoperation. It said the two evaluators have to
+call each other in both directions for a long time — an interpreted REPL form
+calling the compiled `length`, a compiled compiler calling an interpreted
+macro expander — so they had better share one environment representation and
+one frame stack, or every unwind would have to cross a boundary.
+
+Each of those examples is real *if* a running image contains interpreted code.
+And that assumption was never stated, because it was never noticed. Stated
+plainly, it does not survive:
+
+> The interpreter is the **bootstrap** evaluator, not a second production one.
+> It runs the compiler, the compiler builds the image, and after that only the
+> bytecode VM runs. A form typed at a REPL, or handed to `eval`, is
+> **compiled and then run**. The interpreter stays in the binary so that an
+> image can be rebuilt from source with nothing but `cargo`, and is otherwise
+> cold.
+
+Under which every example dissolves. The REPL form is compiled before it calls
+anything. The expander was compiled when it was defined. `eval` means
+compile-then-run. Interpreted-versus-compiled testing is two separate runs in
+two separate heaps. Rebuilding from source is entirely interpreted, because
+nothing compiled exists yet.
+
+This is not a clever workaround; it is what the reference implementation does:
+
+```
+* sb-ext:*evaluator-mode*
+:COMPILE
+* (sb-kernel:%fun-name (eval '(lambda (x) x)))
+(LAMBDA (X))
+```
+
+Typing a form at SBCL's REPL compiles it. SBCL's full interpreter exists and
+is switched off by default.
+
+One rule keeps it true through the bootstrap, where the hole would otherwise
+be: compiling a file whose later forms use a macro defined in an earlier one
+means the compiler must expand a macro it has just processed. So **while the
+compiler is interpreted, it evaluates `defmacro` into the interpreter**, and
+an expander is never compiled while its caller is not. One evaluator at a
+time, start to finish.
+
+### What the corrected premise changed, and what it did not
+
+The frames answer **reversed**. With no mixed execution there is no boundary
+for an unwind to cross, so compiled frames become regions of one growable heap
+vector — a call pushes words and allocates nothing, which is what every
+production bytecode VM does. The vector is an ordinary traced heap object, so
+slices, image save and the collector are untouched. One detail earns its
+place: popped slots are cleared, one store each, because a traced object's
+dead slots would otherwise keep whatever they last held alive.
+
+The variables answer **stood**, on a worse reason. Not "the two
+representations must interoperate" but "flat closures and stack-allocated
+locals need escape analysis, that is compiler work, and phase 1 is already a
+long walk before anything runs." `ObjectType::Environment` is still the right
+shape — its doc comment, from chapters ago, says *"this is the layout lexical
+addressing uses, so when the compiler arrives it replaces the name scan with
+an index and the data structure does not change"* — but the chain is now a
+deferral rather than a conclusion, and the instruction set will change when
+the faster design lands.
+
+### The part worth keeping
+
+A decision can be correct and badly argued, and the two come apart more often
+than is comfortable. The chain survived; the reason for it did not, and the
+frames went the other way the moment the hidden assumption was said out loud.
+
+Which is the strongest case this book can make for its own method. The wrong
+premise was not a missing fact — everything needed to spot it was already in
+`docs/design.md`, in one sentence about the interpreter staying "as a
+debugging fallback". It was an assumption that had never been written in a
+place where someone could disagree with it. Writing the plan down is what made
+it contradictable.
 
 ### 2 · The bytecode VM, in Rust
 
@@ -345,9 +401,11 @@ a hope; put it where it fails the build.*
 
 ## Two evaluators that must agree
 
-The interpreter does not retire. It stays for two jobs: rebuilding the system
-from source with nothing but `cargo`, and being the fallback when the compiler
-is the thing under suspicion.
+The interpreter does not retire — it goes cold, which is not the same thing.
+It stays in the binary for two jobs: rebuilding an image from source with
+nothing but `cargo`, and being a second opinion when the compiler is the thing
+under suspicion. Neither job runs it *alongside* compiled code; each is a
+separate run of the whole system.
 
 Which hands the testing a gift. Chapter 12 built a harness where one file runs
 three ways — Quokka native, Quokka under WebAssembly, SBCL — and all three must
@@ -358,6 +416,11 @@ That is a strong test, because the two paths share almost nothing. The
 interpreter walks a tree in Rust; the compiled path runs Lisp that emits
 instructions that a different Rust loop executes. A disagreement is a real bug
 in one of them, and the harness says which file and which form.
+
+Two runs, two heaps — which is exactly why keeping the interpreter costs
+nothing in the design. A second evaluator you never run at the same time as
+the first is not a second mechanism to maintain at every boundary; it is a
+spare.
 
 It is also the first time Quokka can check itself against *itself* rather than
 against SBCL. Everything in `tests/lisp/` so far is constrained to portable
