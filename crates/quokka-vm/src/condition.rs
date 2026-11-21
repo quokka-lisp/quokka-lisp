@@ -126,7 +126,7 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
 pub fn describe<'h>(mc: &Mutation<'h>, condition: Value<'h>) -> String {
     let type_name = mc.symbol_name(mc.slot(condition, TYPE));
     let message = mc.slot(condition, MESSAGE);
-    if message.is_object() && mc.header(message).object_type == ObjectType::String {
+    if message.is_object() && mc.header(message).object_type.is_string() {
         format!("{type_name}: {}", mc.string_to_rust(message))
     } else {
         type_name

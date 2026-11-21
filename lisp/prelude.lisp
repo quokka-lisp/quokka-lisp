@@ -214,9 +214,37 @@
             (walk 0))))))
 
 ;; `(reverse "abc")` gives a vector of characters rather than a string, which
-;; Common Lisp would not: it returns a sequence of the same type. Making that
-;; right needs a string allocator exposed to Lisp, and `make-string` is not
-;; here yet. Said rather than hidden; `tests/lisp/vectors.lisp` does not ask.
+;; Common Lisp would not: it returns a sequence of the same type. The allocator
+;; it was waiting for now exists — `%make-string`, just below — so this is a
+;; small fix rather than a missing feature. Said rather than hidden;
+;; `tests/lisp/vectors.lisp` does not ask.
+
+;; A source literal is a constant string and refuses `%set-aref` (issue #26),
+;; because sharing an object is only sound when nothing can write to it. So a
+;; program that wants to write characters makes a string of its own, and these
+;; are the two ways Common Lisp offers.
+;;
+;; CLHS leaves `make-string`'s fill character unspecified when
+;; `:initial-element` is not given, exactly as `make-array`'s is. So
+;; `tests/lisp/` must not ask what it is — the same rule, for the same reason.
+(defun make-string (size &key (initial-element #\Space))
+  (%make-string size initial-element))
+
+(defun copy-seq (sequence)
+  (if (listp sequence)
+      (labels ((walk (rest acc)
+                 (if (endp rest) (reverse acc) (walk (cdr rest) (cons (car rest) acc)))))
+        (walk sequence nil))
+      (let ((n (%sequence-length sequence)))
+        (let ((out (if (stringp sequence)
+                       (%make-string n #\Space)
+                       (%make-vector n nil))))
+          (labels ((walk (i)
+                     (if (= i n)
+                         out
+                         (progn (%set-aref out i (aref sequence i))
+                                (walk (+ i 1))))))
+            (walk 0))))))
 
 (defun listp (x) (if (null x) t (consp x)))
 

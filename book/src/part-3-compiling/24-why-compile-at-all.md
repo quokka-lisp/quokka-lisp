@@ -6,11 +6,17 @@
 > exists at all — and the obvious answer, *speed*, is the less interesting
 > half.
 >
-> **Status: none of this is built.** This chapter is written before the work
-> rather than after it, which is the opposite of every chapter so far. It is
-> the plan and the reasoning behind it, kept deliberately so that what
-> actually happens can contradict it. Where it turns out to be wrong, the
-> chapters after it will say so rather than quietly agreeing with hindsight.
+> **Status: almost none of this is built.** This chapter is written before
+> the work rather than after it, which is the opposite of every chapter so
+> far. It is the plan and the reasoning behind it, kept deliberately so that
+> what actually happens can contradict it. Where it turns out to be wrong,
+> the chapters after it will say so rather than quietly agreeing with
+> hindsight.
+>
+> The decisions below *are* settled — they were argued out in #25 and #26
+> before a line of the compiler existed, which is the point of writing a plan
+> down. One of them turned out to need code immediately, and the last section
+> is about that.
 
 ## The interpreter works. That is the problem.
 
@@ -174,6 +180,53 @@ faster, and the paper explaining why is a good read. The answer depends on how
 much you are willing to spend on the compiler, and Quokka's budget is small on
 purpose.
 
+### How wide is one instruction?
+
+A second question, independent of the first, and the one where the obvious
+answer lost.
+
+The obvious answer is **one 64-bit word per instruction** — `[opcode: 8][a:
+24][b: 32]` — because a `Code` object already *is* an array of raw 64-bit
+words, so nothing new is needed, decoding is two shifts, and a disassembler is
+a `for` loop. Lua does exactly this with 32-bit words and is not a slow
+language.
+
+The argument against it is memory, and it is specifically a **wasm32**
+argument. Packed bytes average a little under two bytes against eight, which
+is nothing at phase 1 — a few hundred kilobytes — and about six megabytes for
+a mature image with the environment in it. Three things make that worth
+having: wasm32 is a 32-bit address space, so the ceiling is real rather than
+theoretical; a copying collector needs two semispaces, so every figure
+doubles; and `docs/design.md` has the whole image being *downloaded* in a
+browser.
+
+The case *for* the word encoding was simplicity, and half of it did not
+survive scrutiny. "Byte offsets cause off-by-one bugs" is true of almost
+everything and is what tests are for. The half that is real has a name:
+
+> **Branch relaxation.** If operand widths vary — varints, as CPython uses —
+> then an instruction's size depends on its operands, a jump's distance
+> depends on the sizes of everything between it and its target, and those
+> sizes depend on the jump distances. That is a fixpoint, and an assembler
+> solves it by iterating until it converges.
+
+But that is a cost of *varints*, not of packing. Fix each opcode's operand
+widths — `CONST` always two bytes, `JUMP` always two — and an instruction's
+size is a function of its opcode alone. Sizes are known the moment the opcode
+is chosen, backpatching is one pass, and the fixpoint never arises.
+
+So: **packed, with fixed widths per opcode**, and ceilings that are compiler
+errors rather than wraparound. A 16-bit jump offset means a function with more
+than 64 KB of code is *reported*; the JVM has had the identical limit per
+method for the identical reason. A silent truncation would be a bug with no
+symptom anywhere near its cause.
+
+One consequence worth stating because it makes the decision cheap: **the
+encoding is a boundary**. The compiler emits instructions as lists —
+`(LOCAL-REF 0 1)` — and an assembler encodes them. The assembler, the VM's
+fetch and the disassembler are the only code that knows the byte layout. If
+this turns out wrong, three places change and the compiler does not.
+
 ## Four things, in order
 
 ### 1 · The instruction set, on paper
@@ -185,9 +238,9 @@ This is the decision with the longest shadow, because everything else encodes
 it. It is also the one most worth arguing about on paper rather than in Rust,
 where the cost of being wrong is a rewrite.
 
-One open question inside it, worth flagging because it is a real trade rather
-than a detail. A closure has to remember the variables it captured, and there
-are two ways:
+One question inside it is a real trade rather than a detail, and it has been
+settled. A closure has to remember the variables it captured, and there are
+two ways:
 
 - A **linked environment chain** — the closure holds a pointer to the scope it
   was made in, which points to the one outside it, and so on. Cheap to create
@@ -201,6 +254,30 @@ Dybvig's *Three Implementation Models for Scheme* is where this is set out
 properly, and flat closures are his. The answer interacts with mutation — if a
 captured variable can be `setq`'d, a copied value and the original have to stay
 in step, which usually means boxing the ones that are assigned.
+
+**The chain won**, and for a reason that is not about speed. The two
+evaluators have to call each other in both directions for a long time, and
+sharing one environment representation means a compiled function and an
+interpreted one can close over the same scope with nothing converting between
+them. `ObjectType::Environment` was already shaped for this: its doc comment
+says, of a decision made chapters ago, *"this is the layout lexical addressing
+uses, so when the compiler arrives it replaces the name scan with an index and
+the data structure does not change"*.
+
+The same reasoning settled the frames. A compiled call pushes a `Frame` onto
+the stack the interpreter already uses, rather than onto a second contiguous
+one — which is slower, since it allocates per call, and which means
+`unwind-protect`, `catch` and a signalled condition walk a stack that is half
+compiled and half interpreted **without knowing it is mixed**. A contiguous
+stack is where most of a bytecode VM's remaining speed lives, and it is named
+in the design as the next step rather than left as a regret.
+
+There is a pattern in both answers worth naming, because it will come up
+again: when two designs differ mostly in speed, the one that keeps a single
+mechanism beats the one that adds a second. Two stacks means every unwinding
+path learns about boundaries; two environment representations means every call
+across the line converts. Those costs are paid by code that has nothing to do
+with the optimisation.
 
 ### 2 · The bytecode VM, in Rust
 
@@ -289,16 +366,119 @@ Common Lisp, because SBCL has to be able to run it — which is why chapter 22's
 against compiled has no such constraint. Both halves are Quokka, so the whole
 language is in scope.
 
+## A thing found on the way: literals are not yours to edit
+
+One question led somewhere unexpected, and it is the only part of this chapter
+that produced code.
+
+If a compiled image holds every function's constants, should two functions
+that both contain `"hello"` share one string? The technique has a name —
+**interning** for strings specifically, **hash consing** for the general form,
+canonicalising every structure so that structurally equal objects are also
+pointer-equal. Quokka already does it for symbols; that is what the obarray in
+chapter 8 *is*.
+
+The obvious split is: share literals when building the image, give run-time
+strings their own storage so they stay mutable. Which is right in shape, and
+the line is in the wrong place. It is not *when the string was made*, it is
+**literal or freshly made** — and literals do not stay in the compiler. They
+are returned, stored and passed around. Here is the state of the system before
+any of this was touched:
+
+```lisp
+quokka> (defun greeting () "hello")
+GREETING
+quokka> (setf (aref (greeting) 0) #\J)
+#\J
+quokka> (greeting)
+"Jello"
+```
+
+A program that meant to change a string it was handed has edited the source of
+a function. That is conforming — CLHS 3.7.1 says the consequences of
+destructively modifying a literal are undefined — and it was a live trap with
+no interning anywhere near it.
+
+**Sharing does not create that hazard. It widens it.** Today the mutation
+spoils one function. With literals coalesced it spoils every function that
+happened to contain `"hello"`, and the symptom surfaces arbitrarily far from
+the cause. Which is the argument against reading "undefined behaviour" as
+permission: the standard allows the sharing, it does not make the result
+debuggable.
+
+### Immutability is what makes sharing sound
+
+There are two ways to protect a shared string, and the system was already
+using one. `SYMBOL-NAME` hands back a **copy**, so `(eq (symbol-name 'foo)
+(symbol-name 'foo))` is false here. Safe, conforming, and it protects a shared
+thing by refusing to share it — the opposite of what interning is for.
+
+The other way composes, because *sharing is only unsound when something can
+write*. So a literal became a heap type of its own:
+
+```rust
+String         = 64,
+Code           = 65,
+Bignum         = 66,
+ConstantString = 67,   // a literal, or a symbol's name
+```
+
+A type rather than a flag bit, for two reasons that are both chapter 5's. The
+header's single subtag test is what makes the collector's linear scan one
+comparison, and a flag would cost that. And 67 is above the 64 line, so
+`slots_are_values()` keeps answering correctly without being told anything new
+— the traced/raw split built for strings in chapter 19 absorbed a type it had
+never heard of.
+
+Every reader — `aref`, `length`, `stringp`, the printer, the hasher — asks
+`is_string()` and gets yes for both. Exactly one place asks which:
+
+```lisp
+quokka> (handler-case (setf (aref (greeting) 0) #\J)
+          (type-error () 'refused))
+REFUSED
+quokka> (greeting)
+"hello"
+```
+
+This is chapter 22's distinction wearing new clothes. "Do not modify literals"
+was a request, living in a document, enforced by nothing. Now it is a
+guarantee, enforced by a type. *A rule that can be followed needs discipline;
+a rule that cannot be broken needs none.*
+
+### And a hole it opened
+
+With literals read-only, there was suddenly **no writable string in the
+system** — the prelude had a comment admitting as much, since `make-string`
+had never been exposed to Lisp. So the change came with `%make-string`, and
+`make-string` and `copy-seq` above it, which is also what a Common Lisp
+programmer reaches for when they want a string they may edit.
+
+That is worth noticing as a shape rather than an incident. Taking a capability
+away from a system means checking what used it, and "nothing in the tests"
+is not the same answer as "nothing".
+
+### What the oracle cannot settle
+
+`(setf (aref "abc" 0) #\z)` is undefined, so SBCL's interpreter permits the
+write and Quokka signals, and **both conform**. A differential test cannot
+adjudicate that, so the refusal is tested in Rust and `tests/lisp/README.md`
+gained a fourth entry in its list of what may never go in a test file.
+
+That list is becoming one of the more interesting documents in the repository:
+each entry is a place where "agrees with SBCL" stops being the definition of
+correct.
+
 ## What is deliberately not decided
 
-Four questions are open, and [#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)
+Two questions remain, and [#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)
 holds them rather than this chapter:
 
-1. Instruction set granularity and the frame layout.
-2. Flat closures or a linked environment chain.
-3. What the image format guarantees across versions.
-4. Where macroexpansion happens, once there are two evaluators that both need
+1. What the image format guarantees across versions.
+2. Where macroexpansion happens, once there are two evaluators that both need
    it.
+
+Neither changes the instruction encoding, which is why they could be left.
 
 Each becomes a `decision` issue when it is reached, and closes when the
 reasoning is written into `docs/design.md` and into the chapter that describes

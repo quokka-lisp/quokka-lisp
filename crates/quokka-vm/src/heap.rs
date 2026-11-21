@@ -322,6 +322,23 @@ pub enum ObjectType {
     Code = 65,
     /// Magnitude limbs. **Not traced.**
     Bignum = 66,
+    /// A string that cannot be written. **Not traced.**
+    ///
+    /// Source literals and symbol names. Common Lisp says the consequences of
+    /// destructively modifying a literal object are undefined (CLHS 3.7.1),
+    /// which is permission to share them and no help at all when a program
+    /// does it anyway: before this type existed, `(setf (aref (greeting) 0)
+    /// #\J)` quietly edited the source of `greeting`.
+    ///
+    /// A distinct type rather than a header flag, because the header's single
+    /// subtag test is what makes the collector's linear scan one comparison,
+    /// and because 67 is above the 64 line so `slots_are_values` still answers
+    /// correctly without being told about it.
+    ///
+    /// It is also what makes sharing *sound* rather than merely licensed: an
+    /// immutable string can be coalesced with an equal one and nothing can
+    /// tell. See issue #26.
+    ConstantString = 67,
 }
 
 impl ObjectType {
@@ -333,6 +350,16 @@ impl ObjectType {
     /// why `raw_types_are_not_traced` exists.
     pub const fn slots_are_values(self) -> bool {
         (self as u8) < 64
+    }
+
+    /// Is this a string, writable or not?
+    ///
+    /// Every reader — `aref`, `length`, `stringp`, the printer, the hasher —
+    /// asks this. Only `%set-aref` cares which of the two it is, which is the
+    /// whole point: immutability is one refusal in one place, not a condition
+    /// scattered through everything that reads text.
+    pub const fn is_string(self) -> bool {
+        matches!(self, ObjectType::String | ObjectType::ConstantString)
     }
 
     fn from_u8(byte: u8) -> Option<ObjectType> {
@@ -350,6 +377,7 @@ impl ObjectType {
             64 => String,
             65 => Code,
             66 => Bignum,
+            67 => ConstantString,
             _ => return None,
         })
     }
@@ -670,8 +698,19 @@ impl<'h> Mutation<'h> {
     /// deliberate for now: it makes indexing a character O(1) and the code
     /// obvious. Packing comes when something measures that it matters.
     pub fn alloc_string(&mut self, text: &str) -> Value<'h> {
+        self.alloc_string_of(text, ObjectType::String)
+    }
+
+    /// Allocate a string nothing may write to: a literal, or a symbol's name.
+    ///
+    /// See [`ObjectType::ConstantString`] for why the distinction is a type.
+    pub fn alloc_constant_string(&mut self, text: &str) -> Value<'h> {
+        self.alloc_string_of(text, ObjectType::ConstantString)
+    }
+
+    fn alloc_string_of(&mut self, text: &str, kind: ObjectType) -> Value<'h> {
         let chars: Vec<char> = text.chars().collect();
-        let v = self.alloc(ObjectType::String, chars.len());
+        let v = self.alloc(kind, chars.len());
         for (index, ch) in chars.iter().enumerate() {
             self.set_raw_slot(v, index, *ch as u64);
         }
@@ -683,11 +722,7 @@ impl<'h> Mutation<'h> {
     /// # Panics
     /// If `v` is not a string.
     pub fn string_to_rust(&self, v: Value<'h>) -> String {
-        assert_eq!(
-            self.header(v).object_type,
-            ObjectType::String,
-            "not a string"
-        );
+        assert!(self.header(v).object_type.is_string(), "not a string");
         (0..self.header(v).slots)
             .map(|i| char::from_u32(self.raw_slot(v, i) as u32).expect("invalid character"))
             .collect()
@@ -698,7 +733,7 @@ impl<'h> Mutation<'h> {
     /// Compares without allocating, which matters because interning calls it
     /// once per symbol already known.
     pub fn string_is(&self, v: Value<'h>, text: &str) -> bool {
-        if !v.is_object() || self.header(v).object_type != ObjectType::String {
+        if !v.is_object() || !self.header(v).object_type.is_string() {
             return false;
         }
         let slots = self.header(v).slots;
@@ -756,7 +791,7 @@ impl<'h> Mutation<'h> {
             cursor = self.cdr(cursor);
         }
 
-        let text = self.alloc_string(name);
+        let text = self.alloc_constant_string(name);
         let symbol = self.alloc(ObjectType::Symbol, symbol::SLOTS);
         self.set_slot(symbol, symbol::NAME, text);
         self.set_slot(symbol, symbol::VALUE, Value::UNBOUND);
@@ -802,7 +837,7 @@ impl<'h> Mutation<'h> {
     pub fn gensym(&mut self) -> Value<'h> {
         self.storage.gensym_counter += 1;
         let n = self.storage.gensym_counter;
-        let text = self.alloc_string(&format!("G{n}"));
+        let text = self.alloc_constant_string(&format!("G{n}"));
         let s = self.alloc(ObjectType::Symbol, symbol::SLOTS);
         self.set_slot(s, symbol::NAME, text);
         self.set_slot(s, symbol::VALUE, Value::UNBOUND);
@@ -997,8 +1032,8 @@ impl Heap {
 
             // The names live in the static area too, so nothing here needs to
             // point into collected space on an empty heap.
-            let nil_name = mc.alloc_string("NIL");
-            let t_name = mc.alloc_string("T");
+            let nil_name = mc.alloc_constant_string("NIL");
+            let t_name = mc.alloc_constant_string("T");
 
             for (s, name) in [(nil, nil_name), (t, t_name)] {
                 mc.set_slot(s, symbol::NAME, name);
@@ -1552,7 +1587,12 @@ mod tests {
     /// nothing else would notice.
     #[test]
     fn raw_types_are_not_traced() {
-        for t in [ObjectType::String, ObjectType::Code, ObjectType::Bignum] {
+        for t in [
+            ObjectType::String,
+            ObjectType::Code,
+            ObjectType::Bignum,
+            ObjectType::ConstantString,
+        ] {
             assert!(!t.slots_are_values(), "{t:?} must not be traced");
         }
         for t in [

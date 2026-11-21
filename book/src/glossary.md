@@ -15,6 +15,12 @@ be correct until the next collection and silently wrong afterwards. ([19](part-2
 slots follow. Cons cells have none.
 ([5](part-1-substrate/05-objects-in-the-heap.md))
 
+**Hash consing.** Canonicalising structures so that two structurally equal
+objects are also the *same* object, and can therefore be compared by pointer.
+[Interning](#interning) is this applied to names. Unsound for anything mutable,
+which is why Quokka's literals had to become read-only before sharing them
+could even be considered. ([24](part-3-compiling/24-why-compile-at-all.md))
+
 **Anaphoric macro.** A macro that deliberately introduces a binding the
 caller can see — `(aif (lookup x) (greet it))`, where `it` is the macro's
 doing. The useful case that [hygiene](#hygiene) makes awkward, and one reason
@@ -51,6 +57,12 @@ as several. Contrast [fixnum](#fixnum). Not yet implemented.
 certain programs — it points at nothing and exists at compile time only. Quokka
 uses one to make it impossible to hold a value across a garbage collection.
 ([4](part-1-substrate/04-rooting.md))
+
+**Branch relaxation.** The pass an assembler needs when instructions vary in
+size: a jump's distance depends on the sizes of the instructions between it and
+its target, and those sizes depend on the jump distances, so it iterates until
+the two agree. Quokka avoids it by fixing each opcode's operand widths, which
+makes an instruction's size a function of its opcode alone. ([24](part-3-compiling/24-why-compile-at-all.md))
 
 **Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built; chapter 24 is the plan. ([24](part-3-compiling/24-why-compile-at-all.md))
 
@@ -202,6 +214,12 @@ a character, `nil`, `t`. Contrast a *reference*, which points into the heap.
 **Implicit progn.** A body that is a sequence of forms yielding the last — the bodies of `lambda`, `defun`, `let` and most else. Nobody writes the `progn`; it is what a body means. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Interning.** Keeping one object per name, so that two reads of `foo` produce the *same* [symbol](#symbol) rather than two equal ones. Without it, `eq` on symbols fails and every variable lookup becomes a string comparison. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Literal.** An object written directly in the source — `"hello"`, `#(1 2 3)`,
+a quoted list — as opposed to one a program builds. Common Lisp leaves the
+consequences of modifying one undefined (CLHS 3.7.1); Quokka makes source
+strings and symbol names a separate heap type that refuses to be written, so
+the undefined case cannot arise. ([24](part-3-compiling/24-why-compile-at-all.md))
 
 **Invariance.** A property of a type's lifetime parameter meaning it cannot be
 silently substituted for a shorter or longer one. Quokka's [brand](#brand) must

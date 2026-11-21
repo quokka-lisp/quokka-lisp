@@ -491,7 +491,7 @@ impl<'a, 'h> Machine<'a, 'h> {
         if self.mc.is_symbol(datum) {
             return Ok(crate::condition::make(self.mc, datum, Value::NIL, rest));
         }
-        if datum.is_object() && self.mc.header(datum).object_type == ObjectType::String {
+        if datum.is_object() && self.mc.header(datum).object_type.is_string() {
             let simple = self.mc.intern("SIMPLE-ERROR");
             return Ok(crate::condition::make(self.mc, simple, datum, rest));
         }

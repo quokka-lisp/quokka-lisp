@@ -137,7 +137,7 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> Result<u64, Ev
         // symbols (chapter 8), so the namespace has to go into the hash.
         return Ok(mix(h, if mc.is_keyword(key) { 2 } else { 3 }));
     }
-    if equal && key.is_object() && mc.header(key).object_type == ObjectType::String {
+    if equal && key.is_object() && mc.header(key).object_type.is_string() {
         let mut h = mix(OFFSET, 4);
         for ch in mc.string_to_rust(key).chars() {
             h = mix(h, ch as u64);
@@ -162,8 +162,8 @@ fn same_key<'h>(mc: &Mutation<'h>, a: Value<'h>, b: Value<'h>, equal: bool) -> b
     if equal
         && a.is_object()
         && b.is_object()
-        && mc.header(a).object_type == ObjectType::String
-        && mc.header(b).object_type == ObjectType::String
+        && mc.header(a).object_type.is_string()
+        && mc.header(b).object_type.is_string()
     {
         return mc.string_to_rust(a) == mc.string_to_rust(b);
     }

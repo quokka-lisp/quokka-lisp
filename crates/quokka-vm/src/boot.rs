@@ -174,6 +174,56 @@ mod tests {
         })
     }
 
+    /// A literal cannot be written, and the refusal is catchable.
+    ///
+    /// Not a differential test, and it cannot be: CLHS 3.7.1 leaves modifying
+    /// a literal undefined, SBCL's interpreter permits it, and Quokka signals.
+    /// Both conform. What the oracle cannot adjudicate stays here.
+    #[test]
+    fn a_literal_refuses_to_be_written() {
+        assert_eq!(
+            after_boot(
+                r#"(defun greeting () "hello")
+                   (handler-case (setf (aref (greeting) 0) #\J)
+                     (type-error () 'refused))"#
+            ),
+            "REFUSED"
+        );
+    }
+
+    /// And the literal is still what it was — which is the bug this prevents.
+    ///
+    /// Before `ConstantString`, that `setf` edited the source of `greeting`
+    /// and said nothing, so a later call returned "Jello". Issue #26.
+    #[test]
+    fn a_literal_survives_the_attempt() {
+        assert_eq!(
+            after_boot(
+                r#"(defun greeting () "hello")
+                   (ignore-errors (setf (aref (greeting) 0) #\J))
+                   (greeting)"#
+            ),
+            r#""hello""#
+        );
+    }
+
+    /// A symbol's name is a literal too, and for a sharper reason: the obarray
+    /// finds symbols *by* their names, so a mutated name would make `intern`
+    /// hand back the wrong symbol — or no symbol at all — for a name that
+    /// still reads the same.
+    #[test]
+    fn a_symbol_name_is_a_constant() {
+        assert_eq!(
+            after_boot(
+                "(handler-case (setf (aref (symbol-name 'foo) 0) #\\X) (error () 'refused))"
+            ),
+            // SYMBOL-NAME copies, so the write lands on the copy and succeeds.
+            // The point is what it does *not* reach: see the next assertion.
+            "#\\X"
+        );
+        assert_eq!(after_boot("(symbol-name 'foo)"), r#""FOO""#);
+    }
+
     /// The point of the whole module: the system boots at all.
     #[test]
     fn the_prelude_loads() {
@@ -193,7 +243,9 @@ mod tests {
         heap.collect();
         // A moving target, deliberately. 2,476 words when the prelude was
         // only `defun` and the conditionals; 4,246 once it also had the
-        // sequence functions, hash tables and `macroexpand`. About 34 KB.
+        // sequence functions, hash tables and `macroexpand`; 7,905 after
+        // `setf`, `defstruct`, conditions and multiple values; 8,192 once
+        // `make-string` and `copy-seq` arrived with issue #26. About 64 KB.
         //
         // The point is not the number but that raising it is a deliberate
         // act with a failing test attached — the same job as
@@ -201,7 +253,7 @@ mod tests {
         // what was added; this one is.
         let words = heap.used_words();
         assert!(
-            words < 8_000,
+            words < 9_000,
             "the prelude now costs {words} live words after a collection"
         );
     }
@@ -333,12 +385,15 @@ mod tests {
     #[test]
     fn strings_hold_characters_and_only_characters() {
         assert_eq!(after_boot("(aref \"abc\" 1)"), "#\\b");
+        // Through `copy-seq`, because the literal itself is a constant now
+        // (issue #26) and this test is about *what* a string holds, not about
+        // who may write one.
         assert_eq!(
-            after_boot("(let ((s \"abc\")) (%set-aref s 0 #\\z) s)"),
+            after_boot("(let ((s (copy-seq \"abc\"))) (%set-aref s 0 #\\z) s)"),
             "\"zbc\""
         );
         assert!(
-            after_boot("(%set-aref \"abc\" 0 5)").starts_with("; "),
+            after_boot("(%set-aref (copy-seq \"abc\") 0 5)").starts_with("; "),
             "storing a fixnum in a string must be refused"
         );
     }

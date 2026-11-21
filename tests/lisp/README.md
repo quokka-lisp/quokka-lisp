@@ -43,7 +43,7 @@ target/debug/quokka --run tests/lisp/arithmetic.lisp # regenerate a baseline
 
 ## What may not go in a test file
 
-Three kinds of form would disagree for reasons that are nobody's fault:
+These kinds of form would disagree for reasons that are nobody's fault:
 
 - **Anything needing a bignum.** SBCL has them and Quokka does not yet, so
   `(* 2432902008176640000 21)` is an error here and an answer there. That is a
@@ -59,6 +59,14 @@ Three kinds of form would disagree for reasons that are nobody's fault:
   CLHS 11.1.2.1.2, and SBCL enforces it with a package lock. Quokka has no
   packages and allows it, so the two disagree for a reason that is the test's
   fault. Use a name of your own; this file caught it the hard way.
+
+- **Modifying a literal.** `(setf (aref "abc" 0) #\z)` is undefined under
+  CLHS 3.7.1. Quokka makes source literals read-only and signals a
+  `type-error`; SBCL's interpreter lets the write through. Both conform, and
+  the disagreement is the standard's, not either implementation's. Use
+  `(copy-seq "abc")` when a test needs a string it can write to. The refusal
+  itself is tested in `crates/quokka-vm/src/boot.rs`, where behaviour the
+  oracle cannot adjudicate belongs. See issue #26.
 
 Adding a file means adding a line to `crates/quokka-vm/tests/differential.rs`;
 `scripts/check-differential.sh` fails if one is left out.

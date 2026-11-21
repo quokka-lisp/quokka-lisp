@@ -343,7 +343,7 @@ impl<'t> Reader<'t> {
             };
             self.at += 1;
             match ch {
-                '"' => return Ok(mc.alloc_string(&out)),
+                '"' => return Ok(mc.alloc_constant_string(&out)),
                 // Common Lisp strings have exactly two escapes: \" and \\.
                 // There is no \n — a newline in a string is a newline.
                 '\\' => {

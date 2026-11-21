@@ -145,3 +145,26 @@
 (length (squares 20))
 (aref (squares 20) 19)
 (elt (squares 20) 0)
+
+;; `copy-seq` keeps the sequence's type, which is how a program gets a string
+;; it may write to: a literal is read-only here (issue #26) and in any Common
+;; Lisp its modification is undefined, so nothing below writes to one.
+;;
+;; What that refusal *does* is deliberately not asked. SBCL's interpreter
+;; permits the write, Quokka signals, and CLHS 3.7.1 leaves it undefined — so
+;; it belongs in a Rust test, like everything else the standard declines to
+;; pin down. See `tests/lisp/README.md`.
+(copy-seq '(1 2 3))
+(copy-seq #(1 2 3))
+(copy-seq "abc")
+(stringp (copy-seq "abc"))
+(string= (copy-seq "abc") "abc")
+(let ((s (copy-seq "abc"))) (setf (aref s 0) #\z) s)
+(let ((s (copy-seq "abc"))) (setf (aref s 0) #\z) (string= s "abc"))
+(copy-seq "")
+
+;; `make-string`'s fill character with no `:initial-element` is unspecified,
+;; exactly as `make-array`'s initial element is, so only the length is asked.
+(length (make-string 4))
+(stringp (make-string 4))
+(string= (make-string 3 :initial-element #\x) "xxx")

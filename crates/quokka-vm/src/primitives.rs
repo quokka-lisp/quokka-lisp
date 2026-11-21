@@ -323,6 +323,19 @@ const TABLE: &[Primitive] = &[
         name: "VALUES-LIST",
         arity: Arity::Exactly(1),
     },
+    // ---- strings you may write to ----------------------------------------
+    //
+    // A source literal is a `ConstantString` and refuses `%set-aref`, so
+    // without this there would be no writable string in the system at all.
+    // The prelude's `copy-seq` and `make-string` are built on it.
+    //
+    // Rule 9: n characters is n words written, the same unbounded-by-argument
+    // shape as `%MAKE-VECTOR`, and the same answer — chunk it when slices
+    // start to matter.
+    Primitive {
+        name: "%MAKE-STRING",
+        arity: Arity::Exactly(2),
+    },
 ];
 
 /// Where `VALUES` sits in the table, which `crate::eval` intercepts.
@@ -344,6 +357,14 @@ pub const APPLY: u32 = 21;
 pub const FUNCALL: u32 = 13;
 
 /// Is `v` a heap object of this type?
+fn boolean<'h>(yes: bool) -> Value<'h> {
+    if yes {
+        Value::T
+    } else {
+        Value::NIL
+    }
+}
+
 fn is_type<'h>(mc: &Mutation<'h>, v: Value<'h>, want: ObjectType) -> Value<'h> {
     if v.is_object() && mc.header(v).object_type == want {
         Value::T
@@ -367,7 +388,7 @@ fn sequence_shape<'h>(
         let header = mc.header(v);
         match header.object_type {
             ObjectType::Vector => return Ok((header.slots, false)),
-            ObjectType::String => return Ok((header.slots, true)),
+            t if t.is_string() => return Ok((header.slots, true)),
             _ => {}
         }
     }
@@ -513,7 +534,7 @@ pub fn call<'h>(
             detail: "is intercepted by the evaluator and should never be called here",
         }),
         "%INTERN" => {
-            if !(args[0].is_object() && mc.header(args[0]).object_type == ObjectType::String) {
+            if !(args[0].is_object() && mc.header(args[0]).object_type.is_string()) {
                 return Err(EvalError::WrongType {
                     name: "%INTERN",
                     wanted: "a string",
@@ -525,7 +546,7 @@ pub fn call<'h>(
         "%STRING-APPEND" => {
             let mut text = String::new();
             for arg in args.iter().take(2) {
-                if !(arg.is_object() && mc.header(*arg).object_type == ObjectType::String) {
+                if !(arg.is_object() && mc.header(*arg).object_type.is_string()) {
                     return Err(EvalError::WrongType {
                         name: "%STRING-APPEND",
                         wanted: "two strings",
@@ -534,6 +555,31 @@ pub fn call<'h>(
                 text.push_str(&mc.string_to_rust(*arg));
             }
             Ok(mc.alloc_string(&text))
+        }
+        "%MAKE-STRING" => {
+            let Some(n) = args[0].as_fixnum() else {
+                return Err(EvalError::WrongType {
+                    name: "MAKE-STRING",
+                    wanted: "a fixnum length",
+                });
+            };
+            let Some(fill) = args[1].as_character() else {
+                return Err(EvalError::WrongType {
+                    name: "MAKE-STRING",
+                    wanted: "a character to fill with",
+                });
+            };
+            if n < 0 {
+                return Err(EvalError::WrongType {
+                    name: "MAKE-STRING",
+                    wanted: "a length of zero or more",
+                });
+            }
+            let s = mc.alloc(ObjectType::String, n as usize);
+            for i in 0..n as usize {
+                mc.set_raw_slot(s, i, fill as u64);
+            }
+            Ok(s)
         }
         "%VECTOR-TO-LIST" => {
             if !(args[0].is_object() && mc.header(args[0]).object_type == ObjectType::Vector) {
@@ -646,6 +692,18 @@ pub fn call<'h>(
             }
         }
         "%SET-AREF" => {
+            // A literal is readable everywhere and writable nowhere. CLHS
+            // 3.7.1 leaves modifying one undefined, which is permission to
+            // share literals and no help when a program modifies one anyway —
+            // before this check, `(setf (aref (greeting) 0) #\J)` edited the
+            // source of `greeting` and said nothing. See issue #26.
+            if args[0].is_object() && mc.header(args[0]).object_type == ObjectType::ConstantString {
+                return Err(EvalError::WrongType {
+                    name: "SET-AREF",
+                    wanted:
+                        "a mutable string — this one is a literal, so copy it with COPY-SEQ first",
+                });
+            }
             let (length, is_string) = sequence_shape(mc, args[0], "SET-AREF")?;
             let index = checked_index(args[1], length)?;
             if is_string {
@@ -666,7 +724,12 @@ pub fn call<'h>(
             Ok(Value::fixnum(length as i64).expect("a heap object cannot be that long"))
         }
         "VECTORP" => Ok(is_type(mc, args[0], ObjectType::Vector)),
-        "STRINGP" => Ok(is_type(mc, args[0], ObjectType::String)),
+        // Both string types answer yes: a literal is a string, it just
+        // cannot be written. The distinction is `%set-aref`'s business and
+        // nothing else's.
+        "STRINGP" => Ok(boolean(
+            args[0].is_object() && mc.header(args[0]).object_type.is_string(),
+        )),
         "CHARACTERP" => Ok(if args[0].as_character().is_some() {
             Value::T
         } else {
@@ -882,7 +945,8 @@ mod tests {
                 "%STRING-APPEND",
                 "%VECTOR-TO-LIST",
                 "VALUES",
-                "VALUES-LIST"
+                "VALUES-LIST",
+                "%MAKE-STRING"
             ]
         );
     }
