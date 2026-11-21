@@ -102,6 +102,7 @@ pub enum Prim {
     MakeString = 49,
     Assemble = 50,
     Integerp = 51,
+    Disassemble = 52,
 }
 
 impl Prim {
@@ -303,6 +304,15 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // instruction. Common Lisp's name and meaning; there was no numeric
     // predicate at all until now, which nothing in the prelude had needed.
     (Prim::Integerp, "INTEGERP", Arity::Exactly(1)),
+    // A compiled function, rendered for a person: instructions with their
+    // offsets, the constants their operands name, where each jump lands, and
+    // any nested function indented beneath the CLOSURE that makes it.
+    //
+    // A `%` name because it is not Common Lisp's `disassemble`, which prints
+    // to a stream and returns nil. There is no output primitive yet, so this
+    // returns the text and the REPL prints it. When there are streams it can
+    // become the real one; chapter 22 is the convention.
+    (Prim::Disassemble, "%DISASSEMBLE", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -706,6 +716,22 @@ pub fn call_slice<'h>(
             args[0].is_object() && mc.header(args[0]).object_type.is_string(),
         )),
         Prim::Integerp => Ok(truth(args[0].as_fixnum().is_some())),
+        Prim::Disassemble => {
+            // A closure or the function inside one, so that both
+            // `(%disassemble (compile-form ...))` and a closure work.
+            let mut f = args[0];
+            if f.is_object() && mc.header(f).object_type == ObjectType::Closure {
+                f = mc.slot(f, crate::eval::closure::BODY);
+            }
+            if !(f.is_object() && mc.header(f).object_type == ObjectType::Function) {
+                return Err(EvalError::WrongType {
+                    name: "%DISASSEMBLE",
+                    wanted: "a compiled function",
+                });
+            }
+            let text = crate::code::disassemble_function(mc, f);
+            Ok(mc.alloc_string(&text))
+        }
         Prim::Characterp => Ok(if args[0].as_character().is_some() {
             Value::T
         } else {

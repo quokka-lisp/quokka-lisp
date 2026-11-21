@@ -200,6 +200,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Test (native) | `cargo test --workspace` |
 | REPL | `cargo run -p quokka-repl` — interprets |
 | REPL, compiling | `cargo run -p quokka-repl -- --compile` — loads `lisp/compiler/`, compiles each form and runs it on the bytecode VM |
+| REPL, showing the code | `cargo run -p quokka-repl -- --show-code` — the same, printing each form's instructions first |
 | GC torture | `cargo test -p quokka-vm --features gc-torture` — collects at every mutation boundary and verifies the heap afterwards |
 | Differential tests | `cargo test -p quokka-vm --test differential` (Quokka) · `./scripts/oracle.sh` (SBCL) |
 | Regenerate a baseline | `cargo run -p quokka-repl -- --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |

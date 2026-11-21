@@ -51,6 +51,36 @@ quokka> (labels ((down (n) (if (= n 0) 'done (down (- n 1))))) (down 20000))
 DONE
 ```
 
+## Looking at what it produced
+
+```
+cargo run -p quokka-repl -- --show-code
+```
+
+Prints each form's instructions before running them, with the constants their
+operands name, where each jump lands, and any nested function indented
+beneath the `CLOSURE` that makes it:
+
+```
+quokka> ((lambda (x) (+ x 1)) 41)
+COMPILED-FORM NIL  ; stack 2
+     0  CLOSURE 0  ; #<compiled LAMBDA>
+     3  FIX 41
+     6  TCALL 1
+     8  RET
+
+    LAMBDA (X)  ; stack 3
+         0  GFREF 0  ; +
+         3  LREF 0 0
+         6  FIX 1
+         9  TCALL 2
+        11  RET
+42
+```
+
+`%disassemble` is the same thing as a function, if you would rather ask for
+one function than see every form.
+
 Two things will not work yet, both correctly:
 
 ```

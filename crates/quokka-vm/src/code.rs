@@ -24,6 +24,7 @@
 
 use crate::heap::{Mutation, ObjectType};
 use crate::value::Value;
+use std::fmt::Write as _;
 
 /// What an opcode's operands look like, and therefore how wide it is.
 ///
@@ -446,6 +447,108 @@ pub fn disassemble(bytes: &[u8]) -> String {
         out.push_str(&format!("{start:>4}  {line}\n"));
     }
     out
+}
+
+/// Render a compiled function the way a person wants to read it.
+///
+/// [`disassemble`] prints the bytes and nothing else, which is enough for a
+/// test and useless for looking at a compiler's output: `CONST 0` and
+/// `GFREF 2` say nothing without the constants they name. This resolves
+/// them, and follows a `CLOSURE` into the function it makes — so one call
+/// shows a whole nest of lambdas, indented.
+///
+/// # Rule 9
+///
+/// Unbounded in its argument, like everything else that walks a program.
+/// It is a debugging tool called by a person, which is the one case where
+/// that is obviously fine.
+pub fn disassemble_function<'h>(mc: &Mutation<'h>, f: Value<'h>) -> String {
+    let mut out = String::new();
+    render(mc, f, 0, &mut out);
+    out
+}
+
+fn render<'h>(mc: &Mutation<'h>, f: Value<'h>, indent: usize, out: &mut String) {
+    let pad = " ".repeat(indent);
+    let name = mc.slot(f, function::NAME);
+    let name = if mc.is_symbol(name) {
+        mc.symbol_name(name)
+    } else {
+        String::from("(anonymous)")
+    };
+    let max_stack = mc.slot(f, function::MAX_STACK).as_fixnum().unwrap_or(0);
+    let params = crate::printer::print(mc, mc.slot(f, function::PARAMS));
+    let _ = writeln!(out, "{pad}{name} {params}  ; stack {max_stack}");
+
+    let constants = mc.slot(f, function::CONSTANTS);
+    let bytes = code_bytes(mc, f);
+    let mut at = 0;
+    let mut nested: Vec<Value<'h>> = Vec::new();
+    while at < bytes.len() {
+        let Ok(d) = decode(&bytes, at) else {
+            let _ = writeln!(out, "{pad}  {at:>4}  <undecodable>");
+            break;
+        };
+        let text = match d.op.operands() {
+            Operands::None => d.op.name().to_string(),
+            Operands::U8 | Operands::U16 => format!("{} {}", d.op.name(), d.a),
+            Operands::U8U8 => format!("{} {} {}", d.op.name(), d.a, d.b),
+            // `FIX` and the jumps share a signed 16-bit field and mean
+            // entirely different things by it: one is a value and the rest
+            // are distances. Printing `FIX +0` reads as an offset of nothing.
+            Operands::S16 if d.op == Op::Fix => format!("FIX {}", d.a),
+            Operands::S16 => format!("{} {:+}", d.op.name(), d.a),
+            Operands::U16S16 => format!("{} {} {:+}", d.op.name(), d.a, d.b),
+        };
+        // What the operand actually names, which is the whole point.
+        let note = match d.op {
+            Op::Const | Op::Gref | Op::Gset | Op::Gfref | Op::Bind | Op::Bindf => {
+                constant_note(mc, constants, d.a)
+            }
+            Op::Closure => {
+                let c = constant_at(mc, constants, d.a);
+                if let Some(c) = c {
+                    if c.is_object() && mc.header(c).object_type == ObjectType::Function {
+                        nested.push(c);
+                    }
+                }
+                constant_note(mc, constants, d.a)
+            }
+            Op::Block | Op::Tag | Op::Handler => constant_note(mc, constants, d.a),
+            Op::Prim => match crate::primitives::name_of(d.a as u32) {
+                Some(n) => format!("  ; {n}"),
+                None => String::new(),
+            },
+            // A jump says where it lands, because an offset alone is not
+            // something a person can follow.
+            Op::Jmp | Op::JmpNil | Op::JmpNotNil => {
+                format!("  ; -> {}", d.next as i32 + d.a)
+            }
+            Op::Catch | Op::Protect => format!("  ; -> {}", d.next as i32 + d.a),
+            _ => String::new(),
+        };
+        let _ = writeln!(out, "{pad}  {at:>4}  {text}{note}");
+        at = d.next;
+    }
+    for c in nested {
+        out.push('\n');
+        render(mc, c, indent + 4, out);
+    }
+}
+
+fn constant_at<'h>(mc: &Mutation<'h>, constants: Value<'h>, index: i32) -> Option<Value<'h>> {
+    if index < 0 || !constants.is_object() {
+        return None;
+    }
+    let i = index as usize;
+    (i < mc.header(constants).slots).then(|| mc.slot(constants, i))
+}
+
+fn constant_note<'h>(mc: &Mutation<'h>, constants: Value<'h>, index: i32) -> String {
+    match constant_at(mc, constants, index) {
+        Some(v) => format!("  ; {}", crate::printer::print(mc, v)),
+        None => String::from("  ; <missing constant>"),
+    }
 }
 
 /// A compiled function: where the instructions, the constants and the shape

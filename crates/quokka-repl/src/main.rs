@@ -51,12 +51,18 @@ fn main() {
     // `quokka --compile` loads the compiler and evaluates by *compiling*:
     // each form becomes a function and the bytecode VM runs it. The ordinary
     // REPL interprets, and does not load the compiler at all.
-    let compiling = args.iter().any(|a| a == "--compile");
+    // `--show-code` also prints each form's instructions before running
+    // them, which is how to look at what the compiler actually produced.
+    let showing = args.iter().any(|a| a == "--show-code");
+    let compiling = showing || args.iter().any(|a| a == "--compile");
 
     let mut host = NativeHost;
     host.write_stdout(&format!("Quokka {VERSION} — phase {PHASE}\n"));
     if compiling {
         host.write_stdout("Compiling: every form is compiled and run on the VM.\n");
+        if showing {
+            host.write_stdout("Showing the instructions for each form.\n");
+        }
     }
     host.write_stdout("Ctrl-D to leave.\n");
 
@@ -83,7 +89,7 @@ fn main() {
             }
             Ok(_) => {
                 let output = if compiling {
-                    compile_and_print(&mut heap, &line)
+                    compile_and_print(&mut heap, &line, showing)
                 } else {
                     read_and_print(&mut heap, &line)
                 };
@@ -163,11 +169,11 @@ fn read_and_print(heap: &mut Heap, line: &str) -> String {
 /// The line is re-read for each form rather than its forms being carried
 /// across mutations, because a `Value` cannot leave one and a REPL line is
 /// short enough that reading it twice costs nothing.
-fn compile_and_print(heap: &mut Heap, line: &str) -> String {
+fn compile_and_print(heap: &mut Heap, line: &str, showing: bool) -> String {
     let mut out = String::new();
     let mut index = 0usize;
     loop {
-        match compile_one(heap, line, index) {
+        match compile_one(heap, line, index, showing) {
             None => return out,
             Some(text) => {
                 out.push_str(&text);
@@ -179,7 +185,7 @@ fn compile_and_print(heap: &mut Heap, line: &str) -> String {
 }
 
 /// Compile and run the `index`th form on the line, or `None` if there is none.
-fn compile_one(heap: &mut Heap, line: &str, index: usize) -> Option<String> {
+fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Option<String> {
     let chars = Reader::chars_of(line);
 
     // Build `(compile-form 'FORM)` and start the interpreter on it.
@@ -254,9 +260,14 @@ fn compile_one(heap: &mut Heap, line: &str, index: usize) -> Option<String> {
     // collection the run itself needs.
     Some(heap.mutate(|mc| {
         let function = mc.root();
-        match run_now(mc, function, EVAL_BUDGET) {
-            Ok(v) => print(mc, v),
-            Err(e) => format!("; {e}"),
+        let mut out = String::new();
+        if showing {
+            out.push_str(&quokka_vm::code::disassemble_function(mc, function));
         }
+        match run_now(mc, function, EVAL_BUDGET) {
+            Ok(v) => out.push_str(&print(mc, v)),
+            Err(e) => out.push_str(&format!("; {e}")),
+        }
+        out
     }))
 }

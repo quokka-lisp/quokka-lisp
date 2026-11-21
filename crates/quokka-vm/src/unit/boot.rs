@@ -876,6 +876,56 @@ mod compiler {
         })
     }
 
+    /// The disassembly of a compiled function, as `--show-code` prints it.
+    ///
+    /// Pinned because it is a tool for reading the compiler's output, and a
+    /// tool that quietly stops annotating constants is worse than none: the
+    /// numbers would still look right.
+    #[test]
+    fn a_disassembly_names_what_the_operands_mean() {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        drive(&mut heap, "(compile-form '((lambda (x) (+ x 1)) 41))").expect("compiles");
+        let text = heap.mutate(|mc| {
+            let f = mc.root();
+            crate::code::disassemble_function(mc, f)
+        });
+        assert_eq!(
+            text,
+            concat!(
+                "COMPILED-FORM NIL  ; stack 2\n",
+                "     0  CLOSURE 0  ; #<compiled LAMBDA>\n",
+                "     3  FIX 41\n",
+                "     6  TCALL 1\n",
+                "     8  RET\n",
+                "\n",
+                "    LAMBDA (X)  ; stack 3\n",
+                "         0  GFREF 0  ; +\n",
+                "         3  LREF 0 0\n",
+                "         6  FIX 1\n",
+                "         9  TCALL 2\n",
+                "        11  RET\n",
+            ),
+            "\n{text}"
+        );
+    }
+
+    /// A jump prints where it lands, and a primitive prints its name.
+    #[test]
+    fn a_disassembly_resolves_jumps_and_primitives() {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        drive(&mut heap, "(compile-form '(if t 1 2))").expect("compiles");
+        let text = heap.mutate(|mc| {
+            let f = mc.root();
+            crate::code::disassemble_function(mc, f)
+        });
+        assert!(text.contains("JMP-NIL"), "{text}");
+        assert!(text.contains("; -> "), "{text}");
+    }
+
     /// A lambda list the compiler cannot do yet says so, rather than
     /// producing a function that binds the wrong things.
     #[test]

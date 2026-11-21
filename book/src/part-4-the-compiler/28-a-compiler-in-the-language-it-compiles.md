@@ -39,6 +39,46 @@ Nothing above was interpreted. The last one is worth a second look: `when` is
 a macro in the prelude, expanded by the compiler, and the instructions that
 run are two jumps.
 
+### Looking at the output
+
+`--show-code` prints the instructions before running them, which is the only
+way to check that a compiler is doing what you think:
+
+```
+quokka> ((lambda (x) (+ x 1)) 41)
+COMPILED-FORM NIL  ; stack 2
+     0  CLOSURE 0  ; #<compiled LAMBDA>
+     3  FIX 41
+     6  TCALL 1
+     8  RET
+
+    LAMBDA (X)  ; stack 3
+         0  GFREF 0  ; +
+         3  LREF 0 0
+         6  FIX 1
+         9  TCALL 2
+        11  RET
+42
+```
+
+Four things in that listing are worth reading rather than skimming.
+
+**The constants are resolved.** `GFREF 0` on its own is unreadable; `GFREF 0
+; +` is a sentence. A disassembler that prints only numbers is a disassembler
+nobody uses twice.
+
+**The nested function is indented beneath the `CLOSURE` that makes it**, which
+is where it lives: in the outer function's constants vector. The structure of
+the source survives into the structure of the listing.
+
+**`LREF 0 0`** is chapter 26's lexical address, in the wild: `x` is the
+innermost scope, slot zero, and the name is gone.
+
+**Both calls are `TCALL`.** The inner `(+ x 1)` is the lambda's whole body, so
+it is in tail position; the outer call is the whole form. Chapter 25 said the
+compiler decides tail position from the shape of the source and writes it
+down — this is it written down.
+
 ## The smallest real thing
 
 ```lisp
