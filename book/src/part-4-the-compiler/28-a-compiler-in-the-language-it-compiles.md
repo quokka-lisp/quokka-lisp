@@ -214,14 +214,19 @@ compiler is a pile of judgements, and most of today's will not survive.
 | decision | why it is that way now | what changes it |
 | --- | --- | --- |
 | Calls go through `GFREF` | uniform, correct, obviously right | inlining `COMMON-LISP` functions to `PRIM`, which is a measurable win on every arithmetic expression |
-| No tail calls | `TCALL` exists and is unused | the compiler must recognise tail position, which is a property of the *source* and so entirely its business |
+| ~~No tail calls~~ | **done.** The compiler threads a tail flag and emits `TCALL`, so a loop written as recursion runs in constant space | — |
 | Instructions accumulated with `append` | it is the obvious thing and the lists are short | `append` is O(n) and the compiler will eventually compile itself, which is thousands of instructions |
 | Constants found by scanning a list | fifty constants, scanned linearly | a hash table, when a function has enough constants for it to matter |
 | One global for the constants being built | threading it through every function would be most of the code | special variables, when there are any |
 | `if` emits a `JMP` even when the then-branch cannot fall through | simple and always correct | noticing that a branch ending in `RET` needs no jump after it |
 | `labels` makes a scope of `nil`s and fills it in | the closures must capture a scope that exists | nothing — this is what `labels` *is*, and the instruction it needed (`FSET`) is the thirty-seventh opcode |
 
-None of those is a bug and each is a thing to come back to. The point of
+One is already struck out, which is the table doing its job: tail calls were
+on it when this chapter was written and were done two days later, and the row
+is left in place rather than deleted so that the list reads as a history
+rather than a wish.
+
+None of the rest is a bug and each is a thing to come back to. The point of
 writing them down here is that a reader of this chapter in a year should be
 able to tell **which parts of the compiler were decisions and which were
 accidents** — and in a compiler, that distinction is harder to recover

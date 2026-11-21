@@ -475,6 +475,7 @@ refuses the function if:
 | the function needs a deeper stack than its `max-stack` | a call would reserve too little |
 | control runs past the last instruction | a function with no `RET` |
 | an instruction names a constant that is not there | |
+| a `RET` or `TCALL` leaves an unwind record open | see below |
 
 It returns the depth actually needed, which is what an assembler should write
 into `max-stack` rather than guessing — and the test helpers now do exactly
@@ -488,6 +489,14 @@ that leaves one item too many does not fail, it makes every instruction after
 it quietly wrong. Both bugs that argued for this were of that shape, and both
 reported something several instructions from the cause. Checking once, when
 the function arrives, is the JVM's answer — see its specification §4.10.
+
+**Why the record rule matters.** `TCALL` reuses the frame by dropping
+everything above it, which includes any `block`, `catch`, `unwind-protect` or
+`handler-case` record pushed inside it — and would leave the mark pointer
+aimed at reclaimed space. Requiring records balanced at `RET` and `TCALL` is
+what lets the machine reuse a frame without also saving and restoring that
+pointer, and it means a compiler that tail-calls out of a `block` is a build
+failure rather than a lost cleanup.
 
 **What it does not check.** Types: a verified function will not corrupt the
 machine, but it may still add a symbol to a string. Nor can it see a

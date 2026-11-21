@@ -546,26 +546,91 @@ fn prelude_recursion_is_bounded_by_the_heap_not_the_stack() {
 /// bytecode, and the VM runs it.
 mod compiler {
     use super::*;
+    use crate::eval::Machine;
+    use crate::value::Value;
     use crate::vm::run_now;
+
+    /// Compile `source` with the Lisp compiler and run the result on the VM,
+    /// **letting the collector run**.
+    ///
+    /// Which is the whole reason this is not four lines around `eval_now`.
+    /// Collection cannot happen inside a `mutate` (chapter 4), so anything
+    /// that evaluates a whole form in one mutation can allocate but never
+    /// reclaim. Every test before this one was small enough not to care.
+    ///
+    /// Compiling is not. It allocates an instruction list, a constants list,
+    /// a `gensym` per branch and a fresh `append` for every concatenation,
+    /// and almost all of it is garbage immediately. The first form large
+    /// enough to notice — two mutually recursive functions — exhausted a
+    /// sixty-four megabyte heap and reported "a computation that does not
+    /// finish, perhaps?", which it was not.
+    ///
+    /// So this drives the machine the way a real host does: a slice at a
+    /// time, with the heap free to collect between them.
+    fn drive(heap: &mut Heap, source: &str) -> Result<(), String> {
+        use crate::slice::{run_slice, Status};
+        let chars = Reader::chars_of(source);
+        let started = heap.mutate(|mc| {
+            let mut reader = Reader::new(&chars);
+            match reader.read(mc) {
+                Ok(Some(form)) => {
+                    Machine::start(mc, form, Value::NIL);
+                    Ok(())
+                }
+                Ok(None) => Err(String::from("; nothing to read")),
+                Err(e) => Err(format!("; {e:?}")),
+            }
+        });
+        started?;
+        for _ in 0..100_000 {
+            let outcome = heap.mutate(|mc| {
+                let (status, error, value) = {
+                    let mut machine = Machine::resume(mc);
+                    let status = run_slice(&mut machine, 500);
+                    (status, machine.error.take(), machine.result())
+                };
+                if let Some(e) = error {
+                    return Some(Err(format!("; {e}")));
+                }
+                if matches!(status, Status::Done { .. }) {
+                    // The answer becomes the root so that it survives the
+                    // collections the next phase may need.
+                    mc.set_root(value);
+                    return Some(Ok(()));
+                }
+                None
+            });
+            if heap.wants_collection() {
+                heap.collect();
+            }
+            if let Some(done) = outcome {
+                return done;
+            }
+        }
+        Err(String::from("; the machine never halted"))
+    }
 
     /// Compile `source` with the Lisp compiler and run the result on the VM.
     fn compile_and_run(source: &str) -> String {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
-        let chars = Reader::chars_of(&format!("(compile-form '{source})"));
-        heap.mutate(|mc| {
-            install_compiler(mc).expect("the compiler loads");
-            let mut reader = Reader::new(&chars);
-            let form = reader.read(mc).expect("reads").expect("a form");
-            let function = match eval_now(mc, form, BOOT_BUDGET) {
-                Ok(f) => f,
-                Err(e) => return format!("; compiling: {e}"),
-            };
-            match run_now(mc, function, 100_000) {
-                Ok(v) => print(mc, v),
-                Err(e) => format!("; running: {e}"),
+        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        if let Err(e) = drive(&mut heap, &format!("(compile-form '{source})")) {
+            return format!("; compiling: {e}");
+        }
+        // The compiled function is the root, so it survives the collections
+        // the run below may need.
+        let outcome = heap.mutate(|mc| {
+            let f = mc.root();
+            match run_now(mc, f, 1_000_000) {
+                Ok(v) => Ok(print(mc, v)),
+                Err(e) => Err(format!("; running: {e}")),
             }
-        })
+        });
+        match outcome {
+            Ok(s) => s,
+            Err(e) => e,
+        }
     }
 
     /// What `compile-form` hands back, printed. Book chapter 28 shows this
@@ -755,6 +820,60 @@ mod compiler {
             compile_and_run("(let ((x 7)) (labels ((f () x)) (f)))"),
             "7"
         );
+    }
+
+    /// Twenty thousand deep, which only terminates because the compiler put
+    /// `TCALL` where a `CALL` would have been.
+    ///
+    /// The interpreter gets this by popping a frame before dispatching, and
+    /// so *discovers* that a call was in tail position. The compiler
+    /// **decides** it, from the shape of the source, and writes it down.
+    #[test]
+    fn a_tail_recursive_loop_runs_in_constant_space() {
+        assert_eq!(
+            compile_and_run("(labels ((down (n) (if (= n 0) 'done (down (- n 1))))) (down 20000))"),
+            "DONE"
+        );
+    }
+
+    /// The same shape with the call *not* in tail position — it is an
+    /// argument to `+` — so each level keeps a frame. Twenty thousand would
+    /// be a different test; this one only has to prove the two differ.
+    #[test]
+    fn a_non_tail_call_is_still_a_call() {
+        assert_eq!(
+            compile_and_run("(labels ((add (n) (if (= n 0) 0 (+ 1 (add (- n 1)))))) (add 100))"),
+            "100"
+        );
+    }
+
+    /// Tail position reaches through everything that passes a value along,
+    /// which is the same list of forms chapter 23 found for multiple values.
+    #[test]
+    fn tail_position_reaches_through_if_and_let_and_progn() {
+        let out = compile_instructions("(lambda (n) (if n (f n) (g n)))");
+        assert_eq!(out.matches("TCALL").count(), 2, "{out}");
+        let out = compile_instructions("(lambda (n) (let ((x n)) (f x)))");
+        assert!(out.contains("TCALL"), "{out}");
+        let out = compile_instructions("(lambda (n) (progn (f n) (g n)))");
+        assert_eq!(out.matches("TCALL").count(), 1, "{out}");
+        assert_eq!(out.matches("(CALL").count(), 1, "{out}");
+    }
+
+    /// The instruction list for a form, as the compiler produces it.
+    fn compile_instructions(source: &str) -> String {
+        let mut heap = Heap::new();
+        install(&mut heap).expect("the prelude boots");
+        heap.mutate(|mc| install_compiler(mc).expect("the compiler loads"));
+        // The body of the lambda, not the CLOSURE that wraps it.
+        let form = format!("(%compile-body (cddr '{source}) (list (list ':variable 'n)) t)");
+        if let Err(e) = drive(&mut heap, &form) {
+            return e;
+        }
+        heap.mutate(|mc| {
+            let v = mc.root();
+            print(mc, v)
+        })
     }
 
     /// A lambda list the compiler cannot do yet says so, rather than

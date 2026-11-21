@@ -590,6 +590,19 @@ pub mod verify {
             /// The last instruction reached.
             at: usize,
         },
+        /// A `RET` or `TCALL` with an unwind record still on the stack.
+        ///
+        /// It matters most for `TCALL`, which reuses the frame by dropping
+        /// everything above it — including any records, and leaving the mark
+        /// pointer aimed at reclaimed space. Requiring them balanced here is
+        /// what lets the machine reuse a frame without saving and restoring
+        /// that pointer too.
+        MarksNotBalanced {
+            /// Where the instruction is.
+            at: usize,
+            /// How many records were still open.
+            open: i32,
+        },
         /// An instruction names a constant the function does not have.
         BadConstant {
             /// Where.
@@ -614,8 +627,15 @@ pub mod verify {
         pops: usize,
         /// Slots pushed after.
         pushes: usize,
+        /// How the count of open unwind records changes.
+        marks: i32,
         /// Does the next instruction run?
         falls_through: bool,
+        /// How many records are open at the branch target, relative to
+        /// before this instruction. Usually the same as `marks`, and not for
+        /// the block-like operators: the record is gone by the time an
+        /// unwind arrives at their label.
+        branch_marks: i32,
         /// A jump target, and how deep the stack is on arrival **relative to
         /// the depth before this instruction**.
         ///
@@ -678,17 +698,20 @@ pub mod verify {
             at = decode(bytes, at).map_err(Error::Malformed)?.next;
         }
 
-        let mut depth_at: std::collections::HashMap<usize, usize> =
+        // Each reachable instruction is visited with how deep the stack is
+        // and how many unwind records are open. Both have to be the same on
+        // every path that reaches it.
+        let mut seen: std::collections::HashMap<usize, (usize, i32)> =
             std::collections::HashMap::new();
-        let mut work = vec![(0usize, 0usize)];
+        let mut work = vec![(0usize, 0usize, 0i32)];
         let mut deepest = 0usize;
 
-        while let Some((at, depth)) = work.pop() {
+        while let Some((at, depth, marks)) = work.pop() {
             if at >= bytes.len() {
                 // Reached by falling off the end of the last instruction.
                 return Err(Error::FallsOffTheEnd { at });
             }
-            if let Some(&known) = depth_at.get(&at) {
+            if let Some(&(known, known_marks)) = seen.get(&at) {
                 if known != depth {
                     return Err(Error::Inconsistent {
                         at,
@@ -696,9 +719,12 @@ pub mod verify {
                         then: depth,
                     });
                 }
+                if known_marks != marks {
+                    return Err(Error::MarksNotBalanced { at, open: marks });
+                }
                 continue;
             }
-            depth_at.insert(at, depth);
+            seen.insert(at, (depth, marks));
 
             let d = decode(bytes, at).map_err(Error::Malformed)?;
             let effect = effect_of(mc, &d, at, constants, count)?;
@@ -709,7 +735,20 @@ pub mod verify {
                     wanted: effect.pops,
                 });
             }
+            // Leaving the function with a record still open would strand the
+            // mark pointer — and for a tail call, which reuses the frame by
+            // dropping everything above it, aim it at reclaimed space.
+            if matches!(d.op, Op::Ret | Op::Tcall) && marks != 0 {
+                return Err(Error::MarksNotBalanced { at, open: marks });
+            }
             let after = depth - effect.pops + effect.pushes;
+            let marks_after = marks + effect.marks;
+            if marks_after < 0 {
+                return Err(Error::MarksNotBalanced {
+                    at,
+                    open: marks_after,
+                });
+            }
             deepest = deepest.max(depth.max(after));
 
             if let Some((target, relative)) = effect.branch {
@@ -724,10 +763,10 @@ pub mod verify {
                         wanted: (-relative) as usize,
                     });
                 }
-                work.push((target, arrives as usize));
+                work.push((target, arrives as usize, marks + effect.branch_marks));
             }
             if effect.falls_through {
-                work.push((d.next, after));
+                work.push((d.next, after, marks_after));
             }
         }
         Ok(deepest)
@@ -743,13 +782,17 @@ pub mod verify {
         let plain = |pops: usize, pushes: usize| Effect {
             pops,
             pushes,
+            marks: 0,
             falls_through: true,
+            branch_marks: 0,
             branch: None,
         };
         let terminator = Effect {
             pops: 0,
             pushes: 0,
+            marks: 0,
             falls_through: false,
+            branch_marks: 0,
             branch: None,
         };
         let constant = |index: i32| -> Result<usize, Error> {
@@ -795,7 +838,11 @@ pub mod verify {
             Op::Values => plain(d.a as usize, 1),
             Op::Mvsave | Op::Mvrestore => plain(1, 1),
             // Control leaves and does not come back here.
-            Op::Ret | Op::Tcall | Op::Unprotect | Op::Go => terminator,
+            Op::Ret | Op::Tcall | Op::Go => terminator,
+            Op::Unprotect => Effect {
+                marks: -1,
+                ..terminator
+            },
             Op::Retfrom => Effect {
                 pops: 1,
                 ..terminator
@@ -814,7 +861,9 @@ pub mod verify {
             Op::JmpNil | Op::JmpNotNil => Effect {
                 pops: 1,
                 pushes: 0,
+                marks: 0,
                 falls_through: true,
+                branch_marks: 0,
                 branch: Some((target(d.a), -1)),
             },
             // A record occupies the stack, and the label it names is reached
@@ -826,7 +875,11 @@ pub mod verify {
                 Effect {
                     pops: 0,
                     pushes: RECORD,
+                    marks: 1,
                     falls_through: true,
+                    // An unwind that finds this record pops it on the way, so
+                    // the label is reached with it already gone.
+                    branch_marks: 0,
                     branch: Some((target(d.b), 1)),
                 }
             }
@@ -835,19 +888,29 @@ pub mod verify {
             Op::Catch => Effect {
                 pops: 1,
                 pushes: RECORD,
+                marks: 1,
                 falls_through: true,
+                branch_marks: 0,
                 branch: Some((target(d.a), 0)),
             },
             // The cleanup fragment is only ever entered by the unwinder,
             // which leaves a paused record where the protect record was — the
             // same size, so the same depth.
+            // The cleanup is reached with the protect record replaced by a
+            // paused one — the same size and still one open record, which
+            // `UNPROTECT` then consumes.
             Op::Protect => Effect {
                 pops: 0,
                 pushes: RECORD,
+                marks: 1,
                 falls_through: true,
+                branch_marks: 1,
                 branch: Some((target(d.a), RECORD as i32)),
             },
-            Op::Unmark => plain(RECORD + 1, 1),
+            Op::Unmark => Effect {
+                marks: -1,
+                ..plain(RECORD + 1, 1)
+            },
         })
     }
 }

@@ -121,25 +121,25 @@
 ;;;
 ;;; Both arms must leave exactly one value, or the verifier refuses the
 ;;; function: the paths meet at DONE and have to agree about the stack.
-(defun %compile-if (form env)
+(defun %compile-if (form env tail)
   (let ((else (gensym))
         (done (gensym)))
-    (append (%compile (second form) env)
+    (append (%compile (second form) env nil)
             (list (list 'JMP-NIL else))
-            (%compile (third form) env)
+            (%compile (third form) env tail)
             (list (list 'JMP done))
             (list (list ':label else))
-            (%compile (nth 3 form) env)
+            (%compile (nth 3 form) env tail)
             (list (list ':label done)))))
 
 ;;; A body: every form but the last is evaluated for effect, so its value is
 ;;; popped. An empty body is `nil`, which is what `(progn)` means.
-(defun %compile-body (forms env)
+(defun %compile-body (forms env tail)
   (cond ((null forms) (list (list 'NIL)))
-        ((null (cdr forms)) (%compile (car forms) env))
-        (t (append (%compile (car forms) env)
+        ((null (cdr forms)) (%compile (car forms) env tail))
+        (t (append (%compile (car forms) env nil)
                    (list (list 'POP))
-                   (%compile-body (cdr forms) env)))))
+                   (%compile-body (cdr forms) env tail)))))
 
 (defun %binding-name (binding)
   (if (consp binding) (car binding) binding))
@@ -169,19 +169,19 @@
 ;;; `BIND` takes the names from a constant vector it does not look at for
 ;;; anything but their count. They are carried for the debugger, which is the
 ;;; only reason a compiled scope knows what its variables are called.
-(defun %compile-let (form env)
+(defun %compile-let (form env tail)
   (let ((names (%binding-names (second form)))
         (inits (%binding-inits (second form))))
     (append (%compile-arguments inits env)
             (list (list 'BIND (%constant-index (apply #'vector names))))
-            (%compile-body (cddr form) (cons (%scope ':variable names) env))
+            (%compile-body (cddr form) (cons (%scope ':variable names) env) tail)
             (list (list 'UNBIND 1)))))
 
 ;;; `(setq x v)` — the value stays on the stack, because `setq` returns it.
 ;;; `LSET` and `GSET` pop and push, so that is what they already do.
 (defun %compile-setq (form env)
   (let ((place (%lookup (second form) env 0 ':variable)))
-    (append (%compile (third form) env)
+    (append (%compile (third form) env nil)
             (if place
                 (list (list 'LSET (car place) (cdr place)))
                 (list (list 'GSET (%constant-index (second form))))))))
@@ -214,7 +214,7 @@
   (let ((outer %constants)
         (outer-count %constant-count))
     (%reset-constants)
-    (let ((code (append (%compile-body body (cons (%scope ':variable params) env))
+    (let ((code (append (%compile-body body (cons (%scope ':variable params) env) t)
                         (list (list 'RET)))))
       (let ((compiled (%assemble code (%constants-vector) params 'lambda)))
         (setq %constants outer)
@@ -224,7 +224,7 @@
 (defun %compile-arguments (arguments env)
   (if (endp arguments)
       nil
-      (append (%compile (car arguments) env)
+      (append (%compile (car arguments) env nil)
               (%compile-arguments (cdr arguments) env))))
 
 ;;; `(f a b)` — the callee first, then the arguments, then CALL.
@@ -249,10 +249,27 @@
         ((and (consp head) (eq (car head) 'lambda)) (%compile-lambda head env))
         (t (error "a call wants a symbol or a lambda expression as its operator"))))
 
-(defun %compile-call (form env)
+;;; A call in tail position reuses the current frame instead of pushing one,
+;;; so a loop written as recursion runs in constant space.
+;;;
+;;; Unlike the interpreter, which gets this by popping a frame before
+;;; dispatching and so *discovers* that a call was in tail position, the
+;;; compiler **decides** it: tail position is a property of the source, and it
+;;; is written into the output where a disassembler can show it.
+;;;
+;;; `TCALL` never returns, so the `RET` that follows is unreachable — which
+;;; the verifier allows and simply does not visit.
+;;;
+;;; What must *cancel* tail position, when they are implemented: `block`,
+;;; `catch`, `unwind-protect` and `handler-case`. Each leaves a record on the
+;;; stack that has to outlive the call, and `TCALL` reuses the frame by
+;;; dropping everything above it. The verifier refuses a `TCALL` with a record
+;;; still open, so getting this wrong is a build failure and not a lost
+;;; cleanup.
+(defun %compile-call (form env tail)
   (append (%compile-callee (car form) env)
           (%compile-arguments (cdr form) env)
-          (list (list 'CALL (length (cdr form))))))
+          (list (list (if tail 'TCALL 'CALL) (length (cdr form))))))
 
 ;;; `(flet ((f (x) ...)) ...)`
 ;;;
@@ -265,11 +282,11 @@
       (append (%compile-lambda (cons 'lambda (cdr (car definitions))) env)
               (%compile-local-functions (cdr definitions) env))))
 
-(defun %compile-flet (form env)
+(defun %compile-flet (form env tail)
   (let ((names (%binding-names (second form))))
     (append (%compile-local-functions (second form) env)
             (list (list 'BINDF (%constant-index (apply #'vector names))))
-            (%compile-body (cddr form) (cons (%scope ':function names) env))
+            (%compile-body (cddr form) (cons (%scope ':function names) env) tail)
             (list (list 'UNBIND 1)))))
 
 ;;; `(labels ((f (x) ... (f ...))) ...)`
@@ -294,13 +311,13 @@
               (list (list 'POP))
               (%store-local-functions (cdr definitions) env (+ index 1)))))
 
-(defun %compile-labels (form env)
+(defun %compile-labels (form env tail)
   (let ((names (%binding-names (second form))))
     (let ((inner (cons (%scope ':function names) env)))
       (append (%nils (length names))
               (list (list 'BINDF (%constant-index (apply #'vector names))))
               (%store-local-functions (second form) inner 0)
-              (%compile-body (cddr form) inner)
+              (%compile-body (cddr form) inner tail)
               (list (list 'UNBIND 1))))))
 
 ;;; A list form: a special operator, a macro call, or a function call.
@@ -309,20 +326,20 @@
 ;;; shadowable by a macro, and a macro call is expanded before anything looks
 ;;; at it as a call — so `when` never reaches `%compile-call`, and neither
 ;;; does anything a user defines with `defmacro`.
-(defun %compile-cons (form env)
+(defun %compile-cons (form env tail)
   (let ((head (car form)))
     (cond ((eq head 'quote) (%compile-value (second form)))
-          ((eq head 'if) (%compile-if form env))
-          ((eq head 'progn) (%compile-body (cdr form) env))
-          ((eq head 'let) (%compile-let form env))
+          ((eq head 'if) (%compile-if form env tail))
+          ((eq head 'progn) (%compile-body (cdr form) env tail))
+          ((eq head 'let) (%compile-let form env tail))
           ((eq head 'setq) (%compile-setq form env))
           ((eq head 'lambda) (%compile-lambda form env))
-          ((eq head 'flet) (%compile-flet form env))
-          ((eq head 'labels) (%compile-labels form env))
+          ((eq head 'flet) (%compile-flet form env tail))
+          ((eq head 'labels) (%compile-labels form env tail))
           (t (multiple-value-bind (expansion expanded) (macroexpand-1 form)
                (if expanded
-                   (%compile expansion env)
-                   (%compile-call form env)))))))
+                   (%compile expansion env tail)
+                   (%compile-call form env tail)))))))
 
 ;;; One form to a list of instructions leaving exactly one value.
 ;;;
@@ -331,7 +348,10 @@
 ;;; run time. Which is chapter 26's distinction, and the reason for it — a
 ;;; lexical binding is created and destroyed by code the compiler can see in
 ;;; full, and a global is reachable by anything at any time.
-(defun %compile (form env)
+;;; TAIL says whether this form's value is the function's value. Only a call
+;;; does anything with it; everything else leaves its value on the stack and
+;;; the `RET` that follows does the returning.
+(defun %compile (form env tail)
   (cond ((null form) (list (list 'NIL)))
         ((eq form t) (list (list 'T)))
         ((symbolp form)
@@ -339,7 +359,7 @@
            (if place
                (list (list 'LREF (car place) (cdr place)))
                (list (list 'GREF (%constant-index form))))))
-        ((consp form) (%compile-cons form env))
+        ((consp form) (%compile-cons form env tail))
         (t (%compile-value form))))
 
 ;;; Compile FORM into a function of no arguments.
@@ -348,5 +368,5 @@
 ;;; `%compile-simple-lambda` saves and restores them instead.
 (defun compile-form (form)
   (%reset-constants)
-  (let ((code (append (%compile form nil) (list (list 'RET)))))
+  (let ((code (append (%compile form nil t) (list (list 'RET)))))
     (%assemble code (%constants-vector) nil 'compiled-form)))
