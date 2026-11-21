@@ -83,7 +83,8 @@ fn the_table_order_is_pinned() {
             "%VECTOR-TO-LIST",
             "VALUES",
             "VALUES-LIST",
-            "%MAKE-STRING"
+            "%MAKE-STRING",
+            "%ASSEMBLE"
         ]
     );
 }

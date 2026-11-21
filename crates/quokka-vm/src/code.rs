@@ -217,6 +217,19 @@ impl Op {
         TABLE[self as usize].1
     }
 
+    /// The opcode with this name, or `None`.
+    ///
+    /// How the Lisp compiler names an instruction. It emits `(JMP-NIL else)`
+    /// and never learns that `JMP-NIL` is byte 20 — the encoding stays in
+    /// this file, which is the whole of chapter 24's "the encoding is a
+    /// boundary" and the reason the compiler cannot drift from the VM.
+    pub fn from_name(name: &str) -> Option<Op> {
+        TABLE
+            .iter()
+            .find(|(_, n, _)| *n == name)
+            .map(|(op, _, _)| *op)
+    }
+
     /// What its operands look like.
     pub fn operands(self) -> Operands {
         TABLE[self as usize].2
@@ -821,6 +834,201 @@ pub mod verify {
             },
             Op::Unmark => plain(RECORD + 1, 1),
         })
+    }
+}
+
+/// Turning a Lisp list of instructions into a verified [`function`] object.
+///
+/// The compiler is written in Lisp and emits instructions as lists —
+/// `(LREF 0 0)`, `(JMP-NIL ELSE)`, `(:LABEL ELSE)`. This resolves the labels,
+/// encodes the operands, verifies the result and computes `max-stack`.
+///
+/// # Why this is not written in Lisp
+///
+/// Because then the opcode numbers and the operand widths would exist in two
+/// places with nothing checking that they agree, and so would the table of
+/// what each instruction does to the stack. That is the mistake issue #30 was
+/// about, and it is cheaper not to make it than to guard it.
+///
+/// What is left in Lisp is everything with a decision in it: what `let`
+/// compiles to, which calls are in tail position, when a primitive may be
+/// inlined. What is here has no judgement in it at all — byte layout, label
+/// arithmetic, stack accounting.
+pub mod assemble {
+    use super::*;
+    use crate::eval::EvalError;
+
+    /// Assemble `instructions` into a function.
+    ///
+    /// # Rule 9
+    ///
+    /// Unbounded in its argument: the cost grows with the length of the
+    /// program, and a slice cannot end in the middle of it. The same note as
+    /// `%MAKE-VECTOR` and the same answer — chunk it when slices start to
+    /// matter, which for a compiler that runs once per build they do not.
+    pub fn assemble<'h>(
+        mc: &mut Mutation<'h>,
+        instructions: Value<'h>,
+        constants: Value<'h>,
+        params: Value<'h>,
+        name: Value<'h>,
+    ) -> Result<Value<'h>, EvalError> {
+        let items = to_items(mc, instructions)?;
+
+        // One pass to place the labels. Possible in one pass precisely
+        // because an instruction's size depends only on its opcode, which is
+        // what fixing the operand widths bought (chapter 24).
+        let mut labels: Vec<(Value<'h>, usize)> = Vec::new();
+        let mut at = 0usize;
+        for item in &items {
+            match item {
+                Item::Label(name) => labels.push((*name, at)),
+                Item::Op(op, _, _) => at += op.width(),
+            }
+        }
+
+        let mut bytes = Vec::new();
+        for item in &items {
+            let Item::Op(op, a, b) = item else { continue };
+            let end = bytes.len() + op.width();
+            let resolve = |operand: &Operand<'h>| -> Result<i32, EvalError> {
+                match operand {
+                    Operand::Number(n) => Ok(*n),
+                    Operand::Label(l) => {
+                        let Some((_, target)) = labels.iter().find(|(name, _)| name == l) else {
+                            return Err(EvalError::BadSyntax {
+                                operator: "ASSEMBLE",
+                                detail: "names a label that is not there",
+                            });
+                        };
+                        // Offsets are from the end of the instruction, which
+                        // is the convention the VM's `jump` reads them with.
+                        Ok(*target as i32 - end as i32)
+                    }
+                    Operand::Missing => Ok(0),
+                }
+            };
+            let (a, b) = (resolve(a)?, resolve(b)?);
+            if !fits(*op, a, b) {
+                return Err(EvalError::BadSyntax {
+                    operator: "ASSEMBLE",
+                    detail: "has an operand too large for the field the opcode gives it",
+                });
+            }
+            encode(&mut bytes, *op, a, b);
+        }
+
+        // Built with a generous `max-stack` so the verification can only fail
+        // for a real reason, then rebuilt with the depth it reports. The
+        // compiler never has to work out how deep its own output gets.
+        let draft = make_function(mc, &bytes, constants, params, MAX_DEPTH, name);
+        let needs = match verify::function(mc, draft) {
+            Ok(n) => n,
+            Err(e) => {
+                let _ = e;
+                return Err(EvalError::BadSyntax {
+                    operator: "ASSEMBLE",
+                    detail: "produced a function the verifier refused",
+                });
+            }
+        };
+        Ok(make_function(mc, &bytes, constants, params, needs, name))
+    }
+
+    /// A stack depth no real function reaches, for the draft above.
+    const MAX_DEPTH: usize = 1 << 20;
+
+    enum Operand<'h> {
+        Number(i32),
+        Label(Value<'h>),
+        Missing,
+    }
+
+    enum Item<'h> {
+        Label(Value<'h>),
+        Op(Op, Operand<'h>, Operand<'h>),
+    }
+
+    fn bad(detail: &'static str) -> EvalError {
+        EvalError::BadSyntax {
+            operator: "ASSEMBLE",
+            detail,
+        }
+    }
+
+    fn to_items<'h>(
+        mc: &Mutation<'h>,
+        instructions: Value<'h>,
+    ) -> Result<Vec<Item<'h>>, EvalError> {
+        let mut out = Vec::new();
+        let mut cursor = instructions;
+        while cursor.is_cons() {
+            let form = mc.car(cursor);
+            cursor = mc.cdr(cursor);
+            if !form.is_cons() {
+                return Err(bad("wants a list of instructions"));
+            }
+            let head = mc.car(form);
+            let rest = mc.cdr(form);
+            if !mc.is_symbol(head) {
+                return Err(bad("wants each instruction to start with a symbol"));
+            }
+            let text = mc.symbol_name(head);
+            if mc.is_keyword(head) && text == "LABEL" {
+                if !rest.is_cons() {
+                    return Err(bad(":label wants a name"));
+                }
+                out.push(Item::Label(mc.car(rest)));
+                continue;
+            }
+            let Some(op) = Op::from_name(&text) else {
+                return Err(bad("names an instruction that does not exist"));
+            };
+            let (a, rest) = operand(mc, rest)?;
+            let (b, _) = operand(mc, rest)?;
+            out.push(Item::Op(op, a, b));
+        }
+        Ok(out)
+    }
+
+    fn operand<'h>(
+        mc: &Mutation<'h>,
+        rest: Value<'h>,
+    ) -> Result<(Operand<'h>, Value<'h>), EvalError> {
+        if !rest.is_cons() {
+            return Ok((Operand::Missing, Value::NIL));
+        }
+        let v = mc.car(rest);
+        let next = mc.cdr(rest);
+        if let Some(n) = v.as_fixnum() {
+            let Ok(n) = i32::try_from(n) else {
+                return Err(bad("has an operand that is not a 32-bit number"));
+            };
+            return Ok((Operand::Number(n), next));
+        }
+        if mc.is_symbol(v) {
+            return Ok((Operand::Label(v), next));
+        }
+        Err(bad("wants each operand to be a number or a label"))
+    }
+
+    /// Does the operand fit the field this opcode gives it?
+    ///
+    /// Checked here so that an overlong jump or a constant index past 65,535
+    /// is an error the compiler can report, rather than the panic `encode`
+    /// would raise. Those ceilings are listed in `docs/bytecode.md`.
+    fn fits(op: Op, a: i32, b: i32) -> bool {
+        let byte = |v: i32| (0..=255).contains(&v);
+        let word = |v: i32| (0..=65_535).contains(&v);
+        let signed = |v: i32| (-32_768..=32_767).contains(&v);
+        match op.operands() {
+            Operands::None => a == 0 && b == 0,
+            Operands::U8 => byte(a),
+            Operands::U8U8 => byte(a) && byte(b),
+            Operands::U16 => word(a),
+            Operands::S16 => signed(a),
+            Operands::U16S16 => word(a) && signed(b),
+        }
     }
 }
 

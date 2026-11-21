@@ -100,6 +100,7 @@ pub enum Prim {
     Values = 47,
     ValuesList = 48,
     MakeString = 49,
+    Assemble = 50,
 }
 
 impl Prim {
@@ -281,6 +282,17 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // shape as `%MAKE-VECTOR`, and the same answer — chunk it when slices
     // start to matter.
     (Prim::MakeString, "%MAKE-STRING", Arity::Exactly(2)),
+    // ---- the compiler's one door ------------------------------------------
+    //
+    // The Lisp compiler emits instructions as lists and this turns them into
+    // a function: labels resolved, operands encoded, the result verified and
+    // its max-stack computed. See `crate::code::assemble` for why the
+    // encoding is not written in Lisp.
+    //
+    // Rule 9: unbounded in its argument, since the cost grows with the length
+    // of the program. The same note as %MAKE-VECTOR, and more defensible —
+    // this runs once per function compiled, not once per call.
+    (Prim::Assemble, "%ASSEMBLE", Arity::Exactly(4)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -508,6 +520,7 @@ pub fn call_slice<'h>(
             }
             Ok(mc.alloc_string(&text))
         }
+        Prim::Assemble => crate::code::assemble::assemble(mc, args[0], args[1], args[2], args[3]),
         Prim::MakeString => {
             let Some(n) = args[0].as_fixnum() else {
                 return Err(EvalError::WrongType {

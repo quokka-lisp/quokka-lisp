@@ -48,6 +48,24 @@ use crate::reader::{ReadError, Reader};
 /// it is part of the system, not configuration.
 pub const PRELUDE: &str = include_str!("../../../lisp/prelude.lisp");
 
+/// The compiler, in the order its files must be read.
+///
+/// **Not loaded at boot.** The prelude is interpreted every time a heap is
+/// prepared, because it defines `defun` and nothing works without it. The
+/// compiler is interpreted *once*, to build an image, and after that it is
+/// compiled code inside that image — so making every REPL start interpret it
+/// would be paying for something that start is not going to use.
+///
+/// Listed rather than discovered, because there is no `load` yet and the
+/// order matters. `scripts/check-compiler.sh` fails if a file in
+/// `lisp/compiler/` is missing from here, for the same reason
+/// `check-differential.sh` exists: a source file nobody loads is worse than
+/// no source file.
+pub const COMPILER: &[(&str, &str)] = &[(
+    "compile.lisp",
+    include_str!("../../../lisp/compiler/compile.lisp"),
+)];
+
 /// How many evaluator steps one prelude form may take.
 ///
 /// Generous, and bounded anyway. A prelude form that does not finish is a bug
