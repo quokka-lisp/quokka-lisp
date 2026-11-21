@@ -349,6 +349,58 @@
       (%compile-body (cddr form) inner tail)
       (%emit (list 'UNBIND 1)))))
 
+;;; `(block out ...)` and `(return-from out value)`
+;;;
+;;; `BLOCK` makes a fresh marker, binds it in the environment under the
+;;; block's name, and pushes a record saying where to carry on. `RETFROM`
+;;; reads the marker back out — by `(depth, index)`, like any other variable,
+;;; except in the block namespace — and unwinds towards it.
+;;;
+;;; Through the environment rather than a known stack depth, because a
+;;; `return-from` can be inside a closure that has escaped, and then nobody
+;;; knows how deep the stack is. Chapter 27 has the argument.
+;;;
+;;; **Tail position is cancelled inside a block.** The record has to outlive
+;;; anything the body calls, and `TCALL` reuses the frame by dropping
+;;; everything above it — so a tail call here would drop the block. The
+;;; verifier refuses a `TCALL` with a record still open, so forgetting this
+;;; would be a build failure rather than a vanished block; passing `nil` is
+;;; what makes it never arise.
+(defun %compile-block (form env)
+  (let ((done (gensym))
+        (name (second form)))
+    (%emit (list 'BLOCK (%constant-index name) done))
+    (%compile-body (cddr form) (cons (%scope ':block (list name)) env) nil)
+    (%emit (list 'UNMARK))
+    (%emit-label done)))
+
+(defun %compile-return-from (form env)
+  (let ((place (%lookup (second form) env 0 ':block)))
+    (if place
+        (progn (%compile (third form) env nil)
+               (%emit (list 'RETFROM (car place) (cdr place))))
+        (error "return-from names a block that is not here"))))
+
+;;; `(multiple-value-call f a b)`
+;;;
+;;; Each argument form is compiled and then `MVSAVE` replaces its value with
+;;; the list of *every* value it produced — so `(values 1 2)` contributes two
+;;; arguments and not one. `MVCALL` appends the lists and calls.
+;;;
+;;; The function is an ordinary form, not a name: `(multiple-value-call #'list
+;;; ...)` evaluates `#'list` like anything else.
+(defun %compile-mv-arguments (arguments env)
+  (if (endp arguments)
+      nil
+      (progn (%compile (car arguments) env nil)
+             (%emit (list 'MVSAVE))
+             (%compile-mv-arguments (cdr arguments) env))))
+
+(defun %compile-multiple-value-call (form env)
+  (%compile (second form) env nil)
+  (%compile-mv-arguments (cddr form) env)
+  (%emit (list 'MVCALL (length (cddr form)))))
+
 ;;; A list form: a special operator, a macro call, or a function call.
 ;;;
 ;;; The order matters and is the standard's. A special operator is not
@@ -364,6 +416,13 @@
           ((eq head 'let*) (%compile-let* (second form) (cddr form) env tail))
           ((eq head 'setq) (%compile-setq form env))
           ((eq head 'lambda) (%compile-lambda form env))
+          ;; `#'f` is `(function f)`, and what it needs is exactly what a
+          ;; call's operator needs: a local function, a global one, or a
+          ;; closure made on the spot.
+          ((eq head 'function) (%compile-callee (second form) env))
+          ((eq head 'block) (%compile-block form env))
+          ((eq head 'return-from) (%compile-return-from form env))
+          ((eq head 'multiple-value-call) (%compile-multiple-value-call form env))
           ((eq head 'flet) (%compile-flet form env tail))
           ((eq head 'labels) (%compile-labels form env tail))
           (t (multiple-value-bind (expansion expanded) (macroexpand-1 form)

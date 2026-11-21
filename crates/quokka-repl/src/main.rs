@@ -175,47 +175,64 @@ fn compile_and_print(heap: &mut Heap, line: &str, showing: bool) -> String {
 }
 
 /// Compile and run the `index`th form on the line, or `None` if there is none.
+/// What the reading step decided to do with a form.
+enum Next {
+    /// There was no form here; the line is finished.
+    Nothing,
+    /// Compile it and run the result.
+    Compile,
+    /// Evaluate it with the interpreter instead — see `defines_a_macro`.
+    Interpret,
+    /// It could not be read.
+    Failed(String),
+}
+
 fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Option<String> {
     let chars = Reader::chars_of(line);
 
-    // Build `(compile-form 'FORM)` and start the interpreter on it.
-    let started = heap.mutate(|mc| {
+    // Read the `index`th form, and either leave `(compile-form 'FORM)` in the
+    // Value register or say that this one is not for compiling.
+    let next = heap.mutate(|mc| {
         let mut reader = Reader::new(&chars);
         let mut form = None;
         for _ in 0..=index {
-            form = match reader.read(mc) {
-                Ok(Some(f)) => Some(Ok(f)),
-                Ok(None) => return None,
-                Err(e) => Some(Err(format!("; {e}"))),
-            };
-            if matches!(form, Some(Err(_))) {
-                break;
+            match reader.read(mc) {
+                Ok(Some(f)) => form = Some(f),
+                Ok(None) => return Next::Nothing,
+                Err(e) => return Next::Failed(format!("; {e}")),
             }
         }
-        match form {
-            None => None,
-            Some(Err(e)) => Some(Err(e)),
-            Some(Ok(f)) => {
-                let quote = mc.intern("QUOTE");
-                let quoted = {
-                    let inner = mc.cons(f, quokka_vm::value::Value::NIL);
-                    mc.cons(quote, inner)
-                };
-                let compile = mc.intern("COMPILE-FORM");
-                let call = {
-                    let args = mc.cons(quoted, quokka_vm::value::Value::NIL);
-                    mc.cons(compile, args)
-                };
-                mc.set_register(Register::Value, call);
-                Some(Ok(()))
-            }
+        let Some(f) = form else {
+            return Next::Nothing;
+        };
+        // `defmacro` is evaluated, not compiled, while the compiler is itself
+        // interpreted: its expander will be called *by the compiler*, and
+        // compiled code cannot be called from interpreted code — so an
+        // expander compiled now could never run. #25 calls this the bootstrap
+        // rule. The file compiler will own it; until there is one, the host
+        // does.
+        if defines_a_macro(mc, f) {
+            return Next::Interpret;
         }
+        let quoted = {
+            let quote = mc.intern("QUOTE");
+            let inner = mc.cons(f, quokka_vm::value::Value::NIL);
+            mc.cons(quote, inner)
+        };
+        let call = {
+            let compile = mc.intern("COMPILE-FORM");
+            let args = mc.cons(quoted, quokka_vm::value::Value::NIL);
+            mc.cons(compile, args)
+        };
+        mc.set_register(Register::Value, call);
+        Next::Compile
     });
 
-    match started {
-        None => return None,
-        Some(Err(e)) => return Some(e),
-        Some(Ok(())) => {}
+    match next {
+        Next::Nothing => return None,
+        Next::Failed(e) => return Some(e),
+        Next::Interpret => return Some(interpret_one(heap, line, index)),
+        Next::Compile => {}
     }
 
     // Drive the compilation a slice at a time, so the collector can run
@@ -238,4 +255,33 @@ fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Opti
         }
         out
     }))
+}
+
+/// Does this form define a macro?
+///
+/// `defmacro` is a special operator here, not a macro, so this is a look at
+/// the head and nothing cleverer.
+fn defines_a_macro<'h>(
+    mc: &quokka_vm::heap::Mutation<'h>,
+    form: quokka_vm::value::Value<'h>,
+) -> bool {
+    form.is_cons() && mc.symbol_is(mc.car(form), "DEFMACRO")
+}
+
+/// Evaluate the `index`th form on the line with the interpreter, for the
+/// forms the compiling REPL must not compile.
+fn interpret_one(heap: &mut Heap, line: &str, index: usize) -> String {
+    let mut out = String::new();
+    let mut seen = 0usize;
+    let _ = quokka_vm::eval::eval_forms(heap, line, EVAL_BUDGET, 2_000, |mc, result| {
+        if seen == index {
+            match result {
+                Ok(v) => out.push_str(&print(mc, v)),
+                Err(e) => out.push_str(&format!("; {e}")),
+            }
+        }
+        seen += 1;
+        seen <= index
+    });
+    out
 }

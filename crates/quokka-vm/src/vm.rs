@@ -499,11 +499,21 @@ impl<'a, 'h> Vm<'a, 'h> {
     fn call(&mut self, n: usize, tail: bool) -> Transition {
         let args = self.pop_n(n);
         let callee = self.pop();
+        self.call_value(callee, &args, tail)
+    }
+
+    /// Call `callee` with `args`, whatever kind of thing it is.
+    ///
+    /// Separate from [`Vm::call`] because `funcall` and `apply` need it too:
+    /// each is a primitive whose whole job is to call something else, which a
+    /// primitive cannot do, so the machine intercepts them and arrives back
+    /// here with a different callee.
+    fn call_value(&mut self, callee: Value<'h>, args: &[Value<'h>], tail: bool) -> Transition {
         if let Some(index) = callee.as_primitive() {
-            if let Some(transition) = self.intercept(index, &args, tail) {
+            if let Some(transition) = self.intercept(index, args, tail) {
                 return transition;
             }
-            return match primitives::call_slice(self.mc, index, &args) {
+            return match primitives::call_slice(self.mc, index, args) {
                 Ok(v) => {
                     if tail {
                         self.mc.set_register(Register::Values, Value::UNBOUND);
@@ -516,7 +526,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 Err(e) => self.fail(e),
             };
         }
-        self.enter(callee, &args, tail)
+        self.enter(callee, args, tail)
     }
 
     /// The primitives the machine has to do itself.
@@ -529,6 +539,46 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// never gets here; this is the path for `(funcall #'values 1 2)`, where
     /// the function was a value rather than a name.
     fn intercept(&mut self, index: u32, args: &[Value<'h>], tail: bool) -> Option<Transition> {
+        // `funcall` and `apply` call a function, which is the machine's job
+        // and not a primitive's — the same reason `error` and `values` are
+        // here. The interpreter intercepts the identical five.
+        if index == primitives::index(primitives::Prim::Funcall) {
+            let Some((callee, rest)) = args.split_first() else {
+                return Some(self.fail(EvalError::WrongArgumentCount {
+                    name: "FUNCALL",
+                    wanted: 1,
+                    got: 0,
+                }));
+            };
+            let (callee, rest) = (*callee, rest.to_vec());
+            return Some(self.call_value(callee, &rest, tail));
+        }
+        if index == primitives::index(primitives::Prim::Apply) {
+            // The last argument is a list and is spread; everything between
+            // the function and it is passed as written.
+            let Some((callee, rest)) = args.split_first() else {
+                return Some(self.fail(EvalError::WrongArgumentCount {
+                    name: "APPLY",
+                    wanted: 2,
+                    got: 0,
+                }));
+            };
+            let callee = *callee;
+            let Some((last, fixed)) = rest.split_last() else {
+                return Some(self.fail(EvalError::WrongArgumentCount {
+                    name: "APPLY",
+                    wanted: 2,
+                    got: 1,
+                }));
+            };
+            let mut spread = fixed.to_vec();
+            let mut cursor = *last;
+            while cursor.is_cons() {
+                spread.push(self.mc.car(cursor));
+                cursor = self.mc.cdr(cursor);
+            }
+            return Some(self.call_value(callee, &spread, tail));
+        }
         if index == primitives::index(primitives::Prim::Error) {
             let datum = args.first().copied().unwrap_or(Value::NIL);
             let rest = args.get(1..).unwrap_or(&[]);

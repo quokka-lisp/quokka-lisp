@@ -836,6 +836,69 @@ mod compiler {
         })
     }
 
+    /// `block` and `return-from`, which the prelude needs because `defun`
+    /// emits one whenever a body mentions `return-from`.
+    #[test]
+    fn a_block_can_be_left_early() {
+        assert_eq!(compile_and_run("(block out (return-from out 42) 99)"), "42");
+        assert_eq!(compile_and_run("(block out 7)"), "7");
+        assert_eq!(
+            compile_and_run(
+                "((lambda (n) (block done (if (= n 0) (return-from done 'zero)) 'other)) 0)"
+            ),
+            "ZERO"
+        );
+    }
+
+    /// A `return-from` from inside a closure that has escaped, which is why
+    /// the marker goes in the environment rather than at a known stack depth.
+    #[test]
+    fn return_from_works_from_inside_a_closure() {
+        assert_eq!(
+            compile_and_run("(block out (funcall (lambda () (return-from out 'left))) 'stayed)"),
+            "LEFT"
+        );
+    }
+
+    /// Tail position is cancelled inside a block, because the record has to
+    /// outlive the call. If it were not, the verifier would refuse the
+    /// function — so this test passing at all is the rule being kept.
+    #[test]
+    fn a_call_inside_a_block_is_not_a_tail_call() {
+        let out = compile_instructions("(lambda (n) (block b (f n)))");
+        assert!(out.contains("(CALL"), "{out}");
+        assert!(!out.contains("TCALL"), "{out}");
+    }
+
+    #[test]
+    fn function_compiles() {
+        assert_eq!(compile_and_run("(funcall #'+ 1 2)"), "3");
+        assert_eq!(compile_and_run("(funcall (lambda (x) (* x 2)) 21)"), "42");
+        assert_eq!(compile_and_run("(let ((f #'-)) (funcall f 10 4))"), "6");
+    }
+
+    /// `funcall` and `apply` are primitives whose job is to call something
+    /// else, which a primitive cannot do — so the machine intercepts them,
+    /// exactly as the interpreter does.
+    #[test]
+    fn apply_spreads_its_last_argument() {
+        assert_eq!(compile_and_run("(apply #'+ '(1 2 3))"), "6");
+        assert_eq!(compile_and_run("(apply #'list 1 2 '(3 4))"), "(1 2 3 4)");
+    }
+
+    #[test]
+    fn values_and_multiple_value_call_compile() {
+        assert_eq!(compile_and_run("(values 1 2)"), "1");
+        assert_eq!(
+            compile_and_run("(multiple-value-call #'list (values 1 2) (values 3 4))"),
+            "(1 2 3 4)"
+        );
+        assert_eq!(
+            compile_and_run("(multiple-value-bind (a b) (values 1 2) (list a b))"),
+            "(1 2)"
+        );
+    }
+
     /// The disassembly of a compiled function, as `--show-code` prints it.
     ///
     /// Pinned because it is a tool for reading the compiler's output, and a
