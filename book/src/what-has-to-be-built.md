@@ -230,7 +230,7 @@ they are **phase 0 and tier 0**, which are finished: `(fact 20)` runs, the
 collector survives being run at every opportunity, and seventeen files of
 Common Lisp agree with a real one. Part III starts **phase 1**, where the
 language stops being defined in Rust — and it starts before the work does, so
-its first chapter is a plan rather than a report, and says so.
+its chapters are a plan rather than a report, and say so at the top.
 
 Each chapter answers one question.
 
@@ -260,6 +260,8 @@ Each chapter answers one question.
 | 22 | [The names with a percent sign](part-2-reading-and-running/22-the-percent-names.md) | What are all those `%` names in the prelude, and what is missing that they stand in for? |
 | 23 | [More than one answer](part-2-reading-and-running/23-more-than-one-answer.md) | How can a form return two things, when the machine has one register for results? |
 | 24 | [Why compile at all](part-3-compiling/24-why-compile-at-all.md) | The interpreter works — so what is a compiler actually for? |
+| 25 | [A machine made of instructions](part-3-compiling/25-a-machine-made-of-instructions.md) | What does compiled code actually look like, and what runs it? |
+| 26 | [Where is the variable?](part-3-compiling/26-where-is-the-variable.md) | How does an instruction say which value it means — and where does the speed come from? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -279,8 +281,8 @@ Still to come, and deliberately so:
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.
   Both Rust pieces are deliberately dumb; all the judgement is in the Lisp one.
-  This is phase 1, chapter 24 is the plan for it, and chapter 12 is what makes
-  it safe to attempt.
+  This is phase 1; chapters 24 to 26 are the plan, the machine and the
+  addressing, and chapter 12 is what makes it safe to attempt.
 - **Self-hosting** — the moment the compiler compiles itself and the result is
   identical to what the interpreter produced. After that the Rust stops growing
   and every further feature is Lisp. See

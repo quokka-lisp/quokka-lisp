@@ -101,10 +101,10 @@ condition system, and the rest is phase 3. No renderer and no editor — phases
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Twenty-four chapters in three parts — the substrate, reading and
+afterwards. Twenty-six chapters in three parts — the substrate, reading and
 running, and now compiling — assuming no prior knowledge of language
 implementation, including what a garbage collector is, what `car` and `cdr`
-are, and why a program would want to rewrite itself.
+are, what an opcode is, and why a program would want to rewrite itself.
 
 It records what decisions cost, not only which were chosen — including several
 occasions where a rule was written down and then broken by the person who wrote

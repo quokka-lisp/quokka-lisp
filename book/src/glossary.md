@@ -15,6 +15,12 @@ be correct until the next collection and silently wrong afterwards. ([19](part-2
 slots follow. Cons cells have none.
 ([5](part-1-substrate/05-objects-in-the-heap.md))
 
+**Fetch–decode–execute.** The loop a [VM](#vm) runs: read the next
+[opcode](#opcode), read however many operand bytes it takes, do the thing,
+repeat. Real processors are built around the same three steps. Quokka's loop
+also counts down a step budget, so it can stop between instructions (rule 4).
+([25](part-3-compiling/25-a-machine-made-of-instructions.md))
+
 **Hash consing.** Canonicalising structures so that two structurally equal
 objects are also the *same* object, and can therefore be compared by pointer.
 [Interning](#interning) is this applied to names. Unsound for anything mutable,
@@ -65,6 +71,12 @@ the two agree. Quokka avoids it by fixing each opcode's operand widths, which
 makes an instruction's size a function of its opcode alone. ([24](part-3-compiling/24-why-compile-at-all.md))
 
 **Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built; chapter 24 is the plan. ([24](part-3-compiling/24-why-compile-at-all.md))
+
+**Addressing mode.** How an instruction says *where* its operand is, rather
+than what it is. Quokka's are: on the stack, written into the instruction, an
+index into the function's constants, a `(depth, index)` pair into the scope
+chain, or a symbol whose cell is read at run time. The term is from processor
+design and carries over exactly. ([26](part-3-compiling/26-where-is-the-variable.md))
 
 **Capture (variable capture).** A [macro](#macro) binding a name that the
 caller also uses, so the caller's variable silently disappears inside the
@@ -211,9 +223,20 @@ where it was. Booting means loading one rather than running a build.
 a character, `nil`, `t`. Contrast a *reference*, which points into the heap.
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
+**Literal operand.** An operand that *is* the value rather than directions for
+finding it — the `7` in `FIX 7`. Machine-code writing usually calls this an
+*immediate*, which this book avoids here because
+[immediate](#immediate) already means a tagged value needing no heap object.
+Two unrelated meanings, one word. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
+
 **Implicit progn.** A body that is a sequence of forms yielding the last — the bodies of `lambda`, `defun`, `let` and most else. Nobody writes the `progn`; it is what a body means. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Interning.** Keeping one object per name, so that two reads of `foo` produce the *same* [symbol](#symbol) rather than two equal ones. Without it, `eq` on symbols fails and every variable lookup becomes a string comparison. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+**Opcode.** Short for *operation code*: the number at the start of an
+instruction saying which operation it is. `CONST`, `LREF` and `JMP` are names
+this book gives to opcodes so they can be read; the machine sees bytes.
+([25](part-3-compiling/25-a-machine-made-of-instructions.md))
 
 **Literal.** An object written directly in the source — `"hello"`, `#(1 2 3)`,
 a quoted list — as opposed to one a program builds. Common Lisp leaves the
@@ -303,6 +326,11 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 
 **Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
+**Operand.** The part of an instruction after the [opcode](#opcode), saying
+what to operate on. Quokka's instructions take nought to two, and how many —
+and how wide — is fixed by the opcode, which is what spares the assembler a
+[branch relaxation](#branch-relaxation) pass. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
+
 **Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
 **Package.** Common Lisp's namespace for symbols: a symbol table plus rules
@@ -366,6 +394,11 @@ This is the definition of "still wanted" that garbage collection uses.
 unusually small, because the structure it produces is ordinary lists.
 ([Preface](what-has-to-be-built.md))
 
+**Program counter (`Pc`).** The offset of the next instruction. Keeping it in
+a heap register rather than a Rust local is what lets the VM stop between
+instructions and resume later — and what lets an image be saved mid-run.
+([25](part-3-compiling/25-a-machine-made-of-instructions.md))
+
 **Register machine.** An instruction set whose instructions name where their
 operands are — `ADD r3, r1, r2` — like real hardware. Fewer, larger
 instructions than a [stack machine](#stack-machine), and a harder compiler,
@@ -380,6 +413,12 @@ register, a global table, a local variable in the implementation language.
 Garbage collection starts its search from these. A root is a *place*; a
 [value](#value) is a *thing*.
 ([3](part-1-substrate/03-what-is-alive.md))
+
+**Operand stack.** The pile of values that instructions push to and pop from.
+`FIX 2`, `FIX 3`, `PRIM *` leaves `6` where the two numbers were. Expressions
+nest and a stack nests, which is why compiling to a stack machine is simpler
+than compiling to anything else. In Quokka it is a vector in the heap, not a
+Rust local, because of rule 4. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
 
 **Rooting.** Telling the collector about a location it cannot find by itself.
 ([4](part-1-substrate/04-rooting.md))
@@ -423,6 +462,10 @@ works between. At any moment one holds everything and the other is empty.
 **Slice.** A bounded stretch of execution after which the VM returns control to
 whoever called it, so a browser can repaint and respond. The caller says how
 many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
+
+**Stack pointer.** How deep the [operand stack](#operand-stack) currently is.
+Popped slots are cleared, because every slot of a traced object is traced and
+a dead one would keep what it last held alive. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
 
 **Special operator.** A form that decides for itself whether, when, or in what environment its arguments are evaluated — or whose arguments are not expressions at all. `if` must be one, or both branches would run before it could choose. Common Lisp has exactly 25, they are a *basis* rather than a feature list, and everything else is macros over them. ([9](part-2-reading-and-running/09-what-a-form-means.md), [13](part-2-reading-and-running/13-the-special-operators.md))
 

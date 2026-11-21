@@ -36,6 +36,8 @@
 # Part III · Compiling
 
 - [Why compile at all](part-3-compiling/24-why-compile-at-all.md)
+- [A machine made of instructions](part-3-compiling/25-a-machine-made-of-instructions.md)
+- [Where is the variable?](part-3-compiling/26-where-is-the-variable.md)
 
 ---
 
