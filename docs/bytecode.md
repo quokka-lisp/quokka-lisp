@@ -341,7 +341,7 @@ from the one that set it. It belongs in a test, not only in a sentence.
 | `catch` / `throw` | `CATCH` / `THROW` |
 | `tagbody` / `go` | `JMP`, plus `TAG` / `GO` when a tag escapes |
 | `unwind-protect` | `PROTECT` / `UNPROTECT` |
-| `%handler-case` | `HANDLER` / `UNHANDLER` |
+| `%handler-case` | `HANDLER` / `UNMARK`, then the clause dispatch as ordinary compiled code ending in a re-signal (#36) |
 | `multiple-value-call` | `MVCALL` |
 | `multiple-value-prog1` | `MVSAVE` / `MVRESTORE` |
 | `the`, `locally` | **nothing** — they compile their body |

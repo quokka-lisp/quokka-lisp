@@ -820,6 +820,125 @@ mod compiler {
         assert_eq!(out.matches("(CALL").count(), 1, "{out}");
     }
 
+    // ---- #36: compiled code catching errors ------------------------------
+    //
+    // Four faults, each with a test that fails without its fix: the compiler
+    // had no `%handler-case`, the unwinder handed a handler `nil` instead of
+    // the condition, the VM's `fail` halted where the interpreter signals,
+    // and `(error c)` did not re-signal `c`.
+
+    /// The case that was reported: an error raised *inside a primitive*,
+    /// caught by compiled code.
+    #[test]
+    fn compiled_code_catches_an_error_from_a_primitive() {
+        assert_eq!(
+            compile_and_run("(handler-case (car 5) (type-error () 'caught))"),
+            "CAUGHT"
+        );
+    }
+
+    /// The clause variable is the condition itself — which needs the
+    /// unwinder to hand the handler the condition, not the `Value` register.
+    #[test]
+    fn a_clause_variable_holds_the_condition() {
+        assert_eq!(
+            compile_and_run("(handler-case (car 5) (type-error (e) (%condition-type e)))"),
+            "TYPE-ERROR"
+        );
+    }
+
+    /// A clause that does not want the condition passes it outwards, to a
+    /// handler that does. The dispatch is compiled code ending in
+    /// `(error c)`, and the inner record is already gone by then.
+    #[test]
+    fn an_unwanted_condition_goes_further_out() {
+        assert_eq!(
+            compile_and_run(
+                "(handler-case (handler-case (car 5) (unbound-variable () 'inner)) \
+                 (type-error () 'outer))"
+            ),
+            "OUTER"
+        );
+    }
+
+    /// CLHS: given a condition, `error` signals *that* condition. The VM
+    /// used to wrap it in a fresh `simple-error`, so the outer `foo` clause
+    /// could never have matched.
+    #[test]
+    fn error_given_a_condition_signals_that_condition() {
+        assert_eq!(
+            compile_and_run(
+                "(handler-case (handler-case (error 'foo) (error (c) (error c))) \
+                 (foo () 'same))"
+            ),
+            "SAME"
+        );
+    }
+
+    /// The interpreter signals a `type-error` for a datum that is neither a
+    /// symbol nor a string, and now the VM does too.
+    #[test]
+    fn error_given_a_number_is_a_type_error() {
+        assert_eq!(
+            compile_and_run("(handler-case (error 42) (type-error () 'refused))"),
+            "REFUSED"
+        );
+    }
+
+    #[test]
+    fn a_form_that_does_not_signal_keeps_its_value() {
+        assert_eq!(compile_and_run("(handler-case 42 (error () 'never))"), "42");
+    }
+
+    /// `ignore-errors` is a prelude macro over `handler-case`, and the prelude
+    /// is what #33 is about to compile.
+    #[test]
+    fn ignore_errors_compiles() {
+        assert_eq!(compile_and_run("(ignore-errors (car 5))"), "NIL");
+    }
+
+    /// With nothing to catch it, a program error still stops the machine,
+    /// carrying the original error rather than a condition allocated for
+    /// nobody.
+    #[test]
+    fn with_no_handler_the_error_still_stops_the_machine() {
+        let out = compile_and_run("(car 5)");
+        assert!(out.starts_with("; running:"), "{out}");
+        assert!(out.contains("CAR wants a list"), "{out}");
+    }
+
+    /// A fault in the bytecode or the bootstrap is **not** catchable, even
+    /// with a catch-all clause right there. Calling the interpreted `length`
+    /// from compiled code breaks #25's rule, and a `handler-case` quietly
+    /// swallowing that would hide exactly the kind of mistake the rule is
+    /// there to expose.
+    #[test]
+    fn a_fault_in_the_machine_is_not_the_programs_to_catch() {
+        let out = compile_and_run("(handler-case (length '(1 2)) (error () 'swallowed))");
+        assert!(out.contains("interpreted closure"), "{out}");
+    }
+
+    /// The protected form is not in tail position, because the record must
+    /// outlive what it calls; a clause body is, because the record is gone by
+    /// the time it runs.
+    #[test]
+    fn only_a_clause_body_is_in_tail_position() {
+        let out = compile_instructions("(lambda (n) (handler-case (f n) (error () (g n))))");
+        assert_eq!(out.matches("TCALL").count(), 1, "{out}");
+        assert_eq!(out.matches("(CALL").count(), 1, "{out}");
+        assert!(out.contains("HANDLER"), "{out}");
+    }
+
+    /// A clause that does not take everything is followed by the re-signal,
+    /// which is a call to `error` — and in tail position too, so there are
+    /// two. After a catch-all there is no re-signal, because it could never
+    /// run; the test above is the other half.
+    #[test]
+    fn a_selective_handler_ends_in_a_re_signal() {
+        let out = compile_instructions("(lambda (n) (handler-case (f n) (type-error () (g n))))");
+        assert_eq!(out.matches("TCALL").count(), 2, "{out}");
+    }
+
     /// The instruction list for a form, as the compiler produces it.
     fn compile_instructions(source: &str) -> String {
         let mut heap = Heap::new();

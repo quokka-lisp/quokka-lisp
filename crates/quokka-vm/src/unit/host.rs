@@ -256,3 +256,18 @@ fn starting_afresh_forgets_a_stale_request() {
     assert_eq!(pending(&mut heap), None);
     assert!(matches!(slice(&mut heap), (Status::Done { .. }, None)));
 }
+
+/// The two halves of this weekend meeting: a host failure (#35) caught by a
+/// compiled `handler-case` (#36). Before #36 this halted the machine, because
+/// compiled code could not catch anything at all.
+#[test]
+fn a_compiled_handler_case_catches_a_missing_file() {
+    let mut heap = compiler();
+    compile(
+        &mut heap,
+        r#"(handler-case (%read-source "missing.lisp") (file-error () 'missing))"#,
+    );
+    crate::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut Files(&[])).expect("caught");
+    let out = heap.mutate(|mc| crate::printer::print(mc, mc.register(Register::Value)));
+    assert_eq!(out, "MISSING");
+}

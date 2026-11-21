@@ -310,13 +310,12 @@ would have fallen through the same gap. It now goes the same way as every
 other call, and a test sends `%read-source` down all three side roads —
 `funcall`, `apply` and `multiple-value-call`.
 
-**Compiled code cannot catch a primitive's error.** The interpreter turns an
-error inside a primitive, such as `(car 5)`, into a condition that a
-`handler-case` can catch. The VM simply stops. So `(handler-case (car 5)
-(type-error () …))` works when interpreted and does not when compiled. It was
-not fixed here, because it is a separate change and #33 will run into it at
-once. A host failure builds its `file-error` itself, so it does not depend on
-the fix.
+**Compiled code could not catch a primitive's error.** The interpreter turns
+an error inside a primitive, such as `(car 5)`, into a condition that a
+`handler-case` can catch; the VM simply stopped. It was fixed straight
+afterwards, as #36, and turned out to be four faults rather than one —
+chapter 28 has them. Since then a compiled `handler-case` catches a
+`file-error` from a missing file, which is the two changes meeting.
 
 **The image format lasted two days.** Adding a register added a word to the
 image header, so `FORMAT_VERSION` went from 1 to 2. Chapter 30 had fixed that

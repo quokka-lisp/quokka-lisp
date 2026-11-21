@@ -287,8 +287,8 @@
 ;;; tail position is a property of the source, written into the output where a
 ;;; disassembler can show it.
 ;;;
-;;; What must *cancel* tail position, when they are implemented: `block`,
-;;; `catch`, `unwind-protect` and `handler-case`. Each leaves a record on the
+;;; What must *cancel* tail position: `block` and `handler-case`, which are
+;;; compiled, and `catch` and `unwind-protect`, which are not yet. Each leaves a record on the
 ;;; stack that has to outlive the call, and `TCALL` reuses the frame by
 ;;; dropping everything above it. The verifier refuses a `TCALL` with a record
 ;;; still open, so getting this wrong is a build failure and not a lost
@@ -381,6 +381,86 @@
                (%emit (list 'RETFROM (car place) (cdr place))))
         (error "return-from names a block that is not here"))))
 
+;;; `(handler-case form (type (var) body...) ...)`
+;;;
+;;; The prelude's macro turns that into `(%handler-case form clause...)`, and
+;;; until #36 nothing here compiled it — it became a call to a function named
+;;; `%HANDLER-CASE`, which does not exist.
+;;;
+;;; The shape is `docs/bytecode.md`'s. `HANDLER` pushes a record that stops
+;;; *every* condition; the VM knows that a handler is here and nothing about
+;;; which conditions it wants. Deciding that is ordinary compiled code at the
+;;; HANDLER label, where the unwinder leaves the condition on the stack:
+;;;
+;;;     HANDLER clauses  ->handler
+;;;     <form>
+;;;     UNMARK
+;;;     JMP              ->done
+;;;   handler:
+;;;     BIND #(c)
+;;;     <(cond ((matches c type) (let ((var c)) body...)) ... (t (error c)))>
+;;;     UNBIND 1
+;;;   done:
+;;;
+;;; Which keeps the judgement above the primitive table (rule 1), and costs a
+;;; `cond` in the output that a VM-side matcher would not. The last clause
+;;; re-signals a condition nobody here wanted; the record has already been
+;;; popped by then, so the search carries on further out.
+;;;
+;;; **Tail position.** The protected form is not in it: the record has to
+;;; outlive anything it calls. The clause bodies are, because by the time
+;;; they run the record is gone.
+(defun %compile-handler-case (form env tail)
+  (let ((handler (gensym))
+        (done (gensym))
+        (condition (gensym)))
+    (%emit (list 'HANDLER (%constant-index (cddr form)) handler))
+    (%compile (second form) env nil)
+    (%emit (list 'UNMARK))
+    (%emit (list 'JMP done))
+    (%emit-label handler)
+    (%emit (list 'BIND (%constant-index (vector condition))))
+    (%compile (cons 'cond (%handler-clauses condition (cddr form)))
+              (cons (%scope ':variable (list condition)) env)
+              tail)
+    (%emit (list 'UNBIND 1))
+    (%emit-label done)))
+
+;;; One `cond` clause per `handler-case` clause, and a last one that
+;;; re-signals.
+;;;
+;;; Except after a catch-all. A clause for `error` takes everything, so
+;;; nothing written after it can run — including the re-signal, which the
+;;; first version emitted anyway and a test counting tail calls found. The
+;;; verifier would have accepted the dead code; a reader of the disassembly
+;;; would have wondered what it was for.
+(defun %handler-clauses (condition clauses)
+  (cond ((endp clauses) (list (list t (list 'error condition))))
+        ((eq (%handler-test condition (car (car clauses))) t)
+         (list (%handler-clause condition (car clauses))))
+        (t (cons (%handler-clause condition (car clauses))
+                 (%handler-clauses condition (cdr clauses))))))
+
+;;; `(type (var) body...)` or `(type () body...)`.
+(defun %handler-clause (condition clause)
+  (let ((variables (second clause))
+        (body (cddr clause)))
+    (list (%handler-test condition (car clause))
+          (if variables
+              (cons 'let (cons (list (list (car variables) condition)) body))
+              (cons 'progn body)))))
+
+;;; Does a clause for TYPE want CONDITION?
+;;;
+;;; The same flat matching as `condition::matches` in Rust — `t`, `error` and
+;;; `condition` take everything, anything else must name the condition's own
+;;; type — but decided at **compile time** where it can be: the clause's type
+;;; is in the source, so a catch-all clause compiles to no test at all.
+(defun %handler-test (condition type)
+  (if (or (eq type t) (eq type 'error) (eq type 'condition))
+      t
+      (list 'eq (list '%condition-type condition) (list 'quote type))))
+
 ;;; `(multiple-value-call f a b)`
 ;;;
 ;;; Each argument form is compiled and then `MVSAVE` replaces its value with
@@ -421,6 +501,7 @@
           ;; closure made on the spot.
           ((eq head 'function) (%compile-callee (second form) env))
           ((eq head 'block) (%compile-block form env))
+          ((eq head '%handler-case) (%compile-handler-case form env tail))
           ((eq head 'return-from) (%compile-return-from form env))
           ((eq head 'multiple-value-call) (%compile-multiple-value-call form env))
           ((eq head 'flet) (%compile-flet form env tail))

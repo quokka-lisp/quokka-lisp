@@ -46,8 +46,8 @@ The compiler compiles **every form of the prelude and every form of itself**
 and installs none of it; chapter 29 says why installing cannot happen in a
 running interpreter.
 
-**310 tests**; **17 differential files agree with SBCL**. The Rust core is
-**12,336** lines of the 15,000 budget.
+**322 tests**; **17 differential files agree with SBCL**. The Rust core is
+**12,413** lines of the 15,000 budget.
 
 ## What is left in phase 1
 
@@ -64,10 +64,10 @@ walked, not bytecode.
 - **step E**: the fourth differential leg, where interpreted and compiled
   results must agree. The verifier cannot see a program that is well-formed
   and computes the wrong thing.
-- **Compiled code cannot catch a primitive's error.** `condition::from_eval_error`
-  is called only by the interpreter; the VM's `fail` halts. So
-  `(handler-case (car 5) (type-error () …))`, compiled, stops the machine.
-  Found while building #35, not fixed there. #33 and step E will both hit it.
+- **The compiler has no `catch`/`throw`, `unwind-protect` or `tagbody`/`go`.**
+  The VM runs all three and the prelude uses none, which is why compiling the
+  prelude never noticed; the differential tests use them, so step E needs
+  them. (`handler-case` was the fourth, and is compiled since #36.)
 
 Also open: #34 (concurrency — what the code must not foreclose before phase
 3's processes; item 1, the host interface, is done as #35), #29 (build the VM

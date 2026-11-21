@@ -606,10 +606,18 @@ impl<'a, 'h> Vm<'a, 'h> {
             return Some(Transition::Block);
         }
         if index == primitives::index(primitives::Prim::Error) {
-            let datum = args.first().copied().unwrap_or(Value::NIL);
-            let rest = args.get(1..).unwrap_or(&[]);
-            let condition = self.make_condition(datum, rest);
-            return Some(self.start_unwind(condition, Value::NIL));
+            let Some((datum, rest)) = args.split_first() else {
+                return Some(self.fail(EvalError::WrongArgumentCount {
+                    name: "ERROR",
+                    wanted: 1,
+                    got: 0,
+                }));
+            };
+            let (datum, rest) = (*datum, rest.to_vec());
+            return Some(match self.make_condition(datum, &rest) {
+                Ok(condition) => self.start_unwind(condition, Value::NIL),
+                Err(e) => self.fail(e),
+            });
         }
         if index == primitives::index(primitives::Prim::Values)
             || index == primitives::index(primitives::Prim::ValuesList)
@@ -645,21 +653,38 @@ impl<'a, 'h> Vm<'a, 'h> {
         None
     }
 
-    /// `(error "text")` or `(error 'some-type)`, as a condition object.
-    fn make_condition(&mut self, datum: Value<'h>, rest: &[Value<'h>]) -> Value<'h> {
+    /// `(error "text")`, `(error 'some-type)` or `(error condition)`, as a
+    /// condition object.
+    ///
+    /// Must agree with the interpreter's `build_condition`, and until #36 did
+    /// not, twice over. Given a condition, CLHS says `error` signals *that*
+    /// condition — which is what re-signalling one a clause did not want
+    /// relies on — and this wrapped it in a fresh `simple-error`, so its type
+    /// was lost and no outer clause for it could match. And any other datum
+    /// became a `simple-error` where the interpreter signals a `type-error`.
+    fn make_condition(
+        &mut self,
+        datum: Value<'h>,
+        rest: &[Value<'h>],
+    ) -> Result<Value<'h>, EvalError> {
+        if crate::condition::is_condition(self.mc, datum) {
+            return Ok(datum);
+        }
         let mut data = Value::NIL;
         for v in rest.iter().rev() {
             data = self.mc.cons(*v, data);
         }
         if self.mc.is_symbol(datum) {
-            return crate::condition::make(self.mc, datum, Value::NIL, data);
+            return Ok(crate::condition::make(self.mc, datum, Value::NIL, data));
         }
         if datum.is_object() && self.mc.header(datum).object_type.is_string() {
             let simple = self.mc.intern("SIMPLE-ERROR");
-            return crate::condition::make(self.mc, simple, datum, data);
+            return Ok(crate::condition::make(self.mc, simple, datum, data));
         }
-        let simple = self.mc.intern("SIMPLE-ERROR");
-        crate::condition::make(self.mc, simple, Value::NIL, data)
+        Err(EvalError::WrongType {
+            name: "ERROR",
+            wanted: "a condition, a symbol naming one, or a string",
+        })
     }
 
     // ---- unwind records ----------------------------------------------------
@@ -827,10 +852,20 @@ impl<'a, 'h> Vm<'a, 'h> {
             self.mc.set_register(Register::Function, function);
             self.mc.set_register(Register::Env, env);
             self.mc.set_register(Register::Unwind, Value::UNBOUND);
-            // `push`, not `push_fresh`: a `(return-from b (values 1 2))`
-            // carries both values out with it, exactly as chapter 23 says a
-            // block is transparent to them.
-            self.push(value);
+            if kind == mark::HANDLER {
+                // A handler receives the **condition**: its compiled clause
+                // dispatch has to look at it to decide whether it was wanted.
+                // Not the `Value` register, which is what a block or catch
+                // receives and which `error` leaves as `nil` — so until #36 a
+                // compiled handler was handed `nil` and could not dispatch at
+                // all. One value, so `push_fresh`.
+                self.push_fresh(target);
+            } else {
+                // `push`, not `push_fresh`: a `(return-from b (values 1 2))`
+                // carries both values out with it, exactly as chapter 23 says
+                // a block is transparent to them.
+                self.push(value);
+            }
             return Transition::Continue;
         }
 
@@ -842,10 +877,52 @@ impl<'a, 'h> Vm<'a, 'h> {
 
     // ---- stepping ----------------------------------------------------------
 
+    /// Stop, or signal — whichever the program can do something about.
+    ///
+    /// The interpreter's rule, exactly (`eval::Machine::fail`): if the error is
+    /// a fault in the program *and* a `handler-case` is open, it becomes a
+    /// condition and unwinds to it; otherwise the machine halts carrying it.
+    /// Checking for a handler first means no condition is allocated for an
+    /// error nobody can catch, including running out of heap.
+    ///
+    /// Until #36 this always halted, so an error raised inside a primitive —
+    /// `(car 5)` — could not be caught by compiled code at all.
+    ///
+    /// One distinction the interpreter does not need. In compiled code a
+    /// `BadSyntax` always means the **bytecode** is wrong: the compiler checked
+    /// the program's syntax before any of it ran, so what is left for the VM
+    /// to find is an opcode that is not one, a jump before the start, a
+    /// missing constant, a compiled caller meeting an interpreted closure.
+    /// Those are never the program's to catch, for the reason `Malformed` is
+    /// not — a `handler-case` would hide a compiler bug behind whatever the
+    /// program does about errors. Decided here by variant, in one place,
+    /// rather than at each of the eleven sites that raise one.
     fn fail(&mut self, e: EvalError) -> Transition {
+        let the_programs = !matches!(e, EvalError::BadSyntax { .. });
+        if the_programs && self.has_handler() {
+            if let Some(condition) = crate::condition::from_eval_error(self.mc, &e) {
+                return self.start_unwind(condition, Value::NIL);
+            }
+        }
         self.error = Some(e);
         self.halted = true;
         Transition::Halt
+    }
+
+    /// Is a `handler-case` record open anywhere on the stack?
+    ///
+    /// A walk of the record chain, as the interpreter walks its frames. Linear
+    /// in the number of open records — `block`s and `catch`es as well as
+    /// handlers — which stays small in any program a person writes.
+    fn has_handler(&self) -> bool {
+        let mut at = self.mc.mp();
+        while at != usize::MAX {
+            if self.mark_slot(at, mark::KIND).as_fixnum() == Some(mark::HANDLER) {
+                return true;
+            }
+            at = self.read_index(at, mark::PREV);
+        }
+        false
     }
 
     /// Pick up the host's answer, or go on waiting for it.

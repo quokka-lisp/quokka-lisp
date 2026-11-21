@@ -298,6 +298,152 @@ able to tell **which parts of the compiler were decisions and which were
 accidents** — and in a compiler, that distinction is harder to recover
 afterwards than anywhere else in the system.
 
+## `handler-case`, and four faults behind one symptom
+
+The compiler as first written could not compile `handler-case` at all, and
+nobody noticed for a week, because nothing it was asked to compile used one.
+The prelude's functions do not. It came to light from the side, while building
+chapter 31: `(handler-case (car 5) (type-error () 'caught))` worked when
+interpreted and stopped the machine when compiled.
+
+It looked like one bug. It was four, and the instructive part is that each
+would have hidden the next.
+
+**1 · The compiler had no case for it.** In Quokka `handler-case` is a macro
+in the prelude, expanding to the special operator `%handler-case`, and
+`compile.lisp` had no clause for `%handler-case`. So the compiler did what it
+does with any unknown head: it compiled a *call* to a function of that name.
+There is no such function, and the compiling REPL said so: *"the function
+%HANDLER-CASE is undefined"*.
+
+**2 · The machine handed the handler `nil`.** When an unwind reaches a
+`HANDLER` record (chapter 27), the VM jumps to the handler's code and pushes a
+value for it. It pushed the `Value` register, which is right for `block` and
+`catch` — they exist to carry a value out — and wrong here, because `error`
+starts its unwind with `nil` in that register. A compiled handler would never
+have seen the condition it is meant to look at. The VM's own test had not
+noticed: its handler threw away whatever arrived.
+
+**3 · The VM could not turn an error into a condition.** When a primitive
+fails — `(car 5)` is a primitive being handed a number — the interpreter asks
+whether any `handler-case` is open, and if so builds a condition and unwinds
+to it. The VM simply stopped. So even with 1 and 2 fixed, an error from inside
+a primitive was uncatchable in compiled code.
+
+**4 · `(error c)` lost the condition's type.** Given a condition object, the
+standard says `error` signals *that* condition. The VM's `error` wrapped it in
+a fresh `simple-error`. That matters exactly where 1 to 3 lead: re-signalling a
+condition that a clause did not want.
+
+### The clause dispatch is compiled code
+
+`docs/bytecode.md` had already decided the shape, back when the VM was
+specified: a `HANDLER` record stops **every** condition, and deciding whether
+this one was wanted is ordinary compiled code at the handler's label. The VM
+knows *that* a handler is there and nothing about which conditions it likes.
+The alternative, teaching the VM what a clause looks like, would put a
+language decision below the primitive table, and rule 1 says those live above
+it.
+
+So the compiler turns
+
+```lisp
+(handler-case (car 5)
+  (type-error (e) (%condition-type e)))
+```
+
+into, in effect,
+
+```text
+    HANDLER clauses   →handler
+    <(car 5)>
+    UNMARK
+    JMP               →done
+handler:                          ; the condition is on the stack
+    BIND #(c)
+    <(cond ((eq (%condition-type c) 'type-error)
+            (let ((e c)) (%condition-type e)))
+           (t (error c)))>
+    UNBIND 1
+done:
+```
+
+and the `cond` is built as a Lisp form and handed back to the compiler, which
+compiles it like any other. Here is the piece that writes each test:
+
+```lisp
+(defun %handler-test (condition type)
+  (if (or (eq type t) (eq type 'error) (eq type 'condition))
+      t
+      (list 'eq (list '%condition-type condition) (list 'quote type))))
+```
+
+The matching is the same flat matching the interpreter does in Rust, but it is
+decided **at compile time** where it can be: the clause's type is right there
+in the source, so a catch-all clause compiles to no test at all. And a
+catch-all ends the dispatch. The first version went on to emit the re-signal
+after it — dead code the verifier would have accepted — and a test counting
+tail calls found two where the source had one.
+
+That last clause, `(t (error c))`, is the re-signal. By the time it runs the
+`HANDLER` record has been popped, so the search for a handler carries on
+*further out*, to whatever encloses this `handler-case`. That is fault 4's
+fix earning its keep: without it, the outer handler would have received a
+`simple-error` instead of the `type-error` it was written for.
+
+The protected form is not in tail position — the record must outlive anything
+it calls, which is the rule `block` already follows. A clause body *is* in
+tail position, because by then the record is gone.
+
+### Which errors are the program's to catch
+
+Fault 3's fix copies the interpreter's rule — *if a handler is open and the
+error is the program's fault, signal it* — with one distinction the interpreter
+never needed.
+
+In compiled code, a `BadSyntax` error always means the **bytecode** is wrong.
+The compiler checked the program's syntax before any of it ran, so what is
+left for the VM to complain about is an opcode that is not one, a jump before
+the start of the code, a constant that is not there, or compiled code calling
+an interpreted function. None of those is a mistake in the program. They are
+mistakes in the compiler, or in the bootstrap, and a catch-all `handler-case`
+quietly swallowing one would hide the bug behind whatever the program does
+about errors. So they halt, as `Malformed` already did:
+
+```rust
+fn fail(&mut self, e: EvalError) -> Transition {
+    let the_programs = !matches!(e, EvalError::BadSyntax { .. });
+    if the_programs && self.has_handler() {
+        if let Some(condition) = crate::condition::from_eval_error(self.mc, &e) {
+            return self.start_unwind(condition, Value::NIL);
+        }
+    }
+    self.error = Some(e);
+    self.halted = true;
+    Transition::Halt
+}
+```
+
+The plan written in the issue was to change the eleven places that raise such
+an error so that each raised `Malformed` instead. Deciding by variant in one
+place won: it keeps every message as it was, and it is one rule a reader can
+check rather than eleven edits a reader has to trust.
+
+### What it says about having two evaluators
+
+Fault 4 is the one to remember. The interpreter's `error` was right; the VM's
+was subtly different in two ways, and both evaluators had passed their own
+tests for weeks. Nothing compared them. That is precisely the gap the fourth
+leg of the differential tests (step E of #23) exists to close: the same file,
+interpreted and compiled, must print the same thing. Until it exists, every
+feature implemented twice is a feature that can quietly disagree with itself.
+
+The compiler still has no case for `catch`/`throw`, `unwind-protect` or
+`tagbody`/`go`. The VM runs all of them, the prelude uses none of them, and
+the differential tests use all three — so step E will need them, and it will
+also be what proves this section's fixes agree with the interpreter on every
+file and not just on the cases written down here.
+
 ## Two things that do not work, and should not
 
 ```lisp
