@@ -1,7 +1,9 @@
 # Further reading
 
-Every chapter ends with references to the specific things it leans on. This
-page is the other kind: the handful of sources you would want open in a tab
+Every chapter ends with references to the specific things it leans on, and
+[Where the ideas came from](where-the-ideas-came-from.md) lists them the other
+way round — by decision, with what was taken and what was deliberately left.
+This page is the third kind: the handful of sources you would want open in a tab
 while reading the whole book, and the ones Quokka itself is checked against.
 
 ## The standard, and where to read it

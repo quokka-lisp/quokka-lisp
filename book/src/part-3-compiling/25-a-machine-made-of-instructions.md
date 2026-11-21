@@ -478,8 +478,8 @@ is later, the structure that allows it is now.
 **References.** `docs/bytecode.md` in this repository is the specification —
 all thirty-six opcodes with their operand widths, which this chapter
 explains rather than repeats. Queinnec, *Lisp in Small Pieces*, chapter 7,
-builds a bytecode machine for Scheme in the same order used here. Smith's
-*Smalltalk-80: The Language and its Implementation* (the "Blue Book"), part
-four, is the classic description of a stack-based bytecode VM and is still the
-most readable. For the fetch–decode–execute loop as hardware does it,
+builds a bytecode machine for Scheme in the same order used here. Goldberg
+and Robson, *Smalltalk-80: The Language and Its Implementation* (1983) — the
+"Blue Book" — part four, is the classic description of a stack-based bytecode
+VM and is still the most readable. For the fetch–decode–execute loop as hardware does it,
 Patterson & Hennessy, *Computer Organization and Design*, chapter 4.

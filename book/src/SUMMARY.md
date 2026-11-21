@@ -44,3 +44,4 @@
 
 [Glossary](glossary.md)
 [Further reading](further-reading.md)
+[Where the ideas came from](where-the-ideas-came-from.md)
