@@ -233,6 +233,8 @@ The work runs in seven phases, each ending at a gate we can demonstrate, so the 
 
 No dates yet: this is a hobby-pace project. Phases 0 to 3 are mostly Rust and compiler work; phases 4 to 6 are mostly Lisp.
 
+**Where the work is.** Phase 0 is complete and its gate passed. Tier 0 — the harder precondition, since phase 1 cannot bootstrap until the interpreter can run the compiler's own source — is also finished ([#18](https://github.com/quokka-lisp/quokka-lisp/issues/18)). Phase 1 is open and nothing in it is built ([#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)).
+
 ## Testing before there is a UI
 
 Every phase is testable from the terminal and in CI long before Quokka has a renderer or file hosts, because the test harness lives in the Rust host, which has the operating system's files and console.

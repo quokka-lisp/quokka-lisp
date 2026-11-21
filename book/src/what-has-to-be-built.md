@@ -226,9 +226,13 @@ three other things — which is a recurring shape worth watching for.
 
 Part I builds the substrate: everything underneath the evaluator. Part II turns
 text into behaviour, and ends by asking whether any of it is correct. Together
-they are **phase 0**, which is finished: `(fact 20)` runs, the collector
-survives being run at every opportunity, and a hundred forms agree with a real
-Common Lisp. Each chapter answers one question.
+they are **phase 0 and tier 0**, which are finished: `(fact 20)` runs, the
+collector survives being run at every opportunity, and seventeen files of
+Common Lisp agree with a real one. Part III starts **phase 1**, where the
+language stops being defined in Rust — and it starts before the work does, so
+its first chapter is a plan rather than a report, and says so.
+
+Each chapter answers one question.
 
 | | Chapter | The question it answers |
 | --- | --- | --- |
@@ -255,6 +259,7 @@ Common Lisp. Each chapter answers one question.
 | 21 | [Records, and a macro that writes ten functions](part-2-reading-and-running/21-records.md) | How does one line define a type, and how does `setf` learn a place it has never seen? |
 | 22 | [The names with a percent sign](part-2-reading-and-running/22-the-percent-names.md) | What are all those `%` names in the prelude, and what is missing that they stand in for? |
 | 23 | [More than one answer](part-2-reading-and-running/23-more-than-one-answer.md) | How can a form return two things, when the machine has one register for results? |
+| 24 | [Why compile at all](part-3-compiling/24-why-compile-at-all.md) | The interpreter works — so what is a compiler actually for? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -263,20 +268,19 @@ it, and only then do 5 and 6 build the thing.
 ## What is not here yet
 
 Still to come, and deliberately so:
-- **The rest of the language.** Nineteen of Common Lisp's twenty-five special
-  operators exist; the six that do not are `macrolet`,
-  `multiple-value-call`, `multiple-value-prog1`, `progv`, `load-time-value`
-  and `symbol-macrolet`. Macros, lambda lists, keywords, vectors, strings,
-  hash tables, `setf`, a minimal **condition system**, `defstruct` and
-  multiple values are all built, and so is tier 0. What is left is the three
-  operators `docs/design.md` excludes on purpose — `progv`,
-  `load-time-value` and `symbol-macrolet` — which an interpreter can add
-  later at little cost.
+- **The rest of the language.** Twenty-two of Common Lisp's twenty-five special
+  operators exist, along with macros, lambda lists, keywords, vectors, strings,
+  hash tables, `setf`, a minimal **condition system**, `defstruct` and multiple
+  values — which is tier 0, finished. The three that do not exist are `progv`,
+  `load-time-value` and `symbol-macrolet`, which `docs/design.md` excludes on
+  purpose and an interpreter can add later at little cost. Beyond tier 0:
+  packages, `loop`, CLOS, bignums and floats, all of them later phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.
   Both Rust pieces are deliberately dumb; all the judgement is in the Lisp one.
-  This is phase 1, and chapter 12 is what makes it safe to attempt.
+  This is phase 1, chapter 24 is the plan for it, and chapter 12 is what makes
+  it safe to attempt.
 - **Self-hosting** — the moment the compiler compiles itself and the result is
   identical to what the interpreter produced. After that the Rust stops growing
   and every further feature is Lisp. See

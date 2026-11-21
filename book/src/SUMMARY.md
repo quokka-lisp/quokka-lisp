@@ -33,6 +33,10 @@
 - [The names with a percent sign](part-2-reading-and-running/22-the-percent-names.md)
 - [More than one answer](part-2-reading-and-running/23-more-than-one-answer.md)
 
+# Part III · Compiling
+
+- [Why compile at all](part-3-compiling/24-why-compile-at-all.md)
+
 ---
 
 [Glossary](glossary.md)

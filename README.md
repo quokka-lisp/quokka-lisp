@@ -17,39 +17,37 @@ be small enough to read.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 
-## Status: phase 0 complete, finishing tier 0
+## Status: tier 0 complete, starting phase 1
 
 ```
 $ cargo run -p quokka-repl
-Quokka 0.0.0 — phase 0 · Spike
+Quokka 0.0.0 — phase 1 · Bytecode and image
 Ctrl-D to leave.
 quokka> (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1)))))
 FACT
 quokka> (fact 20)
 2432902008176640000
-quokka> (defun adder (n) (lambda (x) (+ x n)))
-ADDER
-quokka> (funcall (adder 5) 37)
-42
 quokka> (defun down (n) (if (= n 0) 'done (down (- n 1))))
 DOWN
 quokka> (down 100000)
 DONE
-quokka> (defmacro my-when (test &body body) `(if ,test (progn ,@body) nil))
-MY-WHEN
-quokka> (my-when (= 1 1) 'yes)
-YES
-quokka> (defun describe-shape (kind &key (colour 'black) (sides 0))
-          (list kind colour sides))
-DESCRIBE-SHAPE
-quokka> (describe-shape 'square :sides 4)
-(SQUARE BLACK 4)
+quokka> (defstruct point x y)
+POINT
+quokka> (let ((p (make-point :x 1 :y 2))) (setf (point-x p) 42) (point-x p))
+42
+quokka> (handler-case (car 5) (type-error () 'that-was-not-a-list))
+THAT-WAS-NOT-A-LIST
+quokka> (multiple-value-bind (value present) (gethash 'absent (make-hash-table))
+          (list value present))
+(NIL NIL)
+quokka> (macrolet ((twice (x) (list '+ x x))) (twice 21))
+42
 ```
 
 The phase 0 gate was *"`(fact 20)` runs; the GC survives an allocation stress
-test."* Both pass, and there is evidence from outside this repository for the
-first: over a hundred Lisp forms produce byte-identical output on Quokka
-natively, Quokka under WebAssembly, and SBCL.
+test."* Both passed. **Tier 0** — the harder target, and the one phase 1 waits
+on — is now finished too: *enough Lisp that the compiler, which is written in
+Lisp, can be interpreted*.
 
 ### What exists
 
@@ -59,53 +57,60 @@ natively, Quokka under WebAssembly, and SBCL.
 | **Heap** | object headers, bump allocation, a soft limit and a hard ceiling |
 | **Garbage collector** | Cheney's copying collector, with a torture mode that collects at every opportunity and verifies the heap afterwards |
 | **Rooting** | holding a value across a collection is a **compile error**, not a convention |
-| **Reader** | tier 0 syntax: lists, dotted pairs, symbols, fixnums, strings, characters, `quote`, nested comments |
+| **Reader** | tier 0 syntax: lists, dotted pairs, symbols, fixnums, strings, characters, vectors, keywords, `quote`, backquote, nested comments |
 | **Evaluator** | an explicit-control machine — no recursive `eval`, so it can stop and resume, and Lisp recursion costs heap rather than Rust stack |
 | **Tail calls** | eliminated, so recursive loops run in constant space |
 | **Closures** | `lambda`, lexical scope, captured environments |
-| **Special operators** | 19 of Common Lisp's 25, including `let`, `let*`, `flet`, `labels`, `block`/`return-from`, `catch`/`throw`, `tagbody`/`go` and `unwind-protect` |
-| **Macros** | `defmacro`, expansion in the evaluator, backquote in the reader, `gensym` |
-| **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux` |
+| **Special operators** | **22 of Common Lisp's 25** — everything except `progv`, `load-time-value` and `symbol-macrolet`, which are outside tier 0 by design |
+| **Macros** | `defmacro` with full lambda lists, backquote, `gensym`, `macroexpand`, and `macrolet` for lexical ones |
+| **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux`, `&body`, and destructuring in macros |
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
 | **Vectors and strings** | `#(1 2 3)`, `aref`, `length` and `elt` over lists, vectors and strings alike |
 | **Hash tables** | keyed by content rather than address, because the collector moves things |
-| **`setf`** | `(setf (aref v i) x)`, `(setf (gethash k h) v)` — pulled forward from tier 1 so that mutation could be tested against SBCL |
-| **`macroexpand`** | a macro's output as an ordinary value, so expansions can be read |
-| **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or` and the list functions are **Lisp**, compiled into the binary and interpreted at boot |
+| **`setf`** | `(setf (aref v i) x)`, `(setf (gethash k h) v)` — pulled forward from tier 1 so that mutation could be tested against SBCL, and extensible, which is what `defstruct` needs |
+| **Conditions** | `error`, `handler-case`, `ignore-errors`; the evaluator's own errors carry the standard's type names, so `(handler-case (car 5) (type-error () …))` means what it means in SBCL |
+| **`defstruct`** | one line generating a constructor, a predicate, a copier and a settable accessor per slot |
+| **Multiple values** | `values`, `multiple-value-bind`, `multiple-value-call`, `multiple-value-prog1` — and every form that should pass them through does |
+| **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or`, `setf`, `defstruct`, `handler-case`, the list and sequence functions — about six hundred lines of **Lisp**, compiled into the binary and interpreted at boot |
 | **REPL** | native terminal, and a browser dev console on the WASM build |
 
-184 tests, green on native, under wasmtime, and with the GC torture mode on.
-Fourteen Common Lisp files produce byte-identical output on Quokka and SBCL.
+192 tests, green on native, under wasmtime, and with the GC torture mode on.
+Seventeen Common Lisp files produce byte-identical output on Quokka natively,
+Quokka under WebAssembly, and SBCL. The Rust core is about 11,200 lines of the
+15,000-line budget.
 
 ### What does not exist yet
 
-Six special operators: `macrolet`, `multiple-value-call`,
-`multiple-value-prog1`, and — outside tier 0 by design — `progv`,
-`load-time-value` and `symbol-macrolet`. **No condition system**: no `error`,
-no `handler-case`, so three things that want to report a problem currently
-expand into a call to an undefined function instead. No `defstruct`. No
-multiple values. Those, with the operators above, are what
-[#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracks, and what
-the compiler needs before the interpreter can run it.
+**No compiler, no bytecode, no image.** The language is still defined by
+`crates/quokka-vm/src/eval.rs` — that is, by Rust. Phase 1
+([#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)) moves it into a
+Lisp file: a bytecode VM, a compiler written in Common Lisp, and an image that
+saves and reloads and resumes where it left off.
 
 No packages — keywords exist, the rest is phase 2
-([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why). No
+([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why), which
+is also why the implementation's own names wear a `%` prefix instead. No
 bignums ([#16](https://github.com/quokka-lisp/quokka-lisp/issues/16)) or floats
-([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)). No bytecode
-compiler, no image save, no renderer, no editor — those are phases 1 through 6
-in [`docs/design.md`](docs/design.md).
+([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)). No `loop`, no
+CLOS, no `define-setf-expander` and therefore no `incf` or `push`. No restarts
+or `define-condition`: `handler-case` is the exception-shaped half of the
+condition system, and the rest is phase 3. No renderer and no editor — phases
+4 through 6 in [`docs/design.md`](docs/design.md).
 
 ## The book
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Nineteen chapters so far, assuming no prior knowledge of language
-implementation — including what a garbage collector is, what `car` and `cdr`
+afterwards. Twenty-four chapters in three parts — the substrate, reading and
+running, and now compiling — assuming no prior knowledge of language
+implementation, including what a garbage collector is, what `car` and `cdr`
 are, and why a program would want to rewrite itself.
 
-It records what decisions cost, not only which were chosen — including three
+It records what decisions cost, not only which were chosen — including several
 occasions where a rule was written down and then broken by the person who wrote
-it, which is the part a book written afterwards would quietly omit.
+it, which is the part a book written afterwards would quietly omit. Part III
+begins before the thing it describes exists, and says so: its first chapter is
+a plan, kept so that what actually happens can correct it.
 
 ```
 mdbook serve book --open     # needs `cargo install mdbook`; optional
@@ -146,8 +151,9 @@ assets/               mascot, icons, palette
 Every development step and open decision is a
 [GitHub issue](https://github.com/quokka-lisp/quokka-lisp/issues) before it is
 code, with the reasoning in the comments.
-[#9](https://github.com/quokka-lisp/quokka-lisp/issues/9) tracked phase 0 and
-[#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracks tier 0; a
+[#9](https://github.com/quokka-lisp/quokka-lisp/issues/9) tracked phase 0,
+[#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracked tier 0, and
+[#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) tracks phase 1; a
 `decision` issue closes when the reasoning is recorded in the design and the
 book, not when the code lands.
 

@@ -52,7 +52,7 @@ certain programs — it points at nothing and exists at compile time only. Quokk
 uses one to make it impossible to hold a value across a garbage collection.
 ([4](part-1-substrate/04-rooting.md))
 
-**Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built. ([The bootstrap](the-bootstrap.md))
+**Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built; chapter 24 is the plan. ([24](part-3-compiling/24-why-compile-at-all.md))
 
 **Capture (variable capture).** A [macro](#macro) binding a name that the
 caller also uses, so the caller's variable silently disappears inside the
@@ -129,6 +129,12 @@ contrast [bignum](#bignum).
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
 **Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. ([The bootstrap](the-bootstrap.md))
+
+**Flat closure.** A [closure](#closure) that copies the values it captured into
+itself when it is made, so each one is at a known index rather than found by
+walking a chain of scopes. Cheaper to use and more expensive to create — the
+opposite trade from the linked environments Quokka's interpreter uses, and an
+open question for the compiler. ([24](part-3-compiling/24-why-compile-at-all.md))
 
 **Flow analysis.** Working out, before a program runs, what it can possibly
 do — which variables escape, which code is unreachable, whether a `block` is
@@ -217,7 +223,7 @@ parameters supplied by name, supplied-p variables, and `&aux` locals. Quokka
 rewrites the whole thing into a simple list plus a `let*` when the closure is
 made, so nothing has to be evaluated while arguments are being bound. ([18](part-2-reading-and-running/18-lambda-lists.md))
 
-**Lexical addressing.** Resolving a variable to "scope 2, slot 0" ahead of time, so lookup is an index rather than a search. It requires a compiler to assign the numbers, which is why Quokka's interpreter cannot use it yet. ([10](part-2-reading-and-running/10-functions-and-scope.md))
+**Lexical addressing.** Resolving a variable to "scope 2, slot 0" ahead of time, so lookup is an index rather than a search. It requires a compiler to assign the numbers, which is why Quokka's interpreter cannot use it yet. Phase 1 is the *yet*. ([10](part-2-reading-and-running/10-functions-and-scope.md), [24](part-3-compiling/24-why-compile-at-all.md))
 
 **Lexical scope.** Determined by where something is written, not by what calls it. `block` and `return-from` are lexical, so a `return-from` can only reach a block it can see in the source — which makes it safe and makes it useless across a function boundary. ([14](part-2-reading-and-running/14-leaving-early.md))
 
@@ -328,6 +334,11 @@ This is the definition of "still wanted" that garbage collection uses.
 unusually small, because the structure it produces is ordinary lists.
 ([Preface](what-has-to-be-built.md))
 
+**Register machine.** An instruction set whose instructions name where their
+operands are — `ADD r3, r1, r2` — like real hardware. Fewer, larger
+instructions than a [stack machine](#stack-machine), and a harder compiler,
+because something must decide which value lives in which register. ([24](part-3-compiling/24-why-compile-at-all.md))
+
 **REPL.** Read, Eval, Print, Loop — a prompt that reads what you type, runs it,
 prints the answer and comes back for more. Invented for Lisp in 1964; now in
 every language. ([Preface](what-has-to-be-built.md))
@@ -377,6 +388,11 @@ many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 **Special operator.** A form that decides for itself whether, when, or in what environment its arguments are evaluated — or whose arguments are not expressions at all. `if` must be one, or both branches would run before it could choose. Common Lisp has exactly 25, they are a *basis* rather than a feature list, and everything else is macros over them. ([9](part-2-reading-and-running/09-what-a-form-means.md), [13](part-2-reading-and-running/13-the-special-operators.md))
 
 **Static area.** The first words of the heap, which the collector copies verbatim and never relocates. A reference into it is therefore a compile-time constant, which is how `nil` can be an ordinary symbol *and* `Value::NIL` a Rust constant. `t` lives there too; the keyword package will. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
+
+**Stack machine.** An instruction set whose instructions take no operands and
+work on an implicit stack: `CONST 3`, `CONST 4`, `ADD`. Tiny instructions and a
+simple compiler, at the cost of more of them. What Quokka's bytecode will be,
+chosen for size rather than speed. ([24](part-3-compiling/24-why-compile-at-all.md))
 
 **String.** A heap object whose slots hold character codes rather than
 [values](#value), which is why it sits on the raw side of the collector's line

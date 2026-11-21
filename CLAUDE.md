@@ -2,34 +2,38 @@
 
 Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Common Lisp subset, browser-first via WASM, with a live, presentation-based UI. The full design is in `docs/design.md` — read it before making structural changes.
 
-Current phase: **0 · Spike — complete**, now finishing **tier 0** (#18) so that
-phase 1 can bootstrap. The phase 0 gate passed long ago; tier 0 is what the
-compiler needs before the interpreter can run it.
+Current phase: **1 · Bytecode and image** (#23). Phase 0's gate passed, and
+**tier 0 is finished** (#18) — which was the real precondition, because tier 0
+is *enough Lisp that the compiler can be interpreted*.
 
-**Tier 0 is finished.** **22 of Common Lisp's 25 special operators** — the
-three missing are `progv`, `load-time-value` and `symbol-macrolet`, which
-`docs/design.md` excludes on purpose. Plus `lambda` and `defmacro`, which CL
-makes macros and Quokka has not. Next is **phase 1**: the interpreter runs the
-compiler to build an image.
+What tier 0 left behind: **22 of Common Lisp's 25 special operators** (the
+missing three are `progv`, `load-time-value` and `symbol-macrolet`, excluded by
+`docs/design.md` on purpose), plus `lambda` and `defmacro`, which CL makes
+macros and Quokka has not. Macros with backquote, `gensym`, `macroexpand`,
+`macrolet` and destructuring lambda lists; `&optional`/`&key` with default
+forms and supplied-p; keywords; vectors and strings as sequences; hash tables
+keyed by content; a condition system (`error`, `handler-case`,
+`ignore-errors`); `defstruct` with an extensible `setf`; and multiple values.
 
-Done: macros with backquote, `gensym`, `macroexpand` and destructuring lambda
-lists; `&optional`/`&key` with default forms and supplied-p; keywords; vectors
-and strings as sequences; hash tables keyed by content; and `setf`, pulled
-forward from tier 1 because without it mutation could not be tested against
-SBCL at all.
+`setf` was pulled forward from tier 1 because without it mutation could not be
+tested against SBCL at all — which is the recurring shape of these decisions:
+the thing that decides is testability against the oracle.
 
 There is a **prelude** (`lisp/prelude.lisp`, compiled into the binary with
 `include_str!` and interpreted at boot) holding `defun`, `when`, `unless`,
 `cond`, `and`, `or`, `setf`, `defstruct`, `macroexpand`, `handler-case`,
 `multiple-value-bind`, the list and sequence functions and the hash-table
-wrappers — Lisp, not Rust.
+wrappers — Lisp, not Rust. About six hundred lines of it.
 
-Also done: a condition system (`error`, `handler-case`, `ignore-errors`),
-`defstruct` with an extensible `setf`, and multiple values — which closed the
-documented divergences in `macroexpand`, `gethash` and `ignore-errors`.
+192 tests; **17 differential files agree with SBCL**. The Rust core is about
+11,200 lines of the 15,000 budget.
 
-189 tests; **17 differential files agree with SBCL**. The Rust core is about
-11,000 lines of the 15,000 budget.
+**Phase 1 is next, and nothing in it is built.** The gate is *an image saves,
+reloads and resumes where it left off*. In dependency order: the instruction
+set on paper, the bytecode VM in Rust, the compiler in `lisp/compiler.lisp`
+(tier 0 only, rule 5), image save and load, and a fourth test leg where
+compiled and interpreted results must match. #23 has the detail and the open
+decisions.
 
 ## Who this is for, and how to work with me
 

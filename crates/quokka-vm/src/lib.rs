@@ -37,7 +37,10 @@ pub mod value;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The phase this build implements, for the banner.
-pub const PHASE: &str = "0 · Spike";
+///
+/// Phase 0 ended when the gate passed; tier 0 — the language the compiler is
+/// written in — is finished, so this build is the one phase 1 bootstraps from.
+pub const PHASE: &str = "1 · Bytecode and image";
 
 /// Evaluate every form in `source` and render the results in the differential
 /// testing format: one line per top-level form.
@@ -98,6 +101,8 @@ mod tests {
     #[test]
     fn version_is_reported() {
         assert!(!VERSION.is_empty());
-        assert_eq!(PHASE, "0 · Spike");
+        // The phase moves; its shape does not. Pinning the string here would
+        // only mean editing two places every time instead of one.
+        assert!(PHASE.starts_with(|c: char| c.is_ascii_digit()));
     }
 }
