@@ -6,9 +6,13 @@
 > system, written to a file and resumed exactly where it stopped. Two decisions
 > made chapters ago are what make that possible at all.
 
-> **Status: this chapter describes a design, not working code.** Images arrive
-> in phase 1. It is written now because the decisions that make it possible were
-> made in phase 0, and the reasoning belongs next to them.
+> **Status: built, and this chapter was right.** It was written in phase 0 as a
+> design, because the decisions that make images possible were made then and the
+> reasoning belonged next to them. Phase 1 implemented it, and the prediction
+> held: saving is `to_le_bytes` over the heap's words and loading is the
+> inverse, with no pointer patching and no second representation. Chapter 30 is
+> the working version, including the one thing this chapter did not foresee —
+> that the GC's torture padding must be switched off before a heap is written.
 
 A Lisp machine did not start by running a build. It started by loading an
 image — the entire contents of memory, written to a file and read back, with

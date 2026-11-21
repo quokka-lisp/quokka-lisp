@@ -228,13 +228,19 @@ position again. The interpreter does not have to be able to call compiled code
 Built and tested. `--compile-file` works on any tier-0 file; the prelude and
 the compiler both compile clean and verify clean.
 
-Not built: steps 3 through 5 above. Until the image exists, the system you can
-actually run is still the interpreted one, and the compiler's output is proved
-correct by the verifier rather than by being executed. Chapter 30 closes that
-gap, and the fourth leg of the differential tests — where an interpreted
-result and a compiled result must agree — is what will catch the cases the
-verifier cannot see, because a program can be perfectly well-formed and still
-compute the wrong thing.
+Steps 4 and 5 of the sequence above are built too — chapter 30 is the image,
+and it saves, reloads and resumes. **Step 3 is not**, which means the world
+inside an image is still the interpreted one: an image is a faithful snapshot
+of whatever heap it is handed, and the only heap that exists is one built by
+interpreting `prelude.lisp`.
+
+So the compiler's output is still proved correct by the verifier rather than
+by being executed. Closing that is
+[#33](https://github.com/quokka-lisp/quokka-lisp/issues/33), and after it the
+fourth leg of the differential tests — where an interpreted result and a
+compiled result must agree — is what will catch the cases the verifier cannot
+see, because a program can be perfectly well-formed and still compute the
+wrong thing.
 
 ---
 

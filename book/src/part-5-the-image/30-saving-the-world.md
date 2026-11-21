@@ -305,8 +305,8 @@ be written to a file and abandoned is exactly the heap where installing
 compiled code is safe. Nothing runs in it afterwards, so there is never a
 moment when half the system is compiled and something is still executing.
 
-That build has one genuine decision in it, which chapter 31 will have to
-make. It cannot be a single pass — compiling form 2 uses the interpreted
+That build is [#33](https://github.com/quokka-lisp/quokka-lisp/issues/33),
+and it has one genuine decision in it that chapter 31 will have to make. It cannot be a single pass — compiling form 2 uses the interpreted
 `length` that compiling form 1 would have replaced — so it has to be two: compile
 everything first, then install everything. And the macros have to be installed
 *twice*, once interpreted so the compiler can expand with them and once

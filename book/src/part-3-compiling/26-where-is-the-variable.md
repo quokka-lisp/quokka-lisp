@@ -6,7 +6,9 @@
 > is that question and its consequences, and it ends with the honest accounting
 > of where a compiled Lisp's speed actually comes from.
 >
-> **Status: specified, not built**, like chapter 25.
+> **Status: built**, like chapter 25 — with the exception named at the end:
+> flat closures and stack-allocated locals are still the faster design, still
+> need escape analysis, and are still deferred.
 
 ## The question every instruction has to answer
 

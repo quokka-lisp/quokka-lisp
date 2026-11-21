@@ -8,10 +8,11 @@
 > Nothing here assumes you have seen a machine instruction before. It assumes
 > only Part II — the reader, the evaluator, environments and frames.
 >
-> **Status: specified, not built.** `docs/bytecode.md` is the specification
-> this chapter explains. The VM is step B of
-> [#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) and does not
-> exist yet.
+> **Status: built.** `docs/bytecode.md` is the specification this chapter
+> explains, and `crates/quokka-vm/src/vm.rs` runs it. The specification was
+> wrong about the opcode count twice while it was being implemented — thirty-four,
+> then thirty-six, now thirty-seven — which is why a test pins the number that
+> this chapter quotes, and so does the depth the verifier computes for `fact`.
 
 ## Start from what already works
 

@@ -230,9 +230,17 @@ they are **phase 0 and tier 0**, which are finished: `(fact 20)` runs, the
 collector survives being run at every opportunity, and seventeen files of
 Common Lisp agree with a real one. Part III starts **phase 1**, where the
 language stops being defined in Rust; its first chapters were written before
-the work and say so at the top. Part IV is the compiler, which is a Lisp
-program rather than a piece of the runtime — a different kind of thing, and
-the place where most of the decisions are still provisional.
+the work and say so at the top, and are left as written so that the later ones
+can correct them. Part IV is the compiler, which is a Lisp program rather than
+a piece of the runtime — a different kind of thing, and the place where most
+of the decisions are still provisional. Part V is the image, where the system
+learns to save itself to a file and start from one, and where two decisions
+made in Part I for unrelated reasons turn out to be what makes it possible.
+
+Phase 1's gate is met — an image saves, reloads and resumes a computation it
+stopped in the middle of — but phase 1 is **not finished**: the world inside
+an image is still interpreted. Chapter 29 says why installing compiled code
+into a running interpreter cannot work, and chapter 30 says where it can.
 
 Each chapter answers one question.
 

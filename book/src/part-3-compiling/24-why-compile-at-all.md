@@ -6,12 +6,20 @@
 > exists at all — and the obvious answer, *speed*, is the less interesting
 > half.
 >
-> **Status: almost none of this is built.** This chapter is written before
-> the work rather than after it, which is the opposite of every chapter so
-> far. It is the plan and the reasoning behind it, kept deliberately so that
-> what actually happens can contradict it. Where it turns out to be wrong,
-> the chapters after it will say so rather than quietly agreeing with
-> hindsight.
+> **Status: this was a plan, and it is kept as it was written.** When this
+> chapter was written almost none of Part III existed. It is the opposite of
+> every chapter before it: the reasoning *before* the work, left standing so
+> that what actually happened can contradict it rather than quietly agreeing
+> with hindsight.
+>
+> It is now all built — the VM, the compiler, the image — and the plan held
+> better than it deserved to. Three things it did not know: the instruction
+> set needed thirty-seven opcodes rather than thirty-four, the thirty-seventh
+> being found by the *compiler* and not the VM (chapter 28); the compiler
+> would be able to compile itself before anything could run it (chapter 29);
+> and the hardest problem of the phase would be none of this, but the fact
+> that a garbage collection cannot happen inside a mutation (chapter 28's
+> interlude).
 >
 > The decisions below *are* settled — they were argued out in #25 and #26
 > before a line of the compiler existed, which is the point of writing a plan

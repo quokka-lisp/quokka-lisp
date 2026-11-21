@@ -2,38 +2,72 @@
 
 Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Common Lisp subset, browser-first via WASM, with a live, presentation-based UI. The full design is in `docs/design.md` — read it before making structural changes.
 
-Current phase: **1 · Bytecode and image** (#23). Phase 0's gate passed, and
-**tier 0 is finished** (#18) — which was the real precondition, because tier 0
-is *enough Lisp that the compiler can be interpreted*.
+Current phase: **1 · Bytecode and image** (#23), well into it. Phase 0's gate
+passed, **tier 0 is finished** (#18), and phase 1's gate — *an image saves,
+reloads and resumes where it left off* — **is met**. Phase 1 itself is not
+finished; see "What is left" below.
 
-What tier 0 left behind: **22 of Common Lisp's 25 special operators** (the
-missing three are `progv`, `load-time-value` and `symbol-macrolet`, excluded by
-`docs/design.md` on purpose), plus `lambda` and `defmacro`, which CL makes
-macros and Quokka has not. Macros with backquote, `gensym`, `macroexpand`,
-`macrolet` and destructuring lambda lists; `&optional`/`&key` with default
-forms and supplied-p; keywords; vectors and strings as sequences; hash tables
-keyed by content; a condition system (`error`, `handler-case`,
-`ignore-errors`); `defstruct` with an extensible `setf`; and multiple values.
+## What exists
+
+**Tier 0**, which was the precondition for everything else because it is
+*enough Lisp that the compiler can be interpreted*: **22 of Common Lisp's 25
+special operators** (the missing three are `progv`, `load-time-value` and
+`symbol-macrolet`, excluded by `docs/design.md` on purpose), plus `lambda` and
+`defmacro`, which CL makes macros and Quokka has not. Macros with backquote,
+`gensym`, `macroexpand`, `macrolet` and destructuring lambda lists;
+`&optional`/`&key` with default forms and supplied-p; keywords; vectors and
+strings as sequences; hash tables keyed by content; a condition system
+(`error`, `handler-case`, `ignore-errors`); `defstruct` with an extensible
+`setf`; and multiple values.
 
 `setf` was pulled forward from tier 1 because without it mutation could not be
 tested against SBCL at all — which is the recurring shape of these decisions:
 the thing that decides is testability against the oracle.
 
-There is a **prelude** (`lisp/prelude.lisp`, compiled into the binary with
+A **prelude** (`lisp/prelude.lisp`, 658 lines, compiled into the binary with
 `include_str!` and interpreted at boot) holding `defun`, `when`, `unless`,
 `cond`, `and`, `or`, `setf`, `defstruct`, `macroexpand`, `handler-case`,
 `multiple-value-bind`, the list and sequence functions and the hash-table
-wrappers — Lisp, not Rust. About six hundred lines of it.
+wrappers — Lisp, not Rust.
 
-192 tests; **17 differential files agree with SBCL**. The Rust core is about
-11,200 lines of the 15,000 budget.
+**Phase 1, steps A to C, done:**
 
-**Phase 1 is next, and nothing in it is built.** The gate is *an image saves,
-reloads and resumes where it left off*. In dependency order: the instruction
-set on paper, the bytecode VM in Rust, the compiler in `lisp/compiler.lisp`
-(tier 0 only, rule 5), image save and load, and a fourth test leg where
-compiled and interpreted results must match. #23 has the detail and the open
-decisions.
+| | |
+| --- | --- |
+| `docs/bytecode.md` | the instruction set on paper: 37 opcodes, frame layout, every ceiling (#27) |
+| `src/code.rs` | encoding, the `Function` object, disassembler, assembler, **verifier** (#28) |
+| `src/vm.rs` | the machine; implements `Steppable`, so `run_slice` drives it and rule 4 holds by construction |
+| `lisp/compiler/compile.lisp` | the compiler, 464 lines of tier-0 Lisp (#31) |
+| `src/image.rs` | save and load a whole heap, mid-computation included |
+
+The compiler compiles **every form of the prelude and every form of itself**
+— 85 functions, all accepted by the verifier. `boot::compile_source` does that
+and installs none of it; chapter 29 says why installing cannot happen in a
+running interpreter.
+
+**300 tests**; **17 differential files agree with SBCL**. The Rust core is
+**11,941** lines of the 15,000 budget.
+
+## What is left in phase 1
+
+**The world inside an image is still interpreted.** `image::save` writes
+whatever heap it is given, and the only heap that exists is one built by
+interpreting the prelude — so `length` in a saved image is a tree being
+walked, not bytecode.
+
+- **#33 · step D**: compile the world and *keep* the results. Two passes
+  (compile everything, then run everything on the VM, which is what installs),
+  and macros installed twice — interpreted so the compiler can expand with
+  them, compiled so the finished image can call them. **One decision is open:
+  whether the build driver lives in Rust or in Lisp. Raise it before writing.**
+- **step E**: the fourth differential leg, where interpreted and compiled
+  results must agree. The verifier cannot see a program that is well-formed
+  and computes the wrong thing.
+
+Also open: #29 (build the VM without the interpreter baked in, so *one
+evaluator at a time* is a build error rather than a rule in prose), #24 (what
+records the work *between* two images — the header's sequence number is
+reserved, the rest is not decided), #26 (string interning).
 
 ## Who this is for, and how to work with me
 
