@@ -305,6 +305,166 @@ An interpreter has to carry every feature of the language with it at run time.
 A compiler gets to spend features at compile time and hand the machine
 something smaller.
 
+## And what the two machines share
+
+That section, and most of this chapter, has been about difference. Which
+invites a conclusion that is mostly wrong, and worth correcting before it
+hardens:
+
+> *The bytecode VM is a separate thing that works in a completely different
+> way from the tree-walking interpreter.*
+
+It is a different **machine**. It is not a different **world**. Almost
+everything underneath both of them is the same code, and the line between what
+is shared and what is not turns out to be sharp and worth naming.
+
+| shared, one copy | each has its own |
+| --- | --- |
+| the heap, and the collector that moves things in it | the stack of frames |
+| tagged values — fixnums, conses, symbols | the operand stack |
+| symbols and the obarray | the program counter, or the `Control` register standing in for one |
+| the reader and the printer | how the next thing to do is decided |
+| the primitive table — *both* call `+` the same way | |
+| the layout of an environment | |
+| **matching arguments to a lambda list** | |
+
+The pattern: they share **mechanism** and keep their own **state**.
+
+Which is also exactly what chapter 24's decision was about, although it did not
+say so in these words. "One evaluator at a time" forbids an interpreted frame
+underneath a compiled one, an unwind crossing from one machine's frames into
+the other's, a scope held in two representations at once. All of those are
+*state*. None of them is a Rust function that takes a heap and some values and
+returns an answer.
+
+If sharing mechanism were the problem, the two would need separate heaps.
+
+### The one that looks like a contradiction
+
+The last row of that table is the one that raises an eyebrow, so it is worth
+following.
+
+Chapter 18 showed that a lambda list is rewritten when a closure is made:
+default forms become a `let*` around the body, so nothing has to be *evaluated*
+while arguments are being bound. What survives the rewrite still looks like
+this, though:
+
+```lisp
+(kind &optional (colour) &key (:sides sides))
+```
+
+and matching arguments against *that* is unavoidably a run-time job. Which
+keyword actually turns up is not something a compiler can know:
+
+```lisp
+(describe-shape 'square :sides 4)
+(describe-shape 'square)
+```
+
+Two calls, the same compiled function, different work to do on arrival. So the
+callee has to decide at call time which name gets which value — and that
+decision is **identical** for a function the interpreter is applying and one
+the VM is calling. Same lambda lists, same rules.
+
+Common Lisp's rules here are fiddly in ways the standard is specific about:
+the *leftmost* occurrence of a keyword wins, an unknown keyword is an error
+unless `&allow-other-keys` was declared, and a parameter with no argument gets
+the unsupplied marker rather than `nil`, so that `(f)` and `(f nil)` can
+differ. Writing that twice is two chances to get one of those subtly
+different, and rule 6 says both have to match SBCL.
+
+So there is one copy, in `lambda_list.rs`, and its signature is the guarantee
+that it is not a back door:
+
+```rust
+pub fn bind<'h>(
+    mc: &mut Mutation<'h>,
+    params: Value<'h>,
+    arguments: Value<'h>,
+) -> Result<(Vec<Value<'h>>, Vec<Value<'h>>), EvalError>
+```
+
+No machine. No stack, no frames, no program counter. A heap, a lambda list, and
+some arguments. Whichever machine is running calls it, at a time when the other
+is not running at all.
+
+### What sharing costs, and how it was paid
+
+Sharing is not free, and the shape of the cost here is a good one to recognise
+because it recurs.
+
+The shared binder takes its arguments as a **list**, because that is what the
+interpreter has: it collected them one at a time into a chain of cons cells. A
+compiled call does not have a list. It has the arguments in a row on the
+operand stack. Using the shared binder would mean consing them up only for the
+binder to walk back down — **an allocation per argument, in every call**, which
+is one of the costs compiling was supposed to remove.
+
+The answer is not a second binder. It is to take the common case directly and
+fall through:
+
+```rust
+if let Some(names) = self.all_required(params) {
+    // the overwhelmingly common shape: no list, no allocation beyond the scope
+    return Ok(env::make(self.mc, parent, env::VARIABLE, &names, args));
+}
+// &optional, &rest or &key — build the list and use the shared binder
+```
+
+The same move had already been made one layer down: `primitives::call` took a
+list, so it was split into a thin wrapper over `call_slice`, which takes a row.
+Both times the question was the same — *the shared code speaks the
+interpreter's language; does the VM translate, or duplicate?* — and both times
+the answer was to narrow the shared part rather than clone it.
+
+### Could we ship only one of them?
+
+A fair question once the sharing is clear, and it has a real answer, although
+not the one you would expect.
+
+After phase 1 the browser does not need the interpreter. It loads an image — a
+heap with everything already compiled in it — and runs the VM. The interpreter
+exists to *build* an image from source with nothing but `cargo`, which is a
+thing you do on a development machine, not in a tab.
+
+So: build the browser without it, and ship less code.
+
+The honest arithmetic, measured rather than guessed. The interpreter is about
+**2,300 lines** of the roughly 7,000 non-test lines in the VM crate — a third
+of the source. The whole compiled WebAssembly module is **186 KB** today, and
+compresses to a fraction of that over the wire. Even deleting the interpreter
+entirely would save perhaps a few tens of kilobytes after compression, against
+an *image* that will be measured in megabytes.
+
+So the size argument, which is the obvious one, is the weak one.
+
+The strong argument is different, and it is this book's recurring theme
+wearing yet another costume. "One evaluator at a time" is currently **a rule in
+prose**. A build that physically does not contain the interpreter cannot break
+it — any dependency on interpretation that crept in would show up as a *build
+error*, at the moment it was introduced, rather than as a silent fallback that
+works perfectly until the day it matters.
+
+*A rule that can be followed needs discipline; a rule that cannot be broken
+needs none.*
+
+There is a precondition, and it is the kind that is cheap now and expensive
+later. Today `vm.rs` begins:
+
+```rust
+use crate::eval::{closure, env, EvalError};
+```
+
+Those three are not the interpreter. `closure` is what a function object looks
+like, `env` is what a scope looks like, `EvalError` is what going wrong looks
+like — shared mechanism, every one of them, living in `eval.rs` because that is
+where they were first needed. While they live there, "build without the
+interpreter" is a refactor. Once they live somewhere of their own, it is a line
+in a manifest.
+
+Which is the same shape as the image-format question in chapter 24: the payoff
+is later, the structure that allows it is now.
+
 ---
 
 **References.** `docs/bytecode.md` in this repository is the specification —
