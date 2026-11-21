@@ -48,6 +48,7 @@
 # Part V · The Image
 
 - [Saving the world](part-5-the-image/30-saving-the-world.md)
+- [Asking the outside world](part-5-the-image/31-asking-the-outside-world.md)
 
 ---
 

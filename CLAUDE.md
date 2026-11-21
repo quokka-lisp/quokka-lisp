@@ -39,14 +39,15 @@ wrappers — Lisp, not Rust.
 | `src/vm.rs` | the machine; implements `Steppable`, so `run_slice` drives it and rule 4 holds by construction |
 | `lisp/compiler/compile.lisp` | the compiler, 464 lines of tier-0 Lisp (#31) |
 | `src/image.rs` | save and load a whole heap, mid-computation included |
+| `src/host.rs` | **host requests**: a program asks the outside world by leaving a request in the heap and blocking; the host answers between slices (#35). First caller: `%read-source`. The interpreter has no I/O |
 
 The compiler compiles **every form of the prelude and every form of itself**
 — 85 functions, all accepted by the verifier. `boot::compile_source` does that
 and installs none of it; chapter 29 says why installing cannot happen in a
 running interpreter.
 
-**300 tests**; **17 differential files agree with SBCL**. The Rust core is
-**11,941** lines of the 15,000 budget.
+**310 tests**; **17 differential files agree with SBCL**. The Rust core is
+**12,336** lines of the 15,000 budget.
 
 ## What is left in phase 1
 
@@ -63,8 +64,14 @@ walked, not bytecode.
 - **step E**: the fourth differential leg, where interpreted and compiled
   results must agree. The verifier cannot see a program that is well-formed
   and computes the wrong thing.
+- **Compiled code cannot catch a primitive's error.** `condition::from_eval_error`
+  is called only by the interpreter; the VM's `fail` halts. So
+  `(handler-case (car 5) (type-error () …))`, compiled, stops the machine.
+  Found while building #35, not fixed there. #33 and step E will both hit it.
 
-Also open: #29 (build the VM without the interpreter baked in, so *one
+Also open: #34 (concurrency — what the code must not foreclose before phase
+3's processes; item 1, the host interface, is done as #35), #29 (build the VM
+without the interpreter baked in, so *one
 evaluator at a time* is a build error rather than a rule in prose), #24 (what
 records the work *between* two images — the header's sequence number is
 reserved, the rest is not decided), #26 (string interning).

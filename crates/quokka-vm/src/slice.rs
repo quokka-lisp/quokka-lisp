@@ -66,15 +66,19 @@ pub enum Transition {
     Continue,
     /// The machine has finished. Further steps also report `Halt`.
     Halt,
+    /// The machine has asked the host for something and cannot go on until it
+    /// is answered. The request is in the heap (see `crate::host`); further
+    /// steps also report `Block` until the host completes it.
+    Block,
 }
 
 /// How a slice ended.
 ///
-/// There will be a third case, `Blocked`, when the browser needs to load a
-/// source file asynchronously: the machine reports what it needs, the host
-/// fetches it, and the next call resumes with the answer. It is deliberately not
-/// here yet — phase 0 loads sources synchronously, and the shape of the request
-/// should be decided when there is a real caller for it rather than guessed now.
+/// `Blocked` was promised here in phase 0 — *"the machine reports what it
+/// needs, the host fetches it, and the next call resumes with the answer"* —
+/// and deliberately left out until there was a real caller, so that the shape
+/// of a request would be decided by one rather than guessed. The caller is
+/// `%read-source` (#35), and the shape is in `crate::host`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// The machine halted before the budget ran out.
@@ -85,6 +89,20 @@ pub enum Status {
     },
     /// The budget ran out. All state is in the machine; call again to continue.
     Yielded,
+    /// The machine is waiting for the host to answer a request.
+    ///
+    /// Not a failure and not the end: the host reads the request with
+    /// `host::pending`, does the work in whatever way suits it — at once, or
+    /// when a browser Promise resolves — answers with `host::complete`, and
+    /// calls again. Calling again *without* answering is harmless and returns
+    /// `Blocked` straight away, having done nothing.
+    ///
+    /// The machine cannot tell how long it waited, which is what keeps
+    /// slicing semantically invisible (rule 4) even across I/O.
+    Blocked {
+        /// Steps taken in this slice, including the one that made the request.
+        steps: u64,
+    },
 }
 
 /// Something [`run_slice`] can drive.
@@ -119,6 +137,7 @@ where
         match machine.step() {
             Transition::Continue => {}
             Transition::Halt => return Status::Done { steps },
+            Transition::Block => return Status::Blocked { steps },
         }
     }
     Status::Yielded

@@ -10,7 +10,6 @@ use quokka_vm::heap::{Heap, Register};
 use quokka_vm::host::{Host, HostError};
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
-use quokka_vm::vm::run_now;
 use quokka_vm::{PHASE, VERSION};
 
 /// The native host: real files, real console.
@@ -219,7 +218,7 @@ fn main() {
             }
             Ok(_) => {
                 let output = if compiling {
-                    compile_and_print(&mut heap, &line, showing)
+                    compile_and_print(&mut heap, &line, showing, &mut host)
                 } else {
                     read_and_print(&mut heap, &line)
                 };
@@ -299,11 +298,11 @@ fn read_and_print(heap: &mut Heap, line: &str) -> String {
 /// The line is re-read for each form rather than its forms being carried
 /// across mutations, because a `Value` cannot leave one and a REPL line is
 /// short enough that reading it twice costs nothing.
-fn compile_and_print(heap: &mut Heap, line: &str, showing: bool) -> String {
+fn compile_and_print(heap: &mut Heap, line: &str, showing: bool, host: &mut NativeHost) -> String {
     let mut out = String::new();
     let mut index = 0usize;
     loop {
-        match compile_one(heap, line, index, showing) {
+        match compile_one(heap, line, index, showing, host) {
             None => return out,
             Some(text) => {
                 out.push_str(&text);
@@ -327,7 +326,13 @@ enum Next {
     Failed(String),
 }
 
-fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Option<String> {
+fn compile_one(
+    heap: &mut Heap,
+    line: &str,
+    index: usize,
+    showing: bool,
+    host: &mut NativeHost,
+) -> Option<String> {
     let chars = Reader::chars_of(line);
 
     // Read the `index`th form, and either leave `(compile-form 'FORM)` in the
@@ -383,18 +388,22 @@ fn compile_one(heap: &mut Heap, line: &str, index: usize, showing: bool) -> Opti
 
     // Run it. The compiled function is the root, so it survives any
     // collection the run itself needs.
-    Some(heap.mutate(|mc| {
-        let function = mc.register(Register::Value);
-        let mut out = String::new();
-        if showing {
-            out.push_str(&quokka_vm::code::disassemble_function(mc, function));
-        }
-        match run_now(mc, function, EVAL_BUDGET) {
-            Ok(v) => out.push_str(&print(mc, v)),
-            Err(e) => out.push_str(&format!("; {e}")),
-        }
-        out
-    }))
+    let mut out = String::new();
+    if showing {
+        out = heap.mutate(|mc| {
+            let function = mc.register(Register::Value);
+            quokka_vm::code::disassemble_function(mc, function)
+        });
+    }
+    // A slice at a time, answering the program's host requests between
+    // slices: this is where a compiled `(%read-source "file.lisp")` reaches
+    // the real filesystem. The native host answers at once; the protocol
+    // would let it answer later (#35).
+    match quokka_vm::vm::run_sliced(heap, EVAL_BUDGET, 2_000, host) {
+        Ok(()) => out.push_str(&heap.mutate(|mc| print(mc, mc.register(Register::Value)))),
+        Err(e) => out.push_str(&format!("; {e}")),
+    }
+    Some(out)
 }
 
 /// Does this form define a macro?

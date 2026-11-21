@@ -175,6 +175,10 @@ pub enum EvalError {
     /// refusal to wait any longer — phase 3 replaces it with Ctrl-C landing in
     /// the debugger, which is what a person actually wants.
     BudgetExhausted,
+    /// The computation asked the host for something and the driver running it
+    /// has no host to answer. Not the program's fault — a test or a tool ran
+    /// it with [`crate::vm::run_now`], which cannot answer requests (#35).
+    Blocked,
 }
 
 impl core::fmt::Display for EvalError {
@@ -207,6 +211,10 @@ impl core::fmt::Display for EvalError {
             EvalError::BudgetExhausted => write!(
                 f,
                 "gave up after the step budget — a computation that does not finish, perhaps?"
+            ),
+            EvalError::Blocked => write!(
+                f,
+                "waiting for the host to answer a request, and nothing here can answer it"
             ),
         }
     }
@@ -2362,6 +2370,7 @@ pub fn eval_now<'h>(
             None => Ok(machine.result()),
         },
         Status::Yielded => Err(EvalError::BudgetExhausted),
+        Status::Blocked { .. } => Err(EvalError::Blocked),
     }
 }
 
@@ -2399,7 +2408,13 @@ pub fn eval_sliced(heap: &mut Heap, budget: u64, slice: u64) -> Result<(), EvalE
             if let Some(e) = error {
                 return Some(Err(e));
             }
-            matches!(status, Status::Done { .. }).then_some(Ok(()))
+            match status {
+                Status::Done { .. } => Some(Ok(())),
+                Status::Yielded => None,
+                // The interpreter never blocks — it has no I/O (#35) — so
+                // this is unreachable today. Said rather than looped on.
+                Status::Blocked { .. } => Some(Err(EvalError::Blocked)),
+            }
         });
         if let Some(done) = outcome {
             return done;

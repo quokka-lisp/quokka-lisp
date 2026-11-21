@@ -120,9 +120,10 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
         // function the verifier refused was produced by the compiler, and a
         // `handler-case` quietly swallowing that would hide a compiler bug
         // behind whatever the program does about errors.
-        EvalError::Malformed(_) | EvalError::HeapExhausted | EvalError::BudgetExhausted => {
-            return None
-        }
+        EvalError::Malformed(_)
+        | EvalError::HeapExhausted
+        | EvalError::BudgetExhausted
+        | EvalError::Blocked => return None,
     };
     let type_name = mc.intern(type_name);
     let message = mc.alloc_string(&message);

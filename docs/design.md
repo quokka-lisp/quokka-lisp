@@ -116,7 +116,9 @@ That sentence was in this document from the start and was implemented nowhere, w
 
 *What it costs:* a budget only bounds time if one step is short, so every primitive must be fast or itself chunked. Two invariants keep slicing invisible: collect on allocation rather than on slice boundaries, and never let Lisp observe the remaining budget.
 
-**Processes.** Lightweight green threads scheduled by the VM, like Genera's processes, on one OS thread to start with.
+*Waiting for the outside world:* a third way for a slice to end, `Blocked`. The VM never calls its host. A primitive that needs something from outside — the first is `%read-source` — leaves a **request** in the heap (the `Request` register) and the machine stops; the host reads it with `host::pending`, does the work at once or when a browser Promise resolves, answers with `host::complete`, and runs the next slice, which carries on as if the primitive had returned. This is a blocking system call in miniature, or a completion queue holding one request. Rust `async` and callbacks were rejected for the same reason: neither a future nor a closure can be saved in an image, and a request in the heap can — an image saved while waiting reloads still waiting. The computation cannot observe how long it waited, so blocking keeps slicing invisible. Only the bytecode VM can make a request; the interpreter, which has no I/O, refuses. See #35 and chapter 31.
+
+**Processes.** Lightweight green threads scheduled by the VM, like Genera's processes, on one OS thread to start with. A blocked request becomes a *parked* process: the scheduler runs another instead of ending the slice, and each process holds its own request. The questions phase 3 must answer, and which ones the code must not foreclose before then, are in #34.
 
 **Primitives.** A single table of Rust primitives (arithmetic, allocation, I/O, graphics calls) is the only door from Lisp into the host. Its size is part of the comprehensibility budget.
 
@@ -289,6 +291,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 - [x] **Rendering stack:** browser-first hybrid renderer (DOM for text, canvas or SVG for drawing) behind a display protocol; native builds in a Tauri shell.
 - [x] **Instruction encoding:** packed bytes with per-opcode operand widths, not a fixed 64-bit instruction word. Chosen for size under wasm32's 32-bit address space, and affordable because fixed widths avoid branch relaxation. See Substrate and #25.
 - [x] **One evaluator at a time:** the interpreter bootstraps and is then cold; everything a running image evaluates is compiled first. Chosen over a mixed image, which would have bought an earlier running system with a boundary that every unwinding path had to understand. See #25.
+- [x] **Host interface:** requests in the heap, answered between slices — not a synchronous trait, not Rust `async`, not callbacks. Chosen before anything was built on the synchronous shape, and because it is the only one of the four an image can save. The interpreter has no I/O. See #35.
 - [x] **Compiled frames:** a contiguous stack in the heap, which the previous point makes free of boundary problems. See #25.
 - [x] **Variables:** the environment chain with `(depth, index)`, not flat closures. Deferred rather than rejected — it is compiler work, and the instruction set will change when it lands. See #25.
 - [x] **Literals are immutable:** source strings and symbol names are a separate heap type and refuse mutation, rather than relying on CLHS 3.7.1's "undefined". Chosen because undefined behaviour permits sharing without making it debuggable. See #26.
@@ -331,7 +334,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka nat
 
 **Still open** (none blocks phase 0)
 
-- [ ] **Concurrency:** green threads on one OS thread for good, or plan for real parallelism later?
+- [ ] **Concurrency:** green threads on one OS thread for good, or plan for real parallelism later? Open in [#34](https://github.com/quokka-lisp/quokka-lisp/issues/34), which recommends one OS thread per world for good.
 - [ ] **Remote protocol:** WebDAV, an S3-compatible API, or our own protocol over HTTPS?
 - [ ] **Git in the browser:** through a Git hosting API, or a Git implementation compiled to WASM?
 

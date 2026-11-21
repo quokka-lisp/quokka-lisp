@@ -276,6 +276,7 @@ Each chapter answers one question.
 | 28 | [A compiler in the language it compiles](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md) | What does a compiler actually do, and which of its decisions are permanent? |
 | 29 | [Compiling a whole file](part-4-the-compiler/29-compiling-a-whole-file.md) | Why can a compiler compile the whole system and not be allowed to install any of it? |
 | 30 | [Saving the world](part-5-the-image/30-saving-the-world.md) | How does a whole running system become a file, and come back? |
+| 31 | [Asking the outside world](part-5-the-image/31-asking-the-outside-world.md) | How does a program read a file when the VM may never wait? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

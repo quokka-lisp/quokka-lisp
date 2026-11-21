@@ -119,6 +119,9 @@ impl<'a, 'h> Vm<'a, 'h> {
         // UNBOUND, not nil: `(catch nil ...)` is legal, so nil cannot mean
         // "nothing is unwinding".
         mc.set_register(Register::Unwind, Value::UNBOUND);
+        // A request left over from an abandoned computation must not be
+        // answered into this one.
+        mc.set_register(Register::Request, Value::NIL);
         mc.set_pc(0);
         mc.set_sp(0);
         mc.set_fp(0);
@@ -579,6 +582,29 @@ impl<'a, 'h> Vm<'a, 'h> {
             }
             return Some(self.call_value(callee, &spread, tail));
         }
+        if index == primitives::index(primitives::Prim::ReadSource) {
+            // The one primitive that does not return. It leaves a request in
+            // the heap and the machine stops; the host answers between slices
+            // and the next step picks the answer up (`resume_request`). See
+            // `crate::host` for why this is a request and not a call.
+            if args.len() != 1 {
+                return Some(self.fail(EvalError::WrongArgumentCount {
+                    name: "%READ-SOURCE",
+                    wanted: 1,
+                    got: args.len(),
+                }));
+            }
+            let name = args[0];
+            if !(name.is_object() && self.mc.header(name).object_type.is_string()) {
+                return Some(self.fail(EvalError::WrongType {
+                    name: "%READ-SOURCE",
+                    wanted: "a string",
+                }));
+            }
+            let request = crate::host::make_request(self.mc, "%READ-SOURCE", name, tail);
+            self.mc.set_register(Register::Request, request);
+            return Some(Transition::Block);
+        }
         if index == primitives::index(primitives::Prim::Error) {
             let datum = args.first().copied().unwrap_or(Value::NIL);
             let rest = args.get(1..).unwrap_or(&[]);
@@ -822,6 +848,33 @@ impl<'a, 'h> Vm<'a, 'h> {
         Transition::Halt
     }
 
+    /// Pick up the host's answer, or go on waiting for it.
+    ///
+    /// The answer goes exactly where the primitive's return value would have
+    /// gone had it returned at once: pushed, or returned from the function if
+    /// the call was in tail position. A failure is signalled as a condition,
+    /// through the same unwinding `error` uses, so a handler can catch it.
+    fn resume_request(&mut self, record: Value<'h>) -> Transition {
+        use crate::host::request;
+        let state = self.mc.slot(record, request::STATE);
+        if self.mc.symbol_is(state, request::WAITING) {
+            return Transition::Block;
+        }
+        let reply = self.mc.slot(record, request::REPLY);
+        let tail = self.mc.slot(record, request::TAIL) != Value::NIL;
+        self.mc.set_register(Register::Request, Value::NIL);
+        if self.mc.symbol_is(state, request::FAILED) {
+            return self.start_unwind(reply, Value::NIL);
+        }
+        if tail {
+            self.mc.set_register(Register::Values, Value::UNBOUND);
+            self.do_return(reply)
+        } else {
+            self.push_fresh(reply);
+            Transition::Continue
+        }
+    }
+
     fn halt_with(&mut self, v: Value<'h>) -> Transition {
         self.mc.set_register(Register::Value, v);
         self.halted = true;
@@ -866,6 +919,13 @@ impl Steppable for Vm<'_, '_> {
         // the heap will not grow, so continuing allocates into a ceiling.
         if self.mc.is_exhausted() {
             return self.fail(EvalError::HeapExhausted);
+        }
+        // Before unwinding, though the two cannot coincide: a request is made
+        // only from ordinary execution, and while one is waiting nothing else
+        // happens. Checked on every step, which costs one register read.
+        let request = self.mc.register(Register::Request);
+        if request != Value::NIL {
+            return self.resume_request(request);
         }
         if self.is_unwinding() {
             return self.step_unwind();
@@ -1204,16 +1264,14 @@ impl Steppable for Vm<'_, '_> {
                         cursor = self.mc.cdr(cursor);
                     }
                 }
-                if let Some(index) = callee.as_primitive() {
-                    return match primitives::call_slice(self.mc, index, &args) {
-                        Ok(v) => {
-                            self.push_fresh(v);
-                            Transition::Continue
-                        }
-                        Err(e) => self.fail(e),
-                    };
-                }
-                return self.enter(callee, &args, false);
+                // Through `call_value`, not straight to the primitive table,
+                // so that the primitives the machine must do itself are
+                // intercepted here as on every other path. This arm used to
+                // call the table directly, which meant
+                // `(multiple-value-call #'funcall ...)` handed `funcall` to a
+                // dispatcher that cannot call anything — found when
+                // `%read-source` would have fallen through the same gap (#35).
+                return self.call_value(callee, &args, false);
             }
         }
         Transition::Continue
@@ -1242,7 +1300,63 @@ pub fn run_now<'h>(
             None => Ok(vm.result()),
         },
         Status::Yielded => Err(EvalError::BudgetExhausted),
+        // There is no host here to answer it, and inside one mutation there
+        // could not be: answering needs the heap between slices.
+        Status::Blocked { .. } => Err(EvalError::Blocked),
     }
+}
+
+/// Run the compiled function in the `Value` register a slice at a time,
+/// answering its requests through `host`, and leave the answer in `Value`.
+///
+/// The bytecode VM's `eval::eval_sliced`: each slice its own mutation, so the
+/// collector runs during a computation and not only after it (#32). And the
+/// place a synchronous host meets the request protocol — when a slice ends
+/// [`crate::slice::Status::Blocked`], [`crate::host::serve`] answers it and the next slice
+/// carries on. A browser host would not use this; it runs the same loop in
+/// JavaScript, with a Promise where `serve` is.
+///
+/// Verifies first, as [`run_now`] does.
+pub fn run_sliced(
+    heap: &mut crate::heap::Heap,
+    budget: u64,
+    slice: u64,
+    host: &mut dyn crate::host::Host,
+) -> Result<(), EvalError> {
+    use crate::slice::{run_slice, Status};
+    let refused = heap.mutate(|mc| {
+        let function = mc.register(Register::Value);
+        if let Err(e) = code::verify::function(mc, function) {
+            return Some(EvalError::Malformed(format!("{e:?}")));
+        }
+        Vm::start(mc, function, Value::NIL);
+        None
+    });
+    if let Some(e) = refused {
+        return Err(e);
+    }
+    let mut spent = 0u64;
+    while spent < budget {
+        spent += slice;
+        let (status, error) = heap.mutate(|mc| {
+            let mut vm = Vm::resume(mc);
+            let status = run_slice(&mut vm, slice);
+            (status, vm.error.take())
+        });
+        if let Some(e) = error {
+            return Err(e);
+        }
+        match status {
+            Status::Done { .. } => return Ok(()),
+            Status::Yielded => {}
+            Status::Blocked { .. } => {
+                if !crate::host::serve(heap, host) {
+                    return Err(EvalError::Blocked);
+                }
+            }
+        }
+    }
+    Err(EvalError::BudgetExhausted)
 }
 
 #[cfg(test)]

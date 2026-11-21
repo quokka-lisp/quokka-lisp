@@ -484,6 +484,15 @@ pub enum Register {
     /// other register — the collector must trace it, and an image must be
     /// able to save a computation half-finished.
     Operands,
+    /// What the running computation has asked the host for, or `nil`.
+    ///
+    /// A request record (see `crate::host::request`) while the machine is
+    /// blocked or holding an answer it has not yet taken. A register because
+    /// the running computation owns it; in phase 3 each process holds its own
+    /// and this becomes the running one's, cached (#34). And in the heap
+    /// rather than on the host's side so that an image saved while waiting
+    /// reloads still waiting (#35).
+    Request,
 }
 
 /// An object header word, as stored in the heap.
@@ -549,6 +558,8 @@ struct Storage {
     function: u64,
     /// Its operand stack, a vector. A root like the rest.
     operands: u64,
+    /// The pending host request, or `nil`. A root like the rest.
+    request: u64,
     /// The bytecode VM's program counter, stack pointer and frame pointer.
     ///
     /// Numbers rather than `Value`s, so the collector leaves them alone — the
@@ -951,6 +962,7 @@ impl<'h> Mutation<'h> {
             Register::Values => self.storage.values,
             Register::Function => self.storage.function,
             Register::Operands => self.storage.operands,
+            Register::Request => self.storage.request,
         })
     }
 
@@ -965,6 +977,7 @@ impl<'h> Mutation<'h> {
             Register::Values => &mut self.storage.values,
             Register::Function => &mut self.storage.function,
             Register::Operands => &mut self.storage.operands,
+            Register::Request => &mut self.storage.request,
         };
         *slot = v.bits();
     }
@@ -1120,6 +1133,7 @@ impl Heap {
                 values: Value::UNBOUND.bits(),
                 function: Value::NIL.bits(),
                 operands: Value::NIL.bits(),
+                request: Value::NIL.bits(),
                 pc: 0,
                 sp: 0,
                 fp: 0,
@@ -1405,6 +1419,7 @@ impl Heap {
         self.storage.values = forward(from, &mut to, static_end, self.storage.values);
         self.storage.function = forward(from, &mut to, static_end, self.storage.function);
         self.storage.operands = forward(from, &mut to, static_end, self.storage.operands);
+        self.storage.request = forward(from, &mut to, static_end, self.storage.request);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has
@@ -1625,6 +1640,7 @@ impl Heap {
             values: s.values,
             function: s.function,
             operands: s.operands,
+            request: s.request,
             pc: s.pc as u64,
             sp: s.sp as u64,
             fp: s.fp as u64,
@@ -1664,6 +1680,7 @@ impl Heap {
                 values: s.values,
                 function: s.function,
                 operands: s.operands,
+                request: s.request,
                 pc: s.pc as usize,
                 sp: s.sp as usize,
                 fp: s.fp as usize,
@@ -1721,11 +1738,15 @@ pub(crate) struct Scalars {
     pub mode: u64,
     pub gensym_counter: u64,
     pub static_end: u64,
+    /// Appended rather than placed beside the other registers, so that the
+    /// words before it keep their positions and the byte offsets the image
+    /// tests name stay true. Format version 2 (#35).
+    pub request: u64,
 }
 
 impl Scalars {
     /// How many `u64`s a `Scalars` occupies in an image header.
-    pub const WORDS: usize = 18;
+    pub const WORDS: usize = 19;
 
     /// In the order they are written. Changing this order changes the format.
     pub fn to_words(self) -> [u64; Scalars::WORDS] {
@@ -1748,6 +1769,7 @@ impl Scalars {
             self.mode,
             self.gensym_counter,
             self.static_end,
+            self.request,
         ]
     }
 
@@ -1772,6 +1794,7 @@ impl Scalars {
             mode: w[15],
             gensym_counter: w[16],
             static_end: w[17],
+            request: w[18],
         }
     }
 }

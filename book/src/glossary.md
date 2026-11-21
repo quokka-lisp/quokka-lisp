@@ -57,6 +57,12 @@ character codes. ([19](part-2-reading-and-running/19-things-with-an-index.md))
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
 as several. Contrast [fixnum](#fixnum). Not yet implemented.
 
+**Blocking.** Stopping until something outside answers — a file is read, a
+packet arrives. A program that blocks is fine; a *VM* that blocks inside a step
+freezes everything above it. Quokka's computations block by leaving a
+[request](#host) in the heap and ending the [slice](#slice); the VM itself
+never waits. ([31](part-5-the-image/31-asking-the-outside-world.md))
+
 **Bootstrapping.** Building a crude version of something, using it to build a better one, and then no longer needing the crude version. Quokka's compiler is written in Lisp, so a slow tree-walking interpreter in Rust runs it once — after which the compiler exists as bytecode and the slow path is never used again. ([The bootstrap](the-bootstrap.md))
 
 **Brand.** A lifetime attached to a type purely so the compiler can refuse
@@ -70,7 +76,7 @@ its target, and those sizes depend on the jump distances, so it iterates until
 the two agree. Quokka avoids it by fixing each opcode's operand widths, which
 makes an instruction's size a function of its opcode alone. ([24](part-3-compiling/24-why-compile-at-all.md))
 
-**Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Not yet built; chapter 24 is the plan. ([24](part-3-compiling/24-why-compile-at-all.md))
+**Bytecode.** A compact artificial instruction set that a [VM](#vm) executes, rather than the machine's own instructions. Smaller and more portable than compiling to real machine code, and much faster than re-reading the source each time. The VM that runs it is Rust and deliberately dumb; the compiler that produces it is Lisp. Chapter 24 is the plan and chapter 25 the machine. ([24](part-3-compiling/24-why-compile-at-all.md))
 
 **Code generation.** The part of a compiler that turns an analysed form into
 instructions — the dispatch on the shape of a form that most of a compiler
@@ -103,6 +109,12 @@ the objects it has already copied *are* the list of things still to examine.
 **Closure.** A function together with the scope it was written in. Capturing that scope is what lets `(lambda (x) (+ x n))` still know what `n` is after the call that bound `n` has returned. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
 **Collection.** One run of the [garbage collector](#garbage-collection).
+
+**Completion queue.** A place where a program leaves requests and the system
+leaves answers, so that neither has to wait for the other. Linux's io_uring and
+Windows' I/O completion ports are built this way; so, with one request at a
+time, is Quokka's [host](#host) interface. Also called the *proactor* pattern.
+([31](part-5-the-image/31-asking-the-outside-world.md))
 
 **Condition.** An error, or any other noteworthy situation, as an *object* a
 program can catch rather than something that ends the computation. Quokka's
@@ -202,6 +214,12 @@ preprocessor. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 hands it to the first clause whose type matches. A [catch](#non-local-exit)
 that matches on type instead of identity — the same unwinding, asking a
 different question of each frame. ([20](part-2-reading-and-running/20-errors-you-can-catch.md))
+
+**Host.** Whatever is running Quokka: the native terminal program, or the
+browser tab. The VM may not touch files, clocks or screens itself (rule 2), so
+it gets everything from the outside world through its host — by a **host
+request**: a record left in the heap that the host reads, answers, and writes
+back. ([31](part-5-the-image/31-asking-the-outside-world.md))
 
 **Heap.** The region of memory where values too big for a single word live. In
 Quokka it is an array of 64-bit words the VM owns.
@@ -354,6 +372,12 @@ about which names are visible where. Quokka does not have them — tier 1, phase
 
 **Parser.** What the [reader](#reader) is called in most languages, where it is far larger — it must know operator precedence, statements versus expressions, declarations. A Lisp reader needs none of that, because the text is already the data structure. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
+**Promise.** In a browser, an object standing for an answer that has not
+arrived yet. JavaScript that asks for something slow gets a Promise back at
+once and finishes; when the answer comes, the browser runs a callback with it.
+The reason a browser host cannot answer a [host request](#host) on the spot.
+([31](part-5-the-image/31-asking-the-outside-world.md))
+
 **Prelude.** The Lisp that a Lisp system loads before any user code —
 `lisp/prelude.lisp` here. Compiled into the binary with `include_str!`, since
 the core VM has no filesystem, and interpreted at boot. `defun`, `when`,
@@ -494,6 +518,13 @@ chosen for size rather than speed. ([24](part-3-compiling/24-why-compile-at-all.
 [values](#value), which is why it sits on the raw side of the collector's line
 (see [raw slots](#raw-slots)). Common Lisp counts it as a vector, so `length`
 and [aref](#aref) work on one. ([8](part-2-reading-and-running/08-text-becomes-structure.md), [19](part-2-reading-and-running/19-things-with-an-index.md))
+
+**System call.** How a program asks an operating system's kernel to do
+something it may not do itself, such as read a disk. The program hands over a
+request, is put to sleep if the answer is not ready, and wakes with the result.
+Quokka's [host requests](#host) are the same shape: the computation is the
+program and the host is the kernel.
+([31](part-5-the-image/31-asking-the-outside-world.md))
 
 **Symbol.** A named thing — `car`, `+`, `my-variable`. Lisp symbols are objects
 in their own right, not just text, and carry a value and a function.

@@ -104,6 +104,7 @@ pub enum Prim {
     Integerp = 51,
     Disassemble = 52,
     RewriteLambdaList = 53,
+    ReadSource = 54,
 }
 
 impl Prim {
@@ -331,6 +332,12 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         "%REWRITE-LAMBDA-LIST",
         Arity::Exactly(2),
     ),
+    // The first primitive that needs the outside world, and so the first that
+    // does not return: the VM intercepts it, leaves a request in the heap and
+    // blocks until the host answers (#35, `crate::host`). A `%` name because
+    // it is not Common Lisp — `load` will be built on it, in Lisp, once there
+    // is `read-from-string` to build it with.
+    (Prim::ReadSource, "%READ-SOURCE", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -734,6 +741,18 @@ pub fn call_slice<'h>(
             args[0].is_object() && mc.header(args[0]).object_type.is_string(),
         )),
         Prim::Integerp => Ok(truth(args[0].as_fixnum().is_some())),
+        // Reached only from the interpreter: the VM intercepts it first. And
+        // refused there on purpose. The interpreter is the bootstrap
+        // evaluator — it reads its sources from `include_str!`, builds an
+        // image and goes cold (#25) — so giving it I/O would mean writing
+        // blocking twice for an evaluator nothing runs after #33. A loud
+        // refusal rather than a quiet one, because a rule enforced on one side
+        // only is enforced where it happened to be tested.
+        Prim::ReadSource => Err(EvalError::BadSyntax {
+            operator: "%READ-SOURCE",
+            detail: "asks the host for something, which only compiled code can do: \
+                     the interpreter is the bootstrap evaluator and has no I/O",
+        }),
         Prim::RewriteLambdaList => {
             let (params, body) = crate::lambda_list::rewrite(
                 mc,

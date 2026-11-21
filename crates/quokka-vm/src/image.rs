@@ -39,7 +39,7 @@
 //! yield, so **execution state lives in the heap, never on the Rust call
 //! stack.** The evaluator's registers, the frame list, the bytecode VM's
 //! program counter and operand stack are all either heap objects or numbers
-//! in the image header's *scalars* — the eighteen fields listed below.
+//! in the image header's *scalars* — the nineteen fields listed below.
 //!
 //! So there is no such thing as "the part of the computation that is in Rust
 //! and cannot be saved". An image written between two instructions reloads
@@ -70,7 +70,12 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 /// rebuild rather than a loss. That stops being true the moment a user's own
 /// work lives in an image, which is when this number starts to matter and a
 /// reader for older versions has to exist.
-pub const FORMAT_VERSION: u64 = 1;
+///
+/// **Version 2** added the `Request` register (#35), two days after version 1
+/// was fixed — which is the honest measure of how stable a format is before
+/// anything depends on it, and why #34 says the format is stable for phase 1
+/// rather than forever.
+pub const FORMAT_VERSION: u64 = 2;
 
 /// Words before the heap's own: magic, version, length, checksum, scalars.
 pub const HEADER_WORDS: usize = 4 + Scalars::WORDS;
