@@ -6,11 +6,13 @@
 
 use std::io::{self, BufRead, Write};
 
-use quokka_vm::eval::eval_now;
+use quokka_vm::eval::{eval_now, Machine};
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{Host, HostError};
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
+use quokka_vm::slice::{run_slice, Status};
+use quokka_vm::vm::run_now;
 use quokka_vm::{PHASE, VERSION};
 
 /// The native host: real files, real console.
@@ -46,14 +48,29 @@ fn main() {
         return;
     }
 
+    // `quokka --compile` loads the compiler and evaluates by *compiling*:
+    // each form becomes a function and the bytecode VM runs it. The ordinary
+    // REPL interprets, and does not load the compiler at all.
+    let compiling = args.iter().any(|a| a == "--compile");
+
     let mut host = NativeHost;
     host.write_stdout(&format!("Quokka {VERSION} — phase {PHASE}\n"));
+    if compiling {
+        host.write_stdout("Compiling: every form is compiled and run on the VM.\n");
+    }
     host.write_stdout("Ctrl-D to leave.\n");
 
     let mut heap = Heap::new();
     if let Err(e) = quokka_vm::boot::install(&mut heap) {
         eprintln!("quokka: {e}");
         std::process::exit(1);
+    }
+    if compiling {
+        let loaded = heap.mutate(quokka_vm::boot::install_compiler);
+        if let Err(e) = loaded {
+            eprintln!("quokka: loading the compiler: {e}");
+            std::process::exit(1);
+        }
     }
     let stdin = io::stdin();
     loop {
@@ -65,7 +82,11 @@ fn main() {
                 return;
             }
             Ok(_) => {
-                let output = read_and_print(&mut heap, &line);
+                let output = if compiling {
+                    compile_and_print(&mut heap, &line)
+                } else {
+                    read_and_print(&mut heap, &line)
+                };
                 host.write_stdout(&output);
 
                 // Between mutations is the only place collection may happen,
@@ -127,4 +148,115 @@ fn read_and_print(heap: &mut Heap, line: &str) -> String {
         }
         out
     })
+}
+
+/// Evaluate every form on the line by compiling it and running the result.
+///
+/// One form at a time, and each one driven a slice at a time with the heap
+/// free to collect in between — which is not fussiness. Collection cannot
+/// happen inside a `mutate`, and compiling allocates far more than evaluating
+/// does: an instruction list, a constants list, a `gensym` per branch and a
+/// fresh `append` for every concatenation, nearly all of it garbage at once.
+/// The interpreting path above can afford one `mutate` per line and this
+/// cannot.
+///
+/// The line is re-read for each form rather than its forms being carried
+/// across mutations, because a `Value` cannot leave one and a REPL line is
+/// short enough that reading it twice costs nothing.
+fn compile_and_print(heap: &mut Heap, line: &str) -> String {
+    let mut out = String::new();
+    let mut index = 0usize;
+    loop {
+        match compile_one(heap, line, index) {
+            None => return out,
+            Some(text) => {
+                out.push_str(&text);
+                out.push('\n');
+                index += 1;
+            }
+        }
+    }
+}
+
+/// Compile and run the `index`th form on the line, or `None` if there is none.
+fn compile_one(heap: &mut Heap, line: &str, index: usize) -> Option<String> {
+    let chars = Reader::chars_of(line);
+
+    // Build `(compile-form 'FORM)` and start the interpreter on it.
+    let started = heap.mutate(|mc| {
+        let mut reader = Reader::new(&chars);
+        let mut form = None;
+        for _ in 0..=index {
+            form = match reader.read(mc) {
+                Ok(Some(f)) => Some(Ok(f)),
+                Ok(None) => return None,
+                Err(e) => Some(Err(format!("; {e}"))),
+            };
+            if matches!(form, Some(Err(_))) {
+                break;
+            }
+        }
+        match form {
+            None => None,
+            Some(Err(e)) => Some(Err(e)),
+            Some(Ok(f)) => {
+                let quote = mc.intern("QUOTE");
+                let quoted = {
+                    let inner = mc.cons(f, quokka_vm::value::Value::NIL);
+                    mc.cons(quote, inner)
+                };
+                let compile = mc.intern("COMPILE-FORM");
+                let call = {
+                    let args = mc.cons(quoted, quokka_vm::value::Value::NIL);
+                    mc.cons(compile, args)
+                };
+                Machine::start(mc, call, quokka_vm::value::Value::NIL);
+                Some(Ok(()))
+            }
+        }
+    });
+
+    match started {
+        None => return None,
+        Some(Err(e)) => return Some(e),
+        Some(Ok(())) => {}
+    }
+
+    // Drive the compilation, collecting between slices.
+    loop {
+        let outcome = heap.mutate(|mc| {
+            let (status, error, value) = {
+                let mut machine = Machine::resume(mc);
+                let status = run_slice(&mut machine, 2_000);
+                (status, machine.error.take(), machine.result())
+            };
+            if let Some(e) = error {
+                return Some(Err(format!("; compiling: {e}")));
+            }
+            if matches!(status, Status::Done { .. }) {
+                mc.set_root(value);
+                return Some(Ok(()));
+            }
+            None
+        });
+        if heap.wants_collection() || heap.is_exhausted() {
+            heap.collect();
+            heap.clear_exhausted();
+        }
+        match outcome {
+            Some(Err(e)) => return Some(e),
+            Some(Ok(())) => break,
+            None => {}
+        }
+    }
+
+    // Run it. The compiled function is the root, so it survives any
+    // collection the run itself needs.
+    Some(heap.mutate(|mc| {
+        let function = mc.root();
+        match run_now(mc, function, EVAL_BUDGET) {
+            Ok(v) => print(mc, v),
+            Err(e) => format!("; {e}"),
+        }
+    }))
 }

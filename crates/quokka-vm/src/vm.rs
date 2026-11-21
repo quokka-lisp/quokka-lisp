@@ -364,11 +364,16 @@ impl<'a, 'h> Vm<'a, 'h> {
                 // An interpreted closure in a compiled program. Not a user
                 // error and not a missing feature: something has mixed the
                 // two evaluators, which #25 says must not happen.
+                // Two quite different situations produce this, and the
+                // message has to serve both: during the bootstrap the prelude
+                // is still interpreted and compiled code simply cannot reach
+                // it, and in a built image reaching one means the bootstrap
+                // let an expander be compiled while its caller was not.
                 return self.fail(EvalError::BadSyntax {
                     operator: "CALL",
-                    detail: "reached an interpreted closure, which means the \
-                             bootstrap let an expander be compiled while its \
-                             caller was not",
+                    detail: "reached an interpreted closure — compiled code \
+                             can only call compiled code, and the prelude is \
+                             not compiled yet",
                 });
             }
             // Say *what* was called. "is not a function" without the value is

@@ -14,6 +14,31 @@
 > **Status: it runs.** `(+ 1 2)` compiles and evaluates to 3, with nothing in
 > Rust deciding what the instructions should be.
 
+## Trying it
+
+```
+cargo run -p quokka-repl -- --compile
+```
+
+The ordinary REPL interprets and does not load the compiler at all. This one
+loads it, and then evaluates every form by **compiling it and running the
+result on the VM**:
+
+```lisp
+quokka> (+ 1 2)
+3
+quokka> ((lambda (n) ((lambda (x) (+ x n)) 5)) 37)
+42
+quokka> (labels ((down (n) (if (= n 0) 'done (down (- n 1))))) (down 20000))
+DONE
+quokka> (when t 'macros-work)
+MACROS-WORK
+```
+
+Nothing above was interpreted. The last one is worth a second look: `when` is
+a macro in the prelude, expanded by the compiler, and the instructions that
+run are two jumps.
+
 ## The smallest real thing
 
 ```lisp
@@ -232,26 +257,34 @@ able to tell **which parts of the compiler were decisions and which were
 accidents** — and in a compiler, that distinction is harder to recover
 afterwards than anywhere else in the system.
 
-## One thing that does not work, and should not
+## Two things that do not work, and should not
 
 ```lisp
-(length (quote (1 2 3)))
-```
-
-Compiles fine. Refuses to run:
-
-```
-; bad CALL: reached an interpreted closure
+quokka> (length '(1 2 3))
+; bad CALL: reached an interpreted closure — compiled code can only call
+  compiled code, and the prelude is not compiled yet
 ```
 
 `length` is in the prelude, which is still *interpreted* — so a compiled
 program calling it is exactly the mixing of the two evaluators that chapter 24
 ruled out. The VM refuses by design rather than by accident.
 
-It stops being an error when the prelude is compiled too, which is the next
-piece of work. Until then it is the right failure: a rule that is enforced
-from the day it is made, rather than one that is observed until something
-needs breaking it.
+The second is funnier and the same rule:
+
+```lisp
+quokka> (compile-form '(+ 1 2))
+; bad CALL: reached an interpreted closure — ...
+```
+
+**The compiler cannot be called from compiled code either**, because the
+compiler is interpreted. Typed into the interpreting REPL it works; typed into
+the compiling one it is refused, by the same machinery and for the same
+reason.
+
+Both stop being errors when the prelude and the compiler are themselves
+compiled, which is the next piece of work and most of what phase 1 has left.
+Until then they are the right failure: a rule enforced from the day it is
+made, rather than one observed until something needs breaking it.
 
 ---
 

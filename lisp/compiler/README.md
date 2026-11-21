@@ -33,3 +33,36 @@ about.
 What is left here is everything with a decision in it: what `let` compiles to,
 which calls are in tail position, when a primitive may be inlined, where a
 `block` needs a marker. That division is rule 1 applied to the compiler.
+
+## Trying it
+
+```
+cargo run -p quokka-repl -- --compile
+```
+
+Loads the prelude, then this directory, and evaluates every form by compiling
+it and running the result on the bytecode VM. The ordinary REPL interprets and
+does not load the compiler at all.
+
+```
+quokka> ((lambda (n) ((lambda (x) (+ x n)) 5)) 37)
+42
+quokka> (labels ((down (n) (if (= n 0) 'done (down (- n 1))))) (down 20000))
+DONE
+```
+
+Two things will not work yet, both correctly:
+
+```
+quokka> (length '(1 2 3))
+; bad CALL: reached an interpreted closure — compiled code can only call
+  compiled code, and the prelude is not compiled yet
+```
+
+`length` is in the prelude, which is still interpreted, and compiled code may
+not call it (issue #25). The same goes for the compiler itself, so
+`(compile-form ...)` typed into a compiling REPL is refused for exactly the
+same reason — the compiler is interpreted too.
+
+Both stop being errors when the prelude is compiled, which is the next piece
+of work.
