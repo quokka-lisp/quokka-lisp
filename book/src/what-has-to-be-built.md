@@ -242,7 +242,9 @@ stopped in the middle of — and since chapter 32 the world inside that image is
 compiled, with nothing interpreted left in it. Chapter 33 checks that the
 compiled world agrees with the interpreted one on every test file, and with
 that **phase 1 is finished**: the language is defined by a Lisp file compiled
-by itself, and the interpreter is only what builds the first image.
+by itself, and the interpreter is only what builds the first image. Part VI is
+**phase 2**, self-hosting, and it opens as Part III did: with a plan written
+before the work, kept so that what happens can correct it.
 
 Each chapter answers one question.
 
@@ -281,6 +283,7 @@ Each chapter answers one question.
 | 31 | [Asking the outside world](part-5-the-image/31-asking-the-outside-world.md) | How does a program read a file when the VM may never wait? |
 | 32 | [A world made of bytecode](part-5-the-image/32-a-world-made-of-bytecode.md) | How does a system built by an interpreter end up with no interpreted code in it? |
 | 33 | [Two evaluators, one answer](part-5-the-image/33-two-evaluators-one-answer.md) | How do you know the compiled world means what the interpreted one meant? |
+| 34 | [Standing on its own](part-6-self-hosting/34-standing-on-its-own.md) | What does it take for a system to rebuild itself, and how would you know it had? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

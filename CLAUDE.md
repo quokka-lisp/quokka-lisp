@@ -7,12 +7,27 @@ Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Com
 resumes where it left off* — holds in a compiled world, and every differential
 file agrees interpreted, compiled and with SBCL (#38).
 
-**Next is phase 2 · Self-hosting**, and nothing in it is started. Per the
-working agreements, ask before beginning it: the compiled compiler rebuilds
-itself and the core library, and the gate is a byte-for-byte match with the
-first build. `docs/design.md` says packages belong at the *start* of phase 2,
-before the compiler's sources would need re-packaging mid-bootstrap. There is
-no tracking issue for phase 2 yet.
+**Phase 2 · Self-hosting is planned and not started** (#39). Its scope is
+**all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
+measured *and* the compiled compiler reproduces itself byte for byte. The
+fixpoint is established early and kept as a standing test. Order: special
+variables (#40, **shallow binding**, decided) → packages (#41, a decision) →
+the reader in Lisp → `eval`/`load` → the image rebuilds itself → the fixpoint →
+printer, `setf` expanders, the last three special operators, sequences,
+`format`, bignums (#16), floats (#17), with the ansi-test harness from early
+on. Streams in tier 1 or not is #42.
+
+Three things to hold on to while working in phase 2:
+
+- **Tier 1 is a library, compiled only.** The prelude and the compiler stay
+  tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
+  Lisp loaded into the compiled world by its own compiler; the interpreter
+  never learns it, and tier-1 differential files run compiled and against SBCL.
+- **The Rust budget: 1,915 lines left, for phases 2 to 6.** Default for every
+  tier-1 feature is Lisp, with no Rust. Each step says what Rust it needs.
+- **The fixpoint compiles the compiler in the environment its source was
+  written for.** A tier-1 `setf` that expands differently from the prelude's
+  would change the compiler's output without anything being wrong.
 
 ## What exists
 

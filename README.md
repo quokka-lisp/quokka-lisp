@@ -111,9 +111,12 @@ interpreted, Quokka compiled, Quokka under WebAssembly, and SBCL. The Rust core 
 
 ### What does not exist yet
 
-**Self-hosting.** The compiled compiler has never rebuilt itself; that, and a
-byte-for-byte match with the first build, is phase 2's gate. Until then the
-interpreter is still what builds an image from source.
+**Self-hosting, and tier 1.** The compiled compiler has never rebuilt itself;
+that, and a byte-for-byte match with the first build, is phase 2's gate, and
+phase 2 also brings all of tier 1 — special variables, packages, the reader and
+printer in Lisp, `setf` expanders, sequences, `format`, bignums and floats
+([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
+Until then the interpreter is still what builds an image from source.
 
 No packages — keywords exist, the rest is phase 2
 ([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why), which
@@ -129,8 +132,8 @@ condition system, and the rest is phase 3. No renderer and no editor — phases
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Thirty-nine chapters in five parts — the substrate, reading and
-running, the machine, the compiler, and the image — assuming no prior
+afterwards. Forty chapters in six parts — the substrate, reading and
+running, the machine, the compiler, the image, and self-hosting — assuming no prior
 knowledge of language implementation, including what a garbage collector is,
 what `car` and `cdr` are, what an opcode is, and why a program would want to
 rewrite itself.
@@ -188,7 +191,8 @@ Every development step and open decision is a
 code, with the reasoning in the comments.
 [#9](https://github.com/quokka-lisp/quokka-lisp/issues/9) tracked phase 0,
 [#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracked tier 0, and
-[#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) tracked phase 1, now closed; a
+[#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) tracked phase 1, now closed, and
+[#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) tracks phase 2; a
 `decision` issue closes when the reasoning is recorded in the design and the
 book, not when the code lands.
 

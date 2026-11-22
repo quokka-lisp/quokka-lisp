@@ -52,6 +52,10 @@
 - [A world made of bytecode](part-5-the-image/32-a-world-made-of-bytecode.md)
 - [Two evaluators, one answer](part-5-the-image/33-two-evaluators-one-answer.md)
 
+# Part VI · Self-hosting
+
+- [Standing on its own](part-6-self-hosting/34-standing-on-its-own.md)
+
 ---
 
 [Glossary](glossary.md)

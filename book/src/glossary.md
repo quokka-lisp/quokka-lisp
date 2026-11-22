@@ -503,6 +503,8 @@ when something reads *and* writes it — which is why Quokka has no `incf`.
 works between. At any moment one holds everything and the other is empty.
 ([6](part-1-substrate/06-cheneys-algorithm.md))
 
+**Shallow binding.** One way to implement [special variables](#special-variable): the current value lives in the symbol, binding saves the old value and stores the new one, and ending the binding puts the old one back. Reading is one load; switching threads has to swap bindings. Its alternative, *deep binding*, keeps bindings in a per-thread list that every read searches. Quokka uses shallow binding. ([34](part-6-self-hosting/34-standing-on-its-own.md))
+
 **Slice.** A bounded stretch of execution after which the VM returns control to
 whoever called it, so a browser can repaint and respond. The caller says how
 many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
@@ -510,6 +512,8 @@ many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 **Stack pointer.** How deep the [operand stack](#operand-stack) currently is.
 Popped slots are cleared, because every slot of a traced object is traced and
 a dead one would keep what it last held alive. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
+
+**Special variable.** A variable whose binding is visible to everything *called* while the binding is in force, not only to the code written inside it — what other languages call dynamic scope. Common Lisp names them with asterisks, like `*package*`, and makes them with `defvar` and `defparameter`. ([34](part-6-self-hosting/34-standing-on-its-own.md))
 
 **Special operator.** A form that decides for itself whether, when, or in what environment its arguments are evaluated — or whose arguments are not expressions at all. `if` must be one, or both branches would run before it could choose. Common Lisp has exactly 25, they are a *basis* rather than a feature list, and everything else is macros over them. ([9](part-2-reading-and-running/09-what-a-form-means.md), [13](part-2-reading-and-running/13-the-special-operators.md))
 
@@ -545,6 +549,8 @@ uses the low three bits, which are free because heap objects are aligned to
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
 **tagbody.** The primitive iteration construct: a body with labels that `go` jumps to. Almost never written directly; `do`, `dolist` and `loop` are macros that expand into it. ([13](part-2-reading-and-running/13-the-special-operators.md))
+
+**Tier.** One of the three stages in which Quokka's Common Lisp subset grows, each the minimum needed to unlock a phase. Tier 0 is enough to run the compiler; tier 1 is the self-hosting core — packages, the reader and printer in Lisp, bignums, floats; tier 2 is what the environment needs, such as CLOS and streams. ([34](part-6-self-hosting/34-standing-on-its-own.md))
 
 **Transparent to values.** Said of a form that returns however many values
 its last form returned — `block`, `let`, `progn`, `if`, `unwind-protect` and
