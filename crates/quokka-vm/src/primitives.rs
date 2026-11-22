@@ -117,6 +117,12 @@ pub enum Prim {
     FindSystemSymbol = 64,
     MakeSymbol = 65,
     InternKeyword = 66,
+    CharCode = 67,
+    CodeChar = 68,
+    CharUpcase = 69,
+    CharDowncase = 70,
+    AlphaCharP = 71,
+    ConstantString = 72,
 }
 
 impl Prim {
@@ -406,6 +412,18 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     ),
     (Prim::MakeSymbol, "MAKE-SYMBOL", Arity::Exactly(1)),
     (Prim::InternKeyword, "%INTERN-KEYWORD", Arity::Exactly(1)),
+    // Step C (#45), for the reader in Lisp. Characters by number, and the two
+    // questions that need Unicode's tables — which Rust's standard library
+    // already carries, where Lisp would carry kilobytes of them in every
+    // image. And a constant copy of a string, so that a literal the Lisp
+    // reader reads is immutable (#26) and packed (#44) like one the Rust
+    // reader reads.
+    (Prim::CharCode, "CHAR-CODE", Arity::Exactly(1)),
+    (Prim::CodeChar, "CODE-CHAR", Arity::Exactly(1)),
+    (Prim::CharUpcase, "CHAR-UPCASE", Arity::Exactly(1)),
+    (Prim::CharDowncase, "CHAR-DOWNCASE", Arity::Exactly(1)),
+    (Prim::AlphaCharP, "ALPHA-CHAR-P", Arity::Exactly(1)),
+    (Prim::ConstantString, "%CONSTANT-STRING", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -865,7 +883,35 @@ pub fn call_slice<'h>(
             Ok(args[1])
         }
         Prim::SystemSymbols => Ok(mc.system_symbols()),
-        Prim::FindSystemSymbol | Prim::MakeSymbol | Prim::InternKeyword => {
+        Prim::CharCode | Prim::CharUpcase | Prim::CharDowncase | Prim::AlphaCharP => {
+            let Some(ch) = args[0].as_character() else {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a character",
+                });
+            };
+            Ok(match prim {
+                Prim::CharCode => Value::fixnum(ch as i64).expect("a code fits a fixnum"),
+                Prim::AlphaCharP => truth(ch.is_alphabetic()),
+                Prim::CharUpcase => Value::character(case_partner(ch, true)),
+                _ => Value::character(case_partner(ch, false)),
+            })
+        }
+        Prim::CodeChar => {
+            let Some(code) = args[0].as_fixnum() else {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "an integer",
+                });
+            };
+            // Not every number is a character: a surrogate half is not, and
+            // CLHS lets `code-char` answer nil for those.
+            Ok(u32::try_from(code)
+                .ok()
+                .and_then(char::from_u32)
+                .map_or(Value::NIL, Value::character))
+        }
+        Prim::FindSystemSymbol | Prim::MakeSymbol | Prim::InternKeyword | Prim::ConstantString => {
             if !(args[0].is_object() && mc.header(args[0]).object_type.is_string()) {
                 return Err(EvalError::WrongType {
                     name,
@@ -878,6 +924,7 @@ pub fn call_slice<'h>(
                     .find_system_symbol(&text, args[1] != Value::NIL)
                     .unwrap_or(Value::NIL),
                 Prim::MakeSymbol => mc.new_symbol(&text),
+                Prim::ConstantString => mc.alloc_constant_string(&text),
                 _ => mc.intern_keyword(&text),
             })
         }
@@ -1013,6 +1060,29 @@ pub fn call_slice<'h>(
 }
 
 /// `nil` is false and the only false thing; `t` is the canonical true.
+/// The other-case partner of `ch`, or `ch` itself if it has none.
+///
+/// CLHS 13.1.4.3: a character has case only if it and its partner map to each
+/// other one to one. Unicode upcases `ß` to "SS", two characters, so in Lisp
+/// `ß` has no case; `ſ` upcases to `S`, which downcases to `s`, so neither has
+/// `ſ` as a partner.
+fn case_partner(ch: char, up: bool) -> char {
+    fn one(mut it: impl Iterator<Item = char>) -> Option<char> {
+        let c = it.next()?;
+        it.next().is_none().then_some(c)
+    }
+    let other = if up {
+        one(ch.to_uppercase())
+    } else {
+        one(ch.to_lowercase())
+    };
+    match other {
+        Some(o) if up && one(o.to_lowercase()) == Some(ch) => o,
+        Some(o) if !up && one(o.to_uppercase()) == Some(ch) => o,
+        _ => ch,
+    }
+}
+
 fn truth<'h>(b: bool) -> Value<'h> {
     if b {
         Value::T

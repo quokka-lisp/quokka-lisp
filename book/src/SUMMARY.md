@@ -58,6 +58,7 @@
 - [Variables that follow the call](part-6-self-hosting/35-variables-that-follow-the-call.md)
 - [Whose symbol is it?](part-6-self-hosting/36-whose-symbol-is-it.md)
 - [Eight characters to a word](part-6-self-hosting/37-eight-characters-to-a-word.md)
+- [Reading, in Lisp](part-6-self-hosting/38-reading-in-lisp.md)
 
 ---
 

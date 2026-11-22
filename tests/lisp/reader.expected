@@ -1,0 +1,88 @@
+=> FOO
+=> 42
+=> -17
+=> 5
+=> 12
+=> 1+
+=> -
+=> "a \"quoted\" string"
+=> #\a
+=> 32
+=> 10
+=> #\(
+=> :KEYWORD
+=> T
+=> (A 2)
+=> (A 1)
+=> ((A B . C) 10)
+=> (Y 4)
+=> :EMPTY
+=> :EMPTY
+!! error
+=> (A (B C) NIL D)
+=> (A . B)
+=> (A B C D)
+=> (A B)
+=> (A B)
+=> (A . B)
+=> (QUOTE X)
+=> (FUNCTION CAR)
+=> #(1 TWO "three")
+=> (A .B)
+!! error
+!! error
+!! error
+!! error
+=> "FOOBAR"
+=> "Mixed Case"
+=> "AbC"
+=> "ABcdEF"
+=> T
+=> T
+!! error
+=> "GEN"
+=> NIL
+=> NIL
+=> T
+=> T
+=> T
+=> T
+=> "READER-TEST"
+=> "READER-TEST"
+=> T
+=> "READER-TEST"
+=> T
+!! error
+!! error
+!! error
+=> (1 2 3 :EOF)
+=> (#\b #\c #\c :EOF)
+=> (#\x #\y)
+=> #\z
+=> #\c
+!! error
+=> T
+=> NIL
+=> 65
+=> #\a
+=> #\A
+=> #\a
+=> #\1
+=> T
+=> NIL
+=> NIL
+=> T
+=> NIL
+=> 7
+=> NIL
+=> 10
+=> 35
+=> NIL
+=> T
+=> (A (BANG B) C)
+=> !B
+=> (BRACKET 1 2 (BRACKET 3))
+=> ((QUERY NIL) (QUERY 7))
+=> (A B)
+=> T
+=> NIL

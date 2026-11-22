@@ -33,12 +33,21 @@
               ((consp x) (setf x (cdr x)))
               (t (return nil)))))
 
+;;; The one exception: binding a standardized special variable with LET, such
+;;; as *PACKAGE* or *READTABLE*. Each one's own CLHS entry expects programs to
+;;; bind it — that is what it is for — so it is not the undefined case.
+(defun standard-special-p (s)
+  (and (cl-symbol-p s) (eq (sb-int:info :variable :kind s) :special)))
+
 (defun check-bindings (bindings context)
   "BINDINGS is a let/flet-style list; each element binds its first symbol."
   (when (proper-list-p bindings)
     (dolist (b bindings)
       (let ((name (if (consp b) (car b) b)))
-        (when (cl-symbol-p name) (note name context))))))
+        (when (and (cl-symbol-p name)
+                   (not (and (member context '("let" "let*") :test #'string=)
+                             (standard-special-p name))))
+          (note name context))))))
 
 (defun check-head (form)
   "Look at FORM itself, without descending."

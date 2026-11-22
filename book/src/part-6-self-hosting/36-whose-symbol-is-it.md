@@ -181,7 +181,8 @@ union, and six small primitives — leaving 1,646.
 
 ## What is not here
 
-- **Reading** `pkg:sym` and `pkg::sym` — step C, the Lisp reader.
+- **Reading** `pkg:sym` and `pkg::sym` — the Lisp reader (chapter 38) reads
+  them; the system reads its own source with it from step D.
 - **Printing** them — step G, the Lisp printer.
 - **A `package-error` condition type.** Package errors are signalled, as simple
   errors; the differential format compares only that an error happened.

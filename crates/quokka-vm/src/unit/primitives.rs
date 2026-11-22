@@ -100,7 +100,13 @@ fn the_table_order_is_pinned() {
             "%SYSTEM-SYMBOLS",
             "%FIND-SYSTEM-SYMBOL",
             "MAKE-SYMBOL",
-            "%INTERN-KEYWORD"
+            "%INTERN-KEYWORD",
+            "CHAR-CODE",
+            "CODE-CHAR",
+            "CHAR-UPCASE",
+            "CHAR-DOWNCASE",
+            "ALPHA-CHAR-P",
+            "%CONSTANT-STRING"
         ]
     );
 }

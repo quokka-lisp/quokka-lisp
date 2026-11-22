@@ -312,6 +312,14 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 
 **Latin-1.** The [character encoding](#character-encoding) ISO 8859-1: one byte per character, covering Western European text. Its 256 codes are exactly Unicode's first 256, so a Latin-1 byte *is* the character's Unicode number. Quokka packs constant strings in it, eight to a word. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
 
+**Readtable.** The table that tells Common Lisp's [reader](#reader) what each character means: whitespace, part of a [token](#token), or a [reader macro](#reader-macro). `*readtable*` is the current one, and a program changes syntax by changing a copy. ([38](part-6-self-hosting/38-reading-in-lisp.md))
+
+**Reader macro.** A function the [readtable](#readtable) holds for a character, called by the reader when it meets that character. `(`, `'`, `"` and `;` are all reader macros in Common Lisp; a comment is one that returns no value at all. A *dispatching* macro character, such as `#`, reads one more character and looks that up in a second table. ([38](part-6-self-hosting/38-reading-in-lisp.md))
+
+**Stream.** An object that hands out characters one at a time (an *input* stream) or accepts them (an *output* stream), remembering where it is. Quokka's tier 1 has string input streams; output streams come with the printer. ([38](part-6-self-hosting/38-reading-in-lisp.md))
+
+**Token.** A run of characters the reader collects up to whitespace or a terminating [reader macro](#reader-macro) character, then turns into a number or a symbol. `\` and `|...|` escape characters inside one. ([38](part-6-self-hosting/38-reading-in-lisp.md))
+
 **Lisp-1.** A Lisp where a symbol has one cell shared by variables and functions. Scheme is one; no `funcall` is needed, but functions and variables compete for names. Contrast [Lisp-2](#lisp-2). ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
 **Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))

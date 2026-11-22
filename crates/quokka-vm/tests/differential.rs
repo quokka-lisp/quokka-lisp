@@ -124,6 +124,108 @@ macro_rules! tier1_cases {
 tier1_cases! {
     specials => "specials",
     packages => "packages",
+    reader => "reader",
+}
+
+/// The Lisp reader (#45) reads every source the system is built from exactly
+/// as the Rust reader does, printed form for printed form.
+///
+/// SBCL cannot check this part. It reads backquote into its own internal
+/// forms, where Quokka must expand it as `reader.rs::quasiquote` does: step F
+/// compiles the compiler with the Lisp reader and expects the bytes the Rust
+/// reader's reading produced, and a different expansion would change them
+/// without anything being wrong. So the oracle here is the Rust reader, and
+/// the input is the largest Lisp there is: the prelude, the compiler and the
+/// library.
+#[test]
+fn the_lisp_reader_reads_the_system_as_the_rust_reader_does() {
+    use quokka_vm::boot::{COMPILER, LIBRARY, PRELUDE};
+    let sources = std::iter::once(("prelude.lisp", PRELUDE))
+        .chain(COMPILER.iter().copied())
+        .chain(LIBRARY.iter().copied());
+    for (name, source) in sources {
+        let by_rust = read_with_rust(source);
+        // A stream over the whole file, then one `read` for each form the Rust
+        // reader found, and one more that must meet the end.
+        let mut program = format!(
+            "(defvar *source* (make-string-input-stream {}))\n",
+            lisp_string(source)
+        );
+        for _ in &by_rust {
+            program.push_str("(read *source*)\n");
+        }
+        program.push_str("(read *source* nil :end)\n");
+        let by_lisp = run_compiled(&program);
+        let by_lisp: Vec<&str> = by_lisp.lines().skip(1).collect();
+        for (i, (rust, lisp)) in by_rust.iter().zip(&by_lisp).enumerate() {
+            assert_eq!(
+                lisp,
+                rust,
+                "{name}, form {}: the two readers disagree",
+                i + 1
+            );
+        }
+        assert_eq!(
+            by_lisp.len(),
+            by_rust.len() + 1,
+            "{name}: a different number of forms"
+        );
+        assert_eq!(
+            by_lisp[by_rust.len()],
+            "=> :END",
+            "{name}: the Lisp reader did not finish"
+        );
+    }
+}
+
+/// What the Lisp reader refuses that SBCL reads, so no baseline can hold it:
+/// ratios and floats, until steps L and M. Reading `1.5` as a symbol would
+/// succeed quietly and mean something else once floats exist. The tokens
+/// around them that are *not* numbers by CLHS 2.3.1 must still be symbols.
+#[test]
+fn the_lisp_reader_refuses_ratios_and_floats() {
+    let refused = ["1.5", ".5", "-1.5e3", "1e5", "2d0", "1/2", "-3/4"];
+    let symbols = ["1+", "1-", "e5", "1/", "/2", "1.2.3", "+.", "a1.5"];
+    let mut program = String::new();
+    for text in refused.iter().chain(&symbols) {
+        program.push_str(&format!("(symbolp (read-from-string \"{text}\"))\n"));
+    }
+    let out = run_compiled(&program);
+    let lines: Vec<&str> = out.lines().collect();
+    for (text, line) in refused.iter().zip(&lines) {
+        assert_eq!(*line, "!! error", "{text} should be refused");
+    }
+    for (text, line) in symbols.iter().zip(&lines[refused.len()..]) {
+        assert_eq!(*line, "=> T", "{text} should read as a symbol");
+    }
+}
+
+/// Every form of SOURCE as the Rust reader reads it, printed as `run_compiled`
+/// prints a result.
+fn read_with_rust(source: &str) -> Vec<String> {
+    let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
+    let chars = quokka_vm::reader::Reader::chars_of(source);
+    let mut reader = quokka_vm::reader::Reader::new(&chars);
+    heap.mutate(|mc| {
+        let mut forms = Vec::new();
+        while let Some(form) = reader.read(mc).expect("the Rust reader reads it") {
+            forms.push(format!("=> {}", quokka_vm::printer::print(mc, form)));
+        }
+        forms
+    })
+}
+
+/// TEXT as a Lisp string literal: `"` and `\` are the only escapes.
+fn lisp_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in text.chars() {
+        if ch == '"' || ch == '\\' {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out.push('"');
+    out
 }
 
 /// The compiled world, built once and kept as image bytes; each file loads

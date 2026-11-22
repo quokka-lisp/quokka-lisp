@@ -24,16 +24,25 @@ symbol's own constant name, and a constant string of Latin-1 characters is a
 `PackedString` (count in raw slot 0, then 8 bytes/word); writable strings stay
 one scalar per word. Only `string_length`/`string_char` in `heap.rs` know the
 layouts differ — go through them, never `raw_slot`, on a string. Image 478 KB →
-254 KB, format version 3. **Next is step C, the reader in Lisp**, then the
-printer (G). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
+254 KB, format version 3. **Step C is done** (#45, chapter 38):
+`lisp/library/reader.lisp` — `read`, `read-from-string`, string input streams
+(#42's input half), a readtable with `set-macro-character` and `#` dispatch,
+`pkg:sym`/`pkg::sym` through `*package*`. It sits *before* `packages.lisp` in
+`boot::LIBRARY`. Nothing reads the system's source with it yet: that is step D.
+Backquote must expand exactly as `reader.rs::quasiquote` does (the fixpoint
+compares bytes); `the_lisp_reader_reads_the_system_as_the_rust_reader_does` in
+`differential.rs` reads every library, prelude and compiler form with both
+readers and keeps that true. Image now 306 KB. **Next is step G, the printer
+in Lisp** (with #42's output streams), then D. Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
-the reader in Lisp → the printer in Lisp → `eval`/`load` → the image rebuilds
+the reader in Lisp (#45, done) → the printer in Lisp → `eval`/`load` → the image rebuilds
 itself → the fixpoint → `setf` expanders, the last three special operators, sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
-on. Streams in tier 1 or not is #42.
+on. Streams (#42): minimal string streams in tier 1 — input done in C, output
+due with the printer in G; #42 closes then.
 
 Three things to hold on to while working in phase 2:
 
@@ -41,7 +50,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,573 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73).
+- **The Rust budget: 1,499 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -94,8 +103,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**393 tests**; **19 differential files agree with SBCL** — 17 interpreted and
-compiled, plus two tier-1 files, compiled only. The Rust core is **13,427** lines of the 15,000 budget.
+**396 tests**; **20 differential files agree with SBCL** — 17 interpreted and
+compiled, plus three tier-1 files, compiled only. The Rust core is **13,501** lines of the 15,000 budget.
 
 ## How phase 1 ended
 
