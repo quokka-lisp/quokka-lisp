@@ -1,9 +1,14 @@
 # Differential tests
 
-Each `.lisp` file is ordinary Common Lisp. The same file runs four ways —
-Quokka interpreted, Quokka compiled (in the image `boot::build_image` makes),
-each of those natively and under wasmtime, and SBCL — and all of them must
-produce the same output.
+Each `.lisp` file is ordinary Common Lisp. The same file runs on Quokka
+interpreted, Quokka compiled (in the image `boot::build_image` makes, and again
+in one that has rebuilt itself), each natively and under wasmtime, and on SBCL —
+and all of them must produce the same output. The compiled runs read every form
+with the image's Lisp reader and print with its Lisp printer (#47); the
+interpreted run uses the Rust ones. **Tier 1** files use the library, which the
+interpreter never learns, so they have no interpreted run and take their
+baseline from SBCL. The [developer manual](../../docs/manual.md) has the
+commands.
 
 Three different comparisons share one file:
 
@@ -63,8 +68,11 @@ These kinds of form would disagree for reasons that are nobody's fault:
 - **Binding or redefining a `COMMON-LISP` symbol.** A specific and non-obvious
   case of the above. `(flet ((car (x) ...)) ...)` is undefined behaviour under
   CLHS 11.1.2.1.2, and SBCL enforces it with a package lock. Quokka has no
-  packages and allows it, so the two disagree for a reason that is the test's
-  fault. Use a name of your own; this file caught it the hard way.
+  package locks and allows it, so the two disagree for a reason that is the
+  test's fault. Use a name of your own; this file caught it the hard way.
+  `scripts/check-cl-names.lisp` refuses such a file. The one exception is a
+  `let` of a standard special variable, such as `*package*` or `*print-base*`,
+  which the standard expects programs to bind.
 
 - **Modifying a literal.** `(setf (aref "abc" 0) #\z)` is undefined under
   CLHS 3.7.1. Quokka makes source literals read-only and signals a
@@ -74,5 +82,8 @@ These kinds of form would disagree for reasons that are nobody's fault:
   itself is tested in `crates/quokka-vm/src/boot.rs`, where behaviour the
   oracle cannot adjudicate belongs. See issue #26.
 
-Adding a file means adding a line to `crates/quokka-vm/tests/differential.rs`;
-`scripts/check-differential.sh` fails if one is left out.
+Adding a file means adding a line to `crates/quokka-vm/tests/differential.rs`
+— `differential_cases!` for tier 0, `tier1_cases!` for tier 1;
+`scripts/check-differential.sh` fails if one is left out. A tier-1 baseline
+comes from SBCL: `sbcl --script scripts/oracle.lisp tests/lisp/NAME.lisp >
+tests/lisp/NAME.expected`.

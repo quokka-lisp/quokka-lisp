@@ -300,8 +300,14 @@ scripts/check.sh      everything CI runs, in one command
 
 ## Commands
 
+**`docs/manual.md` is the developer manual for people** (#49): starting,
+building, rebuilding, testing, adding things. When a step changes a command, a
+REPL flag, a file list or a test name, change the manual in the same commit.
+
 `./scripts/check.sh` runs everything CI runs. Use it before every commit — it is
-the cheapest way to honour rule 2. It takes about ten seconds.
+the cheapest way to honour rule 2. It takes about 2¼ minutes now (134 s) — the rebuild
+tests rebuild the system twice, and GC torture runs everything again — so run
+it in the background.
 
 **Tests run optimised** (`[profile.test]` in the workspace `Cargo.toml`), because
 the time goes into *running* them rather than compiling them: this is an

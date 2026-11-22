@@ -5,6 +5,8 @@ Draft v0.1 · November 2026 · Carsten
 > This is the repository copy of the design. The live version, with all diagrams, is at
 > https://claude.ai/artifact/SbwCzDv2s8uG2xW18Afuv2. Diagrams are noted below as *[Diagram: …]*.
 > When a design decision changes, update both.
+>
+> How to build, run, rebuild and test Quokka is in [the developer manual](manual.md).
 
 ## Vision and principles
 
@@ -288,7 +290,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka int
 - [x] **Dialect:** a Common Lisp subset, tested against SBCL as the reference.
 - [x] **Bootstrap host:** bootstrap by interpretation — the Rust interpreter runs the CL compiler to build the first image.
 - [x] **Subset boundary:** three tiers matched to phases (see The CL subset boundary).
-- [x] **Source of truth:** files on any file host are the truth; the image is a live cache of them.
+- [x] **Source of truth:** files on any file host are the truth; the image is a live cache of them. It follows that **images are not committed**: they are build artefacts (`.gitignore` has `*.qi`), rebuilt in seconds by the cold build or the warm rebuild, and a committed one would be an undiffable second truth that every format bump invalidates. The system's own source changes in files and reaches an image by `--rebuild-image`; when the editor lives in the image, editing a definition writes its file back. A browser will load a published image — a CI artefact or release download — not one from the repository.
 - [x] **Rooting:** lifetime branding, not a shadow stack. Holding a value across a collection is a compile error. Chosen over an explicit root stack because the Rust surface is small and permanently bounded by rule 1, so the cost of the stricter scheme is bounded too. See Substrate: the Rust VM.
 - [x] **Yielding:** the caller passes a step budget (`run_slice(budget)`); no clock and no yield callback in the VM. Chosen over a host-set wall-clock deadline for determinism and replayability. See Substrate: the Rust VM.
 - [x] **Browser target:** WASM is first-class from phase 0. The VM runs client-side in the browser, yields to the browser's event loop, and keeps images in browser storage.

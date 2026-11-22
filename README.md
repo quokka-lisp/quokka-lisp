@@ -17,7 +17,36 @@ be small enough to read.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 
-## Status: phase 1 finished — a compiled world, built by itself
+## Status: phase 2 under way — the system reads, prints, evaluates and rebuilds itself in Lisp
+
+Phase 1 ended with a compiled world built by itself (below). Phase 2, *self-hosting*
+([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39)), has since moved the
+reader, the printer and the read-eval-print loop into Lisp, and taught a running
+world to rebuild itself from its own source:
+
+```
+$ cargo run --release -p quokka-repl -- --save-image c1.qi
+$ cargo run --release -p quokka-repl -- --rebuild-image c1.qi c2.qi
+c2.qi: rebuilt, Value("(:FORMS 373 :REPLACED 316)"); 360224 bytes
+$ cargo run --release -p quokka-repl -- --image c2.qi
+quokka> (defpackage :geo (:use :cl) (:export :area))
+#<PACKAGE "GEO">
+quokka> (in-package :geo)
+#<PACKAGE "GEO">
+quokka> (defun area (r) (* r r))
+AREA
+quokka> (in-package :cl-user)
+#<PACKAGE "COMMON-LISP-USER">
+quokka> (list (geo:area 3) 'geo::area (eval (read-from-string "(+ 1 2)")))
+(9 GEO:AREA 3)
+```
+
+What remains of the phase is its gate — **the fixpoint**, the compiled compiler
+reproducing itself byte for byte (step F) — and the rest of tier 1.
+**How to build, run, rebuild and test it all is in the
+[developer manual](docs/manual.md).**
+
+### Phase 1: a compiled world, built by itself
 
 ```
 $ cargo run -p quokka-repl
@@ -82,7 +111,11 @@ cannot reach.
 | **Heap** | object headers, bump allocation, a soft limit and a hard ceiling |
 | **Garbage collector** | Cheney's copying collector, with a torture mode that collects at every opportunity and verifies the heap afterwards |
 | **Rooting** | holding a value across a collection is a **compile error**, not a convention |
-| **Reader** | tier 0 syntax: lists, dotted pairs, symbols, fixnums, strings, characters, vectors, keywords, `quote`, backquote, nested comments |
+| **Reader** | in Rust for the bootstrap: lists, dotted pairs, symbols, fixnums, strings, characters, vectors, keywords, `quote`, backquote, nested comments; **and in Lisp** for everything a built world reads — driven by a readtable (`set-macro-character`, `#` dispatch), reading `pkg:sym` and `pkg::sym` through `*package*`, from string input streams |
+| **Printer, in Lisp** | `prin1`, `princ`, `print`, `write` and their `-to-string` forms, with package prefixes and `\|...\|` escapes by SBCL's measured rules, and seven `*print-…*` variables |
+| **Output** | `*standard-output*` writes to the console through a host request; string output streams and `with-output-to-string` |
+| **`eval` and `load`** | `eval` compiles and calls — a built world never interprets; `load` reads a file through the host or a stream; the read-eval-print loop itself is Lisp |
+| **The warm rebuild** | `--rebuild-image`: a running world reads its source from disk with its own reader, compiles it with its own compiler in two passes, replaces every function, and proves it did |
 | **Evaluator** | an explicit-control machine — no recursive `eval`, so it can stop and resume, and Lisp recursion costs heap rather than Rust stack |
 | **Tail calls** | eliminated, so recursive loops run in constant space |
 | **Closures** | `lambda`, lexical scope, captured environments |
@@ -96,7 +129,8 @@ cannot reach.
 | **Conditions** | `error`, `handler-case`, `ignore-errors`; the evaluator's own errors carry the standard's type names, so `(handler-case (car 5) (type-error () …))` means what it means in SBCL |
 | **`defstruct`** | one line generating a constructor, a predicate, a copier and a settable accessor per slot |
 | **Special variables** | `defvar`, `defparameter`, and dynamic binding by `let`, `let*` and parameters — the first of tier 1, in a library the compiled world loads; shallow binding, undone however a binding is left |
-| **Packages** | `defpackage`, `in-package`, `*package*`, `intern` and `find-symbol` with their statuses, `export`, `use-package`, nicknames; `COMMON-LISP` holds all 978 standard names, Quokka's internals live in `QUOKKA` — Lisp objects in the library, adopted from the system's symbol table after the build |
+| **Packages** | `defpackage`, `in-package`, `*package*`, `intern` and `find-symbol` with their statuses, `export`, `use-package`, nicknames; `COMMON-LISP` holds all 978 standard names, Quokka's internals live in `QUOKKA` — Lisp objects in the library, adopted from the system's symbol table after the build, and read and printed with prefixes |
+| **Strings, packed** | a constant string of Latin-1 characters takes one byte a character, not eight; the image shrank from 478 KB to 254 KB ([#44](https://github.com/quokka-lisp/quokka-lisp/issues/44)) |
 | **Multiple values** | `values`, `multiple-value-bind`, `multiple-value-call`, `multiple-value-prog1` — and every form that should pass them through does |
 | **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or`, `setf`, `defstruct`, `handler-case`, the list and sequence functions — about six hundred lines of **Lisp**, compiled into the binary and interpreted at boot |
 | **A bytecode VM** | thirty-nine opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
@@ -104,24 +138,26 @@ cannot reach.
 | **Images** | the whole heap to a file and back, *including a computation stopped in mid-air*. Saving is `to_le_bytes` and loading is the inverse, with no pointer patching, because rule 3 made references word indices rather than addresses |
 | **A compiled world** | `--save-image` builds an image in which the prelude, every macro and the compiler are bytecode, and a scan of the whole heap proves nothing interpreted is left; `--image` compiles every form with the image's own compiler and never uses the interpreter |
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
-| **REPL** | native terminal, and a browser dev console on the WASM build; `--image` runs a compiled world, `--compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
+| **REPL** | native terminal, and a browser dev console on the WASM build; `--image` runs a compiled world in its own Lisp, `--rebuild-image` rebuilds one, `--compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-391 tests, green on native, under wasmtime, and with the GC torture mode on.
-Seventeen Common Lisp files produce byte-identical output on Quokka
-interpreted, Quokka compiled, Quokka under WebAssembly, and SBCL. The Rust core is 13,354 lines of the
-15,000-line budget.
+403 tests, green on native, under wasmtime, and with the GC torture mode on.
+Twenty-two Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, five more of
+tier 1 compiled only — and all twenty-two again in a world that has rebuilt
+itself. The Rust core is 13,676 lines of the 15,000-line budget.
 
 ### What does not exist yet
 
-**Self-hosting, and tier 1.** The compiled compiler has never rebuilt itself;
-that, and a byte-for-byte match with the first build, is phase 2's gate, and
-phase 2 also brings all of tier 1 — special variables, packages, the reader and
-printer in Lisp, `setf` expanders, sequences, `format`, bignums and floats
+**The fixpoint, and the rest of tier 1.** A world rebuilds itself, and
+successive rebuilds come out the same size; proving that the compiled compiler
+reproduces itself *byte for byte* is phase 2's gate (step F). Tier 1 still
+lacks `setf` expanders, `progv`, `load-time-value` and `symbol-macrolet`,
+sequences, `format`, bignums and floats
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
-Until then the interpreter is still what builds an image from source.
+The first world is still built by the interpreter — the cold build — and is
+then rebuilt by itself.
 
-Packages can be made and used, but not yet *read* or *printed* with a prefix
-— `pkg::sym` waits for the reader and printer in Lisp. No
+No
 bignums ([#16](https://github.com/quokka-lisp/quokka-lisp/issues/16)) or floats
 ([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)). No `loop`, no
 CLOS, no `define-setf-expander` and therefore no `incf` or `push`. No restarts
@@ -133,7 +169,7 @@ condition system, and the rest is phase 3. No renderer and no editor — phases
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Forty-two chapters in six parts — the substrate, reading and
+afterwards. Forty-seven chapters in six parts — the substrate, reading and
 running, the machine, the compiler, the image, and self-hosting — assuming no prior
 knowledge of language implementation, including what a garbage collector is,
 what `car` and `cdr` are, what an opcode is, and why a program would want to
@@ -147,7 +183,9 @@ a plan, kept so that what actually happens can correct it. Part IV is the
 compiler, and ends on a list of the decisions in it that are expected to
 change. Part V is the image, and spends most of its length on why two rules
 written for unrelated reasons — references as indices, execution state in the
-heap — turned the hardest thing in a runtime into a `memcpy`.
+heap — turned the hardest thing in a runtime into a `memcpy`. Part VI is
+self-hosting as it happens: special variables, packages, packing strings, the
+reader and printer moved into Lisp, `eval`, and a world rebuilding itself.
 
 ```
 mdbook serve book --open     # needs `cargo install mdbook`; optional
@@ -167,8 +205,13 @@ cargo run -p quokka-repl # the REPL
 ```
 
 `wasmtime`, `wasm-pack` and `sbcl` are optional — `check.sh` skips those legs
-and says which. See [`CLAUDE.md`](CLAUDE.md) for the full command set, the rules
-that must not be broken, and a toolchain gotcha worth knowing.
+and says which.
+
+**[`docs/manual.md`](docs/manual.md) is the developer manual**: the three ways
+to start Quokka (only `--image` is the whole system), making a world with the
+cold build and rebuilding it warm, the bootstrap round, every kind of test,
+and how to add a test, a library file, a primitive or a chapter.
+[`CLAUDE.md`](CLAUDE.md) has the rules that must not be broken.
 
 ## Layout
 

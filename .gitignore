@@ -12,7 +12,10 @@ crates/quokka-wasm/pkg/
 crates/quokka-wasm/www/quokka_wasm*.js
 crates/quokka-wasm/www/quokka_wasm*.wasm
 
-# Saved images are build artefacts, not sources
+# Saved images are build artefacts, not sources: the files are the truth and
+# an image is a live cache of them (docs/design.md, *Source of truth*). Every
+# command saves `.qi`; `.quokka-image` is the older name.
+*.qi
 *.quokka-image
 
 # The brand pack, unpacked into assets/brand/. The archive itself is redundant
