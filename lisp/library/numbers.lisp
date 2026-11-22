@@ -29,3 +29,40 @@
 (defun zerop (number) (eq number 0))
 (defun plusp (number) (> number 0))
 (defun minusp (number) (< number 0))
+
+;;; The comparisons the Rust table does not have (#54, J1). `<`, `>` and `=`
+;;; are primitives; these are Lisp over them, and take any number of
+;;; arguments, as CL's do: true when every adjacent pair is in order.
+(defun %pairwise (test number more)
+  (cond ((null more) t)
+        ((funcall test number (car more)) (%pairwise test (car more) (cdr more)))
+        (t nil)))
+
+(defun <= (number &rest more) (%pairwise (lambda (a b) (not (> a b))) number more))
+(defun >= (number &rest more) (%pairwise (lambda (a b) (not (< a b))) number more))
+
+;;; `/=` is every pair, not only adjacent ones: (/= 1 2 1) is false.
+(defun /= (number &rest more)
+  (cond ((null more) t)
+        ((%none-equal number more) (apply #'/= more))
+        (t nil)))
+
+(defun %none-equal (number others)
+  (cond ((null others) t)
+        ((= number (car others)) nil)
+        (t (%none-equal number (cdr others)))))
+
+(defun 1+ (number) (+ number 1))
+(defun 1- (number) (- number 1))
+(defun evenp (integer) (zerop (mod integer 2)))
+(defun oddp (integer) (not (evenp integer)))
+
+(defun max (number &rest more)
+  (if (null more)
+      number
+      (apply #'max (if (> (car more) number) (car more) number) (cdr more))))
+
+(defun min (number &rest more)
+  (if (null more)
+      number
+      (apply #'min (if (< (car more) number) (car more) number) (cdr more))))

@@ -34,7 +34,7 @@
 (defvar %library-files
   '("lisp/library/specials.lisp" "lisp/library/cl-symbols.lisp"
     "lisp/library/numbers.lisp" "lisp/library/operators.lisp"
-    "lisp/library/setf.lisp" "lisp/library/reader.lisp"
+    "lisp/library/setf.lisp" "lisp/library/lists.lisp" "lisp/library/reader.lisp"
     "lisp/library/printer.lisp" "lisp/library/eval.lisp"
     "lisp/library/rebuild.lisp" "lisp/library/packages.lisp"))
 

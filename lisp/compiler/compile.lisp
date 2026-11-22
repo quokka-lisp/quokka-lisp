@@ -764,6 +764,21 @@
         ((eq (car lambda-list) '&environment) (cddr lambda-list))
         (t (cons (car lambda-list) (%without-environment-parameter (cdr lambda-list))))))
 
+;;; Whether NAME is a local function in ENVIRONMENT, which then shadows a
+;;; global macro of that name.
+(defun %environment-function-p (environment name)
+  (if environment (%lookup name (second environment) 0 ':function) nil))
+
+;;; `(%destructuring-lambda lambda-list body...)` (#54): a function whose
+;;; parameters are a *macro* lambda list — destructuring, `&body`, a dotted
+;;; rest — for `destructuring-bind` in the library. The rewrite is the one
+;;; `defmacro` uses, so the two take a list apart identically; its output
+;;; is compiled directly, because rewriting it a second time as an ordinary
+;;; `lambda` would lose the `&optional` defaults.
+(defun %compile-destructuring-lambda (form env)
+  (let ((rewritten (%rewrite-macro-lambda-list (second form) (cddr form))))
+    (%compile-rewritten-lambda (first rewritten) (second rewritten) (third rewritten) env)))
+
 ;;; `(%dynamic-bind symbol value body...)` (#53): bind the special variable
 ;;; that SYMBOL — a form, evaluated — names, to VALUE, for BODY. Not Common
 ;;; Lisp: `progv` in the library is built on it, one name at a time.
@@ -1100,6 +1115,7 @@
           ((eq head 'macrolet) (%compile-macrolet form env tail))
           ((eq head 'symbol-macrolet) (%compile-symbol-macrolet form env tail))
           ((eq head '%dynamic-bind) (%compile-dynamic-bind form env))
+          ((eq head '%destructuring-lambda) (%compile-destructuring-lambda form env))
           ((eq head 'catch) (%compile-catch form env))
           ((eq head 'throw) (%compile-throw form env))
           ((eq head 'unwind-protect) (%compile-unwind-protect form env))
@@ -1131,6 +1147,11 @@
           ((%special-operator-p head)
            (error (%string-append "the compiler cannot compile the special operator "
                                   (symbol-name head))))
+          ;; A local function shadows a global macro of the same name (CLHS `flet`):
+          ;; `(flet ((when (x) x)) (when 1))` calls the
+          ;; function. Until #54 the global macro won.
+          ((and (symbolp head) (%lookup head env 0 ':function))
+           (%compile-call form env tail))
           ;; A global macro, expanded here rather than by `macroexpand-1` so
           ;; the expander runs in this ENV (#53) — and so that the library
           ;; may redefine `macroexpand-1` without touching how the compiler

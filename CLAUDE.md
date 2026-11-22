@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 439 :REPLACED 365)` (asserted in `differential.rs`; a new library file
+`(:FORMS 564 :REPLACED 474)` (asserted in `differential.rs`; a new library file
 changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -89,8 +89,17 @@ counting. **Macros get `&environment`**: the compiler strips it
 (`%rewrite-macro`) and binds it to `(%current-environment)`, which is
 `(:environment scopes local-macros)` while `%expand` runs an expander. **The
 compiler expands macros itself and never calls `macroexpand-1`** — keep it
-that way, so the library can redefine `macroexpand-1`. **Next: step J,
-sequences.** Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
+that way, so the library can redefine `macroexpand-1`. **Step J, sequences
+(#54, chapter 45), is in three sub-steps, a commit each.** **J1 is done**:
+`lisp/library/lists.lisp` — `eql` (= `eq`, exact while no number is boxed;
+bignums and floats redefine it), `equal`, `equalp`; `prog1` `prog2` `case`
+`ecase` `return` `psetq` `dolist` `dotimes` `do` `do*` `destructuring-bind`
+(over the compiler form `%destructuring-lambda`); the CLHS 14 list functions;
+`member` redefined with `:key`/`:test`. `numbers.lisp` gained `<=` `>=` `/=`
+`1+` `1-` `evenp` `oddp` `max` `min`. The compiler now lets a local function
+shadow a global macro. **Next: J2**, the CLHS 17 sequence functions, written
+once each over an iteration macro `%do-sequence` that expands into a list loop
+and a vector loop (decision 4); then **J3**, strings. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -107,7 +116,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,191 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`).
+- **The Rust budget: 1,187 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4 — its `boot::LIBRARY` entry).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -160,8 +169,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**408 tests**; **24 differential files agree with SBCL** — 17 interpreted and
-compiled, plus seven tier-1 files, compiled only, and all 24 also pass in a rebuilt world. The Rust core is **13,809** lines of the 15,000 budget.
+**409 tests**; **25 differential files agree with SBCL** — 17 interpreted and
+compiled, plus eight tier-1 files, compiled only, and all 25 also pass in a rebuilt world. The Rust core is **13,813** lines of the 15,000 budget.
 
 ## How phase 1 ended
 

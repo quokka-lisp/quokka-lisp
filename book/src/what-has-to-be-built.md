@@ -294,6 +294,7 @@ Each chapter answers one question.
 | 42 | [The fixpoint](part-6-self-hosting/42-the-fixpoint.md) | How do you show a compiler reproduces itself, when its output can never be literally the same file twice? |
 | 43 | [Places](part-6-self-hosting/43-places.md) | How does `incf` update a place it has never seen, evaluating each part once — and how do you add that without changing how the compiler compiles itself? |
 | 44 | [The last three, and what a macro can see](part-6-self-hosting/44-the-last-three.md) | How does a program bind a variable whose name it computes, and how can a macro know what the code around it means? |
+| 45 | [Lists, loops and sequences](part-6-self-hosting/45-sequences.md) | How do you write fifty similar functions without repeating yourself or paying for an abstraction at run time? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

@@ -129,6 +129,7 @@ tier1_cases! {
     eval => "eval",
     setf_expanders => "setf-expanders",
     special_operators => "special-operators",
+    list_functions => "list-functions",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -295,7 +296,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 439 :REPLACED 365)".into())],
+        [Outcome::Value("(:FORMS 564 :REPLACED 474)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

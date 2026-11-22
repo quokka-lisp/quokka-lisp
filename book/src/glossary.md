@@ -56,6 +56,11 @@ rather than by walking. Common Lisp calls both of them vectors, so one
 function serves both, although one holds traced references and the other raw
 character codes. ([19](part-2-reading-and-running/19-things-with-an-index.md))
 
+**Boxing.** Storing a value as a separate heap object rather than inside
+the word that refers to it. A fixnum or a character is *unboxed* — the word
+is the value — while a bignum or a float is *boxed*, so two equal ones can be
+two objects. Why `eql` exists beside `eq`. ([45](part-6-self-hosting/45-sequences.md))
+
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
 as several. Contrast [fixnum](#fixnum). Not yet implemented.
 
@@ -175,6 +180,12 @@ technique are from *Structure and Interpretation of Computer Programs* §5.4.
 with no heap space used. Quokka's are 63 bits. The traditional Lisp word;
 contrast [bignum](#bignum).
 ([1](part-1-substrate/01-one-word-for-everything.md))
+
+**eql, equal, equalp.** Common Lisp's equalities, from strictest to
+loosest after `eq` (identity): `eql` also compares numbers and characters by
+value; `equal` compares conses and strings by content; `equalp` also ignores
+case and compares vectors element by element.
+([45](part-6-self-hosting/45-sequences.md))
 
 **Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. Quokka's holds since step F: every named compiled function is the same in C1, C2 and C3, and C2 and C3 are the same world word for word apart from gensym names. ([The bootstrap](the-bootstrap.md), [42](part-6-self-hosting/42-the-fixpoint.md))
 

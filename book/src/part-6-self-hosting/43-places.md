@@ -302,8 +302,8 @@ makes symbols into places too.
 - **`char`, `schar`, `subseq`, `get` and `symbol-plist` as places.** Their
   readers don't exist yet. Strings and subsequences come with step J, and
   symbol plists need a slot on the symbol.
-- **`pushnew` by `eql`.** Its default test is `eq` until bignums bring `eql`.
-  On everything Quokka has today (fixnums, characters, symbols) the two agree.
+- **`pushnew` by `eql`** was `eq` here, until step J1 defined `eql`
+  (chapter 45) and `pushnew` became `adjoin` into a place.
 - **A `macrolet` place**, as above.
 
 ---

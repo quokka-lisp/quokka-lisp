@@ -72,8 +72,10 @@
                (values (cdr definition) t)
                (values form nil))))
         ((and (consp form) (symbolp (car form)))
-         (let ((expander (or (%environment-macro environment (car form))
-                             (%macro-function (car form)))))
+         (let ((expander (cond ((%environment-macro environment (car form)))
+                               ;; A local function shadows a global macro.
+                               ((%environment-function-p environment (car form)) nil)
+                               (t (%macro-function (car form))))))
            (if expander
                (values (%expand expander (cdr form)
                                 (if environment (second environment) nil)

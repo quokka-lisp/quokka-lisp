@@ -255,30 +255,14 @@
               (,(%one-store stores place) (cons ,value ,reader)))
          ,writer))))
 
-;;; `pushnew` compares with `eq` by default where CL says `eql`: Quokka has no
-;;; `eql` until bignums, and on everything it has today the two agree.
+;;; `pushnew` is `adjoin` (in `lists.lisp`) into a place: `eql` by default.
 (defmacro pushnew (item place &rest keys &environment environment)
   (let ((value (gensym "ITEM")))
     (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
       `(let* ((,value ,item)
               ,@(%bindings vars vals)
-              (,(%one-store stores place) (%adjoin ,value ,reader ,@keys)))
+              (,(%one-store stores place) (adjoin ,value ,reader ,@keys)))
          ,writer))))
-
-;;; `adjoin`'s work, for `pushnew`, until step J gives the list functions a
-;;; home of their own.
-(defun %adjoin (item list &key key test test-not)
-  (let ((probe (if key (funcall key item) item)))
-    (labels ((same (element)
-               (let ((x (if key (funcall key element) element)))
-                 (cond (test (funcall test probe x))
-                       (test-not (not (funcall test-not probe x)))
-                       (t (eq probe x)))))
-             (present (rest)
-               (cond ((null rest) nil)
-                     ((same (car rest)) t)
-                     (t (present (cdr rest))))))
-      (if (present list) list (cons item list)))))
 
 (defmacro pop (place &environment environment)
   (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
