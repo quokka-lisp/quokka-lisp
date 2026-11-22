@@ -19,8 +19,12 @@ is the library's last file, and its last form adopts every system symbol
 `scripts/generate-cl-symbols.lisp`; the rest into `QUOKKA`). `symbol::HOME` is
 `nil` | `0` (unadopted) | `1` (keyword) | a package. Until the Lisp reader
 exists, a symbol the Rust reader makes is adopted into `CL-USER` the first time
-anything asks for it. **Next is step C, the reader in Lisp**, then the printer
-(G). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums),
+anything asks for it. **Before step C: #44, decided as "pack strings now"** —
+(1) `symbol-name` returns the symbol's own constant name instead of a fresh
+copy (the copies are 27% of the image), then (2) pack strings in memory (choose
+8 Latin-1/word + wide type vs 2 UTF-32/word at the start; ~37 Rust touch
+points; image format bump). #44's last comment has the measurements and plan.
+**Then step C, the reader in Lisp**, then the printer (G). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums),
 and the image is 478 KB because strings are a word per character (#44). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
