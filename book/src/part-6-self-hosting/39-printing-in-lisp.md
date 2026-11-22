@@ -9,8 +9,8 @@
 > again in a different order. What it unlocks is step D, where the system reads
 > and prints its own work in Lisp.
 
-*Status: done, issue #46. The differential files still print with the Rust
-printer until step D; the reason is below.*
+*Status: done, issue #46. The differential files print with it since step D
+(chapter 40); why not sooner is below.*
 
 ## What a printer promises
 

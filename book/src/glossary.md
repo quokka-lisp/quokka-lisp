@@ -314,6 +314,8 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 
 **Print-read consistency.** The printer's contract in Common Lisp: what `prin1` writes, `read` reads back as the same object (or an equal one, for a list). For symbols it means a package prefix when the current package would not find the symbol alone, and `|...|` around a name the reader would change. ([39](part-6-self-hosting/39-printing-in-lisp.md))
 
+**Proclamation.** A declaration that holds everywhere rather than in one scope. `defvar` *proclaims* a variable special, and it must do so before any code that binds the variable is compiled, because the compiler decides at compile time whether a binding is lexical or dynamic. ([40](part-6-self-hosting/40-the-loop-closes.md))
+
 **Readtable.** The table that tells Common Lisp's [reader](#reader) what each character means: whitespace, part of a [token](#token), or a [reader macro](#reader-macro). `*readtable*` is the current one, and a program changes syntax by changing a copy. ([38](part-6-self-hosting/38-reading-in-lisp.md))
 
 **Reader macro.** A function the [readtable](#readtable) holds for a character, called by the reader when it meets that character. `(`, `'`, `"` and `;` are all reader macros in Common Lisp; a comment is one that returns no value at all. A *dispatching* macro character, such as `#`, reads one more character and looks that up in a second table. ([38](part-6-self-hosting/38-reading-in-lisp.md))
@@ -532,6 +534,8 @@ many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 **Stack pointer.** How deep the [operand stack](#operand-stack) currently is.
 Popped slots are cleared, because every slot of a traced object is traced and
 a dead one would keep what it last held alive. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
+
+**Re-entrant.** Safe to call again while a call is still in progress. Quokka's `compile-form` is not: it keeps its work in global variables, so compiling inside a compilation would overwrite it. ([40](part-6-self-hosting/40-the-loop-closes.md))
 
 **Special variable.** A variable whose binding is visible to everything *called* while the binding is in force, not only to the code written inside it — what other languages call dynamic scope. Common Lisp names them with asterisks, like `*package*`, and makes them with `defvar` and `defparameter`. ([34](part-6-self-hosting/34-standing-on-its-own.md))
 

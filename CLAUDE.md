@@ -28,8 +28,7 @@ layouts differ — go through them, never `raw_slot`, on a string. Image 478 KB 
 `lisp/library/reader.lisp` — `read`, `read-from-string`, string input streams
 (#42's input half), a readtable with `set-macro-character` and `#` dispatch,
 `pkg:sym`/`pkg::sym` through `*package*`. It sits *before* `packages.lisp` in
-`boot::LIBRARY`. Nothing reads the system's source with it yet: that is step D.
-Backquote must expand exactly as `reader.rs::quasiquote` does (the fixpoint
+`boot::LIBRARY`. Backquote must expand exactly as `reader.rs::quasiquote` does (the fixpoint
 compares bytes); `the_lisp_reader_reads_the_system_as_the_rust_reader_does` in
 `differential.rs` reads every library, prelude and compiler form with both
 readers and keeps that true. **Step G is done** (#46, chapter 39):
@@ -37,18 +36,26 @@ readers and keeps that true. **Step G is done** (#46, chapter 39):
 package prefixes, `|...|` by SBCL's measured rules, seven `*print-…*`
 variables; output streams, with `*standard-output*` a console stream whose
 writes are `%write-console` host requests; and `numbers.lisp` (`truncate`,
-`floor`, `mod` over the new `%quotient`/`rem`). Image now 344 KB. **Step D must
-flip the differential harness to the Lisp printer**: `run_compiled` in
-`differential.rs` uses `Printer::Rust` until the test files are read by the
-Lisp reader, because the Rust reader hands a test's `a` the `QUOKKA` symbol and
-the Lisp printer then rightly writes `QUOKKA::A` (66 forms; #46 has why
-`CL-USER` must not use `QUOKKA` instead). **Next is step D, `eval` and
-`load`.** Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
+`floor`, `mod` over the new `%quotient`/`rem`). **Step D is done** (#47,
+chapter 40): `lisp/library/eval.lisp` — `eval` is `(funcall (compile-form
+form))` (the VM calls a bare `Function` as a closure over nothing), `load`
+takes a host file name or a stream and rebinds `*package*`/`*readtable*`, and
+the read-eval-print loop is Lisp: `%host-step`, driven by hosts through
+`vm::eval_source`. **A built image now reads with the Lisp reader and prints
+with the Lisp printer** — the REPL with `--image`, `--save-image SRC...`, and
+the compiled differential leg (`run_compiled`); `vm::compile_and_run_forms`
+(Rust reader) is left for loading the library during the build, and for the
+two tests that hold the Lisp reader and printer to the Rust ones
+(`run_compiled_rust_read`). A special variable must be proclaimed before
+anything binds it: `reader.lisp` opens with `(defvar *package*)` for that
+reason. `compile-form` is not re-entrant. Image now 348 KB. **Next is step E,
+the image rebuilds itself** (the build driver to Lisp; the library read by the
+Lisp reader). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
-the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` → the image rebuilds
+the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` (#47, done) → the image rebuilds
 itself → the fixpoint → `setf` expanders, the last three special operators, sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
 on. Streams (#42, closed): minimal string streams and the console in tier 1;
@@ -60,7 +67,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,440 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59).
+- **The Rust budget: 1,365 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -113,8 +120,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**398 tests**; **21 differential files agree with SBCL** — 17 interpreted and
-compiled, plus four tier-1 files, compiled only. The Rust core is **13,560** lines of the 15,000 budget.
+**400 tests**; **22 differential files agree with SBCL** — 17 interpreted and
+compiled, plus five tier-1 files, compiled only. The Rust core is **13,635** lines of the 15,000 budget.
 
 ## How phase 1 ended
 
@@ -259,7 +266,7 @@ rather than a duplication:
 | | | |
 | --- | --- | --- |
 | `crates/*/src/unit/` | **unit tests** | Pulled into their module by `#[cfg(test)] #[path = "unit/<name>.rs"] mod tests;`, so each file is still a child of what it tests and **sees private items**. That is why they are a separate *file* and not a separate crate: a separate crate reaches only the public API, and making `TABLE`, `Vm`'s fields and the heap's internals public to allow that would widen the public surface — which is itself part of what a reader has to understand. |
-| `crates/*/tests/` | **integration tests** | Cargo's own directory, compiled as a separate crate that reaches **only the public API**. That is the point of it: `differential.rs` drives the whole system through its public entry points alone — `run_forms` for the interpreted leg, `boot::build_image`, `image` and `vm::compile_and_run_forms` for the compiled one — exactly as a host does. |
+| `crates/*/tests/` | **integration tests** | Cargo's own directory, compiled as a separate crate that reaches **only the public API**. That is the point of it: `differential.rs` drives the whole system through its public entry points alone — `run_forms` for the interpreted leg, `boot::build_image`, `image` and `vm::eval_source` for the compiled one — exactly as a host does. |
 
 They are not merged, and the directory that could be renamed was. `src/unit/`
 was `src/tests/` until two directories called `tests` in one crate proved
@@ -311,7 +318,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | REPL, showing the code | `cargo run -p quokka-repl -- --show-code` — the same, printing each form's instructions first |
 | Compile a file | `cargo run -p quokka-repl -- --compile-file lisp/prelude.lisp` — compiles and verifies every form, installing none of it (see `boot::compile_source`) |
 | Save an image | `cargo run -p quokka-repl -- --save-image world.qi [SRC...]` — builds the **compiled** world (`boot::build_image`), runs any sources through it, writes it |
-| Start from an image | `cargo run -p quokka-repl -- --image world.qi` — every form compiled by the image's own compiler and run on the VM; the interpreter is never used |
+| Start from an image | `cargo run -p quokka-repl -- --image world.qi` — every form read, evaluated and printed by the image's own Lisp (#47); the interpreter and the Rust reader and printer are never used |
 | GC torture | `cargo test -p quokka-vm --features gc-torture` — collects at every mutation boundary and verifies the heap afterwards |
 | Differential tests | `cargo test -p quokka-vm --test differential` (Quokka) · `./scripts/oracle.sh` (SBCL) |
 | Regenerate a baseline | `cargo run -p quokka-repl -- --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |

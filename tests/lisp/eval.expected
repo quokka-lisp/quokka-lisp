@@ -1,0 +1,33 @@
+=> 3
+=> A
+=> 42
+=> "self-evaluating"
+=> :KEYWORD
+=> 2
+=> (1 2 3)
+=> (1 2)
+=> 2
+=> 42
+=> *COUNTER*
+=> 1
+=> *DYNAMIC*
+=> INNER
+!! error
+!! error
+!! error
+=> T
+=> :LOADED
+=> 7
+=> T
+!! error
+=> "EVAL-TEST"
+=> "COMMON-LISP-USER"
+=> "EVAL-TEST"
+=> "EVAL-TEST"
+=> WHOSE
+=> "COMMON-LISP-USER"
+=> "COMMON-LISP-USER"
+=> "EVAL-TEST"
+=> :EVAL-TEST
+=> T
+=> NIL

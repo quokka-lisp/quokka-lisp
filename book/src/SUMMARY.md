@@ -60,6 +60,7 @@
 - [Eight characters to a word](part-6-self-hosting/37-eight-characters-to-a-word.md)
 - [Reading, in Lisp](part-6-self-hosting/38-reading-in-lisp.md)
 - [Printing, in Lisp](part-6-self-hosting/39-printing-in-lisp.md)
+- [The loop closes](part-6-self-hosting/40-the-loop-closes.md)
 
 ---
 

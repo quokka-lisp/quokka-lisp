@@ -362,6 +362,12 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// of #25's "one evaluator at a time", and the check below is where the
     /// decision stops being a plan and starts being enforced.
     fn compiled_body(&self, callee: Value<'h>) -> Option<Value<'h>> {
+        // A compiled function on its own is a closure over nothing: what
+        // `compile-form` returns, and so what `eval` calls (#47). CL's
+        // `compile` returns a function too, not something to wrap first.
+        if callee.is_object() && self.mc.header(callee).object_type == ObjectType::Function {
+            return Some(callee);
+        }
         // A macro as well as a closure: `macroexpand-1` is prelude Lisp that
         // calls an expander with `apply`, and the interpreter has always let
         // it (`closure::is_callable`). Once macros are compiled (#33), the VM
@@ -404,7 +410,11 @@ impl<'a, 'h> Vm<'a, 'h> {
             return self.fail(EvalError::NotAFunction(what));
         };
         let params = self.mc.slot(code_object, function::PARAMS);
-        let captured = self.mc.slot(callee, closure::ENV);
+        let captured = if callee == code_object {
+            Value::NIL
+        } else {
+            self.mc.slot(callee, closure::ENV)
+        };
         let scope = match self.bind_parameters(params, args, captured) {
             Ok(s) => s,
             Err(e) => return self.fail(e),
@@ -1686,6 +1696,66 @@ where
             each(mc, result)
         });
         if !carry_on {
+            return Ok(());
+        }
+    }
+}
+
+/// What one form came to when a host ran it through [`eval_source`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    /// The form's value, as `prin1` wrote it.
+    Value(String),
+    /// A Lisp error, caught by the loop: its message.
+    Error(String),
+    /// What the loop could not catch, such as the step budget running out.
+    Failed(EvalError),
+}
+
+/// Run every form of `source` through a built image, as its REPL does (#47):
+/// read by the Lisp reader in `*package*`, evaluated by `eval`, printed by
+/// `prin1`. The loop is `%host-step` in `lisp/library/eval.lisp`; this only
+/// calls it until the input runs out, handing each [`Outcome`] to `each`,
+/// which says whether to go on. Unlike [`compile_and_run_forms`], the Rust
+/// reader and printer play no part.
+pub fn eval_source(
+    heap: &mut crate::heap::Heap,
+    source: &str,
+    budget: u64,
+    slice: u64,
+    host: &mut dyn crate::host::Host,
+    mut each: impl FnMut(Outcome) -> bool,
+) -> Result<(), EvalError> {
+    heap.mutate(|mc| {
+        let text = mc.alloc_string(source);
+        mc.set_register(Register::Value, text);
+    });
+    call_global(heap, "%HOST-SOURCE", budget, slice, host)?;
+    loop {
+        heap.mutate(|mc| mc.set_register(Register::Value, Value::NIL));
+        let outcome = match call_global(heap, "%HOST-STEP", budget, slice, host) {
+            Err(e) => Outcome::Failed(e),
+            Ok(()) => {
+                let step = heap.mutate(|mc| {
+                    let result = mc.register(Register::Value);
+                    let kind = mc.car(result);
+                    if mc.symbol_is(kind, "EOF") {
+                        return None;
+                    }
+                    let text = mc.string_to_rust(mc.car(mc.cdr(result)));
+                    Some(if mc.symbol_is(kind, "VALUE") {
+                        Outcome::Value(text)
+                    } else {
+                        Outcome::Error(text)
+                    })
+                });
+                match step {
+                    Some(outcome) => outcome,
+                    None => return Ok(()),
+                }
+            }
+        };
+        if !each(outcome) {
             return Ok(());
         }
     }

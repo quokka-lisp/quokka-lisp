@@ -229,6 +229,17 @@
         ((symbolp object) (%print-symbol object out))
         ((stringp object) (%print-string object out))
         ((consp object) (%print-list object out level))
+        ;; The library's own structures are vectors underneath (`defstruct`
+        ;; makes vectors until there are structure types), but they are not
+        ;; data anyone reads back, and SBCL writes them as `#<...>`.
+        ((%package-p object)
+         (write-string "#<PACKAGE " out)
+         (%print-string (package-name object) out)
+         (write-char #\> out))
+        ((%string-input-stream-p object) (write-string "#<STRING-INPUT-STREAM>" out))
+        ((%string-output-stream-p object) (write-string "#<STRING-OUTPUT-STREAM>" out))
+        ((%console-stream-p object) (write-string "#<CONSOLE-STREAM>" out))
+        ((%readtable-p object) (write-string "#<READTABLE>" out))
         ((vectorp object) (%print-vector object out level))
         ;; Functions, conditions, hash tables: nothing reads them back, so
         ;; CLHS lets each implementation print them its own way. The Rust

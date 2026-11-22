@@ -10,6 +10,7 @@ use quokka_vm::heap::{Heap, Register};
 use quokka_vm::host::{Host, HostError};
 use quokka_vm::printer::print;
 use quokka_vm::reader::Reader;
+use quokka_vm::vm::Outcome;
 use quokka_vm::{PHASE, VERSION};
 
 /// The native host: real files, real console.
@@ -63,8 +64,8 @@ fn main() {
         }
         // Any further arguments are source files loaded into the world before
         // it is saved, which is how an image comes to hold work rather than
-        // just a boot. Compiled, by the image's own compiler — the
-        // interpreter has nothing left to run in here.
+        // just a boot. Read by the image's own reader and compiled by its own
+        // compiler (#47) — the interpreter has nothing left to run in here.
         let mut native = NativeHost;
         for path in &args[3..] {
             let source = match std::fs::read_to_string(path) {
@@ -75,23 +76,26 @@ fn main() {
                 }
             };
             let mut failed = None;
-            let read = quokka_vm::vm::compile_and_run_forms(
+            let ran = quokka_vm::vm::eval_source(
                 &mut heap,
                 &source,
                 EVAL_BUDGET,
                 2_000,
                 &mut native,
-                |_mc, result| match result {
-                    Ok(_) => true,
-                    Err(e) => {
+                |outcome| match outcome {
+                    Outcome::Value(_) => true,
+                    Outcome::Error(e) => {
+                        failed = Some(e);
+                        false
+                    }
+                    Outcome::Failed(e) => {
                         failed = Some(format!("{e}"));
                         false
                     }
                 },
             );
-            if let Err(e) = read {
-                eprintln!("{path}: {e}");
-                std::process::exit(1);
+            if let Err(e) = ran {
+                failed = Some(format!("{e}"));
             }
             if let Some(e) = failed {
                 eprintln!("{path}: {e}");
@@ -246,24 +250,24 @@ fn main() {
     }
 }
 
-/// Evaluate a line in a compiled image: every form compiled by the image's
-/// own compiler and run on the VM, `defmacro` included, and the interpreter
-/// not involved at all. There is no bootstrap rule here, because there is
-/// nothing left to bootstrap.
+/// Evaluate a line in a compiled image: read, evaluated and printed by the
+/// image's own Lisp (#47), and the interpreter, the Rust reader and the Rust
+/// printer not involved at all. There is no bootstrap rule here, because
+/// there is nothing left to bootstrap.
 fn image_print(heap: &mut Heap, line: &str, host: &mut NativeHost) -> String {
     let mut out = String::new();
-    let read =
-        quokka_vm::vm::compile_and_run_forms(heap, line, EVAL_BUDGET, 2_000, host, |mc, result| {
-            if !out.is_empty() {
-                out.push('\n');
-            }
-            match result {
-                Ok(v) => out.push_str(&print(mc, v)),
-                Err(e) => out.push_str(&format!("; {e}")),
-            }
-            true
-        });
-    if let Err(e) = read {
+    let ran = quokka_vm::vm::eval_source(heap, line, EVAL_BUDGET, 2_000, host, |outcome| {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        match outcome {
+            Outcome::Value(text) => out.push_str(&text),
+            Outcome::Error(message) => out.push_str(&format!("; {message}")),
+            Outcome::Failed(e) => out.push_str(&format!("; {e}")),
+        }
+        true
+    });
+    if let Err(e) = ran {
         out.push_str(&format!("; {e}"));
     }
     out.push('\n');

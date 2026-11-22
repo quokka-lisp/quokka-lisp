@@ -10,8 +10,9 @@
 > exactly as the old one did. What it unlocks is step D, `eval` and `load`, where
 > the Lisp reader starts reading programs, and through that the fixpoint.
 
-*Status: done, issue #45. Used by Lisp code that calls `read`; the system's own
-source is still read by the Rust reader until step D.*
+*Status: done, issue #45. Since step D (chapter 40) a built image reads
+everything with it; the library is still read by the Rust reader during the
+build, until step E.*
 
 ## Why write a reader twice
 

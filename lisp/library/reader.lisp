@@ -26,6 +26,14 @@
 ;;;; functions called here are looked up when called, not when compiled, so
 ;;;; the order costs nothing.
 
+;;; `*package*` gets its value in `packages.lisp`, the library's last file,
+;;; once there are packages to be in. It is proclaimed special here, before
+;;; anything binds it: a `let` of a variable not yet special compiles to an
+;;; ordinary local, and `load`'s `(let ((*package* *package*)) ...)` did
+;;; exactly that, so an `in-package` inside a loaded file changed the global
+;;; package and leaked out of it (#47).
+(defvar *package*)
+
 ;;; ------------------------------------------------------------------------
 ;;; Characters
 ;;;

@@ -101,6 +101,7 @@ pub const LIBRARY: &[(&str, &str)] = &[
         "printer.lisp",
         include_str!("../../../lisp/library/printer.lisp"),
     ),
+    ("eval.lisp", include_str!("../../../lisp/library/eval.lisp")),
     (
         "packages.lisp",
         include_str!("../../../lisp/library/packages.lisp"),

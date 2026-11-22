@@ -126,6 +126,7 @@ tier1_cases! {
     packages => "packages",
     reader => "reader",
     printer => "printer",
+    eval => "eval",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -173,7 +174,7 @@ fn read_the_system_both_ways(printer: Printer, disagree: &str) {
             program.push_str("(read *source*)\n");
         }
         program.push_str("(read *source* nil :end)\n");
-        let by_lisp = run_compiled_printing(&program, printer);
+        let by_lisp = run_compiled_rust_read(&program, printer);
         let by_lisp: Vec<&str> = by_lisp.lines().skip(1).collect();
         for (i, (rust, lisp)) in by_rust.iter().zip(&by_lisp).enumerate() {
             assert_eq!(lisp, rust, "{name}, form {}: {disagree}", i + 1);
@@ -252,35 +253,101 @@ fn compiled_image() -> &'static [u8] {
     })
 }
 
-/// `run_forms`, in a compiled world: each form compiled by the image's own
-/// compiler and run on the VM, one at a time — so a `defstruct` has run
-/// before the form that uses its accessors is compiled, which is the order
-/// a file means. A compile error is a condition signalled inside
-/// `compile-form`, and so arrives as the form's `!! error`, exactly as a
-/// deliberately malformed form errs at run time when interpreted.
+/// `run_forms`, in a compiled world, entirely in the image's own Lisp
+/// (#47): each form read by the Lisp reader in `CL-USER`, evaluated by
+/// `eval` — compiled by the image's compiler and run on the VM — and printed
+/// by the Lisp printer, one at a time, so a `defstruct` has run before the
+/// form that uses its accessors is read, which is the order a file means. A
+/// compile error is a condition, and so arrives as the form's `!! error`,
+/// exactly as a deliberately malformed form errs at run time when
+/// interpreted. The interpreted leg prints with the Rust printer against the
+/// same baseline, so the two printers are held to one answer.
 ///
 /// Anything a form writes to `*standard-output*` comes first, as SBCL's does
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
-    run_compiled_printing(source, Printer::Rust)
+    use quokka_vm::vm::{eval_source, Outcome};
+    let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
+    let mut out = String::new();
+    // The host's output is collected as it happens; it is moved to `out`
+    // before each result, which is the order SBCL writes them in.
+    let output = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let mut host = SharedHost(output.clone(), Vec::new());
+    let ran = eval_source(&mut heap, source, BUDGET, 2_000, &mut host, |outcome| {
+        out.push_str(&std::mem::take(&mut *output.borrow_mut()));
+        match outcome {
+            Outcome::Value(text) => {
+                out.push_str("=> ");
+                out.push_str(&text);
+                out.push('\n');
+            }
+            Outcome::Error(_) | Outcome::Failed(_) => out.push_str("!! error\n"),
+        }
+        true
+    });
+    if ran.is_err() {
+        out.push_str("!! error\n");
+    }
+    out
 }
 
-/// Which printer writes a compiled form's result.
-///
-/// The Lisp printer is the one the differential files should use, so that
-/// all of them check it against SBCL — and they will, from step D (#46).
-/// Until then the files are read by the Rust reader, whose flat table gives
-/// a test's `a` the `QUOKKA` symbol the build already used, and a correct
-/// printer in `CL-USER` writes that as `QUOKKA::A`: 66 forms disagreed by
-/// that prefix alone. At D the files are read by the Lisp reader, a test's
-/// `a` is `CL-USER::A`, and `run_compiled` switches to `Printer::Lisp`.
+/// A host whose console output the result callback can also reach — the
+/// callback runs while `eval_source` holds the host itself — and which has
+/// the files it is given, by name, and no others.
+struct SharedHost(
+    std::rc::Rc<std::cell::RefCell<String>>,
+    Vec<(&'static str, &'static str)>,
+);
+
+impl quokka_vm::host::Host for SharedHost {
+    fn write_stdout(&mut self, s: &str) {
+        self.0.borrow_mut().push_str(s);
+    }
+    fn read_source(&mut self, name: &str) -> Result<String, quokka_vm::host::HostError> {
+        self.1
+            .iter()
+            .find(|(file, _)| *file == name)
+            .map(|(_, text)| text.to_string())
+            .ok_or_else(|| quokka_vm::host::HostError::NotFound(name.to_string()))
+    }
+}
+
+/// `load` with a file name asks the host for the file (#47) — the only way
+/// to test it, since SBCL's oracle would read a real file and Quokka's
+/// harness has none. The file defines a function, changes package, and a
+/// form after the `load` sees that the package change stayed inside it.
+#[test]
+fn load_reads_a_file_through_the_host() {
+    use quokka_vm::vm::{eval_source, Outcome};
+    let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
+    let output = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let file = "(defpackage :loaded (:use :cl)) (defun from-file () 42) (in-package :loaded)";
+    let mut host = SharedHost(output.clone(), vec![("virtual.lisp", file)]);
+    let mut results = Vec::new();
+    let source =
+        r#"(load "virtual.lisp") (from-file) (package-name *package*) (load "missing.lisp")"#;
+    eval_source(&mut heap, source, BUDGET, 2_000, &mut host, |outcome| {
+        results.push(outcome);
+        true
+    })
+    .expect("the loop runs");
+    assert_eq!(results[0], Outcome::Value("T".into()));
+    assert_eq!(results[1], Outcome::Value("42".into()));
+    assert_eq!(results[2], Outcome::Value("\"COMMON-LISP-USER\"".into()));
+    assert!(matches!(results[3], Outcome::Error(_)), "{:?}", results[3]);
+}
+
+/// Which printer writes a result in [`run_compiled_rust_read`].
 #[derive(Clone, Copy, PartialEq)]
 enum Printer {
     Rust,
     Lisp,
 }
 
-fn run_compiled_printing(source: &str, printer: Printer) -> String {
+/// The compiled world as it was before #47: forms read by the *Rust* reader,
+/// results printed by PRINTER. What the two system-wide tests above need,
+/// since their point is to hold the Lisp reader and printer to the Rust ones.
+fn run_compiled_rust_read(source: &str, printer: Printer) -> String {
     use quokka_vm::heap::Register;
     use quokka_vm::vm::{call_global, run_sliced};
     let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");

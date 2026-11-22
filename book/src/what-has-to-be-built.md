@@ -289,6 +289,7 @@ Each chapter answers one question.
 | 37 | [Eight characters to a word](part-6-self-hosting/37-eight-characters-to-a-word.md) | How should text sit in memory, and why not the encoding everyone else uses? |
 | 38 | [Reading, in Lisp](part-6-self-hosting/38-reading-in-lisp.md) | How does a program change the syntax it is read with, and how do you know a new reader reads the old source the same? |
 | 39 | [Printing, in Lisp](part-6-self-hosting/39-printing-in-lisp.md) | How does a printer write a symbol so the reader gets the same one back, and why can a right answer fail a test? |
+| 40 | [The loop closes](part-6-self-hosting/40-the-loop-closes.md) | What is `eval` when nothing interprets, and what changes when the whole REPL is Lisp? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
