@@ -982,8 +982,11 @@ pub fn call_slice<'h>(
                     wanted: "a symbol",
                 });
             }
-            let name = mc.symbol_name(args[0]);
-            Ok(mc.alloc_string(&name))
+            // The symbol's own name, not a copy (#44). It is a constant string,
+            // so a program that tries to modify it is refused rather than
+            // renaming the symbol behind the obarray's back — CLHS leaves that
+            // undefined, and refusing is the safe reading of undefined.
+            Ok(mc.slot(args[0], symbol::NAME))
         }
         Prim::SymbolFunction => {
             if !mc.is_symbol(args[0]) {

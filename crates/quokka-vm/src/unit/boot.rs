@@ -69,9 +69,9 @@ fn a_literal_survives_the_attempt() {
 fn a_symbol_name_is_a_constant() {
     assert_eq!(
         after_boot("(handler-case (setf (aref (symbol-name 'foo) 0) #\\X) (error () 'refused))"),
-        // SYMBOL-NAME copies, so the write lands on the copy and succeeds.
-        // The point is what it does *not* reach: see the next assertion.
-        "#\\X"
+        // SYMBOL-NAME hands back the name itself, not a copy (#44), so the
+        // write meets a constant string and is refused.
+        "REFUSED"
     );
     assert_eq!(after_boot("(symbol-name 'foo)"), r#""FOO""#);
 }
