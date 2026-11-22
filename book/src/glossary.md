@@ -144,7 +144,7 @@ that writes ten functions, and the clearest demonstration of what macros are
 for. Quokka's structures are vectors with the type name in the first slot,
 since real types need a class system. ([21](part-2-reading-and-running/21-records.md))
 
-**Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file natively, under WebAssembly and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
+**Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file interpreted and compiled, natively and under WebAssembly, and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md), [33](part-5-the-image/33-two-evaluators-one-answer.md))
 
 **Dotted pair.** A [cons cell](#cons-cell) whose [cdr](#cdr) is not a list, written `(a . b)`. A list is the common case of a cons cell, not the only one; the dot is how you write the general case. Also called an *improper list*. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 

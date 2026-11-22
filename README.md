@@ -98,10 +98,11 @@ cannot reach.
 | **Multiple values** | `values`, `multiple-value-bind`, `multiple-value-call`, `multiple-value-prog1` — and every form that should pass them through does |
 | **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or`, `setf`, `defstruct`, `handler-case`, the list and sequence functions — about six hundred lines of **Lisp**, compiled into the binary and interpreted at boot |
 | **A bytecode VM** | thirty-eight opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
-| **A compiler, in Lisp** | [`lisp/compiler/compile.lisp`](lisp/compiler/compile.lisp): 464 lines of tier-0 Common Lisp that compiles **every form of the prelude and every form of itself** — 85 functions, all accepted by the verifier |
+| **A compiler, in Lisp** | [`lisp/compiler/compile.lisp`](lisp/compiler/compile.lisp): tier-0 Common Lisp that compiles **every special operator**, the prelude, and **itself** — and refuses what the interpreter refuses, so the two agree on what a program is |
 | **Images** | the whole heap to a file and back, *including a computation stopped in mid-air*. Saving is `to_le_bytes` and loading is the inverse, with no pointer patching, because rule 3 made references word indices rather than addresses |
+| **A compiled world** | `--save-image` builds an image in which the prelude, every macro and the compiler are bytecode, and a scan of the whole heap proves nothing interpreted is left; `--image` compiles every form with the image's own compiler and never uses the interpreter |
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
-| **REPL** | native terminal, and a browser dev console on the WASM build; `--compile` compiles each form and runs it on the VM, `--show-code` prints the instructions first |
+| **REPL** | native terminal, and a browser dev console on the WASM build; `--image` runs a compiled world, `--compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
 385 tests, green on native, under wasmtime, and with the GC torture mode on.
 Seventeen Common Lisp files produce byte-identical output on Quokka
@@ -109,6 +110,10 @@ interpreted, Quokka compiled, Quokka under WebAssembly, and SBCL. The Rust core 
 15,000-line budget.
 
 ### What does not exist yet
+
+**Self-hosting.** The compiled compiler has never rebuilt itself; that, and a
+byte-for-byte match with the first build, is phase 2's gate. Until then the
+interpreter is still what builds an image from source.
 
 No packages — keywords exist, the rest is phase 2
 ([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why), which
@@ -183,9 +188,7 @@ Every development step and open decision is a
 code, with the reasoning in the comments.
 [#9](https://github.com/quokka-lisp/quokka-lisp/issues/9) tracked phase 0,
 [#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracked tier 0, and
-[#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) tracks phase 1,
-where steps A to C are closed and
-[#33](https://github.com/quokka-lisp/quokka-lisp/issues/33) is what is left; a
+[#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) tracked phase 1, now closed; a
 `decision` issue closes when the reasoning is recorded in the design and the
 book, not when the code lands.
 

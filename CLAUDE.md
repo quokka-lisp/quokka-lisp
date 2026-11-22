@@ -37,7 +37,7 @@ A **prelude** (`lisp/prelude.lisp`, 658 lines, compiled into the binary with
 `multiple-value-bind`, the list and sequence functions and the hash-table
 wrappers — Lisp, not Rust.
 
-**Phase 1, steps A to C, done:**
+**Phase 1, done:**
 
 | | |
 | --- | --- |
@@ -49,10 +49,11 @@ wrappers — Lisp, not Rust.
 | `boot::build_image` | the compiled world: two passes, then a heap scan proving nothing interpreted survives (#33) |
 | `src/host.rs` | **host requests**: a program asks the outside world by leaving a request in the heap and blocking; the host answers between slices (#35). First caller: `%read-source`. The interpreter has no I/O |
 
-The compiler compiles **every form of the prelude and every form of itself**
-— 85 functions, all accepted by the verifier. `boot::compile_source` does that
-and installs none of it; chapter 29 says why installing cannot happen in a
-running interpreter.
+The compiler compiles **every form of the prelude and every form of itself**,
+all accepted by the verifier. `boot::compile_source` does that and installs
+none of it (chapter 29 says why installing cannot happen in a running
+interpreter); `boot::build_image` does install it, in a heap that is saved and
+abandoned straight afterwards (chapter 32).
 
 **385 tests**; **17 differential files agree interpreted, compiled and with
 SBCL**. The Rust core is **13,085** lines of the 15,000 budget.
@@ -74,8 +75,8 @@ compile error counting as `!! error`. It found `setq` compiling only its first
 pair, and a compiler that accepted malformed special forms the interpreter
 refuses — `%check-syntax` now applies the interpreter's conditions, read from
 `eval.rs`. The old compile leg (bootstrap compiler over the test files) was
-retired as strictly weaker. The compiled leg has not yet run under wasmtime on
-a developer machine; CI runs it.
+retired as strictly weaker. The compiled leg also passes under wasmtime in CI
+(this machine has no `wasmtime`, so check.sh only builds that leg locally).
 
 Also open: #34 (concurrency — what the code must not foreclose before phase
 3's processes; item 1, the host interface, is done as #35), #29 (build the VM
@@ -186,7 +187,7 @@ build it as a site, but mdBook is not required for anything and is not in CI.
 
 ## Testing
 
-- **Differential tests:** `tests/lisp/*.lisp` are ordinary Common Lisp. The same file runs on Quokka native, Quokka under wasmtime, and SBCL, and all three must agree — Quokka against SBCL catches *we implemented Lisp wrong*, Quokka native against wasm32 catches *the VM differs by target*. SBCL is the oracle, not a build dependency: without it that leg skips and says so. A file must not depend on bignums, print a function, or test anything the standard leaves unspecified; `tests/lisp/README.md` says why.
+- **Differential tests:** `tests/lisp/*.lisp` are ordinary Common Lisp. The same file runs on Quokka interpreted and Quokka compiled (in a world `boot::build_image` built), each natively and under wasmtime, and on SBCL, and all must agree — Quokka against SBCL catches *we implemented Lisp wrong*, native against wasm32 catches *the VM differs by target*, interpreted against compiled catches *the compiler and the interpreter disagree* (#38). In the compiled leg each form is compiled and run before the next is read, and a compile error counts as `!! error`. SBCL is the oracle, not a build dependency: without it that leg skips and says so. A file must not depend on bignums, print a function, or test anything the standard leaves unspecified; `tests/lisp/README.md` says why.
 - **Rust tests:** unit and property tests for tagged words, the heap, the reader and the GC.
 - **GC torture mode:** a build or runtime flag that collects on every allocation. Run it in CI.
 - **WASM:** run the same tests under wasmtime (WASI) and in a headless browser.
@@ -200,7 +201,7 @@ rather than a duplication:
 | | | |
 | --- | --- | --- |
 | `crates/*/src/unit/` | **unit tests** | Pulled into their module by `#[cfg(test)] #[path = "unit/<name>.rs"] mod tests;`, so each file is still a child of what it tests and **sees private items**. That is why they are a separate *file* and not a separate crate: a separate crate reaches only the public API, and making `TABLE`, `Vm`'s fields and the heap's internals public to allow that would widen the public surface — which is itself part of what a reader has to understand. |
-| `crates/*/tests/` | **integration tests** | Cargo's own directory, compiled as a separate crate that reaches **only the public API**. That is the point of it: `differential.rs` drives the whole system through `run_forms` alone, exactly as a host does. |
+| `crates/*/tests/` | **integration tests** | Cargo's own directory, compiled as a separate crate that reaches **only the public API**. That is the point of it: `differential.rs` drives the whole system through its public entry points alone — `run_forms` for the interpreted leg, `boot::build_image`, `image` and `vm::compile_and_run_forms` for the compiled one — exactly as a host does. |
 
 They are not merged, and the directory that could be renamed was. `src/unit/`
 was `src/tests/` until two directories called `tests` in one crate proved

@@ -1,9 +1,13 @@
 # Quokka bytecode — the instruction set
 
-**Status: specification, nothing implemented.** Written before the VM and the
-compiler, deliberately, so that it can be argued with (#25 is the record of
-one such argument changing two answers). Where the implementation contradicts
-this document, this document is wrong and gets corrected.
+**Status: implemented, all thirty-eight opcodes** — by `crates/quokka-vm/src/vm.rs`
+and `code.rs`, emitted by `lisp/compiler/compile.lisp`, and exercised by every
+differential file in a compiled world (#38). It was written before the VM and
+the compiler, deliberately, so that it could be argued with (#25 is the record
+of one such argument changing two answers), and where the implementation
+contradicted it, it was corrected and says so: the opcode count three times,
+`UNHANDLER`, `HANDLER`'s clause dispatch, `unwind-protect`'s cleanup, and the
+`tagbody` plan of §5, which did not survive contact.
 
 Decided already, in `docs/design.md` and #25:
 

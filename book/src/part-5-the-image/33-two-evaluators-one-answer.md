@@ -159,14 +159,19 @@ re-packaged mid-bootstrap.
 
 ## Status
 
-Built. All seventeen files agree interpreted, compiled, and with SBCL, and the
-compiled leg also passes under GC torture.
+Built. All seventeen files agree interpreted, compiled, and with SBCL; the
+compiled leg passes under GC torture; and it passes under WebAssembly too.
 
-Not yet seen: the compiled leg under WebAssembly. The WebAssembly legs run in
-CI, which has `wasmtime`; the machine this chapter was written on does not, so
-until CI has run it, "the compiled world agrees under wasm32" is expected
-rather than observed. Also not here: the browser host for requests (chapter
-31), which still waits for a compiled world in a browser tab.
+That last one is worth a sentence on how it was known. The machine this
+chapter was written on has no `wasmtime`, so the compiled leg was first run
+under wasm32 by CI, after the commit — and until that run came back, the
+chapter said "expected rather than observed", which is the honest wording for
+something not yet seen. It came back green: the compiled world gives the same
+answers on 64-bit native and on wasm32's 32-bit address space, which is rule
+3's word indices earning their keep once more.
+
+Not here: the browser host for requests (chapter 31), which still waits for a
+compiled world in a browser tab.
 
 ---
 

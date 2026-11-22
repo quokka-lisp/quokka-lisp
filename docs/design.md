@@ -255,7 +255,7 @@ The work runs in seven phases, each ending at a gate we can demonstrate, so the 
 
 No dates yet: this is a hobby-pace project. Phases 0 to 3 are mostly Rust and compiler work; phases 4 to 6 are mostly Lisp.
 
-**Where the work is.** Phase 0 is complete and its gate passed. Tier 0 — the harder precondition, since phase 1 cannot bootstrap until the interpreter can run the compiler's own source — is also finished ([#18](https://github.com/quokka-lisp/quokka-lisp/issues/18)). Phase 1 is open and nothing in it is built ([#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)).
+**Where the work is.** Phases 0 and 1 are complete and their gates passed ([#9](https://github.com/quokka-lisp/quokka-lisp/issues/9), [#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)), as is tier 0 ([#18](https://github.com/quokka-lisp/quokka-lisp/issues/18)). Quokka starts from a compiled image in which the prelude, the macros and the compiler are bytecode, and every differential file agrees interpreted, compiled and with SBCL. Phase 2 — self-hosting — is next and not started; packages come at its start.
 
 ## Testing before there is a UI
 
@@ -263,7 +263,7 @@ Every phase is testable from the terminal and in CI long before Quokka has a ren
 
 *[Diagram: differential testing — one test file runs on Quokka native, Quokka in WASM and SBCL; results are compared]*
 
-The backbone is differential testing: the same Lisp test file runs on Quokka natively, on Quokka in WASM and on SBCL, and all three must print the same result.
+The backbone is differential testing: the same Lisp test file runs on Quokka interpreted and Quokka compiled, natively and in WASM, and on SBCL, and all of them must print the same result.
 
 - **No file system? The host has one.** Before file hosts exist, one host primitive loads source files: `std::fs` natively, WASI in WASM tests, files bundled into the page in the browser. File hosts arrive later on top of it.
 - **A terminal REPL from phase 0.** stdin and stdout are enough to drive everything up to phase 3.
