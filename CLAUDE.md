@@ -10,14 +10,18 @@ file agrees interpreted, compiled and with SBCL (#38).
 **Phase 2 · Self-hosting is under way** (#39). **Step A, special variables, is
 done** (#40): `defvar`, `defparameter`, dynamic `let`/`let*`/parameters by
 shallow binding — a `DBIND` record restored by `UNMARK`, the unwinder, an
-uncaught error, or an abandoned computation. **Next is step B, packages, which
-starts with the decision in #41.** Its scope is
+uncaught error, or an abandoned computation. **Packages are decided (#41)** —
+Lisp objects in the library, adopted after the build from the Rust system
+symbol table; the useful core of CL's package system; one internal package,
+`QUOKKA`; `%` names kept. **Next is step B, building them**, then the Lisp
+reader (C) and printer (G) straight after, because reading and printing
+`pkg::sym` needs `*package*`. Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
-variables (#40, done) → packages (#41, a decision) →
-the reader in Lisp → `eval`/`load` → the image rebuilds itself → the fixpoint →
-printer, `setf` expanders, the last three special operators, sequences,
+variables (#40, done) → packages (#41, decided) →
+the reader in Lisp → the printer in Lisp → `eval`/`load` → the image rebuilds
+itself → the fixpoint → `setf` expanders, the last three special operators, sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
 on. Streams in tier 1 or not is #42.
 

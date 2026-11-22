@@ -11,6 +11,12 @@
 > and kept as written so that what actually happens can contradict it. The
 > decisions marked as made were made while planning; the ones marked open are
 > open, and each has an issue. #39 tracks the phase.
+>
+> *Decided since, and recorded where the chapters that build them will say
+> more:* packages (#41) — Lisp objects in the library, adopted after the
+> build; the useful core of the package system; one internal package,
+> `QUOKKA`; the `%` prefix kept. That moved the Lisp reader and printer to
+> straight after packages in the order below.
 
 ## What self-hosting means
 
