@@ -290,6 +290,7 @@ Each chapter answers one question.
 | 38 | [Reading, in Lisp](part-6-self-hosting/38-reading-in-lisp.md) | How does a program change the syntax it is read with, and how do you know a new reader reads the old source the same? |
 | 39 | [Printing, in Lisp](part-6-self-hosting/39-printing-in-lisp.md) | How does a printer write a symbol so the reader gets the same one back, and why can a right answer fail a test? |
 | 40 | [The loop closes](part-6-self-hosting/40-the-loop-closes.md) | What is `eval` when nothing interprets, and what changes when the whole REPL is Lisp? |
+| 41 | [The image rebuilds itself](part-6-self-hosting/41-the-image-rebuilds-itself.md) | How does a running world replace its own compiler without being compiled by a half-replaced one? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

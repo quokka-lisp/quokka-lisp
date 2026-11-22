@@ -409,15 +409,23 @@ impl<'a, 'h> Vm<'a, 'h> {
             let what = crate::printer::print(self.mc, callee);
             return self.fail(EvalError::NotAFunction(what));
         };
-        let params = self.mc.slot(code_object, function::PARAMS);
-        let captured = if callee == code_object {
+        // A bare compiled form runs in no scope at all, as `Vm::start` runs
+        // one. Binding its empty parameter list would make a scope object,
+        // and every `defun` inside would capture it: three words a function,
+        // and closures unlike the cold build's (#48).
+        let scope = if callee == code_object && args.is_empty() {
             Value::NIL
         } else {
-            self.mc.slot(callee, closure::ENV)
-        };
-        let scope = match self.bind_parameters(params, args, captured) {
-            Ok(s) => s,
-            Err(e) => return self.fail(e),
+            let params = self.mc.slot(code_object, function::PARAMS);
+            let captured = if callee == code_object {
+                Value::NIL
+            } else {
+                self.mc.slot(callee, closure::ENV)
+            };
+            match self.bind_parameters(params, args, captured) {
+                Ok(s) => s,
+                Err(e) => return self.fail(e),
+            }
         };
         let wanted = self
             .mc

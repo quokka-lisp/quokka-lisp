@@ -105,6 +105,8 @@ Pronounced "could-er". Read it as "rest".
 
 **Character encoding.** A rule for writing characters' numbers as bytes. *UTF-32* uses four bytes for every character; *UTF-8* uses one for ASCII and two to four for the rest, which is compact but means finding the *n*th character takes a scan; [Latin-1](#latin-1) uses one byte and covers only 256 characters. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
 
+**Cold build.** Making a world from nothing, from outside it: Quokka's `boot::build_image`, in Rust, with the interpreter. Contrast the *warm rebuild*, in which a running world remakes itself from its own source. The term is SBCL's, whose build makes a *cold core*. ([41](part-6-self-hosting/41-the-image-rebuilds-itself.md))
+
 **Cheney's algorithm.** The [copying collector](#copying-collector) Quokka uses.
 Its distinguishing trick is needing no extra memory to keep track of its work:
 the objects it has already copied *are* the list of things still to examine.
@@ -327,6 +329,8 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 **Package prefix.** The `pkg:` or `pkg::` before a symbol's name, saying which package it comes from: one colon for an external symbol, two for an internal one. The printer writes one only when the reader would not find the symbol without it. ([36](part-6-self-hosting/36-whose-symbol-is-it.md), [39](part-6-self-hosting/39-printing-in-lisp.md))
 
 **Two's complement.** How machines store signed integers: the top bit counts as a large negative value. A fixed width therefore holds one more negative number than positive, so negating the most negative one overflows. ([39](part-6-self-hosting/39-printing-in-lisp.md))
+
+**Generation (of a compiler).** One complete build of a compiler by the previous one. Quokka's cold build makes C1; C1 rebuilding itself makes C2; C2 makes C3. A *bootstrap stage*, in GCC's term. Comparing generations is how a self-compiling compiler is checked. ([41](part-6-self-hosting/41-the-image-rebuilds-itself.md))
 
 **Lisp-1.** A Lisp where a symbol has one cell shared by variables and functions. Scheme is one; no `funcall` is needed, but functions and variables compete for names. Contrast [Lisp-2](#lisp-2). ([9](part-2-reading-and-running/09-what-a-form-means.md))
 

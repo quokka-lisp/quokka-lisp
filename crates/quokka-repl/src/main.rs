@@ -117,6 +117,37 @@ fn main() {
         return;
     }
 
+    // `quokka --rebuild-image IN OUT` starts from the image IN, has it rebuild
+    // itself from the source files on disk — read, compiled and installed by
+    // its own Lisp (#48) — and saves the result as OUT. Run from the
+    // repository's root, which is where the file names it asks for are.
+    if args.len() == 4 && args[1] == "--rebuild-image" {
+        let mut heap = load_image(&args[2]);
+        let mut said = String::new();
+        let ran = quokka_vm::vm::eval_source(
+            &mut heap,
+            "(quokka::%rebuild-world)",
+            EVAL_BUDGET * 20,
+            2_000,
+            &mut NativeHost,
+            |outcome| {
+                said = format!("{outcome:?}");
+                true
+            },
+        );
+        if ran.is_err() || !said.starts_with("Value") {
+            eprintln!("quokka: the rebuild failed: {said} {ran:?}");
+            std::process::exit(1);
+        }
+        let bytes = quokka_vm::image::save(&mut heap);
+        if let Err(e) = std::fs::write(&args[3], &bytes) {
+            eprintln!("cannot write {}: {e}", args[3]);
+            std::process::exit(1);
+        }
+        println!("{}: rebuilt, {said}; {} bytes", args[3], bytes.len());
+        return;
+    }
+
     // `quokka --compile-file FILE` compiles every form of a file and reports
     // what happened, without installing any of it. That last part is the
     // point rather than a shortcut — see `boot::compile_source` for why
@@ -177,27 +208,13 @@ fn main() {
     let from_image = args.iter().position(|a| a == "--image").map(|i| i + 1);
     let mut heap = match from_image.and_then(|i| args.get(i)) {
         Some(path) => {
-            let bytes = match std::fs::read(path) {
-                Ok(b) => b,
-                Err(e) => {
-                    eprintln!("cannot read {path}: {e}");
-                    std::process::exit(1);
-                }
-            };
-            match quokka_vm::image::load(&bytes, DEFAULT_IMAGE_LIMIT) {
-                Ok(h) => {
-                    host.write_stdout(&format!(
-                        "Loaded {path}: {} words, sequence {}.\n",
-                        h.used_words(),
-                        h.sequence()
-                    ));
-                    h
-                }
-                Err(e) => {
-                    eprintln!("quokka: {path}: {e}");
-                    std::process::exit(1);
-                }
-            }
+            let h = load_image(path);
+            host.write_stdout(&format!(
+                "Loaded {path}: {} words, sequence {}.\n",
+                h.used_words(),
+                h.sequence()
+            ));
+            h
         }
         None => {
             let mut heap = Heap::new();
@@ -248,6 +265,18 @@ fn main() {
             }
         }
     }
+}
+
+/// Read an image file into a heap, or say why not and stop.
+fn load_image(path: &str) -> Heap {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| {
+        eprintln!("cannot read {path}: {e}");
+        std::process::exit(1);
+    });
+    quokka_vm::image::load(&bytes, DEFAULT_IMAGE_LIMIT).unwrap_or_else(|e| {
+        eprintln!("quokka: {path}: {e}");
+        std::process::exit(1);
+    })
 }
 
 /// Evaluate a line in a compiled image: read, evaluated and printed by the

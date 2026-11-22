@@ -253,6 +253,109 @@ fn compiled_image() -> &'static [u8] {
     })
 }
 
+/// The system's source as a rebuilding image asks for it (#48): by the names
+/// `rebuild.lisp` uses, answered from the copies the binary embeds for the
+/// cold build, which is what a host without files does.
+fn embedded_sources() -> Vec<(String, &'static str)> {
+    use quokka_vm::boot::{COMPILER, LIBRARY, PRELUDE};
+    let mut files = vec![("lisp/prelude.lisp".to_string(), PRELUDE)];
+    for (name, text) in COMPILER {
+        files.push((format!("lisp/compiler/{name}"), *text));
+    }
+    for (name, text) in LIBRARY {
+        files.push((format!("lisp/library/{name}"), *text));
+    }
+    files
+}
+
+/// Have the world in IMAGE rebuild itself, and save what it becomes.
+fn rebuild(image: &[u8]) -> Vec<u8> {
+    use quokka_vm::vm::{eval_source, Outcome};
+    let mut heap = quokka_vm::image::load(image, 1 << 22).expect("the image loads");
+    let output = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let files: Vec<(&'static str, &'static str)> = embedded_sources()
+        .into_iter()
+        .map(|(name, text)| (&*Box::leak(name.into_boxed_str()), text))
+        .collect();
+    let mut host = SharedHost(output, files);
+    let mut said = Vec::new();
+    eval_source(
+        &mut heap,
+        "(quokka::%rebuild-world)",
+        BUDGET * 40,
+        2_000,
+        &mut host,
+        |outcome| {
+            said.push(outcome);
+            true
+        },
+    )
+    .expect("the rebuild runs");
+    assert_eq!(
+        said,
+        [Outcome::Value("(:FORMS 373 :REPLACED 316)".into())],
+        "the rebuild did not finish as expected"
+    );
+    quokka_vm::image::save(&mut heap)
+}
+
+/// C2 in #39's terms: the cold-built world, rebuilt once by itself.
+fn rebuilt_image() -> &'static [u8] {
+    static IMAGE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    IMAGE.get_or_init(|| rebuild(compiled_image()))
+}
+
+/// A rebuilt world is a whole world (#48): every differential file, tier 0
+/// and tier 1, agrees with its baseline in it, as in the cold-built one.
+#[test]
+fn a_rebuilt_world_passes_every_differential_file() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lisp");
+    let mut checked = 0;
+    for entry in std::fs::read_dir(&dir).expect("tests/lisp is there") {
+        let path = entry.expect("a directory entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("lisp") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("a name")
+            .to_string();
+        let source = std::fs::read_to_string(&path).expect("the file reads");
+        let expected =
+            std::fs::read_to_string(path.with_extension("expected")).expect("a baseline");
+        let actual = run_compiled_in(rebuilt_image(), &source);
+        compare(&stem, &source, &expected, &actual);
+        checked += 1;
+    }
+    assert!(
+        checked >= 22,
+        "only {checked} differential files were found"
+    );
+}
+
+/// And a rebuilt world can rebuild itself again — C3 from C2 — replacing as
+/// many names from as many forms.
+#[test]
+fn a_rebuilt_world_rebuilds_again() {
+    let again = rebuild(rebuilt_image());
+    let out = run_compiled_in(&again, "(list (+ 1 2) (read-from-string \"cl:car\"))");
+    assert_eq!(out, "=> (3 CAR)\n");
+}
+
+/// `rebuild.lisp` names the library's files itself, since it asks the host
+/// for them; it must name the same files, in the same order, as the cold
+/// build loads.
+#[test]
+fn the_rebuild_reads_the_library_the_cold_build_loads() {
+    let names: Vec<String> = quokka_vm::boot::LIBRARY
+        .iter()
+        .map(|(name, _)| format!("\"lisp/library/{name}\""))
+        .collect();
+    let out = run_compiled("quokka::%library-files");
+    assert_eq!(out, format!("=> ({})\n", names.join(" ")));
+}
+
 /// `run_forms`, in a compiled world, entirely in the image's own Lisp
 /// (#47): each form read by the Lisp reader in `CL-USER`, evaluated by
 /// `eval` — compiled by the image's compiler and run on the VM — and printed
@@ -266,8 +369,13 @@ fn compiled_image() -> &'static [u8] {
 /// Anything a form writes to `*standard-output*` comes first, as SBCL's does
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
+    run_compiled_in(compiled_image(), source)
+}
+
+/// `run_compiled`, in the world IMAGE holds.
+fn run_compiled_in(image: &[u8], source: &str) -> String {
     use quokka_vm::vm::{eval_source, Outcome};
-    let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
+    let mut heap = quokka_vm::image::load(image, 1 << 22).expect("the image loads");
     let mut out = String::new();
     // The host's output is collected as it happens; it is moved to `out`
     // before each result, which is the order SBCL writes them in.
