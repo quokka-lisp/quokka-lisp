@@ -123,7 +123,7 @@ cannot reach.
 | **Evaluator** | an explicit-control machine — no recursive `eval`, so it can stop and resume, and Lisp recursion costs heap rather than Rust stack |
 | **Tail calls** | eliminated, so recursive loops run in constant space |
 | **Closures** | `lambda`, lexical scope, captured environments |
-| **Special operators** | **22 of Common Lisp's 25** — everything except `progv`, `load-time-value` and `symbol-macrolet`, which are outside tier 0 by design |
+| **Special operators** | **all 25 of Common Lisp's** — 22 in tier 0, which the interpreter runs; `progv`, `load-time-value` and `symbol-macrolet` in tier 1, compiled only, with macros that see their lexical environment through `&environment` |
 | **Macros** | `defmacro` with full lambda lists, backquote, `gensym`, `macroexpand`, and `macrolet` for lexical ones |
 | **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux`, `&body`, and destructuring in macros |
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
@@ -137,24 +137,23 @@ cannot reach.
 | **Strings, packed** | a constant string of Latin-1 characters takes one byte a character, not eight; the image shrank from 478 KB to 254 KB ([#44](https://github.com/quokka-lisp/quokka-lisp/issues/44)) |
 | **Multiple values** | `values`, `multiple-value-bind`, `multiple-value-call`, `multiple-value-prog1` — and every form that should pass them through does |
 | **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or`, `setf`, `defstruct`, `handler-case`, the list and sequence functions — about six hundred lines of **Lisp**, compiled into the binary and interpreted at boot |
-| **A bytecode VM** | thirty-nine opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
+| **A bytecode VM** | forty opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
 | **A compiler, in Lisp** | [`lisp/compiler/compile.lisp`](lisp/compiler/compile.lisp): tier-0 Common Lisp that compiles **every special operator**, the prelude, and **itself** — and refuses what the interpreter refuses, so the two agree on what a program is |
 | **Images** | the whole heap to a file and back, *including a computation stopped in mid-air*. Saving is `to_le_bytes` and loading is the inverse, with no pointer patching, because rule 3 made references word indices rather than addresses |
 | **A compiled world** | `quokka build` builds an image in which the prelude, every macro and the compiler are bytecode, and a scan of the whole heap proves nothing interpreted is left; `--image` compiles every form with the image's own compiler and never uses the interpreter |
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-407 tests, green on native, under wasmtime, and with the GC torture mode on.
-Twenty-three Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, six more of
-tier 1 compiled only — and all twenty-three again in a world that has rebuilt
-itself. The Rust core is 13,767 lines of the 15,000-line budget.
+408 tests, green on native, under wasmtime, and with the GC torture mode on.
+Twenty-four Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, seven more of
+tier 1 compiled only — and all twenty-four again in a world that has rebuilt
+itself. The Rust core is 13,809 lines of the 15,000-line budget.
 
 ### What does not exist yet
 
 **The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
-which still lacks `progv`, `load-time-value` and `symbol-macrolet`,
-sequences, `format`, bignums and floats
+which still lacks sequences, `format`, bignums and floats
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
 The first world is still built by the interpreter — the cold build — and is
 then rebuilt by itself.

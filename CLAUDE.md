@@ -77,15 +77,26 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 421 :REPLACED 348)` (asserted in `differential.rs`; a new library file
-changes it). **Next: step I**, `progv`, `load-time-value`, `symbol-macrolet`
-(which makes symbols places: `get-setf-expansion` must then ask). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
+`(:FORMS 439 :REPLACED 365)` (asserted in `differential.rs`; a new library file
+changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
+`lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
+binds one name per level with the compiler form `%dynamic-bind` → the new
+`DBIND-SYMBOL` instruction; `makunbound` is a primitive), `load-time-value`
+(a macro that `eval`s while expanding), and `macroexpand-1`/`macroexpand`
+taking an environment. `symbol-macrolet` is in the compiler: a
+`(:symbol-macro . alist)` scope in `env` that `%lookup` steps over without
+counting. **Macros get `&environment`**: the compiler strips it
+(`%rewrite-macro`) and binds it to `(%current-environment)`, which is
+`(:environment scopes local-macros)` while `%expand` runs an expander. **The
+compiler expands macros itself and never calls `macroexpand-1`** — keep it
+that way, so the library can redefine `macroexpand-1`. **Next: step J,
+sequences.** Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
 the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` (#47, done) → the image rebuilds
-itself (#48, done) → the fixpoint (#50, done) → `setf` expanders (#52, done) → the last three special operators, sequences,
+itself (#48, done) → the fixpoint (#50, done) → `setf` expanders (#52, done) → the last three special operators (#53, done) → sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
 on. Streams (#42, closed): minimal string streams and the console in tier 1;
 generic streams stay tier 2.
@@ -96,7 +107,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,233 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line).
+- **The Rust budget: 1,191 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -135,7 +146,7 @@ wrappers — Lisp, not Rust.
 
 | | |
 | --- | --- |
-| `docs/bytecode.md` | the instruction set on paper: 39 opcodes, frame layout, every ceiling (#27) |
+| `docs/bytecode.md` | the instruction set on paper: 40 opcodes, frame layout, every ceiling (#27) |
 | `src/code.rs` | encoding, the `Function` object, disassembler, assembler, **verifier** (#28) |
 | `src/vm.rs` | the machine; implements `Steppable`, so `run_slice` drives it and rule 4 holds by construction |
 | `lisp/compiler/compile.lisp` | the compiler, 464 lines of tier-0 Lisp (#31) |
@@ -149,8 +160,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**407 tests**; **23 differential files agree with SBCL** — 17 interpreted and
-compiled, plus six tier-1 files, compiled only, and all 23 also pass in a rebuilt world. The Rust core is **13,767** lines of the 15,000 budget.
+**408 tests**; **24 differential files agree with SBCL** — 17 interpreted and
+compiled, plus seven tier-1 files, compiled only, and all 24 also pass in a rebuilt world. The Rust core is **13,809** lines of the 15,000 budget.
 
 ## How phase 1 ended
 
@@ -161,7 +172,7 @@ special operator compiles. An image is used through
 `vm::compile_and_run_forms`, which calls the image's own `compile-form` with a
 trampoline (`vm::call_global`) and never touches the interpreter. `tagbody` is
 a `TAG` record that survives a `go` plus a jump table, and a local `go` is one
-`JMP-TAG` (38 opcodes at the end of phase 1; `DBIND` made 39 in #40).
+`JMP-TAG` (38 opcodes at the end of phase 1; `DBIND` made 39 in #40, `DBIND-SYMBOL` 40 in #53).
 
 **The fourth differential leg (#38)** runs every file in a compiled world
 against the same baseline: each form compiled and run before the next, a

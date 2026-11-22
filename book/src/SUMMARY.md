@@ -64,6 +64,7 @@
 - [The image rebuilds itself](part-6-self-hosting/41-the-image-rebuilds-itself.md)
 - [The fixpoint](part-6-self-hosting/42-the-fixpoint.md)
 - [Places](part-6-self-hosting/43-places.md)
+- [The last three, and what a macro can see](part-6-self-hosting/44-the-last-three.md)
 
 ---
 

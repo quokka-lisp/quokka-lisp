@@ -378,6 +378,12 @@ shape, so the standard library cannot be finished without it.
 can add them later at little cost." `macrolet` — local macro definitions —
 arrives with macros.
 
+As it turned out, the interpreter never added them. They arrived in tier 1,
+compiled only, two of them as macros (which the standard allows), and
+`symbol-macrolet` needed the compiler to hand macros their lexical
+environment. [The last three, and what a macro can see](../part-6-self-hosting/44-the-last-three.md)
+tells that story.
+
 ---
 
 ## The shape of the list

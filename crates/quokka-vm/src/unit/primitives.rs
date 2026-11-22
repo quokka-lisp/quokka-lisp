@@ -110,7 +110,8 @@ fn the_table_order_is_pinned() {
             "%WRITE-CONSOLE",
             "%QUOTIENT",
             "REM",
-            "%PRINTED"
+            "%PRINTED",
+            "MAKUNBOUND"
         ]
     );
 }

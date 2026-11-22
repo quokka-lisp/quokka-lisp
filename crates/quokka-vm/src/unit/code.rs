@@ -30,7 +30,7 @@ fn the_table_is_in_opcode_order() {
 /// Thirty-eight since `JMP-TAG` (#37), thirty-nine since `DBIND` (#40).
 #[test]
 fn there_are_thirty_nine_opcodes() {
-    assert_eq!(OPCODE_COUNT, 39);
+    assert_eq!(OPCODE_COUNT, 40);
 }
 
 /// Every operand shape survives a round trip, including the signed one,

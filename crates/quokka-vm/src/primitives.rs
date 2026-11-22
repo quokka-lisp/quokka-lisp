@@ -127,6 +127,7 @@ pub enum Prim {
     Quotient = 74,
     Rem = 75,
     Printed = 76,
+    Makunbound = 77,
 }
 
 impl Prim {
@@ -438,6 +439,10 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::Quotient, "%QUOTIENT", Arity::Exactly(2)),
     (Prim::Rem, "REM", Arity::Exactly(2)),
     (Prim::Printed, "%PRINTED", Arity::Exactly(1)),
+    // Step I (#53), for `progv`: a name given fewer values than names is
+    // bound and then made to have no value (CLHS). The unbound marker is a
+    // Rust value Lisp must never hold, so only Rust can put it in a symbol.
+    (Prim::Makunbound, "MAKUNBOUND", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -960,7 +965,7 @@ pub fn call_slice<'h>(
                 _ => mc.intern_keyword(&text),
             })
         }
-        Prim::Boundp | Prim::SymbolValue | Prim::Set => {
+        Prim::Boundp | Prim::SymbolValue | Prim::Set | Prim::Makunbound => {
             if !mc.is_symbol(args[0]) {
                 return Err(EvalError::WrongType {
                     name,
@@ -975,6 +980,10 @@ pub fn call_slice<'h>(
                     Err(EvalError::UnboundVariable(what))
                 }
                 Prim::SymbolValue => Ok(value),
+                Prim::Makunbound => {
+                    mc.set_slot(args[0], symbol::VALUE, Value::UNBOUND);
+                    Ok(args[0])
+                }
                 _ => {
                     mc.set_slot(args[0], symbol::VALUE, args[1]);
                     Ok(args[1])

@@ -408,6 +408,13 @@ The standard also calls it a *generalized reference*. ([43](part-6-self-hosting/
 which makes a new list — why `(setf (getf …))` must write the place that holds
 the list as well. ([43](part-6-self-hosting/43-places.md))
 
+**Lexical environment.** What the code around a point in a program means:
+which names are variables, local functions, local macros or symbol macros
+there. The compiler keeps it as a list of scopes; a macro that asks for it
+with `&environment` receives it as an object it can hand to `macroexpand-1`
+and `get-setf-expansion`. Empty, it is the *null environment*.
+([44](part-6-self-hosting/44-the-last-three.md))
+
 **Package.** Common Lisp's namespace for symbols: a symbol table plus rules
 about which names are visible where. Quokka does not have them — tier 1, phase
 2 — but symbols do carry a *home namespace*, with two possible values, because
@@ -543,9 +550,19 @@ that writes and a form that reads. A macro that reads *and* writes a place —
 `incf`, `push` — binds the temporaries once and uses both forms, so each
 subform is evaluated exactly once, left to right. ([43](part-6-self-hosting/43-places.md))
 
+**Symbol macro.** A symbol that stands for a form within a region of code,
+made by `symbol-macrolet`: reading it reads the form, `setq` of it is `setf`
+of the form, and a variable binding of the same name inside the region
+shadows it. ([44](part-6-self-hosting/44-the-last-three.md))
+
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.
 ([6](part-1-substrate/06-cheneys-algorithm.md))
+
+**Unbound.** A variable with no value at all — not `nil`, which is a value.
+Reading one is an error. Inside, an unbound variable holds a marker only Rust
+can see; `boundp` asks, and `makunbound` puts the marker back.
+([44](part-6-self-hosting/44-the-last-three.md))
 
 **Shallow binding.** One way to implement [special variables](#special-variable): the current value lives in the symbol, binding saves the old value and stores the new one, and ending the binding puts the old one back. Reading is one load; switching threads has to swap bindings. Its alternative, *deep binding*, keeps bindings in a per-thread list that every read searches. Quokka uses shallow binding. ([34](part-6-self-hosting/34-standing-on-its-own.md))
 

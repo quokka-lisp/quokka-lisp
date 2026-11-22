@@ -293,6 +293,7 @@ Each chapter answers one question.
 | 41 | [The image rebuilds itself](part-6-self-hosting/41-the-image-rebuilds-itself.md) | How does a running world replace its own compiler without being compiled by a half-replaced one? |
 | 42 | [The fixpoint](part-6-self-hosting/42-the-fixpoint.md) | How do you show a compiler reproduces itself, when its output can never be literally the same file twice? |
 | 43 | [Places](part-6-self-hosting/43-places.md) | How does `incf` update a place it has never seen, evaluating each part once — and how do you add that without changing how the compiler compiles itself? |
+| 44 | [The last three, and what a macro can see](part-6-self-hosting/44-the-last-three.md) | How does a program bind a variable whose name it computes, and how can a macro know what the code around it means? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -301,13 +302,13 @@ it, and only then do 5 and 6 build the thing.
 ## What is not here yet
 
 Still to come, and deliberately so:
-- **The rest of the language.** Twenty-two of Common Lisp's twenty-five special
-  operators exist, along with macros, lambda lists, keywords, vectors, strings,
-  hash tables, `setf`, a minimal **condition system**, `defstruct` and multiple
-  values — which is tier 0, finished. The three that do not exist are `progv`,
-  `load-time-value` and `symbol-macrolet`, which `docs/design.md` excludes on
-  purpose and an interpreter can add later at little cost. Beyond tier 0:
-  packages, `loop`, CLOS, bignums and floats, all of them later phases.
+- **The rest of the language.** All twenty-five of Common Lisp's special
+  operators exist — twenty-two in tier 0, along with macros, lambda lists,
+  keywords, vectors, strings, hash tables, `setf`, a minimal **condition
+  system**, `defstruct` and multiple values; `progv`, `load-time-value` and
+  `symbol-macrolet` in tier 1, compiled only (chapter 44). Still to come in
+  tier 1: sequences, `format`, bignums and floats; beyond it, `loop`, CLOS
+  and the rest, in later phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.

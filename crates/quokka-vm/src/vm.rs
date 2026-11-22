@@ -735,6 +735,17 @@ impl<'a, 'h> Vm<'a, 'h> {
     // ---- unwind records ----------------------------------------------------
 
     /// Push a record, remembering where to carry on if an unwind finds it.
+    /// Bind SYMBOL dynamically to VALUE: a record holding its old value,
+    /// which `UNMARK` and the unwinder put back. `DBIND` and `DBIND-SYMBOL`.
+    fn bind_special(&mut self, symbol: Value<'h>, value: Value<'h>) {
+        let old = self.mc.slot(symbol, crate::heap::symbol::VALUE);
+        self.push_mark(mark::SPECIAL, symbol, 0);
+        let at = self.mc.mp();
+        let stack = self.mc.register(Register::Operands);
+        self.mc.set_slot(stack, at + mark::SAVED, old);
+        self.mc.set_slot(symbol, crate::heap::symbol::VALUE, value);
+    }
+
     fn push_mark(&mut self, kind: i64, datum: Value<'h>, resume: usize) {
         self.ensure(mark::SIZE);
         let at = self.mc.sp();
@@ -1406,12 +1417,18 @@ impl Steppable for Vm<'_, '_> {
                     Err(e) => return self.fail(e),
                 };
                 let value = self.pop();
-                let old = self.mc.slot(symbol, crate::heap::symbol::VALUE);
-                self.push_mark(mark::SPECIAL, symbol, 0);
-                let at = self.mc.mp();
-                let stack = self.mc.register(Register::Operands);
-                self.mc.set_slot(stack, at + mark::SAVED, old);
-                self.mc.set_slot(symbol, crate::heap::symbol::VALUE, value);
+                self.bind_special(symbol, value);
+            }
+            Op::DbindSymbol => {
+                let value = self.pop();
+                let symbol = self.pop();
+                if !self.mc.is_symbol(symbol) {
+                    return self.fail(EvalError::WrongType {
+                        name: "PROGV",
+                        wanted: "a symbol",
+                    });
+                }
+                self.bind_special(symbol, value);
             }
             Op::JmpTag => {
                 // The fast path of `go`: the innermost record is the tagbody's

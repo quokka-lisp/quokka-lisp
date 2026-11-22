@@ -199,6 +199,13 @@ pub enum Op {
     /// `return-from`, a `go` or an error. That is the record machinery
     /// `block` and `catch` already had, with one more kind of record.
     Dbind = 38,
+
+    /// `DBIND` with the symbol taken from the stack: pop a value, pop a
+    /// symbol, and bind it exactly as `DBIND` does (#53). For `progv`, whose
+    /// names are computed at run time, so no constant can hold them. One
+    /// binding, one record, as before — `progv` binds a list one name at a
+    /// time, recursing in Lisp, so no instruction ever loops (rule 9).
+    DbindSymbol = 39,
 }
 
 /// Every opcode, in order, which is also the order of their byte values.
@@ -246,6 +253,7 @@ const TABLE: &[(Op, &str, Operands)] = &[
     (Op::Fset, "FSET", Operands::U8U8),
     (Op::JmpTag, "JMP-TAG", Operands::S16),
     (Op::Dbind, "DBIND", Operands::U16),
+    (Op::DbindSymbol, "DBIND-SYMBOL", Operands::None),
 ];
 
 /// How many opcodes there are. `docs/bytecode.md` quotes this number.
@@ -1161,6 +1169,10 @@ pub mod verify {
                     ..plain(1, RECORD)
                 }
             }
+            Op::DbindSymbol => Effect {
+                marks: 1,
+                ..plain(2, RECORD)
+            },
         })
     }
 }

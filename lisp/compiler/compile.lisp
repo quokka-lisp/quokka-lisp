@@ -193,15 +193,19 @@
         (t (%position item (cdr remaining) (+ index 1)))))
 
 (defun %lookup (name env depth tag)
-  (if (null env)
-      nil
+  (cond
+    ((null env) nil)
+    ;; A `symbol-macrolet` scope exists only while compiling: nothing is
+    ;; pushed for it at run time, so it is not a link and is not counted.
+    ((eq (car (car env)) ':symbol-macro) (%lookup name (cdr env) depth tag))
+    (t
       (let ((scope (car env)))
         (let ((index (if (eq (car scope) tag)
                          (%position name (cdr scope) 0)
                          nil)))
           (if index
               (cons depth index)
-              (%lookup name (cdr env) (+ depth 1) tag))))))
+              (%lookup name (cdr env) (+ depth 1) tag)))))))
 
 ;;; `(if test then else)`
 ;;;
@@ -316,11 +320,16 @@
 ;;; `b` — and nothing noticed, because the only tests of `setq` with more than
 ;;; one pair were in a differential file that had never been run compiled.
 (defun %compile-setq-pairs (pairs env)
-  (let ((place (%lookup (car pairs) env 0 ':variable)))
-    (%compile (second pairs) env nil)
-    (if place
-        (%emit (list 'LSET (car place) (cdr place)))
-        (%emit (list 'GSET (%constant-index (car pairs)))))
+  (let ((macro (%symbol-macro (car pairs) env)))
+    ;; `setq` of a symbol macro is `setf` of what it stands for (CLHS
+    ;; `setq`), so `(setq x 5)` with `x` meaning `(car cell)` writes the car.
+    (if macro
+        (%compile (list 'setf (cdr macro) (second pairs)) env nil)
+        (let ((place (%lookup (car pairs) env 0 ':variable)))
+          (%compile (second pairs) env nil)
+          (if place
+              (%emit (list 'LSET (car place) (cdr place)))
+              (%emit (list 'GSET (%constant-index (car pairs)))))))
     (if (cddr pairs)
         (progn (%emit (list 'POP))
                (%compile-setq-pairs (cddr pairs) env)))))
@@ -606,7 +615,7 @@
 ;;; what `macroexpand-1` looks for.
 (defun %compile-defmacro (form env)
   (let ((name (second form))
-        (rewritten (%rewrite-macro-lambda-list (third form) (cdr (cddr form)))))
+        (rewritten (%rewrite-macro (third form) (cdr (cddr form)))))
     (%compile-callee '%set-symbol-function env)
     (%compile-value name)
     (%compile-callee '%make-macro env)
@@ -645,7 +654,7 @@
                               macros))))
 
 (defun %local-expander (definition)
-  (let ((rewritten (%rewrite-macro-lambda-list (second definition) (cddr definition))))
+  (let ((rewritten (%rewrite-macro (second definition) (cddr definition))))
     (%make-macro (%assemble-lambda (first rewritten) (second rewritten) (third rewritten) nil))))
 
 ;;; The local macro named HEAD, innermost first, or nil.
@@ -656,6 +665,114 @@
   (cond ((endp macros) nil)
         ((eq (car (car macros)) head) (cdr (car macros)))
         (t (%find-macro head (cdr macros)))))
+
+;;; `(symbol-macrolet ((name expansion) ...) body...)` (#53)
+;;;
+;;; A symbol that stands for a form. Like `macrolet`, it exists only while
+;;; the body is compiled, but it lives in ENV rather than beside it, because
+;;; it is a *variable*-like name and must obey variable scope: a `let` of the
+;;; same name inside the body shadows it, and that falls out of keeping both
+;;; in the one chain, innermost first. `%lookup` steps over the scope without
+;;; counting it, since nothing exists for it at run time.
+(defun %compile-symbol-macrolet (form env tail)
+  (%compile-body (cddr form)
+                 (cons (cons ':symbol-macro (%symbol-macro-definitions (second form))) env)
+                 tail))
+
+;;; `((name expansion) ...)` as an alist. A special variable cannot be one
+;;; (CLHS `symbol-macrolet`): its references go to the symbol at run time.
+(defun %symbol-macro-definitions (definitions)
+  (if (endp definitions)
+      nil
+      (let ((name (car (car definitions))))
+        (if (%special-variable-p name)
+            (error "symbol-macrolet cannot name a special variable" name))
+        (cons (cons name (second (car definitions)))
+              (%symbol-macro-definitions (cdr definitions))))))
+
+;;; What NAME stands for in ENV, as `(name . expansion)`, or nil: nil also
+;;; when a variable binding nearer than the definition shadows it.
+(defun %symbol-macro (name env)
+  (cond ((null env) nil)
+        ((eq (car (car env)) ':symbol-macro)
+         (or (%assq name (cdr (car env))) (%symbol-macro name (cdr env))))
+        ((and (eq (car (car env)) ':variable) (%position name (cdr (car env)) 0)) nil)
+        (t (%symbol-macro name (cdr env)))))
+
+(defun %assq (key alist)
+  (cond ((endp alist) nil)
+        ((eq (car (car alist)) key) (car alist))
+        (t (%assq key (cdr alist)))))
+
+;;; The environment a macro sees (#53)
+;;;
+;;; A macro is a function of its argument forms, and some need more: to know
+;;; what the code *around* the call means. `(incf x)` must ask whether `x`
+;;; is a symbol macro here, and only the compiler knows that. Common Lisp
+;;; hands an expander that asks — with `&environment` in its lambda list —
+;;; the **lexical environment** of the call as an object, which
+;;; `macroexpand-1` and `get-setf-expansion` accept.
+;;;
+;;; Here the object is `(:environment scopes local-macros)`: the compiler's
+;;; ENV, and `%local-macros`, as they stand while the expander runs. The
+;;; compiler records ENV in `%expansion-scopes` for the length of each
+;;; expansion; nil for both is the null environment, and is written nil.
+(setq %expansion-scopes nil)
+
+;;; Call EXPANDER on ARGUMENTS with SCOPES and MACROS as its environment.
+(defun %expand (expander arguments scopes macros)
+  (let ((outer-scopes %expansion-scopes)
+        (outer-macros %local-macros))
+    (setq %expansion-scopes scopes)
+    (setq %local-macros macros)
+    (let ((expansion (apply expander arguments)))
+      (setq %expansion-scopes outer-scopes)
+      (setq %local-macros outer-macros)
+      expansion)))
+
+(defun %current-environment ()
+  (if (or %expansion-scopes %local-macros)
+      (list ':environment %expansion-scopes %local-macros)
+      nil))
+
+(defun %environment-symbol-macro (environment name)
+  (if environment (%symbol-macro name (second environment)) nil))
+
+(defun %environment-macro (environment name)
+  (if environment (%find-macro name (third environment)) nil))
+
+;;; A macro's lambda list and body, rewritten for the compiler. The Rust
+;;; rewrite has no `&environment` (`lambda_list.rs`), and does not need one:
+;;; it is taken out here, and its variable bound around the body to the
+;;; environment the expander is called in.
+(defun %rewrite-macro (lambda-list body)
+  (let ((variable (%environment-parameter lambda-list)))
+    (if variable
+        (%rewrite-macro-lambda-list
+         (%without-environment-parameter lambda-list)
+         (list (cons 'let (cons (list (list variable (list '%current-environment)))
+                                body))))
+        (%rewrite-macro-lambda-list lambda-list body))))
+
+(defun %environment-parameter (lambda-list)
+  (cond ((not (consp lambda-list)) nil)
+        ((eq (car lambda-list) '&environment) (second lambda-list))
+        (t (%environment-parameter (cdr lambda-list)))))
+
+(defun %without-environment-parameter (lambda-list)
+  (cond ((not (consp lambda-list)) lambda-list)
+        ((eq (car lambda-list) '&environment) (cddr lambda-list))
+        (t (cons (car lambda-list) (%without-environment-parameter (cdr lambda-list))))))
+
+;;; `(%dynamic-bind symbol value body...)` (#53): bind the special variable
+;;; that SYMBOL — a form, evaluated — names, to VALUE, for BODY. Not Common
+;;; Lisp: `progv` in the library is built on it, one name at a time.
+(defun %compile-dynamic-bind (form env)
+  (%compile (second form) env nil)
+  (%compile (third form) env nil)
+  (%emit (list 'DBIND-SYMBOL))
+  (%with-open ':record (lambda () (%compile-body (cdr (cddr form)) env nil)))
+  (%emit (list 'UNMARK)))
 
 ;;; `(tagbody tag-or-form...)` and `(go tag)`
 ;;;
@@ -981,6 +1098,8 @@
           ((eq head 'go) (%compile-go form env))
           ((eq head 'defmacro) (%compile-defmacro form env))
           ((eq head 'macrolet) (%compile-macrolet form env tail))
+          ((eq head 'symbol-macrolet) (%compile-symbol-macrolet form env tail))
+          ((eq head '%dynamic-bind) (%compile-dynamic-bind form env))
           ((eq head 'catch) (%compile-catch form env))
           ((eq head 'throw) (%compile-throw form env))
           ((eq head 'unwind-protect) (%compile-unwind-protect form env))
@@ -1008,13 +1127,17 @@
           ;; only when run — `handler-case` hid that way for a week.
           ;; A local macro shadows a global one, so it is asked first.
           ((and (symbolp head) (%local-macro head))
-           (%compile (apply (%local-macro head) (cdr form)) env tail))
+           (%compile (%expand (%local-macro head) (cdr form) env %local-macros) env tail))
           ((%special-operator-p head)
            (error (%string-append "the compiler cannot compile the special operator "
                                   (symbol-name head))))
-          (t (multiple-value-bind (expansion expanded) (macroexpand-1 form)
-               (if expanded
-                   (%compile expansion env tail)
+          ;; A global macro, expanded here rather than by `macroexpand-1` so
+          ;; the expander runs in this ENV (#53) — and so that the library
+          ;; may redefine `macroexpand-1` without touching how the compiler
+          ;; compiles itself.
+          (t (let ((expander (if (symbolp head) (%macro-function head) nil)))
+               (if expander
+                   (%compile (%expand expander (cdr form) env %local-macros) env tail)
                    (%compile-call form env tail)))))))
 
 ;;; One form, emitting instructions that leave exactly one value.
@@ -1032,10 +1155,13 @@
   (cond ((null form) (%emit (list 'NIL)))
         ((eq form t) (%emit (list 'T)))
         ((symbolp form)
-         (let ((place (%lookup form env 0 ':variable)))
-           (if place
-               (%emit (list 'LREF (car place) (cdr place)))
-               (%emit (list 'GREF (%constant-index form))))))
+         (let ((macro (%symbol-macro form env)))
+           (if macro
+               (%compile (cdr macro) env tail)
+               (let ((place (%lookup form env 0 ':variable)))
+                 (if place
+                     (%emit (list 'LREF (car place) (cdr place)))
+                     (%emit (list 'GREF (%constant-index form))))))))
         ((consp form) (%compile-cons form env tail))
         (t (%compile-value form))))
 
@@ -1058,6 +1184,7 @@
   (let ((outer-code %code)
         (outer-open %open)
         (outer-macros %local-macros)
+        (outer-scopes %expansion-scopes)
         (outer-constants %constants)
         (outer-count %constant-count))
     (unwind-protect
@@ -1065,6 +1192,7 @@
            (setq %code nil)
            (setq %open nil)
            (setq %local-macros nil)
+           (setq %expansion-scopes nil)
            (%reset-constants)
            (%compile form nil t)
            (%emit (list 'RET))
@@ -1072,5 +1200,6 @@
       (setq %code outer-code)
       (setq %open outer-open)
       (setq %local-macros outer-macros)
+      (setq %expansion-scopes outer-scopes)
       (setq %constants outer-constants)
       (setq %constant-count outer-count))))

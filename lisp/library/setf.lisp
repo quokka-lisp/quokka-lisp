@@ -35,8 +35,9 @@
 ;;;; 3. Places beyond the prelude's: the ones whose reader exists, plus
 ;;;;    `getf`, the case that shows why five values and not a writer's name.
 ;;;;
-;;;; `&environment` is accepted and bound to nil: there is no lexical macro
-;;;; environment to pass yet, so a `macrolet` place is not seen.
+;;;; Every macro here takes `&environment` and hands it to
+;;;; `get-setf-expansion`, so a symbol macro or a `macrolet` macro is seen as
+;;;; a place (#53). Until step I there was no environment to hand on.
 ;;;;
 ;;;; There is no `mapcar` or `dolist` yet (sequences are step J), so the
 ;;;; walking below is done with `labels`.
@@ -66,12 +67,15 @@
 ;;; get-setf-expansion
 
 (defun get-setf-expansion (place &optional environment)
-  environment
   (cond
-    ;; A variable needs no temporaries: read it, `setq` it.
+    ;; A symbol macro is the place it stands for (#53). A variable needs no
+    ;; temporaries: read it, `setq` it.
     ((symbolp place)
-     (let ((store (gensym "NEW")))
-       (values nil nil (list store) (list 'setq place store) place)))
+     (multiple-value-bind (expansion expanded) (macroexpand-1 place environment)
+       (if expanded
+           (get-setf-expansion expansion environment)
+           (let ((store (gensym "NEW")))
+             (values nil nil (list store) (list 'setq place store) place)))))
     ((not (consp place)) (%setf-unknown-place place))
     ;; A place the prelude knows: the writer is what the prelude's `setf`
     ;; would write, with temporaries in place of the subforms.
@@ -85,7 +89,7 @@
     ((gethash (car place) %setf-expanders)
      (apply (gethash (car place) %setf-expanders) (cdr place)))
     ;; A macro form is a place if what it expands to is (CLHS 5.1.2.7).
-    (t (multiple-value-bind (expansion expanded) (macroexpand-1 place)
+    (t (multiple-value-bind (expansion expanded) (macroexpand-1 place environment)
          (if expanded
              (get-setf-expansion expansion environment)
              (%setf-unknown-place place))))))
@@ -129,21 +133,21 @@
 ;;; not know goes through its expansion instead of being an error. The shape
 ;;; — the `progn`, the odd-number error — is copied exactly, because a known
 ;;; place must expand as before (decision 1).
-(defmacro setf (&rest pairs)
+(defmacro setf (&rest pairs &environment environment)
   (labels ((expand (rest)
              (cond ((null rest) nil)
                    ((null (cdr rest))
                     (error "SETF wants place and value in pairs" (car rest)))
-                   (t (cons (%setf-pair (car rest) (car (cdr rest)))
+                   (t (cons (%setf-pair (car rest) (car (cdr rest)) environment)
                             (expand (cdr (cdr rest))))))))
     (let ((forms (expand pairs)))
       (cond ((null forms) nil)
             ((null (cdr forms)) (car forms))
             (t (cons 'progn forms))))))
 
-(defun %setf-pair (place value)
+(defun %setf-pair (place value environment)
   (or (%setf-known-place place value)
-      (multiple-value-bind (vars vals stores writer) (get-setf-expansion place)
+      (multiple-value-bind (vars vals stores writer) (get-setf-expansion place environment)
         (if (and (consp stores) (null (cdr stores)))
             `(let* (,@(%bindings vars vals) (,(car stores) ,value)) ,writer)
             `(let* ,(%bindings vars vals)
@@ -174,7 +178,7 @@
               (%long-defsetf-expansion
                ',name ,arguments ,(length stores)
                (lambda (,@stores ,@plain)
-                 (let ((,environment nil)) ,environment ,@body)))))))))
+                 (let ((,environment (%current-environment))) ,environment ,@body)))))))))
 
 (defun %long-defsetf-expansion (name forms count writer)
   (multiple-value-bind (vars vals args) (%temporaries forms)
@@ -187,18 +191,19 @@
   (if (= count 0) nil (cons (gensym "NEW") (%gensyms (- count 1)))))
 
 ;;; `(define-setf-expander name lambda-list body...)` — BODY returns the five
-;;; values itself. Its lambda list is a macro's, destructuring included, so
-;;; the expander is made the way `defmacro` makes one, under a name nobody
-;;; can write (a fresh uninterned symbol), and taken back out as a function.
+;;; values itself. Its lambda list is a macro's, destructuring and
+;;; `&environment` included, so the expander is made the way `defmacro` makes
+;;; one, under a name nobody can write (a fresh uninterned symbol), and taken
+;;; back out as a function. It is called while a `setf` is being expanded,
+;;; so `&environment` is that `setf`'s.
 (defmacro define-setf-expander (name lambda-list &body body)
   (let ((hidden (gensym "SETF-EXPANDER")))
-    (multiple-value-bind (plain environment) (%without-environment lambda-list)
-      `(progn
-         (defmacro ,hidden ,plain (let ((,environment nil)) ,environment ,@body))
-         (%define-setf-expander ',name (%macro-function ',hidden))))))
+    `(progn
+       (defmacro ,hidden ,lambda-list ,@body)
+       (%define-setf-expander ',name (%macro-function ',hidden)))))
 
 ;;; A lambda list without its `&environment VAR`, and VAR (a gensym if there
-;;; was none). `defmacro` has no `&environment` yet (`lambda_list.rs`).
+;;; was none), for long `defsetf`, whose lambda list is an ordinary one.
 (defun %without-environment (lambda-list)
   (labels ((walk (rest kept)
              (cond ((not (consp rest)) (values (append (reverse kept) rest) (gensym "ENV")))
@@ -215,9 +220,10 @@
 ;;; lambda list has only `&optional` and `&rest`, per CLHS.
 (defmacro define-modify-macro (name lambda-list function &optional documentation)
   documentation
-  (let ((place (gensym "PLACE")))
-    `(defmacro ,name (,place ,@lambda-list)
-       (%modify-place ,place ',function ,(%modify-arguments lambda-list)))))
+  (let ((place (gensym "PLACE"))
+        (environment (gensym "ENV")))
+    `(defmacro ,name (,place ,@lambda-list &environment ,environment)
+       (%modify-place ,place ',function ,(%modify-arguments lambda-list) ,environment))))
 
 ;;; The form that lists a modify macro's arguments, rest list included.
 (defun %modify-arguments (lambda-list)
@@ -230,8 +236,8 @@
                    (t (walk (cdr rest) (cons (car rest) required))))))
     (walk lambda-list nil)))
 
-(defun %modify-place (place function arguments)
-  (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place)
+(defun %modify-place (place function arguments environment)
+  (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
     `(let* (,@(%bindings vars vals)
             (,(%one-store stores place) (,function ,reader ,@arguments)))
        ,writer)))
@@ -241,9 +247,9 @@
 
 ;;; `push` evaluates ITEM *before* the place's subforms — the one exception
 ;;; to left-to-right that CLHS 5.1.1.1 needs, since ITEM is written first.
-(defmacro push (item place)
+(defmacro push (item place &environment environment)
   (let ((value (gensym "ITEM")))
-    (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place)
+    (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
       `(let* ((,value ,item)
               ,@(%bindings vars vals)
               (,(%one-store stores place) (cons ,value ,reader)))
@@ -251,9 +257,9 @@
 
 ;;; `pushnew` compares with `eq` by default where CL says `eql`: Quokka has no
 ;;; `eql` until bignums, and on everything it has today the two agree.
-(defmacro pushnew (item place &rest keys)
+(defmacro pushnew (item place &rest keys &environment environment)
   (let ((value (gensym "ITEM")))
-    (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place)
+    (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
       `(let* ((,value ,item)
               ,@(%bindings vars vals)
               (,(%one-store stores place) (%adjoin ,value ,reader ,@keys)))
@@ -274,8 +280,8 @@
                      (t (present (cdr rest))))))
       (if (present list) list (cons item list)))))
 
-(defmacro pop (place)
-  (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place)
+(defmacro pop (place &environment environment)
+  (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
     (let ((list (gensym "LIST")))
       `(let* (,@(%bindings vars vals)
               (,list ,reader)
@@ -286,11 +292,11 @@
 ;;; `(shiftf p1 ... pn new)`: each place takes the next one's old value, the
 ;;; last takes NEW, and the result is p1's old value. All subforms first, in
 ;;; order; then all reads; then all writes.
-(defmacro shiftf (&rest places-and-value)
+(defmacro shiftf (&rest places-and-value &environment environment)
   (let ((places (reverse (cdr (reverse places-and-value))))
         (new (car (reverse places-and-value)))
         (old (gensym "OLD")))
-    (multiple-value-bind (bindings stores writers readers) (%expand-places places)
+    (multiple-value-bind (bindings stores writers readers) (%expand-places places environment)
       `(let* (,@bindings
               (,old ,(car readers))
               ,@(%bindings stores (append (cdr readers) (list new))))
@@ -299,10 +305,10 @@
 
 ;;; `(rotatef p1 ... pn)`: each place takes the next one's value, the last
 ;;; takes the first's. Nil.
-(defmacro rotatef (&rest places)
+(defmacro rotatef (&rest places &environment environment)
   (if (null places)
       nil
-      (multiple-value-bind (bindings stores writers readers) (%expand-places places)
+      (multiple-value-bind (bindings stores writers readers) (%expand-places places environment)
         `(let* (,@bindings
                 ,@(%bindings stores (append (cdr readers) (list (car readers)))))
            ,@writers
@@ -311,11 +317,12 @@
 ;;; `(psetf p1 v1 p2 v2 ...)`: like `setf`, but every value is computed
 ;;; before any place is written. Nil. Each value is bound right after its
 ;;; own place's subforms, which keeps the order of evaluation the source's.
-(defmacro psetf (&rest pairs)
+(defmacro psetf (&rest pairs &environment environment)
   (labels ((walk (rest bindings writers)
              (if (null rest)
                  `(let* ,(reverse bindings) ,@(reverse writers) nil)
-                 (multiple-value-bind (vars vals stores writer) (get-setf-expansion (car rest))
+                 (multiple-value-bind (vars vals stores writer)
+                     (get-setf-expansion (car rest) environment)
                    (walk (cdr (cdr rest))
                          (cons (list (%one-store stores (car rest)) (car (cdr rest)))
                                (append (reverse (%bindings vars vals)) bindings))
@@ -324,12 +331,12 @@
 
 ;;; Expand every place in PLACES: the bindings of all their temporaries, in
 ;;; order, then the store, writer and reader of each.
-(defun %expand-places (places)
+(defun %expand-places (places environment)
   (labels ((walk (rest bindings stores writers readers)
              (if (null rest)
                  (values bindings (reverse stores) (reverse writers) (reverse readers))
                  (multiple-value-bind (vars vals store-list writer reader)
-                     (get-setf-expansion (car rest))
+                     (get-setf-expansion (car rest) environment)
                    (walk (cdr rest) (append bindings (%bindings vars vals))
                          (cons (%one-store store-list (car rest)) stores)
                          (cons writer writers) (cons reader readers))))))
@@ -422,8 +429,8 @@
 ;;; `(remf place indicator)` removes the property and says whether there was
 ;;; one. Removing the first property makes the list shorter at the front, so
 ;;; the place is written, as for `getf`.
-(defmacro remf (place indicator)
-  (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place)
+(defmacro remf (place indicator &environment environment)
+  (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
     (let ((key (gensym "INDICATOR"))
           (removed (gensym "REMOVED")))
       `(let* (,@(%bindings vars vals) (,key ,indicator))
