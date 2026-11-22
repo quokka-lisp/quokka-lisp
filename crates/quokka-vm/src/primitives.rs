@@ -123,6 +123,10 @@ pub enum Prim {
     CharDowncase = 70,
     AlphaCharP = 71,
     ConstantString = 72,
+    WriteConsole = 73,
+    Quotient = 74,
+    Rem = 75,
+    Printed = 76,
 }
 
 impl Prim {
@@ -424,6 +428,16 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::CharDowncase, "CHAR-DOWNCASE", Arity::Exactly(1)),
     (Prim::AlphaCharP, "ALPHA-CHAR-P", Arity::Exactly(1)),
     (Prim::ConstantString, "%CONSTANT-STRING", Arity::Exactly(1)),
+    // Step G (#46), for the printer in Lisp. Console output, which is a
+    // request to the host like `%read-source` and intercepted by the VM the
+    // same way. Integer division, which printing a number in a base cannot do
+    // without; `truncate`, `floor` and `mod` are Lisp over these two. And the
+    // Rust printer's text for an object Lisp has no way to describe — a
+    // function, a condition — so it reads the same whichever printer runs.
+    (Prim::WriteConsole, "%WRITE-CONSOLE", Arity::Exactly(1)),
+    (Prim::Quotient, "%QUOTIENT", Arity::Exactly(2)),
+    (Prim::Rem, "REM", Arity::Exactly(2)),
+    (Prim::Printed, "%PRINTED", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -861,8 +875,26 @@ pub fn call_slice<'h>(
         // blocking twice for an evaluator nothing runs after #33. A loud
         // refusal rather than a quiet one, because a rule enforced on one side
         // only is enforced where it happened to be tested.
-        Prim::ReadSource => Err(EvalError::BadSyntax {
-            operator: "%READ-SOURCE",
+        Prim::Quotient | Prim::Rem => {
+            let (n, d) = (fixnum(name, args[0])?, fixnum(name, args[1])?);
+            if d == 0 {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a divisor other than zero",
+                });
+            }
+            // Rust's `/` and `%` truncate towards zero, which is exactly CL's
+            // `truncate` and `rem`. The one overflow is the most negative
+            // fixnum divided by -1.
+            make(if prim == Prim::Quotient {
+                n.checked_div(d)
+            } else {
+                n.checked_rem(d)
+            })
+        }
+        Prim::Printed => Ok(mc.alloc_string(&crate::printer::print(mc, args[0]))),
+        Prim::ReadSource | Prim::WriteConsole => Err(EvalError::BadSyntax {
+            operator: name,
             detail: "asks the host for something, which only compiled code can do: \
                      the interpreter is the bootstrap evaluator and has no I/O",
         }),

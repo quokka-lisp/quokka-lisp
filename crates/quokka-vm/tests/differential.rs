@@ -125,6 +125,7 @@ tier1_cases! {
     specials => "specials",
     packages => "packages",
     reader => "reader",
+    printer => "printer",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -139,6 +140,23 @@ tier1_cases! {
 /// library.
 #[test]
 fn the_lisp_reader_reads_the_system_as_the_rust_reader_does() {
+    read_the_system_both_ways(Printer::Rust, "the two readers disagree");
+}
+
+/// The Lisp printer (#46) writes every form of the system as the Rust printer
+/// does: the forms the previous test checked, now printed by `prin1` rather
+/// than by `printer.rs`. Until step D switches the differential files to the
+/// Lisp printer, this is the broad check on it — every symbol, string,
+/// character, number and nesting the system is written in.
+#[test]
+fn the_lisp_printer_prints_the_system_as_the_rust_printer_does() {
+    read_the_system_both_ways(Printer::Lisp, "the two printers disagree");
+}
+
+/// Read every form of the prelude, the compiler and the library with the Rust
+/// reader and print it with the Rust printer; read it again with the Lisp
+/// reader and print it with PRINTER; and insist the two agree.
+fn read_the_system_both_ways(printer: Printer, disagree: &str) {
     use quokka_vm::boot::{COMPILER, LIBRARY, PRELUDE};
     let sources = std::iter::once(("prelude.lisp", PRELUDE))
         .chain(COMPILER.iter().copied())
@@ -155,15 +173,10 @@ fn the_lisp_reader_reads_the_system_as_the_rust_reader_does() {
             program.push_str("(read *source*)\n");
         }
         program.push_str("(read *source* nil :end)\n");
-        let by_lisp = run_compiled(&program);
+        let by_lisp = run_compiled_printing(&program, printer);
         let by_lisp: Vec<&str> = by_lisp.lines().skip(1).collect();
         for (i, (rust, lisp)) in by_rust.iter().zip(&by_lisp).enumerate() {
-            assert_eq!(
-                lisp,
-                rust,
-                "{name}, form {}: the two readers disagree",
-                i + 1
-            );
+            assert_eq!(lisp, rust, "{name}, form {}: {disagree}", i + 1);
         }
         assert_eq!(
             by_lisp.len(),
@@ -245,31 +258,77 @@ fn compiled_image() -> &'static [u8] {
 /// a file means. A compile error is a condition signalled inside
 /// `compile-form`, and so arrives as the form's `!! error`, exactly as a
 /// deliberately malformed form errs at run time when interpreted.
+///
+/// Anything a form writes to `*standard-output*` comes first, as SBCL's does
+/// in the oracle's output.
 fn run_compiled(source: &str) -> String {
-    use quokka_vm::printer::print;
+    run_compiled_printing(source, Printer::Rust)
+}
+
+/// Which printer writes a compiled form's result.
+///
+/// The Lisp printer is the one the differential files should use, so that
+/// all of them check it against SBCL — and they will, from step D (#46).
+/// Until then the files are read by the Rust reader, whose flat table gives
+/// a test's `a` the `QUOKKA` symbol the build already used, and a correct
+/// printer in `CL-USER` writes that as `QUOKKA::A`: 66 forms disagreed by
+/// that prefix alone. At D the files are read by the Lisp reader, a test's
+/// `a` is `CL-USER::A`, and `run_compiled` switches to `Printer::Lisp`.
+#[derive(Clone, Copy, PartialEq)]
+enum Printer {
+    Rust,
+    Lisp,
+}
+
+fn run_compiled_printing(source: &str, printer: Printer) -> String {
+    use quokka_vm::heap::Register;
+    use quokka_vm::vm::{call_global, run_sliced};
     let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
     let mut host = quokka_vm::host::NullHost::default();
     let mut out = String::new();
-    let read = quokka_vm::vm::compile_and_run_forms(
-        &mut heap,
-        source,
-        BUDGET,
-        2_000,
-        &mut host,
-        |mc, result| {
-            match result {
-                Ok(value) => {
-                    out.push_str("=> ");
-                    out.push_str(&print(mc, value));
-                    out.push('\n');
-                }
-                Err(_) => out.push_str("!! error\n"),
+    let chars = quokka_vm::reader::Reader::chars_of(source);
+    let mut reader = quokka_vm::reader::Reader::new(&chars);
+    loop {
+        let read = heap.mutate(|mc| match reader.read(mc) {
+            Err(_) => Some(false),
+            Ok(None) => None,
+            Ok(Some(form)) => {
+                mc.set_register(Register::Value, form);
+                Some(true)
             }
-            true
-        },
-    );
-    if read.is_err() {
-        out.push_str("!! read error\n");
+        });
+        match read {
+            None => break,
+            Some(false) => {
+                out.push_str("!! read error\n");
+                break;
+            }
+            Some(true) => {}
+        }
+        let ran = call_global(&mut heap, "COMPILE-FORM", BUDGET, 2_000, &mut host)
+            .and_then(|()| run_sliced(&mut heap, BUDGET, 2_000, &mut host));
+        // The form's value is in the Value register; the Lisp printer leaves
+        // its text there instead. A printer that fails is a bug, not a result.
+        if ran.is_ok() && printer == Printer::Lisp {
+            call_global(&mut heap, "PRIN1-TO-STRING", BUDGET, 2_000, &mut host)
+                .unwrap_or_else(|e| panic!("the Lisp printer failed: {e}"));
+        }
+        out.push_str(&std::mem::take(&mut host.output));
+        match ran {
+            Ok(()) => {
+                let text = heap.mutate(|mc| {
+                    let value = mc.register(Register::Value);
+                    match printer {
+                        Printer::Lisp => mc.string_to_rust(value),
+                        Printer::Rust => quokka_vm::printer::print(mc, value),
+                    }
+                });
+                out.push_str("=> ");
+                out.push_str(&text);
+                out.push('\n');
+            }
+            Err(_) => out.push_str("!! error\n"),
+        }
     }
     out
 }

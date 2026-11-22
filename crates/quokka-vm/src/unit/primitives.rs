@@ -106,7 +106,11 @@ fn the_table_order_is_pinned() {
             "CHAR-UPCASE",
             "CHAR-DOWNCASE",
             "ALPHA-CHAR-P",
-            "%CONSTANT-STRING"
+            "%CONSTANT-STRING",
+            "%WRITE-CONSOLE",
+            "%QUOTIENT",
+            "REM",
+            "%PRINTED"
         ]
     );
 }

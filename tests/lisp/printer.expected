@@ -1,0 +1,128 @@
+=> "42"
+=> "-7"
+=> "0"
+=> "#\\a"
+=> "#\\ "
+=> "#\\Tab"
+=> "#\\Newline"
+=> "#\\Soh"
+=> "#\\Rubout"
+=> "\"plain\""
+=> "\"with \\\"quotes\\\" and \\\\ backslash\""
+=> "with \"quotes\""
+=> "a"
+=> "(1 2 3)"
+=> "(1 . 2)"
+=> "(1 2 . 3)"
+=> "((1) (2 (3)))"
+=> "NIL"
+=> "#(1 \"two\" #\\3)"
+=> "#()"
+=> "(QUOTE CAR)"
+=> "(FUNCTION CAR)"
+=> "CAR"
+=> "NIL"
+=> "T"
+=> ":KEYWORD"
+=> "|lower|"
+=> "|Mixed Case|"
+=> "|123|"
+=> "1+"
+=> "-"
+=> "E5"
+=> "|+1|"
+=> "|.|"
+=> "|A:B|"
+=> "|A#|"
+=> "|A(B|"
+=> "||"
+=> "|BAR\\|BAZ|"
+=> "|BACK\\\\SLASH|"
+=> "lower case"
+=> "#:LONELY"
+=> "LONELY"
+=> "LONELY"
+=> "PRINTER-TEST"
+=> "PRINTER-TEST:OUTSIDE"
+=> "PRINTER-TEST::INSIDE"
+=> "INSIDE"
+=> "COMMON-LISP:CAR"
+=> "COMMON-LISP-USER::SOMETHING-OF-OURS"
+=> "PRINTER-TEST::INSIDE"
+=> "foo-bar"
+=> "Foo-Bar"
+=> "(Abc1d X2y :Key)"
+=> "|Mixed|"
+=> "FF"
+=> "#xFF"
+=> "#x-A"
+=> "1010"
+=> "#b1010"
+=> "#o10"
+=> "#3r122"
+=> "42."
+=> "|A1|"
+=> "(1 2 3 ...)"
+=> "(...)"
+=> "#(1 2 ...)"
+=> "(1 (2 #))"
+=> "#"
+=> "(1 (2 #) ...)"
+=> "BEE"
+=> "\"x\""
+=> "hello"
+=> "el"
+=> "ab"
+=> "one
+two"
+=> "\"q\"q"
+=> "
+42 "
+=> "
+x
+"
+=> "x
+"
+=> ("first" "second")
+=> "101010"
+=> 42
+=> T
+=> T
+=> NIL
+to the console
+=> 1
+"quoted"
+=> 2
+KEYWORD
+=> 3
+
+42 
+=> 4
+a line
+=> 5
+#xFF
+=> 6
+=> "Space"
+=> "Nul"
+=> T
+=> NIL
+=> #\7
+=> #\B
+=> NIL
+=> "SYM"
+=> "c"
+=> "str"
+=> (3 1)
+=> (-3 -1)
+=> (3 1)
+=> (-4 1)
+=> (-4 -1)
+=> (3 -1)
+=> (2 0)
+=> (5 0)
+=> 1
+=> -1
+=> -1
+=> 5
+=> (T T NIL)
+!! error

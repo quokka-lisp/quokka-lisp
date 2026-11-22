@@ -65,7 +65,8 @@ fn write_immediate(out: &mut String, v: Value<'_>) {
     } else if let Some(ch) = v.as_character() {
         out.push_str("#\\");
         out.push_str(&match ch {
-            ' ' => "Space".to_string(),
+            // SBCL's way, which the Lisp printer follows too (#46).
+            ' ' => " ".to_string(),
             '\n' => "Newline".to_string(),
             '\t' => "Tab".to_string(),
             '\r' => "Return".to_string(),

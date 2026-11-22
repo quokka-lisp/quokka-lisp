@@ -32,17 +32,27 @@ layouts differ — go through them, never `raw_slot`, on a string. Image 478 KB 
 Backquote must expand exactly as `reader.rs::quasiquote` does (the fixpoint
 compares bytes); `the_lisp_reader_reads_the_system_as_the_rust_reader_does` in
 `differential.rs` reads every library, prelude and compiler form with both
-readers and keeps that true. Image now 306 KB. **Next is step G, the printer
-in Lisp** (with #42's output streams), then D. Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
+readers and keeps that true. **Step G is done** (#46, chapter 39):
+`lisp/library/printer.lisp` — `prin1`/`princ`/`print`/`write` and `-to-string`,
+package prefixes, `|...|` by SBCL's measured rules, seven `*print-…*`
+variables; output streams, with `*standard-output*` a console stream whose
+writes are `%write-console` host requests; and `numbers.lisp` (`truncate`,
+`floor`, `mod` over the new `%quotient`/`rem`). Image now 344 KB. **Step D must
+flip the differential harness to the Lisp printer**: `run_compiled` in
+`differential.rs` uses `Printer::Rust` until the test files are read by the
+Lisp reader, because the Rust reader hands a test's `a` the `QUOKKA` symbol and
+the Lisp printer then rightly writes `QUOKKA::A` (66 forms; #46 has why
+`CL-USER` must not use `QUOKKA` instead). **Next is step D, `eval` and
+`load`.** Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
-the reader in Lisp (#45, done) → the printer in Lisp → `eval`/`load` → the image rebuilds
+the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` → the image rebuilds
 itself → the fixpoint → `setf` expanders, the last three special operators, sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
-on. Streams (#42): minimal string streams in tier 1 — input done in C, output
-due with the printer in G; #42 closes then.
+on. Streams (#42, closed): minimal string streams and the console in tier 1;
+generic streams stay tier 2.
 
 Three things to hold on to while working in phase 2:
 
@@ -50,7 +60,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,499 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74).
+- **The Rust budget: 1,440 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -103,8 +113,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**396 tests**; **20 differential files agree with SBCL** — 17 interpreted and
-compiled, plus three tier-1 files, compiled only. The Rust core is **13,501** lines of the 15,000 budget.
+**398 tests**; **21 differential files agree with SBCL** — 17 interpreted and
+compiled, plus four tier-1 files, compiled only. The Rust core is **13,560** lines of the 15,000 budget.
 
 ## How phase 1 ended
 

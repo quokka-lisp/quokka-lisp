@@ -90,8 +90,16 @@ pub const LIBRARY: &[(&str, &str)] = &[
         include_str!("../../../lisp/library/cl-symbols.lisp"),
     ),
     (
+        "numbers.lisp",
+        include_str!("../../../lisp/library/numbers.lisp"),
+    ),
+    (
         "reader.lisp",
         include_str!("../../../lisp/library/reader.lisp"),
+    ),
+    (
+        "printer.lisp",
+        include_str!("../../../lisp/library/printer.lisp"),
     ),
     (
         "packages.lisp",

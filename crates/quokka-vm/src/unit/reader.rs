@@ -172,7 +172,8 @@ fn quote_is_just_a_list() {
 #[test]
 fn characters() {
     reads_as("#\\a", "#\\a");
-    reads_as("#\\space", "#\\Space");
+    // A space prints as itself after `#\`, as SBCL prints it (#46).
+    reads_as("#\\space", "#\\ ");
     reads_as("#\\Newline", "#\\Newline");
     reads_as("#\\(", "#\\(");
 }

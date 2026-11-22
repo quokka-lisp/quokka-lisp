@@ -1,0 +1,150 @@
+;;;; The printer in Lisp (#46): prin1, princ, print, write and their
+;;;; -to-string forms, the print variables, output streams, the console, and
+;;;; integer division.
+;;;;
+;;;; Tier 1, so this runs compiled and against SBCL. Results are printed by
+;;;; the harness's printer, so the Lisp printer is tested by what it returns
+;;;; as a string. A symbol written in this file is read by the Rust reader
+;;;; until step D, which may give it the QUOKKA symbol of the same name, so
+;;;; symbols are made from strings here, or are keywords or Common Lisp's own
+;;;; (#46). Ratios, floats and Unicode character names are left out: Quokka
+;;;; has none of them yet.
+
+;; Numbers, characters, strings.
+(prin1-to-string 42)
+(prin1-to-string -7)
+(prin1-to-string 0)
+(prin1-to-string #\a)
+(prin1-to-string #\Space)
+(prin1-to-string #\Tab)
+(prin1-to-string #\Newline)
+(prin1-to-string (code-char 1))
+(prin1-to-string (code-char 127))
+(prin1-to-string "plain")
+(prin1-to-string "with \"quotes\" and \\ backslash")
+(princ-to-string "with \"quotes\"")
+(princ-to-string #\a)
+
+;; Lists, vectors, nesting.
+(prin1-to-string '(1 2 3))
+(prin1-to-string '(1 . 2))
+(prin1-to-string '(1 2 . 3))
+(prin1-to-string '((1) (2 (3))))
+(prin1-to-string '())
+(prin1-to-string #(1 "two" #\3))
+(prin1-to-string #())
+(prin1-to-string ''car)
+(prin1-to-string '#'car)
+
+;; Symbols: Common Lisp's, keywords, and names that need bars.
+(prin1-to-string 'car)
+(prin1-to-string nil)
+(prin1-to-string t)
+(prin1-to-string :keyword)
+(prin1-to-string (intern "lower"))
+(prin1-to-string (intern "Mixed Case"))
+(prin1-to-string (intern "123"))
+(prin1-to-string (intern "1+"))
+(prin1-to-string (intern "-"))
+(prin1-to-string (intern "E5"))
+(prin1-to-string (intern "+1"))
+(prin1-to-string (intern "."))
+(prin1-to-string (intern "A:B"))
+(prin1-to-string (intern "A#"))
+(prin1-to-string (intern "A(B"))
+(prin1-to-string (intern ""))
+(prin1-to-string (intern "BAR|BAZ"))
+(prin1-to-string (intern "BACK\\SLASH"))
+(princ-to-string (intern "lower case"))
+(prin1-to-string (make-symbol "LONELY"))
+(princ-to-string (make-symbol "LONELY"))
+(write-to-string (make-symbol "LONELY") :gensym nil)
+
+;; Package prefixes.
+(package-name (defpackage :printer-test (:use :cl) (:export :outside)))
+(prin1-to-string (intern "OUTSIDE" :printer-test))
+(prin1-to-string (intern "INSIDE" :printer-test))
+(let ((*package* (find-package :printer-test)))
+  (prin1-to-string (intern "INSIDE" :printer-test)))
+(let ((*package* (find-package :keyword)))
+  (prin1-to-string 'car))
+(let ((*package* (find-package :printer-test)))
+  (prin1-to-string (read-from-string "cl-user::something-of-ours")))
+(prin1-to-string (read-from-string "printer-test::inside"))
+
+;; Print variables.
+(write-to-string (intern "FOO-BAR") :case :downcase)
+(write-to-string (intern "FOO-BAR") :case :capitalize)
+(write-to-string (list (intern "ABC1D") (intern "X2Y") :key) :case :capitalize)
+(write-to-string (intern "Mixed") :case :downcase)
+(write-to-string 255 :base 16)
+(write-to-string 255 :base 16 :radix t)
+(write-to-string -10 :base 16 :radix t)
+(write-to-string 10 :base 2)
+(write-to-string 10 :base 2 :radix t)
+(write-to-string 8 :base 8 :radix t)
+(write-to-string 17 :base 3 :radix t)
+(write-to-string 42 :radix t)
+(write-to-string (intern "A1") :base 16)
+(write-to-string '(1 2 3 4 5) :length 3)
+(write-to-string '(1 2 3) :length 0)
+(write-to-string #(1 2 3 4) :length 2)
+(write-to-string '(1 (2 (3 (4)))) :level 2)
+(write-to-string '(1) :level 0)
+(write-to-string '(1 (2 (3 (4))) 3 4) :length 2 :level 2)
+(let ((*print-base* 16)) (prin1-to-string 3054))
+(let ((*print-escape* nil)) (prin1-to-string "x"))
+
+;; Output to a string.
+(with-output-to-string (s) (write-string "hello" s))
+(with-output-to-string (s) (write-string "hello" s :start 1 :end 3))
+(with-output-to-string (s) (write-char #\a s) (write-char #\b s))
+(with-output-to-string (s) (write-line "one" s) (write-string "two" s))
+(with-output-to-string (s) (prin1 "q" s) (princ "q" s))
+(with-output-to-string (s) (print 42 s))
+(with-output-to-string (s) (terpri s) (fresh-line s) (write-string "x" s) (fresh-line s))
+(with-output-to-string (s) (list (fresh-line s) (write-string "x" s) (fresh-line s)))
+(let ((s (make-string-output-stream)))
+  (write-string "first" s)
+  (list (get-output-stream-string s) (progn (write-string "second" s) (get-output-stream-string s))))
+(with-output-to-string (s) (write 42 :stream s :base 2))
+(prin1 42 (make-string-output-stream))
+(streamp (make-string-output-stream))
+(output-stream-p (make-string-output-stream))
+(input-stream-p (make-string-output-stream))
+
+;; Output to the console: what a form writes comes before its value.
+(progn (write-string "to the console") (terpri) 1)
+(progn (prin1 "quoted") (terpri) 2)
+(progn (princ :keyword) (terpri) 3)
+(progn (print 42) (terpri) 4)
+(progn (write-line "a line") 5)
+(progn (write 255 :base 16 :radix t) (terpri) 6)
+
+;; Characters by name, and the reverse of digit-char-p.
+(char-name #\Space)
+(char-name (code-char 0))
+(graphic-char-p #\a)
+(graphic-char-p #\Newline)
+(digit-char 7)
+(digit-char 11 16)
+(digit-char 11)
+(string :sym)
+(string #\c)
+(string "str")
+
+;; Integer division.
+(multiple-value-list (truncate 7 2))
+(multiple-value-list (truncate -7 2))
+(multiple-value-list (floor 7 2))
+(multiple-value-list (floor -7 2))
+(multiple-value-list (floor 7 -2))
+(multiple-value-list (floor -7 -2))
+(multiple-value-list (floor 6 3))
+(multiple-value-list (truncate 5))
+(mod -7 2)
+(mod 7 -2)
+(rem -7 2)
+(abs -5)
+(list (zerop 0) (plusp 1) (minusp 1))
+(floor 1 0)

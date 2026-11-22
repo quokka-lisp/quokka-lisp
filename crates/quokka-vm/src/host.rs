@@ -88,8 +88,8 @@ impl fmt::Display for HostError {
 pub trait Host {
     /// Write a string to the host's console or dev-console transcript.
     ///
-    /// The host's own output, not Lisp's: Common Lisp output means streams
-    /// and `*standard-output*`, a special variable, and that waits for #34.
+    /// The host's own output, and since #46 Lisp's too: a write to
+    /// `*standard-output*` arrives here as a [`Request::WriteConsole`].
     fn write_stdout(&mut self, s: &str);
 
     /// Answer a [`Request::ReadSource`].
@@ -161,12 +161,15 @@ pub mod request {
 
 /// What a program can ask its host for.
 ///
-/// One variant today. A file host, the clock, the network and the display
-/// protocol will each add some, and each will be a request rather than a call.
+/// A file host, the clock, the network and the display protocol will each
+/// add some, and each will be a request rather than a call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     /// The text of a Lisp source file. Made by `%read-source`.
     ReadSource(String),
+    /// Text for the console. Made by `%write-console`, which is what
+    /// `*standard-output*` writes with (#46). Answered with an empty string.
+    WriteConsole(String),
 }
 
 /// Make a waiting request record. Called by the VM when it intercepts a
@@ -205,8 +208,12 @@ pub fn pending(heap: &mut Heap) -> Option<Request> {
         }
         let kind = mc.slot(record, request::KIND);
         let argument = mc.slot(record, request::ARGUMENT);
+        let text = mc.string_to_rust(argument);
         if mc.symbol_is(kind, "%READ-SOURCE") {
-            return Some(Request::ReadSource(mc.string_to_rust(argument)));
+            return Some(Request::ReadSource(text));
+        }
+        if mc.symbol_is(kind, "%WRITE-CONSOLE") {
+            return Some(Request::WriteConsole(text));
         }
         None
     })
@@ -262,6 +269,10 @@ pub fn serve(heap: &mut Heap, host: &mut dyn Host) -> bool {
     };
     let reply = match request {
         Request::ReadSource(name) => host.read_source(&name),
+        Request::WriteConsole(text) => {
+            host.write_stdout(&text);
+            Ok(String::new())
+        }
     };
     complete(heap, reply)
 }

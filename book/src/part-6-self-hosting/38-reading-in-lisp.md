@@ -55,7 +55,7 @@ whether tier 1 should have them at all. The options were:
 
 Minimal streams won. They cost about forty lines of Lisp, and every function
 already has its final name and arguments. When tier 2 makes streams generic,
-callers do not change. Output streams come with the printer (step G).
+callers do not change. Output streams came with the printer (chapter 39).
 
 **How does the reader decide what a character means?** The Rust reader is a
 `match` on the next character: `(` reads a list, `"` a string, `'` a quotation.

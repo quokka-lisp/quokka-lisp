@@ -601,14 +601,21 @@ impl<'a, 'h> Vm<'a, 'h> {
             }
             return Some(self.call_value(callee, &spread, tail));
         }
-        if index == primitives::index(primitives::Prim::ReadSource) {
-            // The one primitive that does not return. It leaves a request in
-            // the heap and the machine stops; the host answers between slices
-            // and the next step picks the answer up (`resume_request`). See
+        let asks_host = if index == primitives::index(primitives::Prim::ReadSource) {
+            Some("%READ-SOURCE")
+        } else if index == primitives::index(primitives::Prim::WriteConsole) {
+            Some("%WRITE-CONSOLE")
+        } else {
+            None
+        };
+        if let Some(kind) = asks_host {
+            // The primitives that do not return. Each leaves a request in the
+            // heap and the machine stops; the host answers between slices and
+            // the next step picks the answer up (`resume_request`). See
             // `crate::host` for why this is a request and not a call.
             if args.len() != 1 {
                 return Some(self.fail(EvalError::WrongArgumentCount {
-                    name: "%READ-SOURCE",
+                    name: kind,
                     wanted: 1,
                     got: args.len(),
                 }));
@@ -616,11 +623,11 @@ impl<'a, 'h> Vm<'a, 'h> {
             let name = args[0];
             if !(name.is_object() && self.mc.header(name).object_type.is_string()) {
                 return Some(self.fail(EvalError::WrongType {
-                    name: "%READ-SOURCE",
+                    name: kind,
                     wanted: "a string",
                 }));
             }
-            let request = crate::host::make_request(self.mc, "%READ-SOURCE", name, tail);
+            let request = crate::host::make_request(self.mc, kind, name, tail);
             self.mc.set_register(Register::Request, request);
             return Some(Transition::Block);
         }

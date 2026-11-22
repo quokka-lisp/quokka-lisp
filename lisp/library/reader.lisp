@@ -67,7 +67,9 @@
   (make-%string-input-stream :string string :position start
                              :end (if end end (length string))))
 
-(defun streamp (object) (%string-input-stream-p object))
+;;; Output streams are in `printer.lisp`; this answers for them too.
+(defun streamp (object)
+  (or (%string-input-stream-p object) (output-stream-p object)))
 
 ;;; There is no console to read from yet, so standard input is an empty
 ;;; string: reading it meets end of file at once.

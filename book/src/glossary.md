@@ -312,6 +312,8 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 
 **Latin-1.** The [character encoding](#character-encoding) ISO 8859-1: one byte per character, covering Western European text. Its 256 codes are exactly Unicode's first 256, so a Latin-1 byte *is* the character's Unicode number. Quokka packs constant strings in it, eight to a word. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
 
+**Print-read consistency.** The printer's contract in Common Lisp: what `prin1` writes, `read` reads back as the same object (or an equal one, for a list). For symbols it means a package prefix when the current package would not find the symbol alone, and `|...|` around a name the reader would change. ([39](part-6-self-hosting/39-printing-in-lisp.md))
+
 **Readtable.** The table that tells Common Lisp's [reader](#reader) what each character means: whitespace, part of a [token](#token), or a [reader macro](#reader-macro). `*readtable*` is the current one, and a program changes syntax by changing a copy. ([38](part-6-self-hosting/38-reading-in-lisp.md))
 
 **Reader macro.** A function the [readtable](#readtable) holds for a character, called by the reader when it meets that character. `(`, `'`, `"` and `;` are all reader macros in Common Lisp; a comment is one that returns no value at all. A *dispatching* macro character, such as `#`, reads one more character and looks that up in a second table. ([38](part-6-self-hosting/38-reading-in-lisp.md))
@@ -319,6 +321,10 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 **Stream.** An object that hands out characters one at a time (an *input* stream) or accepts them (an *output* stream), remembering where it is. Quokka's tier 1 has string input streams; output streams come with the printer. ([38](part-6-self-hosting/38-reading-in-lisp.md))
 
 **Token.** A run of characters the reader collects up to whitespace or a terminating [reader macro](#reader-macro) character, then turns into a number or a symbol. `\` and `|...|` escape characters inside one. ([38](part-6-self-hosting/38-reading-in-lisp.md))
+
+**Package prefix.** The `pkg:` or `pkg::` before a symbol's name, saying which package it comes from: one colon for an external symbol, two for an internal one. The printer writes one only when the reader would not find the symbol without it. ([36](part-6-self-hosting/36-whose-symbol-is-it.md), [39](part-6-self-hosting/39-printing-in-lisp.md))
+
+**Two's complement.** How machines store signed integers: the top bit counts as a large negative value. A fixed width therefore holds one more negative number than positive, so negating the most negative one overflows. ([39](part-6-self-hosting/39-printing-in-lisp.md))
 
 **Lisp-1.** A Lisp where a symbol has one cell shared by variables and functions. Scheme is one; no `funcall` is needed, but functions and variables compete for names. Contrast [Lisp-2](#lisp-2). ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
