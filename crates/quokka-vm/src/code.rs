@@ -187,6 +187,18 @@ pub enum Op {
     /// The verifier checks statically that the innermost record is a `TAG`,
     /// and the machine checks again at run time.
     JmpTag = 37,
+
+    /// Bind a **special variable**: pop a value, push a record holding the
+    /// symbol `constants[k]` and its current value, and store the new value
+    /// in the symbol (#40).
+    ///
+    /// Shallow binding: the value lives in the symbol, so reading a special
+    /// stays `GREF` — one load — and only binding costs anything. The old
+    /// value comes back when the record goes, whichever way it goes: `UNMARK`
+    /// on the way out normally, the unwinder on the way past for a `throw`, a
+    /// `return-from`, a `go` or an error. That is the record machinery
+    /// `block` and `catch` already had, with one more kind of record.
+    Dbind = 38,
 }
 
 /// Every opcode, in order, which is also the order of their byte values.
@@ -233,6 +245,7 @@ const TABLE: &[(Op, &str, Operands)] = &[
     (Op::Mvrestore, "MVRESTORE", Operands::None),
     (Op::Fset, "FSET", Operands::U8U8),
     (Op::JmpTag, "JMP-TAG", Operands::S16),
+    (Op::Dbind, "DBIND", Operands::U16),
 ];
 
 /// How many opcodes there are. `docs/bytecode.md` quotes this number.
@@ -530,7 +543,7 @@ fn render<'h>(mc: &Mutation<'h>, f: Value<'h>, indent: usize, out: &mut String) 
                 }
                 constant_note(mc, constants, d.a)
             }
-            Op::Block | Op::Tag | Op::Handler => constant_note(mc, constants, d.a),
+            Op::Block | Op::Tag | Op::Handler | Op::Dbind => constant_note(mc, constants, d.a),
             Op::Prim => match crate::primitives::name_of(d.a as u32) {
                 Some(n) => format!("  ; {n}"),
                 None => String::new(),
@@ -1139,6 +1152,15 @@ pub mod verify {
                 marks: -1,
                 ..plain(RECORD + 1, 1)
             },
+            // A record in place of the value it popped. No branch: nothing
+            // ever lands on a binding, it is only ever left.
+            Op::Dbind => {
+                constant(d.a)?;
+                Effect {
+                    marks: 1,
+                    ..plain(1, RECORD)
+                }
+            }
         })
     }
 }

@@ -27,10 +27,10 @@ fn the_table_is_in_opcode_order() {
 /// The count `docs/bytecode.md` quotes. Not a law, but a number in prose
 /// that drifts the moment nobody is checking — it has already been wrong
 /// once, when the specification said thirty-four and the enum said thirty-six.
-/// Thirty-eight since `JMP-TAG` (#37).
+/// Thirty-eight since `JMP-TAG` (#37), thirty-nine since `DBIND` (#40).
 #[test]
-fn there_are_thirty_eight_opcodes() {
-    assert_eq!(OPCODE_COUNT, 38);
+fn there_are_thirty_nine_opcodes() {
+    assert_eq!(OPCODE_COUNT, 39);
 }
 
 /// Every operand shape survives a round trip, including the signed one,
@@ -318,6 +318,25 @@ fn a_jump_table_entry_that_is_not_a_jump_is_refused() {
     assert_eq!(
         check_with_tags(&[(Op::Tag, 0, 0), (Op::Nil, 0, 0), (Op::Ret, 0, 0)], 1),
         Err(verify::Error::BadTable { at: 0, entry: 5 })
+    );
+}
+
+/// A special variable's binding is a record, and it is not a tagbody's — so
+/// a one-step `go` cannot drop past it. The compiler uses `GO` there, and the
+/// unwinder restores the binding on the way (#40).
+#[test]
+fn a_jmp_tag_past_a_dynamic_binding_is_refused() {
+    assert_eq!(
+        check(
+            &[
+                (Op::Fix, 1, 0),
+                (Op::Dbind, 0, 0),
+                (Op::JmpTag, 0, 0),
+                (Op::Ret, 0, 0)
+            ],
+            1
+        ),
+        Err(verify::Error::NoTagRecord { at: 6 })
     );
 }
 

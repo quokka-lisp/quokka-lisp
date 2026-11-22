@@ -7,11 +7,15 @@ Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Com
 resumes where it left off* — holds in a compiled world, and every differential
 file agrees interpreted, compiled and with SBCL (#38).
 
-**Phase 2 · Self-hosting is planned and not started** (#39). Its scope is
+**Phase 2 · Self-hosting is under way** (#39). **Step A, special variables, is
+done** (#40): `defvar`, `defparameter`, dynamic `let`/`let*`/parameters by
+shallow binding — a `DBIND` record restored by `UNMARK`, the unwinder, an
+uncaught error, or an abandoned computation. **Next is step B, packages, which
+starts with the decision in #41.** Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
-variables (#40, **shallow binding**, decided) → packages (#41, a decision) →
+variables (#40, done) → packages (#41, a decision) →
 the reader in Lisp → `eval`/`load` → the image rebuilds itself → the fixpoint →
 printer, `setf` expanders, the last three special operators, sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
@@ -23,8 +27,14 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,915 lines left, for phases 2 to 6.** Default for every
-  tier-1 feature is Lisp, with no Rust. Each step says what Rust it needs.
+- **The Rust budget: 1,754 lines left, for phases 2 to 6** (step A spent 161).
+  Default for every tier-1 feature is Lisp, with no Rust. Each step says what
+  Rust it needs.
+- **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
+  `build_image` after pass 2. A tier-1 differential file goes in
+  `tier1_cases!` in `tests/differential.rs` (compiled and SBCL legs only), and
+  its baseline comes from SBCL: `sbcl --script scripts/oracle.lisp
+  tests/lisp/NAME.lisp > tests/lisp/NAME.expected`.
 - **The fixpoint compiles the compiler in the environment its source was
   written for.** A tier-1 `setf` that expands differently from the prelude's
   would change the compiler's output without anything being wrong.
@@ -56,7 +66,7 @@ wrappers — Lisp, not Rust.
 
 | | |
 | --- | --- |
-| `docs/bytecode.md` | the instruction set on paper: 38 opcodes, frame layout, every ceiling (#27) |
+| `docs/bytecode.md` | the instruction set on paper: 39 opcodes, frame layout, every ceiling (#27) |
 | `src/code.rs` | encoding, the `Function` object, disassembler, assembler, **verifier** (#28) |
 | `src/vm.rs` | the machine; implements `Steppable`, so `run_slice` drives it and rule 4 holds by construction |
 | `lisp/compiler/compile.lisp` | the compiler, 464 lines of tier-0 Lisp (#31) |
@@ -70,8 +80,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**385 tests**; **17 differential files agree interpreted, compiled and with
-SBCL**. The Rust core is **13,085** lines of the 15,000 budget.
+**389 tests**; **18 differential files agree with SBCL** — 17 interpreted and
+compiled, plus the first tier-1 file, compiled only. The Rust core is **13,246** lines of the 15,000 budget.
 
 ## How phase 1 ended
 
@@ -82,7 +92,7 @@ special operator compiles. An image is used through
 `vm::compile_and_run_forms`, which calls the image's own `compile-form` with a
 trampoline (`vm::call_global`) and never touches the interpreter. `tagbody` is
 a `TAG` record that survives a `go` plus a jump table, and a local `go` is one
-`JMP-TAG` (38 opcodes).
+`JMP-TAG` (38 opcodes at the end of phase 1; `DBIND` made 39 in #40).
 
 **The fourth differential leg (#38)** runs every file in a compiled world
 against the same baseline: each form compiled and run before the next, a

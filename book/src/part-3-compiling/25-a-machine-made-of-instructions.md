@@ -11,7 +11,7 @@
 > **Status: built.** `docs/bytecode.md` is the specification this chapter
 > explains, and `crates/quokka-vm/src/vm.rs` runs it. The specification was
 > wrong about the opcode count three times while it was being implemented —
-> thirty-four, then thirty-six, thirty-seven, now thirty-eight — which is why a test pins the number that
+> thirty-four, then thirty-six, thirty-seven, thirty-eight, and now thirty-nine — which is why a test pins the number that
 > this chapter quotes, and so does the depth the verifier computes for `fact`.
 
 ## Start from what already works
@@ -616,7 +616,7 @@ is later, the structure that allows it is now.
 ---
 
 **References.** `docs/bytecode.md` in this repository is the specification —
-all thirty-eight opcodes with their operand widths, which this chapter
+all thirty-nine opcodes with their operand widths, which this chapter
 explains rather than repeats. Queinnec, *Lisp in Small Pieces*, chapter 7,
 builds a bytecode machine for Scheme in the same order used here. Goldberg
 and Robson, *Smalltalk-80: The Language and Its Implementation* (1983) — the

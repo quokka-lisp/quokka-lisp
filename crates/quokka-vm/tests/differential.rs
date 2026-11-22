@@ -99,6 +99,32 @@ differential_cases! {
     values => "values",
 }
 
+/// **Tier 1**: files that run compiled only (#39). Tier 1 — special
+/// variables, packages, the reader in Lisp and the rest — lives in a library
+/// the compiled world loads and the interpreter never learns, because the
+/// interpreter stays tier 0 (rule 5). So these files have two legs, not
+/// three: compiled Quokka and SBCL. Their baselines come from SBCL, through
+/// `scripts/oracle.lisp`, since there is no interpreted run to take them from.
+macro_rules! tier1_cases {
+    ($($name:ident => $stem:literal),* $(,)?) => {
+        mod tier1 {
+            $(
+                #[test]
+                fn $name() {
+                    let source = include_str!(concat!("../../../tests/lisp/", $stem, ".lisp"));
+                    let expected = include_str!(concat!("../../../tests/lisp/", $stem, ".expected"));
+                    let actual = super::run_compiled(source);
+                    super::compare($stem, source, expected, &actual);
+                }
+            )*
+        }
+    };
+}
+
+tier1_cases! {
+    specials => "specials",
+}
+
 /// The compiled world, built once and kept as image bytes; each file loads
 /// its own copy, so no file can see what another defined.
 fn compiled_image() -> &'static [u8] {

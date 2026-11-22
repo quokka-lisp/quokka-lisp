@@ -91,7 +91,10 @@ fn the_table_order_is_pinned() {
             "%READ-SOURCE",
             "%SPECIAL-OPERATOR-P",
             "%REWRITE-MACRO-LAMBDA-LIST",
-            "%MAKE-MACRO"
+            "%MAKE-MACRO",
+            "BOUNDP",
+            "SYMBOL-VALUE",
+            "SET"
         ]
     );
 }

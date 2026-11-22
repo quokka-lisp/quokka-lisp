@@ -108,6 +108,9 @@ pub enum Prim {
     SpecialOperatorP = 55,
     RewriteMacroLambdaList = 56,
     MakeMacro = 57,
+    Boundp = 58,
+    SymbolValue = 59,
+    Set = 60,
 }
 
 impl Prim {
@@ -373,6 +376,13 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // makes, with a compiled body. What a compiled `defmacro` stores in the
     // function cell, and what `macrolet` holds for its body's extent (#33).
     (Prim::MakeMacro, "%MAKE-MACRO", Arity::Exactly(1)),
+    // A symbol's value cell, named at run time — which no instruction can do,
+    // because `GREF` and `GSET` name theirs in the code. Common Lisp's own
+    // functions, tier 1, and what `defvar` needs to leave a bound variable
+    // alone (#40).
+    (Prim::Boundp, "BOUNDP", Arity::Exactly(1)),
+    (Prim::SymbolValue, "SYMBOL-VALUE", Arity::Exactly(1)),
+    (Prim::Set, "SET", Arity::Exactly(2)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -816,6 +826,27 @@ pub fn call_slice<'h>(
         }),
         Prim::RewriteLambdaList => {
             rewrite_for_compiler(mc, args, crate::lambda_list::Kind::Ordinary)
+        }
+        Prim::Boundp | Prim::SymbolValue | Prim::Set => {
+            if !mc.is_symbol(args[0]) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a symbol",
+                });
+            }
+            let value = mc.slot(args[0], symbol::VALUE);
+            match prim {
+                Prim::Boundp => Ok(truth(value != Value::UNBOUND)),
+                Prim::SymbolValue if value == Value::UNBOUND => {
+                    let what = mc.string_to_rust(mc.slot(args[0], symbol::NAME));
+                    Err(EvalError::UnboundVariable(what))
+                }
+                Prim::SymbolValue => Ok(value),
+                _ => {
+                    mc.set_slot(args[0], symbol::VALUE, args[1]);
+                    Ok(args[1])
+                }
+            }
         }
         Prim::RewriteMacroLambdaList => {
             rewrite_for_compiler(mc, args, crate::lambda_list::Kind::Macro)

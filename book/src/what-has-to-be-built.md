@@ -284,6 +284,7 @@ Each chapter answers one question.
 | 32 | [A world made of bytecode](part-5-the-image/32-a-world-made-of-bytecode.md) | How does a system built by an interpreter end up with no interpreted code in it? |
 | 33 | [Two evaluators, one answer](part-5-the-image/33-two-evaluators-one-answer.md) | How do you know the compiled world means what the interpreted one meant? |
 | 34 | [Standing on its own](part-6-self-hosting/34-standing-on-its-own.md) | What does it take for a system to rebuild itself, and how would you know it had? |
+| 35 | [Variables that follow the call](part-6-self-hosting/35-variables-that-follow-the-call.md) | How can a binding be visible to code written somewhere else entirely? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

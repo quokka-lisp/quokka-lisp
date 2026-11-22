@@ -55,6 +55,7 @@
 # Part VI · Self-hosting
 
 - [Standing on its own](part-6-self-hosting/34-standing-on-its-own.md)
+- [Variables that follow the call](part-6-self-hosting/35-variables-that-follow-the-call.md)
 
 ---
 

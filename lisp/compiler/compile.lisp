@@ -38,6 +38,70 @@
 ;;; chain of scopes link for link, and most of these leave no scope behind.
 (setq %open nil)
 
+;;; Special variables (#40): the symbols `defvar` and `defparameter` have
+;;; proclaimed. Every binding of one is dynamic, wherever it appears — a `let`,
+;;; a `let*`, a lambda parameter — so the compiler has to know which they are
+;;; before it compiles a binding.
+;;;
+;;; A table here rather than a mark on the symbol, because the compiler is the
+;;; only thing that asks, and a table costs no Rust (#39: 1,915 lines left for
+;;; phases 2 to 6). Proclaiming happens when `defvar`'s *expansion* is made as
+;;; well as when it runs, so that a binding compiled later in the same
+;;; top-level form is already special — what CL's compile-time processing of
+;;; `defvar` is for.
+(setq %special-variables (make-hash-table))
+
+(defun %proclaim-special (symbol)
+  (setf (gethash symbol %special-variables) t)
+  symbol)
+
+(defun %special-variable-p (symbol)
+  (gethash symbol %special-variables))
+
+;;; The names among NAMES that are special.
+(defun %specials-among (names)
+  (cond ((endp names) nil)
+        ((%special-variable-p (car names)) (cons (car names) (%specials-among (cdr names))))
+        (t (%specials-among (cdr names)))))
+
+;;; NAMES with every special replaced by a fresh symbol. The value is still
+;;; bound in the lexical scope — that is where `BIND` and a call put it — but
+;;; under a name nothing can refer to, so every reference to the special in
+;;; the body reaches its value cell instead, as it must.
+(defun %rename-specials (names)
+  (cond ((endp names) nil)
+        ((%special-variable-p (car names)) (cons (gensym) (%rename-specials (cdr names))))
+        (t (cons (car names) (%rename-specials (cdr names))))))
+
+;;; For each special in NAMES, copy its value out of the scope just bound —
+;;; where RENAMED says it is — and bind it dynamically.
+(defun %emit-dynamic-binds (names renamed index)
+  (if (endp names)
+      nil
+      (progn (if (%special-variable-p (car names))
+                 (progn (%emit (list 'LREF 0 index))
+                        (%emit (list 'DBIND (%constant-index (car names))))))
+             (%emit-dynamic-binds (cdr names) (cdr renamed) (+ index 1)))))
+
+;;; Leave N dynamic bindings: each `UNMARK` drops one record, keeps the value
+;;; above it, and puts the old value of its symbol back.
+(defun %emit-unmarks (n)
+  (if (> n 0)
+      (progn (%emit (list 'UNMARK))
+             (%emit-unmarks (- n 1)))))
+
+;;; Compile BODY with dynamic bindings open for the specials among NAMES,
+;;; whose values are in the innermost scope under RENAMED.
+;;;
+;;; Not in tail position: the bindings must be undone after the body, so a
+;;; call in it cannot reuse the frame. And open as a record for `go`, so a
+;;; `go` out of it uses the unwinder, which restores them.
+(defun %compile-with-dynamic-binds (names renamed body env)
+  (let ((count (length (%specials-among names))))
+    (%emit-dynamic-binds names renamed 0)
+    (%with-open ':record (lambda () (%compile-body body env nil)))
+    (%emit-unmarks count)))
+
 ;;; Compile with ENTRY open, by calling THUNK. The save and restore are by
 ;;; hand because tier 0 has no special variables to bind.
 (defun %with-open (entry thunk)
@@ -198,8 +262,16 @@
 (defun %compile-let (form env tail)
   (let ((names (%binding-names (second form))))
     (%compile-arguments (%binding-inits (second form)) env)
-    (%emit (list 'BIND (%constant-index (apply #'vector names))))
-    (%compile-body (cddr form) (cons (%scope ':variable names) env) tail)
+    (if (%specials-among names)
+        ;; Every init is evaluated before anything is bound, special or not —
+        ;; which is what `let` means. So the values are bound lexically first,
+        ;; the specials under hidden names, and then copied into their symbols.
+        (let ((renamed (%rename-specials names)))
+          (%emit (list 'BIND (%constant-index (apply #'vector renamed))))
+          (%compile-with-dynamic-binds names renamed (cddr form)
+                                       (cons (%scope ':variable renamed) env)))
+        (progn (%emit (list 'BIND (%constant-index (apply #'vector names))))
+               (%compile-body (cddr form) (cons (%scope ':variable names) env) tail)))
     (%emit (list 'UNBIND 1))))
 
 ;;; `(let* ((a 1) (b (+ a 1))) ...)`
@@ -217,12 +289,20 @@
       (%compile-body body env tail)
       (let ((name (%binding-name (car bindings))))
         (%compile (%binding-init (car bindings)) env nil)
-        (%emit (list 'BIND (%constant-index (vector name))))
-        (%compile-let* (cdr bindings)
-                       body
-                       (cons (%scope ':variable (list name)) env)
-                       tail)
-        (%emit (list 'UNBIND 1)))))
+        (if (%special-variable-p name)
+            ;; One special at a time, as `let*` binds everything: the init has
+            ;; seen every binding before it, and every binding after it sees
+            ;; this one.
+            (progn (%emit (list 'DBIND (%constant-index name)))
+                   (%with-open ':record
+                               (lambda () (%compile-let* (cdr bindings) body env nil)))
+                   (%emit (list 'UNMARK)))
+            (progn (%emit (list 'BIND (%constant-index (vector name))))
+                   (%compile-let* (cdr bindings)
+                                  body
+                                  (cons (%scope ':variable (list name)) env)
+                                  tail)
+                   (%emit (list 'UNBIND 1)))))))
 
 ;;; `(setq x v)` — the value stays on the stack, because `setq` returns it.
 ;;; `LSET` and `GSET` pop and push, so that is what they already do.
@@ -283,7 +363,14 @@
     (setq %code nil)
     (%reset-constants)
     (%with-open ':function
-                (lambda () (%compile-body body (cons (%scope ':variable names) env) t)))
+                (lambda ()
+                  (if (%specials-among names)
+                      ;; A parameter that names a special variable binds it
+                      ;; dynamically for the call — `(defun f (*x*) ...)`.
+                      (let ((renamed (%rename-specials names)))
+                        (%compile-with-dynamic-binds names renamed body
+                                                     (cons (%scope ':variable renamed) env)))
+                      (%compile-body body (cons (%scope ':variable names) env) t))))
     (%emit (list 'RET))
     (let ((compiled (%assemble (reverse %code) (%constants-vector) params 'lambda)))
       (setq %code outer-code)

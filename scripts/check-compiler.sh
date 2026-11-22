@@ -12,17 +12,20 @@ cd "$(dirname "$0")/.."
 status=0
 count=0
 
-for path in lisp/compiler/*.lisp; do
+# The compiler and the tier-1 library are both listed by hand in boot.rs,
+# because order matters and there is nothing to discover them with. A file in
+# either directory that is not listed would never be loaded.
+for path in lisp/compiler/*.lisp lisp/library/*.lisp; do
   [ -e "$path" ] || continue
   count=$((count + 1))
   name=$(basename "$path")
   if ! grep -q "\"$name\"" crates/quokka-vm/src/boot.rs; then
-    echo "not listed in boot.rs COMPILER: $name" >&2
+    echo "not listed in boot.rs (COMPILER or LIBRARY): $path" >&2
     status=1
   fi
 done
 
 if [ "$status" -eq 0 ]; then
-  echo "compiler: $count file(s), all listed"
+  echo "compiler and library: $count file(s), all listed"
 fi
 exit $status

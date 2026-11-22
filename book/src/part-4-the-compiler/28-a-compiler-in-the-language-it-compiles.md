@@ -273,7 +273,7 @@ when somebody breaks a rule deserves its own change and its own paragraph.
 ## The decisions that are provisional
 
 Which is the real reason this is a part of its own. The machine is nearly
-settled — thirty-eight instructions, and changing one is a format change. The
+settled — thirty-nine instructions, and changing one is a format change. The
 compiler is a pile of judgements, and most of today's will not survive.
 
 | decision | why it is that way now | what changes it |

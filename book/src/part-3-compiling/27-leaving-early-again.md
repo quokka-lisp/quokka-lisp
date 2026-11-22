@@ -285,7 +285,8 @@ special operator in chapter 13 has somewhere to go.
 (Thirty-six of them. A thirty-seventh arrived later, when the compiler wanted
 to write the function namespace and found that nothing could — `flet` does not
 need it and `labels` does, and no amount of working on the VM was going to
-notice. `docs/bytecode.md` records how. A thirty-eighth, `JMP-TAG`, came with
+notice. `docs/bytecode.md` records how. A thirty-ninth, `DBIND`, came with special
+variables in chapter 35. A thirty-eighth, `JMP-TAG`, came with
 `tagbody`, and chapter 28 tells the story of why the `TAG` and `GO` in this
 chapter turned out not to be enough on their own.)
 

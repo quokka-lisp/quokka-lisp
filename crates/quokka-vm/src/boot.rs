@@ -67,6 +67,20 @@ pub const COMPILER: &[(&str, &str)] = &[(
     include_str!("../../../lisp/compiler/compile.lisp"),
 )];
 
+/// The tier-1 library, in the order its files must be loaded (#39).
+///
+/// A third body of Lisp, after the prelude and the compiler, and different
+/// from both: it is **never interpreted**. The prelude and the compiler stay
+/// tier 0 because the interpreter has to run them (rule 5); the library is
+/// tier 1, and is loaded into the compiled world by the image's own compiler
+/// once [`build_image`] has built it — so it may use tier-1 features itself.
+/// `scripts/check-compiler.sh` fails if a file in `lisp/library/` is missing
+/// from here.
+pub const LIBRARY: &[(&str, &str)] = &[(
+    "specials.lisp",
+    include_str!("../../../lisp/library/specials.lisp"),
+)];
+
 /// Load the compiler into a heap that already has the prelude.
 ///
 /// Separate from [`install`] on purpose: see [`COMPILER`]. A REPL does not
@@ -419,7 +433,9 @@ pub struct Built {
 ///    what installs — a compiled `(defun length ...)` stores a compiled
 ///    closure. Nothing interpreted runs once this begins, and file order
 ///    means a top-level form only calls what earlier forms have replaced.
-/// 4. **Prove it**: collect, then scan the heap. Any closure or macro whose
+/// 4. **The library**: the tier-1 Lisp, compiled and run by the compiler
+///    pass 2 installed — the first code this world compiles for itself.
+/// 5. **Prove it**: collect, then scan the heap. Any closure or macro whose
 ///    body is not compiled code is a build failure naming who holds it.
 ///
 /// Two passes rather than one because the compiler is itself interpreted Lisp
@@ -481,6 +497,34 @@ pub fn build_image(heap: &mut crate::heap::Heap) -> Result<Built, BootError> {
         });
         crate::vm::run_sliced(heap, BOOT_BUDGET, 2_000, &mut host)
             .map_err(|error| BootError::Eval { form, error })?;
+    }
+
+    // The tier-1 library, compiled and run one form at a time by the
+    // compiler just installed — the first code this world compiles for itself.
+    for (_file, source) in LIBRARY {
+        let mut failure = None;
+        let mut form = 0usize;
+        let read = crate::vm::compile_and_run_forms(
+            heap,
+            source,
+            BOOT_BUDGET,
+            2_000,
+            &mut host,
+            |_mc, outcome| {
+                form += 1;
+                match outcome {
+                    Ok(_) => true,
+                    Err(error) => {
+                        failure = Some(BootError::Eval { form, error });
+                        false
+                    }
+                }
+            },
+        );
+        read.map_err(BootError::Read)?;
+        if let Some(e) = failure {
+            return Err(e);
+        }
     }
 
     // Leave nothing of the build behind, and then look.

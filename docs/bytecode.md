@@ -1,6 +1,6 @@
 # Quokka bytecode — the instruction set
 
-**Status: implemented, all thirty-eight opcodes** — by `crates/quokka-vm/src/vm.rs`
+**Status: implemented, all thirty-nine opcodes** — by `crates/quokka-vm/src/vm.rs`
 and `code.rs`, emitted by `lisp/compiler/compile.lisp`, and exercised by every
 differential file in a compiled world (#38). It was written before the VM and
 the compiler, deliberately, so that it could be argued with (#25 is the record
@@ -113,12 +113,13 @@ depend on their operands.
 
 ## 5 · The instructions
 
-**Thirty-eight.** Grouped by what they are for, not by number.
+**Thirty-nine.** Grouped by what they are for, not by number.
 
 (This document said thirty-four until the enum was written and the rows were
 counted by a compiler rather than by me; then thirty-six until the compiler
 asked for `FSET`; then thirty-seven until `tagbody` wanted a one-step `go`
-and got `JMP-TAG` (#37). `code::OPCODE_COUNT` is the number, and a test pins it,
+and got `JMP-TAG` (#37); then thirty-eight until special variables needed
+`DBIND` (#40). `code::OPCODE_COUNT` is the number, and a test pins it,
 because a count in prose drifts the moment nobody is checking.)
 
 ### Pushing a value
@@ -229,6 +230,7 @@ an interpreter structurally cannot.
 | `TAG k:u16 o:s16` | 5 | bind every tag in `constants[k]` (a vector) to one fresh marker, then push a tagbody record whose jump table starts at `here + o`. **The record survives a `go`** |
 | `GO d:u8 i:u8` | 3 | find the marker `d` scopes out, slot `i`, and unwind to it carrying `i`; the landing keeps the record and resumes at table entry `i` |
 | `JMP-TAG o:s16` | 3 | the one-step local `go`: drop the stack to the top of the innermost record, which must be a tagbody's, restore the environment it saved, and jump to `here + o` |
+| `DBIND k:u16` | 3 | bind the **special variable** `constants[k]`: pop a value, push a record holding the symbol and its old value, store the new one. `UNMARK` and the unwinder restore the old value whichever way the binding is left (#40) |
 
 `block` and `tagbody` go through the environment rather than through a known
 stack depth because a `return-from` or a `go` can be inside a closure that has
@@ -270,7 +272,7 @@ Pushing one allocates nothing.
 | slot | |
 | --- | --- |
 | `PREV` | the index of the next record down, or −1 |
-| `KIND` | block, catch, tag, protect, handler, or paused |
+| `KIND` | block, catch, tag, protect, handler, paused, or special — a special variable's binding, whose frame slot holds the value the symbol had before (#40) |
 | `DATUM` | the marker, the tag, the clause list, or the cleanup's address |
 | `FP` `PC` `FUNCTION` `ENV` | enough to carry on from, which is a frame by another name |
 
@@ -351,7 +353,7 @@ no single delivery point:**
 > may leave it set.
 
 The interpreter had one funnel — `deliver` — and clearing there was free. A
-bytecode VM has thirty-eight funnels, so this is a rule each one must follow,
+bytecode VM has thirty-nine funnels, so this is a rule each one must follow,
 and forgetting it means a stale second value surfacing in a form a long way
 from the one that set it. It belongs in a test, not only in a sentence.
 

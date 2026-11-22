@@ -69,6 +69,10 @@ pub mod mark {
     /// holds the value, `PC` the full list of values, and `DATUM` the target
     /// still being looked for.
     pub const PAUSED: i64 = 6;
+    /// A special variable's binding (#40). The datum is the symbol, and the
+    /// value it had before is kept in [`SAVED`]: like a pause, a binding has
+    /// no frame to restore, so the frame slot holds what it does need.
+    pub const SPECIAL: i64 = 7;
 
     /// The index of the next record down, or `usize::MAX` as a fixnum.
     pub const PREV: usize = 0;
@@ -86,6 +90,8 @@ pub mod mark {
     pub const ENV: usize = 6;
     /// How many slots one record takes.
     pub const SIZE: usize = 7;
+    /// Where a [`SPECIAL`] record keeps the value the symbol had before.
+    pub const SAVED: usize = FP;
 }
 
 /// The bytecode machine.
@@ -105,6 +111,15 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// loads an image; this is the raw entry point, kept separate so that a
     /// test can run deliberately malformed bytecode and watch what happens.
     pub fn start(mc: &'a mut Mutation<'h>, function: Value<'h>, env: Value<'h>) -> Vm<'a, 'h> {
+        // Whatever was in progress is being discarded, and if it had special
+        // variables bound — a computation its driver gave up on — their old
+        // values come back now, before its stack is thrown away (#40).
+        Vm {
+            mc: &mut *mc,
+            error: None,
+            halted: false,
+        }
+        .unbind_all();
         let wanted = mc
             .slot(function, function::MAX_STACK)
             .as_fixnum()
@@ -744,6 +759,7 @@ impl<'a, 'h> Vm<'a, 'h> {
         }
         // The body's value is above the record and has to survive it.
         let v = self.pop();
+        self.restore_binding(at);
         let prev = self.read_index(at, mark::PREV);
         let env = self.mark_slot(at, mark::ENV);
         self.drop_to(at);
@@ -905,7 +921,10 @@ impl<'a, 'h> Vm<'a, 'h> {
             return Transition::Continue;
         }
 
-        // Not this one. Drop it and look further out, one step at a time.
+        // Not this one. Drop it and look further out, one step at a time —
+        // putting back a special variable's old value if it is a binding,
+        // which is all an unwind passing a binding has to do.
+        self.restore_binding(at);
         self.drop_to(at);
         self.mc.set_mp(prev);
         Transition::Continue
@@ -940,6 +959,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 return self.start_unwind(condition, Value::NIL);
             }
         }
+        self.unbind_all();
         self.error = Some(e);
         self.halted = true;
         Transition::Halt
@@ -986,6 +1006,31 @@ impl<'a, 'h> Vm<'a, 'h> {
             self.push_fresh(reply);
             Transition::Continue
         }
+    }
+
+    /// If the record at `at` is a special variable's binding, put the
+    /// symbol's old value back. Anything else is left alone.
+    fn restore_binding(&mut self, at: usize) {
+        if self.mark_slot(at, mark::KIND).as_fixnum() == Some(mark::SPECIAL) {
+            let symbol = self.mark_slot(at, mark::DATUM);
+            let old = self.mark_slot(at, mark::SAVED);
+            self.mc.set_slot(symbol, crate::heap::symbol::VALUE, old);
+        }
+    }
+
+    /// Undo every special binding still on the stack, innermost first.
+    ///
+    /// For a computation that will not finish: one halted by an error nothing
+    /// caught, or abandoned by its driver. Without this, a special variable
+    /// bound when the machine stopped would stay rebound for ever, because the
+    /// only things that restore it are the ways out the machine never took.
+    fn unbind_all(&mut self) {
+        let mut at = self.mc.mp();
+        while at != usize::MAX {
+            self.restore_binding(at);
+            at = self.read_index(at, mark::PREV);
+        }
+        self.mc.set_mp(usize::MAX);
     }
 
     fn halt_with(&mut self, v: Value<'h>) -> Transition {
@@ -1323,6 +1368,25 @@ impl Steppable for Vm<'_, '_> {
                 self.push_mark(mark::PROTECT, at, decoded.next);
             }
             Op::Unmark => return self.pop_mark(),
+            Op::Dbind => {
+                let symbol = match self.constant(decoded.a) {
+                    Ok(s) if self.mc.is_symbol(s) => s,
+                    Ok(_) => {
+                        return self.fail(EvalError::BadSyntax {
+                            operator: "DBIND",
+                            detail: "names a constant that is not a symbol",
+                        })
+                    }
+                    Err(e) => return self.fail(e),
+                };
+                let value = self.pop();
+                let old = self.mc.slot(symbol, crate::heap::symbol::VALUE);
+                self.push_mark(mark::SPECIAL, symbol, 0);
+                let at = self.mc.mp();
+                let stack = self.mc.register(Register::Operands);
+                self.mc.set_slot(stack, at + mark::SAVED, old);
+                self.mc.set_slot(symbol, crate::heap::symbol::VALUE, value);
+            }
             Op::JmpTag => {
                 // The fast path of `go`: the innermost record is the tagbody's
                 // own, and it holds the stack base and the environment to

@@ -1856,3 +1856,41 @@ fn a_compiled_computation_resumes_from_an_image() {
     let n = reloaded.mutate(|mc| print(mc, mc.register(Register::Value)));
     assert_eq!(n, "500");
 }
+
+/// A computation abandoned with a special variable bound — here, by running
+/// out of budget in a loop that never ends — must not leave the binding in
+/// place. Starting the next computation undoes it (#40).
+#[test]
+fn an_abandoned_computation_leaves_no_binding_behind() {
+    use crate::heap::Register;
+    use crate::slice::{run_slice, Status};
+
+    let mut heap = compiled_world();
+    in_compiled_world(&mut heap, "(defvar *x* 0)");
+    let mut host = crate::host::NullHost::default();
+    heap.mutate(|mc| {
+        let chars = Reader::chars_of("(let ((*x* 1)) (tagbody top (go top)))");
+        let mut reader = Reader::new(&chars);
+        let form = reader.read(mc).expect("reads").expect("a form");
+        mc.set_register(Register::Value, form);
+    });
+    crate::vm::call_global(&mut heap, "COMPILE-FORM", 10_000_000, 2_000, &mut host)
+        .expect("compiles");
+    heap.mutate(|mc| {
+        let f = mc.register(Register::Value);
+        crate::vm::Vm::start(mc, f, crate::value::Value::NIL);
+    });
+    let status = heap.mutate(|mc| run_slice(&mut crate::vm::Vm::resume(mc), 500));
+    assert_eq!(status, Status::Yielded, "the loop never ends");
+    assert_eq!(in_compiled_world(&mut heap, "*x*"), ["0"]);
+}
+
+/// And one that halts on an error nothing caught undoes its bindings as it
+/// stops, so the very next form sees the old value.
+#[test]
+fn an_uncaught_error_undoes_its_bindings() {
+    let mut heap = compiled_world();
+    let out = in_compiled_world(&mut heap, "(defvar *y* 0) (let ((*y* 9)) (car 1)) *y*");
+    assert!(out[1].starts_with("; "), "{out:?}");
+    assert_eq!(out[2], "0");
+}
