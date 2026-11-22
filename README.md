@@ -25,10 +25,10 @@ reader, the printer and the read-eval-print loop into Lisp, and taught a running
 world to rebuild itself from its own source:
 
 ```
-$ cargo run --release -p quokka-repl -- build c1.qi
-$ cargo run --release -p quokka-repl -- rebuild c1.qi c2.qi
+$ cargo run --release -p quokka -- build c1.qi
+$ cargo run --release -p quokka -- rebuild c1.qi c2.qi
 c2.qi: rebuilt, Value("(:FORMS 373 :REPLACED 316)"); 360224 bytes
-$ cargo run --release -p quokka-repl -- c2.qi
+$ cargo run --release -p quokka -- c2.qi
 quokka> (defpackage :geo (:use :cl) (:export :area))
 #<PACKAGE "GEO">
 quokka> (in-package :geo)
@@ -55,7 +55,7 @@ At the end of phase 1 the plain REPL was the bootstrap interpreter; today
 that is `quokka bootstrap`, and the same session runs unchanged in a world.
 
 ```
-$ cargo run -p quokka-repl -- bootstrap
+$ cargo run -p quokka -- bootstrap
 boot> (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1)))))
 FACT
 boot> (fact 20)
@@ -85,10 +85,10 @@ phase 1's gate is met:
 > *An image saves, reloads and resumes where it left off.*
 
 ```
-$ cargo run -p quokka-repl -- build world.qi
+$ cargo run -p quokka -- build world.qi
 world.qi: 107144 bytes, 13347 words, sequence 1
 
-$ cargo run -p quokka-repl -- world.qi
+$ cargo run -p quokka -- world.qi
 world.qi: 13347 words, sequence 1 · compiled · tier 1
 quokka> (reverse '(1 2 3))
 (3 2 1)
@@ -203,8 +203,8 @@ installs the `wasm32-unknown-unknown` and `wasm32-wasip1` targets.
 
 ```
 ./scripts/check.sh                                     # everything CI runs
-cargo run --release -p quokka-repl -- build world.qi   # make a world
-cargo run --release -p quokka-repl -- world.qi         # work in it; :save FILE keeps it
+cargo run --release -p quokka -- build world.qi   # make a world
+cargo run --release -p quokka -- world.qi         # work in it; :save FILE keeps it
 ```
 
 `wasmtime`, `wasm-pack` and `sbcl` are optional — `check.sh` skips those legs
@@ -219,16 +219,19 @@ and how to add a test, a library file, a primitive or a chapter.
 ## Layout
 
 ```
-crates/quokka-vm      the VM: tagged words, heap, GC, reader, evaluator — no host dependencies
-crates/quokka-repl    native terminal REPL
-crates/quokka-wasm    WASM bindings and a browser dev console
-lisp/prelude.lisp     the core library, interpreted at boot
-lisp/compiler/        the compiler, in Common Lisp (tier 0 only)
-tests/lisp/           differential tests — the same file run interpreted, compiled, and in SBCL
-book/                 The Road to Quokka
-docs/design.md        the design
-docs/bytecode.md      the instruction set
-assets/               mascot, icons, palette
+crates/quokka-vm         the machine: tagged words, heap, GC, bytecode VM, images — no host dependencies
+crates/quokka-bootstrap  the cold build: the Rust reader and the interpreter that make the first world
+crates/quokka            the `quokka` program: runs a world, builds and rebuilds one
+crates/quokka-wasm       WASM bindings and a browser dev console
+lisp/prelude.lisp        the core library, interpreted at boot
+lisp/compiler/           the compiler, in Common Lisp (tier 0 only)
+lisp/library/            tier 1, in Lisp: packages, reader, printer, eval, the rebuild
+tests/lisp/              differential tests — the same file run interpreted, compiled, and in SBCL
+book/                    The Road to Quokka
+docs/design.md           the design
+docs/manual.md           the developer manual: building, running, testing
+docs/bytecode.md         the instruction set
+assets/                  mascot, icons, palette
 ```
 
 ## How the work is tracked

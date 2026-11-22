@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/quokka-vm",
     "crates/quokka-bootstrap",
-    "crates/quokka-repl",
+    "crates/quokka",
     "crates/quokka-wasm",
 ]
 

@@ -47,11 +47,12 @@ a part of the checks, and `check.sh` says which parts it skipped.
 
 ## 2. The `quokka` program
 
-Everything is one program, `quokka` (the `quokka-repl` crate). Run it through
+Everything is one program, `quokka`, built by the crate of the same name in
+`crates/quokka`. Run it through
 cargo, with `--release` for anything to do with worlds:
 
 ```bash
-cargo run --release -p quokka-repl -- ARGUMENTS
+cargo run --release -p quokka -- ARGUMENTS
 ```
 
 or build it once with `cargo build --release` and run `target/release/quokka`.
@@ -75,7 +76,7 @@ says how to make one. `quokka help` prints the table above.
 | --- | --- |
 | `crates/quokka-vm` | the machine a world runs on: values, heap, collector, bytecode VM, primitives, images, the host protocol. No interpreter: it cannot reach one (#29) |
 | `crates/quokka-bootstrap` | what only the cold build needs: the Rust reader, the tree-walking interpreter, `boot::build_image`, and the whole-system tests (`tests/differential.rs`) |
-| `crates/quokka-repl` | the `quokka` program |
+| `crates/quokka` | the `quokka` program |
 | `crates/quokka-wasm` | the browser host and its dev console |
 | `lisp/` | everything above the primitive table: the prelude, the compiler, the tier-1 library |
 
@@ -143,7 +144,7 @@ file. There are two ways to make one, and between them they form the
 Use `--release`. A debug build takes about 40 seconds for the cold build and
 minutes for a rebuild; a release build takes 5 and 18 seconds. The commands
 below are written as `quokka ...`; through cargo they are
-`cargo run --release -p quokka-repl -- ...`.
+`cargo run --release -p quokka -- ...`.
 
 ### The cold build: a world from nothing
 
@@ -338,7 +339,7 @@ that expands differently from the prelude's.
 1. Write `tests/lisp/NAME.lisp`.
 2. Make its baseline. **Tier 0**, from Quokka's interpreter:
    ```bash
-   cargo run -p quokka-repl -- bootstrap --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected
+   cargo run -p quokka -- bootstrap --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected
    ```
    **Tier 1**, from SBCL, since the interpreter cannot run it:
    ```bash
@@ -407,6 +408,6 @@ say how much.
 | *can't find crate for `core`* | a non-rustup `cargo` on your `PATH` (§1) | put `~/.cargo/bin` first |
 | *image format 2, but this build reads 3* | the image format changed since the file was saved | make a new one with `quokka build` |
 | `quokka rebuild` fails with *not found: lisp/prelude.lisp* | run from somewhere other than the repository's root | `cd` to the root |
-| *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | the budget is `EVAL_BUDGET` in `crates/quokka-repl/src/main.rs` |
+| *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | the budget is `EVAL_BUDGET` in `crates/quokka/src/main.rs` |
 | `quokka: no world to run` | `quokka` was started without a world | `quokka build world.qi` once, then `quokka world.qi` |
 | `check.sh` "passed" but CI failed | its output was piped, and the pipe's success hid the failure (§4) | use the exit-code form |

@@ -17,7 +17,7 @@
 ## Trying it
 
 ```
-cargo run -p quokka-repl -- bootstrap --compile
+cargo run -p quokka -- bootstrap --compile
 ```
 
 The ordinary REPL interprets and does not load the compiler at all. This one

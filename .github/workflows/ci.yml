@@ -54,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
-      # quokka-repl is a native host and is deliberately excluded.
+      # quokka is a native host and is deliberately excluded.
       - run: cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
 
   wasm-wasi:

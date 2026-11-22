@@ -160,7 +160,7 @@ in the file compiler, where it belongs.
 ## Trying it
 
 ```bash
-cargo run -p quokka-repl -- bootstrap --compile-file lisp/prelude.lisp
+cargo run -p quokka -- bootstrap --compile-file lisp/prelude.lisp
 ```
 
 ```
@@ -176,7 +176,7 @@ values (chapter 23).
 And then the one that matters:
 
 ```bash
-cargo run -p quokka-repl -- bootstrap --compile-file lisp/compiler/compile.lisp
+cargo run -p quokka -- bootstrap --compile-file lisp/compiler/compile.lisp
 ```
 
 ```

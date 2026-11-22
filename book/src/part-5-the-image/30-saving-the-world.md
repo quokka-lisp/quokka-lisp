@@ -15,7 +15,7 @@ the heap of chapter 4.
 An **image** is that heap, written to a file.
 
 ```bash
-cargo run -p quokka-repl -- build world.qi
+cargo run -p quokka -- build world.qi
 ```
 
 ```
@@ -26,7 +26,7 @@ A hundred kilobytes is the entire system above the Rust line: the prelude, the
 compiler, every symbol either of them interned. And:
 
 ```bash
-cargo run -p quokka-repl -- world.qi
+cargo run -p quokka -- world.qi
 ```
 
 ```
@@ -267,7 +267,7 @@ have gone wrong once.
 A world with your own code in it:
 
 ```bash
-cargo run -p quokka-repl -- build mine.qi mine.lisp
+cargo run -p quokka -- build mine.qi mine.lisp
 ```
 
 where `mine.lisp` is

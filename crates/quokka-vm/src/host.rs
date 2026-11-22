@@ -3,7 +3,7 @@
 //! CLAUDE.md rule 2: the core VM crate has no host dependencies. Everything the
 //! VM needs from the outside world — console output, loading a Lisp source file,
 //! and (later) the clock, storage and the display protocol — arrives from
-//! whatever is hosting it. `quokka-repl` is a host over `std`; `quokka-wasm` is
+//! whatever is hosting it. `quokka` is a host over `std`; `quokka-wasm` is
 //! one over the browser.
 //!
 //! # Requests, not calls

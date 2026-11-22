@@ -49,7 +49,7 @@ two tests that hold the Lisp reader and printer to the Rust ones
 (`run_compiled_rust_read`). A special variable must be proclaimed before
 anything binds it: `reader.lisp` opens with `(defvar *package*)` for that
 reason. `compile-form` is re-entrant (it saves and restores its globals, so `eval` in a macro expander works) but not safe for two processes at once (#34). **Step E is done** (#48, chapter 41): the **warm rebuild**,
-`%rebuild-world` in `lisp/library/rebuild.lisp`, and `cargo run -p quokka-repl
+`%rebuild-world` in `lisp/library/rebuild.lisp`, and `cargo run -p quokka
 -- rebuild IN OUT` from the repo root. A running world reads its source
 from the host by name (`%read-source`; disk natively, the binary's embedded
 copies in tests) in package `QUOKKA`, compiles every prelude and compiler form
@@ -300,10 +300,11 @@ crates/quokka-vm         the machine: tagged words, heap, GC, bytecode VM, primi
                          protocol (no host dependencies, and no interpreter — #29)
 crates/quokka-bootstrap  the cold build: Rust reader, tree-walking interpreter, build_image;
                          and the whole-system tests (tests/differential.rs)
-crates/quokka-repl    native terminal REPL binary
-crates/quokka-wasm    WASM bindings plus a minimal browser dev console page
-lisp/                 Lisp sources: compiler and core library (tier 0 only)
-tests/lisp/           differential test files
+crates/quokka            the `quokka` program: runs a world (`quokka WORLD.qi`), builds and
+                         rebuilds one, and the bootstrap REPL (#51)
+crates/quokka-wasm       WASM bindings plus a minimal browser dev console page
+lisp/                    Lisp sources: the prelude and compiler (tier 0), the library (tier 1)
+tests/lisp/              differential test files
 docs/design.md        the design
 book/                 The Road to Quokka, written alongside the system
 scripts/check.sh      everything CI runs, in one command
@@ -341,14 +342,14 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Everything CI runs | `./scripts/check.sh` |
 | Build (native) | `cargo build --workspace` |
 | Test (native) | `cargo test --workspace` |
-| Run a world | `cargo run --release -p quokka-repl -- world.qi` — **this is Quokka**: every form read, evaluated and printed by the world's own Lisp (#47); `:save FILE` saves the world between forms (#51); `quokka` with no world refuses |
-| Bootstrap REPL | `cargo run -p quokka-repl -- bootstrap` — the tier-0 interpreter, prompt `boot>`; `--compile` compiles each form with the bootstrap compiler, `--show-code` also prints the instructions |
-| Compile a file | `cargo run -p quokka-repl -- bootstrap --compile-file lisp/prelude.lisp` — compiles and verifies every form, installing none of it (see `boot::compile_source`) |
-| Build a world (the cold build) | `cargo run --release -p quokka-repl -- build world.qi [SRC...]` — builds the **compiled** world (`boot::build_image`), runs any sources through it, writes it |
-| Rebuild a world | `cargo run --release -p quokka-repl -- rebuild world.qi rebuilt.qi` — from the repo root; the world recompiles itself from the files on disk (#48) |
+| Run a world | `cargo run --release -p quokka -- world.qi` — **this is Quokka**: every form read, evaluated and printed by the world's own Lisp (#47); `:save FILE` saves the world between forms (#51); `quokka` with no world refuses |
+| Bootstrap REPL | `cargo run -p quokka -- bootstrap` — the tier-0 interpreter, prompt `boot>`; `--compile` compiles each form with the bootstrap compiler, `--show-code` also prints the instructions |
+| Compile a file | `cargo run -p quokka -- bootstrap --compile-file lisp/prelude.lisp` — compiles and verifies every form, installing none of it (see `boot::compile_source`) |
+| Build a world (the cold build) | `cargo run --release -p quokka -- build world.qi [SRC...]` — builds the **compiled** world (`boot::build_image`), runs any sources through it, writes it |
+| Rebuild a world | `cargo run --release -p quokka -- rebuild world.qi rebuilt.qi` — from the repo root; the world recompiles itself from the files on disk (#48) |
 | GC torture | `cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture` — collects at every mutation boundary and verifies the heap afterwards |
 | Differential tests | `cargo test -p quokka-bootstrap --test differential` (Quokka) · `./scripts/oracle.sh` (SBCL) |
-| Regenerate a baseline | `cargo run -p quokka-repl -- bootstrap --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |
+| Regenerate a baseline | `cargo run -p quokka -- bootstrap --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |
 | Build for the browser | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
 | Test under WASI | `CARGO_TARGET_WASM32_WASIP1_RUNNER='wasmtime --dir=.' cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
 | Dev console bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |
@@ -358,7 +359,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Docs | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --open` |
 | Preview the book | `mdbook serve book --open` (needs `cargo install mdbook`; optional) |
 
-`quokka-repl` is a native host and is deliberately **not** built for wasm32.
+`quokka` is a native host and is deliberately **not** built for wasm32.
 
 ### Toolchain gotcha
 

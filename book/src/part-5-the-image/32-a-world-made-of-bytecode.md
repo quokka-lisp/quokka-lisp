@@ -207,8 +207,8 @@ had it. Tier 1 will.
 ## Trying it
 
 ```bash
-cargo run -p quokka-repl -- build world.qi
-cargo run -p quokka-repl -- world.qi
+cargo run -p quokka -- build world.qi
+cargo run -p quokka -- world.qi
 ```
 
 The first builds the compiled world and saves it. The second loads it and

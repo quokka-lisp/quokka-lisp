@@ -1,6 +1,6 @@
 [package]
-name = "quokka-repl"
-description = "Quokka native terminal REPL."
+name = "quokka"
+description = "The quokka program: runs a world, and makes one."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

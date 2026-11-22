@@ -24,17 +24,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "quokka-bootstrap"
+name = "quokka"
 version = "0.0.0"
 dependencies = [
+ "quokka-bootstrap",
  "quokka-vm",
 ]
 
 [[package]]
-name = "quokka-repl"
+name = "quokka-bootstrap"
 version = "0.0.0"
 dependencies = [
- "quokka-bootstrap",
  "quokka-vm",
 ]
 

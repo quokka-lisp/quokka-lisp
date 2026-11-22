@@ -25,8 +25,8 @@ The **warm rebuild**, `%rebuild-world` in `rebuild.lisp`, starts from a
 running world, and that world does all the work itself:
 
 ```bash
-cargo run -p quokka-repl -- build c1.qi
-cargo run -p quokka-repl -- rebuild c1.qi c2.qi
+cargo run -p quokka -- build c1.qi
+cargo run -p quokka -- rebuild c1.qi c2.qi
 ```
 
 The second command loads `c1.qi`, calls `(quokka::%rebuild-world)`, and saves
