@@ -19,13 +19,13 @@ is the library's last file, and its last form adopts every system symbol
 `scripts/generate-cl-symbols.lisp`; the rest into `QUOKKA`). `symbol::HOME` is
 `nil` | `0` (unadopted) | `1` (keyword) | a package. Until the Lisp reader
 exists, a symbol the Rust reader makes is adopted into `CL-USER` the first time
-anything asks for it. **Before step C: #44, decided as "pack strings now"** —
-(1) `symbol-name` returns the symbol's own constant name instead of a fresh
-copy (the copies are 27% of the image), then (2) pack strings in memory (choose
-8 Latin-1/word + wide type vs 2 UTF-32/word at the start; ~37 Rust touch
-points; image format bump). #44's last comment has the measurements and plan.
-**Then step C, the reader in Lisp**, then the printer (G). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums),
-and the image is 478 KB because strings are a word per character (#44). Its scope is
+anything asks for it. **#44 is done** (chapter 37): `symbol-name` returns the
+symbol's own constant name, and a constant string of Latin-1 characters is a
+`PackedString` (count in raw slot 0, then 8 bytes/word); writable strings stay
+one scalar per word. Only `string_length`/`string_char` in `heap.rs` know the
+layouts differ — go through them, never `raw_slot`, on a string. Image 478 KB →
+254 KB, format version 3. **Next is step C, the reader in Lisp**, then the
+printer (G). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -41,7 +41,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,646 lines left, for phases 2 to 6** (A spent 161, B 108).
+- **The Rust budget: 1,573 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -94,8 +94,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**391 tests**; **19 differential files agree with SBCL** — 17 interpreted and
-compiled, plus two tier-1 files, compiled only. The Rust core is **13,354** lines of the 15,000 budget.
+**393 tests**; **19 differential files agree with SBCL** — 17 interpreted and
+compiled, plus two tier-1 files, compiled only. The Rust core is **13,427** lines of the 15,000 budget.
 
 ## How phase 1 ended
 

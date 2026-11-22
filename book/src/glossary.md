@@ -103,6 +103,8 @@ it as "first". ([Preface](what-has-to-be-built.md))
 Pronounced "could-er". Read it as "rest".
 ([Preface](what-has-to-be-built.md))
 
+**Character encoding.** A rule for writing characters' numbers as bytes. *UTF-32* uses four bytes for every character; *UTF-8* uses one for ASCII and two to four for the rest, which is compact but means finding the *n*th character takes a scan; [Latin-1](#latin-1) uses one byte and covers only 256 characters. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
+
 **Cheney's algorithm.** The [copying collector](#copying-collector) Quokka uses.
 Its distinguishing trick is needing no extra memory to keep track of its work:
 the objects it has already copied *are* the list of things still to examine.
@@ -307,6 +309,8 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 **Lexical addressing.** Resolving a variable to "scope 2, slot 0" ahead of time, so lookup is an index rather than a search. It requires a compiler to assign the numbers, which is why Quokka's interpreter cannot use it yet. Phase 1 is the *yet*. ([10](part-2-reading-and-running/10-functions-and-scope.md), [24](part-3-compiling/24-why-compile-at-all.md))
 
 **Lexical scope.** Determined by where something is written, not by what calls it. `block` and `return-from` are lexical, so a `return-from` can only reach a block it can see in the source — which makes it safe and makes it useless across a function boundary. ([14](part-2-reading-and-running/14-leaving-early.md))
+
+**Latin-1.** The [character encoding](#character-encoding) ISO 8859-1: one byte per character, covering Western European text. Its 256 codes are exactly Unicode's first 256, so a Latin-1 byte *is* the character's Unicode number. Quokka packs constant strings in it, eight to a word. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
 
 **Lisp-1.** A Lisp where a symbol has one cell shared by variables and functions. Scheme is one; no `funcall` is needed, but functions and variables compete for names. Contrast [Lisp-2](#lisp-2). ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
@@ -529,7 +533,8 @@ chosen for size rather than speed. ([24](part-3-compiling/24-why-compile-at-all.
 **String.** A heap object whose slots hold character codes rather than
 [values](#value), which is why it sits on the raw side of the collector's line
 (see [raw slots](#raw-slots)). Common Lisp counts it as a vector, so `length`
-and [aref](#aref) work on one. ([8](part-2-reading-and-running/08-text-becomes-structure.md), [19](part-2-reading-and-running/19-things-with-an-index.md))
+and [aref](#aref) work on one. A writable string holds one character per word;
+a constant one whose characters are all [Latin-1](#latin-1) holds eight. ([8](part-2-reading-and-running/08-text-becomes-structure.md), [19](part-2-reading-and-running/19-things-with-an-index.md), [37](part-6-self-hosting/37-eight-characters-to-a-word.md))
 
 **System call.** How a program asks an operating system's kernel to do
 something it may not do itself, such as read a disk. The program hands over a

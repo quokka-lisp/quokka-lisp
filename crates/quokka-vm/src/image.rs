@@ -75,7 +75,10 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 /// was fixed — which is the honest measure of how stable a format is before
 /// anything depends on it, and why #34 says the format is stable for phase 1
 /// rather than forever.
-pub const FORMAT_VERSION: u64 = 2;
+///
+/// **Version 3** packs constant strings eight Latin-1 characters to a word
+/// (#44), a new object type an older reader would refuse anyway.
+pub const FORMAT_VERSION: u64 = 3;
 
 /// Words before the heap's own: magic, version, length, checksum, scalars.
 pub const HEADER_WORDS: usize = 4 + Scalars::WORDS;

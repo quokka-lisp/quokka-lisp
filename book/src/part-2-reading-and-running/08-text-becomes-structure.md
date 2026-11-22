@@ -157,6 +157,10 @@ layout. Packing four characters per word, or storing UTF-8 and dealing with
 variable-width indexing, is a real optimisation available at any point and
 nobody has measured a need for it.
 
+*Later: the need was measured in phase 2, and constant strings now pack
+eight characters to a word. Chapter 37 tells that story, including why UTF-8
+lost.*
+
 Being deliberately wasteful is a defensible position when the waste is contained
 and the alternative costs clarity. The trick is writing down *that* it is
 deliberate, so the next reader knows it is a decision rather than an oversight.

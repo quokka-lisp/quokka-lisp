@@ -162,7 +162,8 @@ measures that it matters". The image went from 114 KB to 592 KB. Dropping the
 name list once adoption was done brought it back to 478 KB, and the rest is
 mostly names. That is the measurement the comment was waiting for, so it has
 its own decision issue, #44: pack the characters, compress the image file,
-or decide it does not matter yet.
+or decide it does not matter yet. Chapter 37 is how that went; the image
+ended at 254 KB.
 
 ## The test
 

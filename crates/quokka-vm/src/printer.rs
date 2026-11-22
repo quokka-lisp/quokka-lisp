@@ -116,7 +116,7 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
             }
             out.push_str(&mc.symbol_name(v));
         }
-        ObjectType::String | ObjectType::ConstantString => {
+        t if t.is_string() => {
             out.push('"');
             for ch in mc.string_to_rust(v).chars() {
                 if ch == '"' || ch == '\\' {

@@ -215,7 +215,10 @@ fn an_image_from_another_version_is_refused() {
     bytes[8] = 99;
     assert!(matches!(
         load(&bytes, 1024),
-        Err(ImageError::WrongVersion { expected: 2, .. })
+        Err(ImageError::WrongVersion {
+            expected: FORMAT_VERSION,
+            ..
+        })
     ));
 }
 

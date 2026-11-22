@@ -156,6 +156,7 @@ fn raw_types_are_not_traced() {
         ObjectType::Code,
         ObjectType::Bignum,
         ObjectType::ConstantString,
+        ObjectType::PackedString,
     ] {
         assert!(!t.slots_are_values(), "{t:?} must not be traced");
     }
@@ -168,6 +169,42 @@ fn raw_types_are_not_traced() {
     ] {
         assert!(t.slots_are_values(), "{t:?} must be traced");
     }
+}
+
+/// A constant of Latin-1 characters packs eight to a word, behind a count
+/// word: twelve characters take two words of bytes plus the count, not
+/// twelve. A character between 128 and 255 is still one byte. Issue #44.
+#[test]
+fn a_latin1_constant_is_packed() {
+    let mut heap = Heap::new();
+    heap.mutate(|mc| {
+        let s = mc.alloc_constant_string("caf\u{e9} au lait");
+        assert_eq!(mc.header(s).object_type, ObjectType::PackedString);
+        assert_eq!(mc.header(s).slots, 1 + 2);
+        assert_eq!(mc.string_length(s), 12);
+        assert_eq!(mc.string_char(s, 3), '\u{e9}');
+        assert_eq!(mc.string_to_rust(s), "caf\u{e9} au lait");
+        assert!(mc.string_is(s, "caf\u{e9} au lait"));
+        assert!(!mc.string_is(s, "caf\u{e9} au lai"));
+        let empty = mc.alloc_constant_string("");
+        assert_eq!(mc.string_length(empty), 0);
+        assert!(mc.string_is(empty, ""));
+    });
+}
+
+/// A constant with a character Latin-1 lacks stays one scalar per word, and
+/// a writable string is always wide, so a write never has to widen it.
+#[test]
+fn only_latin1_constants_are_packed() {
+    let mut heap = Heap::new();
+    heap.mutate(|mc| {
+        let wide = mc.alloc_constant_string("\u{3bb}x");
+        assert_eq!(mc.header(wide).object_type, ObjectType::ConstantString);
+        assert_eq!(mc.string_to_rust(wide), "\u{3bb}x");
+        let mutable = mc.alloc_string("abc");
+        assert_eq!(mc.header(mutable).object_type, ObjectType::String);
+        assert_eq!(mc.string_length(mutable), 3);
+    });
 }
 
 #[test]

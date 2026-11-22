@@ -327,7 +327,13 @@ pub enum ObjectType {
     /// type rather than one per kind, so adding a special operator does not
     /// mean adding a variant here. See `crate::eval`.
     Frame = 6,
-    /// Characters, packed. **Not traced.**
+    /// A string that can be written: one Unicode scalar per word. **Not
+    /// traced.**
+    ///
+    /// Wide on purpose. Any character can be stored at any index without the
+    /// string changing size, which a packed string cannot promise: putting a
+    /// `λ` into eight-to-a-word Latin-1 would need more words, and an object
+    /// cannot grow where it stands. See [`ObjectType::PackedString`].
     String = 64,
     /// Bytecode. **Not traced.**
     Code = 65,
@@ -349,7 +355,25 @@ pub enum ObjectType {
     /// It is also what makes sharing *sound* rather than merely licensed: an
     /// immutable string can be coalesced with an equal one and nothing can
     /// tell. See issue #26.
+    ///
+    /// Since #44 only a constant string with a character above Latin-1 is
+    /// stored this way; the rest are [`ObjectType::PackedString`].
     ConstantString = 67,
+    /// A constant string whose characters are all Latin-1 (codes below 256),
+    /// eight to a word. **Not traced.**
+    ///
+    /// Raw slot 0 is the character count, because the header counts words and
+    /// five characters and eight both fill one. The bytes follow from slot 1,
+    /// least significant first, as [`Mutation::raw_byte`] reads them. A byte
+    /// *is* the character's code — Latin-1 is Unicode's first 256 scalars — so
+    /// reading character `i` is one shift, and stays O(1). UTF-8 would be as
+    /// small for ASCII but would make `char` a scan from the start.
+    ///
+    /// Only constants are packed, because only a constant's characters are
+    /// all known when it is made and can never change. That is every symbol
+    /// name and literal, which is what fills an image (#44). Lisp cannot tell
+    /// the two constant layouts apart: both are `string`, both refuse writes.
+    PackedString = 68,
 }
 
 impl ObjectType {
@@ -370,7 +394,10 @@ impl ObjectType {
     /// whole point: immutability is one refusal in one place, not a condition
     /// scattered through everything that reads text.
     pub const fn is_string(self) -> bool {
-        matches!(self, ObjectType::String | ObjectType::ConstantString)
+        matches!(
+            self,
+            ObjectType::String | ObjectType::ConstantString | ObjectType::PackedString
+        )
     }
 
     fn from_u8(byte: u8) -> Option<ObjectType> {
@@ -390,6 +417,7 @@ impl ObjectType {
             65 => Code,
             66 => Bignum,
             67 => ConstantString,
+            68 => PackedString,
             _ => return None,
         })
     }
@@ -781,11 +809,11 @@ impl<'h> Mutation<'h> {
         v
     }
 
-    /// Allocate a string.
+    /// Allocate a string that can be written.
     ///
-    /// One Unicode scalar per word. That wastes most of each word, and it is
-    /// deliberate for now: it makes indexing a character O(1) and the code
-    /// obvious. Packing comes when something measures that it matters.
+    /// One Unicode scalar per word, which wastes most of each word. Constants
+    /// are packed instead (#44); this stays wide so that a write never has to
+    /// widen it. See [`ObjectType::String`].
     pub fn alloc_string(&mut self, text: &str) -> Value<'h> {
         self.alloc_string_of(text, ObjectType::String)
     }
@@ -799,6 +827,14 @@ impl<'h> Mutation<'h> {
 
     fn alloc_string_of(&mut self, text: &str, kind: ObjectType) -> Value<'h> {
         let chars: Vec<char> = text.chars().collect();
+        if kind == ObjectType::ConstantString && chars.iter().all(|&ch| (ch as u32) < 256) {
+            let v = self.alloc(ObjectType::PackedString, 1 + chars.len().div_ceil(8));
+            self.set_raw_slot(v, 0, chars.len() as u64);
+            for (index, ch) in chars.iter().enumerate() {
+                self.set_raw_byte(v, 8 + index, *ch as u8);
+            }
+            return v;
+        }
         let v = self.alloc(kind, chars.len());
         for (index, ch) in chars.iter().enumerate() {
             self.set_raw_slot(v, index, *ch as u64);
@@ -806,14 +842,44 @@ impl<'h> Mutation<'h> {
         v
     }
 
+    /// How many characters a string holds — not how many words.
+    ///
+    /// # Panics
+    /// If `v` is not a string.
+    pub fn string_length(&self, v: Value<'h>) -> usize {
+        let header = self.header(v);
+        assert!(header.object_type.is_string(), "not a string");
+        if header.object_type == ObjectType::PackedString {
+            self.raw_slot(v, 0) as usize
+        } else {
+            header.slots
+        }
+    }
+
+    /// Character `index` of a string. This and [`Self::string_length`] are
+    /// the only two places that know there are two layouts.
+    ///
+    /// # Panics
+    /// If `v` is not a string or `index` is past its end.
+    pub fn string_char(&self, v: Value<'h>, index: usize) -> char {
+        assert!(
+            index < self.string_length(v),
+            "index past the end of a string"
+        );
+        if self.header(v).object_type == ObjectType::PackedString {
+            char::from(self.raw_byte(v, 8 + index))
+        } else {
+            char::from_u32(self.raw_slot(v, index) as u32).expect("a string holds characters")
+        }
+    }
+
     /// Read a string back out.
     ///
     /// # Panics
     /// If `v` is not a string.
     pub fn string_to_rust(&self, v: Value<'h>) -> String {
-        assert!(self.header(v).object_type.is_string(), "not a string");
-        (0..self.header(v).slots)
-            .map(|i| char::from_u32(self.raw_slot(v, i) as u32).expect("invalid character"))
+        (0..self.string_length(v))
+            .map(|i| self.string_char(v, i))
             .collect()
     }
 
@@ -825,15 +891,9 @@ impl<'h> Mutation<'h> {
         if !v.is_object() || !self.header(v).object_type.is_string() {
             return false;
         }
-        let slots = self.header(v).slots;
         let mut chars = text.chars();
-        for i in 0..slots {
-            match chars.next() {
-                Some(ch) if ch as u64 == self.raw_slot(v, i) => {}
-                _ => return false,
-            }
-        }
-        chars.next().is_none()
+        (0..self.string_length(v)).all(|i| chars.next() == Some(self.string_char(v, i)))
+            && chars.next().is_none()
     }
 
     /// Find or create the symbol with this name.
@@ -1724,6 +1784,12 @@ impl Heap {
         let Some(header) = Header::decode(words[name]) else {
             return String::from("?");
         };
+        if header.object_type == ObjectType::PackedString {
+            let first = name + HEADER_WORDS + 1;
+            return (0..words[first - 1] as usize)
+                .map(|i| char::from((words[first + i / 8] >> ((i % 8) * 8)) as u8))
+                .collect();
+        }
         (0..header.slots)
             .filter_map(|i| char::from_u32(words[name + HEADER_WORDS + i] as u32))
             .collect()

@@ -453,7 +453,7 @@ fn sequence_shape<'h>(
         let header = mc.header(v);
         match header.object_type {
             ObjectType::Vector => return Ok((header.slots, false)),
-            t if t.is_string() => return Ok((header.slots, true)),
+            t if t.is_string() => return Ok((mc.string_length(v), true)),
             _ => {}
         }
     }
@@ -780,10 +780,7 @@ pub fn call_slice<'h>(
             let (length, is_string) = sequence_shape(mc, args[0], "AREF")?;
             let index = checked_index(args[1], length)?;
             if is_string {
-                let code = mc.raw_slot(args[0], index) as u32;
-                Ok(Value::character(
-                    char::from_u32(code).expect("a string holds characters"),
-                ))
+                Ok(Value::character(mc.string_char(args[0], index)))
             } else {
                 Ok(mc.slot(args[0], index))
             }
@@ -794,7 +791,11 @@ pub fn call_slice<'h>(
             // share literals and no help when a program modifies one anyway —
             // before this check, `(setf (aref (greeting) 0) #\J)` edited the
             // source of `greeting` and said nothing. See issue #26.
-            if args[0].is_object() && mc.header(args[0]).object_type == ObjectType::ConstantString {
+            //
+            // Both constant layouts refuse; only `String` is writable, and it
+            // is the one layout where any character fits anywhere (#44).
+            let kind = args[0].is_object().then(|| mc.header(args[0]).object_type);
+            if kind.is_some_and(|t| t.is_string() && t != ObjectType::String) {
                 return Err(EvalError::WrongType {
                     name: "SET-AREF",
                     wanted:
