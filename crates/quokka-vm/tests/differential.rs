@@ -334,13 +334,353 @@ fn a_rebuilt_world_passes_every_differential_file() {
     );
 }
 
+/// C3: the world rebuilt twice.
+fn twice_rebuilt_image() -> &'static [u8] {
+    static IMAGE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    IMAGE.get_or_init(|| rebuild(rebuilt_image()))
+}
+
 /// And a rebuilt world can rebuild itself again — C3 from C2 — replacing as
 /// many names from as many forms.
 #[test]
 fn a_rebuilt_world_rebuilds_again() {
-    let again = rebuild(rebuilt_image());
-    let out = run_compiled_in(&again, "(list (+ 1 2) (read-from-string \"cl:car\"))");
+    let out = run_compiled_in(
+        twice_rebuilt_image(),
+        "(list (+ 1 2) (read-from-string \"cl:car\"))",
+    );
     assert_eq!(out, "=> (3 CAR)\n");
+}
+
+/// Every compiled function a world holds under a name, described so that two
+/// generations can be compared: `(qualified name, description)`, sorted.
+fn describe_world(image: &[u8]) -> Vec<(String, String)> {
+    use quokka_vm::heap::symbol;
+    let mut heap = quokka_vm::image::load(image, 1 << 22).expect("the image loads");
+    heap.mutate(|mc| {
+        let mut out = Vec::new();
+        let mut cursor = mc.system_symbols();
+        while cursor.is_cons() {
+            let sym = mc.car(cursor);
+            cursor = mc.cdr(cursor);
+            let definition = mc.slot(sym, symbol::FUNCTION);
+            if definition.is_object() {
+                let mut gensyms = Vec::new();
+                let text = describe(mc, definition, &mut gensyms, 0);
+                out.push((qualified(mc, sym, &mut Vec::new()), text));
+            }
+        }
+        out.sort();
+        out
+    })
+}
+
+/// A symbol as `PACKAGE::NAME`, a keyword as `:NAME`, and an uninterned one
+/// — a gensym — as `#:G` and the order it was first met in, so that two
+/// generations whose gensym counters differ still describe alike.
+fn qualified<'h>(
+    mc: &quokka_vm::heap::Mutation<'h>,
+    sym: quokka_vm::value::Value<'h>,
+    gensyms: &mut Vec<quokka_vm::value::Value<'h>>,
+) -> String {
+    use quokka_vm::heap::symbol;
+    let name = mc.symbol_name(sym);
+    let home = mc.slot(sym, symbol::HOME);
+    if home.is_nil() {
+        let n = gensyms.iter().position(|g| *g == sym).unwrap_or_else(|| {
+            gensyms.push(sym);
+            gensyms.len() - 1
+        });
+        return format!("#:G{n}");
+    }
+    match home.as_fixnum() {
+        Some(0) => format!("?::{name}"),
+        Some(_) => format!(":{name}"),
+        // A package object: a `%package` structure, whose name is slot 1.
+        None => format!("{}::{name}", mc.string_to_rust(mc.slot(home, 1))),
+    }
+}
+
+/// Everything about V that a compiler decided, recursively: a function's
+/// code bytes, parameters, stack depth, name and constants; a closure's
+/// function and environment; lists, vectors and strings by content.
+fn describe<'h>(
+    mc: &quokka_vm::heap::Mutation<'h>,
+    v: quokka_vm::value::Value<'h>,
+    gensyms: &mut Vec<quokka_vm::value::Value<'h>>,
+    depth: usize,
+) -> String {
+    use quokka_vm::heap::ObjectType;
+    if depth > 64 {
+        return "#<deep>".into();
+    }
+    if v.is_cons() {
+        let mut parts = Vec::new();
+        let mut cursor = v;
+        while cursor.is_cons() {
+            parts.push(describe(mc, mc.car(cursor), gensyms, depth + 1));
+            cursor = mc.cdr(cursor);
+        }
+        if !cursor.is_nil() {
+            parts.push(format!(". {}", describe(mc, cursor, gensyms, depth + 1)));
+        }
+        return format!("({})", parts.join(" "));
+    }
+    if !v.is_object() {
+        return quokka_vm::printer::print(mc, v);
+    }
+    let header = mc.header(v);
+    match header.object_type {
+        ObjectType::Symbol => qualified(mc, v, gensyms),
+        t if t.is_string() => format!("{t:?}{}", quokka_vm::printer::print(mc, v)),
+        ObjectType::Function => {
+            use quokka_vm::code::function;
+            let code: String = quokka_vm::code::code_bytes(mc, v)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            format!(
+                "fn[{} params={} stack={} code={} constants={}]",
+                describe(mc, mc.slot(v, function::NAME), gensyms, depth + 1),
+                describe(mc, mc.slot(v, function::PARAMS), gensyms, depth + 1),
+                describe(mc, mc.slot(v, function::MAX_STACK), gensyms, depth + 1),
+                code,
+                describe(mc, mc.slot(v, function::CONSTANTS), gensyms, depth + 1),
+            )
+        }
+        t if t.slots_are_values() => {
+            let slots: Vec<String> = (0..header.slots)
+                .map(|i| describe(mc, mc.slot(v, i), gensyms, depth + 1))
+                .collect();
+            format!("{t:?}[{}]", slots.join(" "))
+        }
+        t => format!("{t:?}<{} raw words>", header.slots),
+    }
+}
+
+/// The words of an image file: its header, then its heap.
+fn image_words(image: &[u8]) -> (Vec<u64>, Vec<u64>) {
+    let words: Vec<u64> = image
+        .chunks_exact(8)
+        .map(|c| u64::from_le_bytes(c.try_into().expect("eight bytes")))
+        .collect();
+    let (header, heap) = words.split_at(quokka_vm::image::HEADER_WORDS);
+    (header.to_vec(), heap.to_vec())
+}
+
+/// Where in an image's header the two counters live that differ between
+/// generations by design. The header is magic, version, length, checksum,
+/// then the scalars in `Scalars::to_words` order — sequence first, the
+/// gensym counter seventeenth. Both are confirmed against the loaded world,
+/// so a reordering fails here rather than allowing the wrong word.
+const CHECKSUM_WORD: usize = 3;
+const SEQUENCE_WORD: usize = 4;
+const GENSYM_COUNTER_WORD: usize = 4 + 16;
+
+fn confirm_header_layout(image: &[u8]) {
+    use quokka_vm::heap::Register;
+    let (header, _) = image_words(image);
+    let mut heap = quokka_vm::image::load(image, 1 << 22).expect("the image loads");
+    assert_eq!(
+        header[SEQUENCE_WORD],
+        heap.sequence(),
+        "the sequence word moved"
+    );
+    // The counter holds the last number issued, so the next gensym is one
+    // more. `gensym` is called through the trampoline rather than as a form,
+    // because compiling a form can make gensyms of its own first.
+    let mut host = quokka_vm::host::NullHost::default();
+    quokka_vm::vm::call_global(&mut heap, "GENSYM", BUDGET, 2_000, &mut host).expect("gensym runs");
+    let name = heap.mutate(|mc| mc.symbol_name(mc.register(Register::Value)));
+    assert_eq!(
+        name,
+        format!("G{}", header[GENSYM_COUNTER_WORD] + 1),
+        "the gensym counter word moved"
+    );
+}
+
+/// The heap of a saved world, object by object: each object's first word and
+/// its type, read from headers the way the collector reads them (tag `101`,
+/// subtag 31 in the low byte, the type in the next, the slot count above).
+/// A word that is not a header begins a two-word cons.
+fn objects(heap: &[u64]) -> Vec<(usize, u8, usize)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at < heap.len() {
+        let word = heap[at];
+        if word & 0xFF == 0xFD {
+            let slots = (word >> 16) as usize;
+            out.push((at, ((word >> 8) & 0xFF) as u8, slots));
+            at += 1 + slots;
+        } else {
+            at += 2;
+        }
+    }
+    assert_eq!(at, heap.len(), "the walk lost the object boundaries");
+    out
+}
+
+/// The text of a string object at `at`: packed (eight Latin-1 bytes a word,
+/// after a count) or one character a word.
+fn string_at(heap: &[u64], at: usize, object_type: u8, slots: usize) -> String {
+    if object_type == quokka_vm::heap::ObjectType::PackedString as u8 {
+        let count = heap[at + 1] as usize;
+        (0..count)
+            .map(|i| char::from((heap[at + 2 + i / 8] >> ((i % 8) * 8)) as u8))
+            .collect()
+    } else {
+        (0..slots)
+            .filter_map(|i| char::from_u32(heap[at + 1 + i] as u32))
+            .collect()
+    }
+}
+
+/// Compare two saved worlds word by word, allowing only what differs between
+/// generations by design: the names of uninterned symbols (gensyms), if they
+/// correspond consistently, and the header's checksum, sequence number and
+/// gensym counter. Returns what else differs.
+fn whole_world_differences(a: &[u8], b: &[u8]) -> Vec<String> {
+    use quokka_vm::heap::{symbol, ObjectType};
+    let (header_a, heap_a) = image_words(a);
+    let (header_b, heap_b) = image_words(b);
+    let mut wrong = Vec::new();
+    for (i, (x, y)) in header_a.iter().zip(&header_b).enumerate() {
+        if x != y && ![CHECKSUM_WORD, SEQUENCE_WORD, GENSYM_COUNTER_WORD].contains(&i) {
+            wrong.push(format!("header word {i}: {x:#x} against {y:#x}"));
+        }
+    }
+    if heap_a.len() != heap_b.len() {
+        wrong.push(format!(
+            "heaps of {} and {} words",
+            heap_a.len(),
+            heap_b.len()
+        ));
+        return wrong;
+    }
+    // Every word of every gensym's name may differ — provided the two names
+    // correspond one to one.
+    let found = objects(&heap_a);
+    let by_start: std::collections::HashMap<usize, (u8, usize)> =
+        found.iter().map(|&(at, t, n)| (at, (t, n))).collect();
+    let nil = quokka_vm::value::Value::NIL.bits();
+    let mut allowed = std::collections::HashSet::new();
+    let mut names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut back: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for &(at, t, _) in &found {
+        if t != ObjectType::Symbol as u8 || heap_a[at + 1 + symbol::HOME] != nil {
+            continue;
+        }
+        let name_ref = heap_a[at + 1 + symbol::NAME];
+        let name_at = (name_ref >> 3) as usize;
+        let Some(&(nt, ns)) = by_start.get(&name_at) else {
+            continue;
+        };
+        let (text_a, text_b) = (
+            string_at(&heap_a, name_at, nt, ns),
+            string_at(&heap_b, name_at, nt, ns),
+        );
+        if names
+            .insert(text_a.clone(), text_b.clone())
+            .is_some_and(|t| t != text_b)
+            || back
+                .insert(text_b.clone(), text_a.clone())
+                .is_some_and(|t| t != text_a)
+        {
+            wrong.push(format!("gensym {text_a} does not correspond to one name"));
+        }
+        allowed.extend(name_at..=name_at + ns);
+    }
+    for (i, (x, y)) in heap_a.iter().zip(&heap_b).enumerate() {
+        if x != y && !allowed.contains(&i) {
+            wrong.push(format!("heap word {i}: {x:#x} against {y:#x}"));
+        }
+    }
+    wrong
+}
+
+/// **The fixpoint** (#39's gate, step F). Every compiled function the
+/// cold-built world holds under a name (C1, compiled by the interpreted
+/// compiler) must be what the world rebuilt by itself holds (C2, compiled by
+/// C1's compiled compiler), and what that rebuilds holds (C3).
+#[test]
+fn the_compiler_reproduces_itself() {
+    let c1 = describe_world(compiled_image());
+    let c2 = describe_world(rebuilt_image());
+    let c3 = describe_world(twice_rebuilt_image());
+    let report = |a: &[(String, String)], b: &[(String, String)], what: &str| {
+        let names_a: Vec<&String> = a.iter().map(|(n, _)| n).collect();
+        let names_b: Vec<&String> = b.iter().map(|(n, _)| n).collect();
+        let differ: Vec<&String> = a
+            .iter()
+            .filter(|(n, d)| b.iter().any(|(m, e)| m == n && e != d))
+            .map(|(n, _)| n)
+            .collect();
+        eprintln!(
+            "{what}: {} and {} named functions; {} differ: {:?}",
+            names_a.len(),
+            names_b.len(),
+            differ.len(),
+            &differ[..differ.len().min(40)]
+        );
+        differ.len()
+    };
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fixpoint");
+    let _ = std::fs::create_dir_all(&dir);
+    for (file, world) in [("c1.txt", &c1), ("c2.txt", &c2), ("c3.txt", &c3)] {
+        let text: Vec<String> = world.iter().map(|(n, d)| format!("{n}\n  {d}\n")).collect();
+        let _ = std::fs::write(dir.join(file), text.concat());
+    }
+    let first = report(&c1, &c2, "C1 against C2");
+    let second = report(&c2, &c3, "C2 against C3");
+    assert_eq!((first, second), (0, 0), "see target/fixpoint/c*.txt");
+}
+
+/// **The fixpoint, for the whole world** (#50). C2 and C3 are the same
+/// world: the same objects in the same places, word for word, except the
+/// gensyms' names — a counter that only goes up — and the header's
+/// checksum, sequence number and gensym counter. This sees what comparing
+/// named functions cannot: code held in data, such as the readtable's reader
+/// macros, every symbol, and the heap's layout.
+#[test]
+fn a_rebuilt_world_is_the_same_world() {
+    confirm_header_layout(twice_rebuilt_image());
+    let wrong = whole_world_differences(rebuilt_image(), twice_rebuilt_image());
+    assert!(
+        wrong.is_empty(),
+        "C2 and C3 differ:\n{}",
+        wrong[..wrong.len().min(20)].join("\n")
+    );
+}
+
+/// The comparisons can fail: they are not passing by comparing nothing. One
+/// redefined function is exactly one named function that differs, and a
+/// world that has run one more form is not the same world.
+#[test]
+fn the_fixpoint_notices_a_change() {
+    use quokka_vm::vm::eval_source;
+    let mut heap = quokka_vm::image::load(rebuilt_image(), 1 << 22).expect("the image loads");
+    let mut host = SharedHost(
+        std::rc::Rc::new(std::cell::RefCell::new(String::new())),
+        Vec::new(),
+    );
+    eval_source(
+        &mut heap,
+        "(defun abs (n) (if (minusp n) (- 0 n) n))",
+        BUDGET,
+        2_000,
+        &mut host,
+        |_| true,
+    )
+    .expect("the redefinition runs");
+    let changed = quokka_vm::image::save(&mut heap);
+    let before = describe_world(rebuilt_image());
+    let after = describe_world(&changed);
+    let differ: Vec<&String> = before
+        .iter()
+        .filter(|(n, d)| after.iter().any(|(m, e)| m == n && e != d))
+        .map(|(n, _)| n)
+        .collect();
+    assert_eq!(differ, ["COMMON-LISP::ABS"]);
+    assert!(!whole_world_differences(rebuilt_image(), &changed).is_empty());
 }
 
 /// `rebuild.lisp` names the library's files itself, since it asks the host

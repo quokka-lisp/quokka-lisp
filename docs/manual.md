@@ -182,11 +182,19 @@ cargo run --release -p quokka-repl -- --rebuild-image c2.qi c3.qi
 What to expect today:
 - C1 is 359,688 bytes; C2 and C3 are 360,224 each.
 - Every rebuild reports `(:FORMS 373 :REPLACED 316)`.
-- `cmp c2.qi c3.qi` still reports differences. Gensyms are numbered by a
-  counter that keeps rising, and the image checksum covers those numbers. The
-  comparison that ignores this, and proves the compiler reproduces itself, is
-  **step F** of phase 2. Until it lands, equal sizes are the quick sign that
-  nothing drifted.
+- `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
+  are numbered by a counter that keeps rising, the image checksum covers those
+  numbers, and the header counts saves.
+- **The fixpoint** (phase 2's gate, chapter 42) ignores exactly those
+  differences, and checks everything else:
+  ```bash
+  cargo test -p quokka-vm --test differential -- the_compiler_reproduces_itself a_rebuilt_world_is_the_same_world
+  ```
+  The first test compares every named compiled function in C1, C2 and C3. The
+  second compares C2 and C3 word by word as whole worlds. Both build their own
+  C1, C2 and C3 from the source in the binary. When one fails, it writes
+  `target/fixpoint/c1.txt`, `c2.txt` and `c3.txt`, one description per
+  function, and `diff` between them shows what changed.
 
 ---
 
@@ -275,8 +283,14 @@ sbcl --script scripts/oracle.lisp tests/lisp/reader.lisp
 | the browser build | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
 | the Rust line budget (15,000, tests not counted) | `./scripts/check-budget.sh` |
 
-The slowest tests are the rebuild tests, about 40 seconds together. They
-rebuild the system twice.
+The slowest tests are the rebuild and fixpoint tests, about 40 seconds
+together. They rebuild the system twice, and share the two rebuilt worlds.
+
+**If the fixpoint fails** after a change to the compiler, the prelude or the
+library, the change made the compiler compile itself differently. Read
+`diff target/fixpoint/c1.txt target/fixpoint/c2.txt`, and find out why before
+doing anything else. Chapter 34 gives one way this can happen: a tier-1 macro
+that expands differently from the prelude's.
 
 ---
 

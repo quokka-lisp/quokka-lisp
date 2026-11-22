@@ -41,8 +41,11 @@ quokka> (list (geo:area 3) 'geo::area (eval (read-from-string "(+ 1 2)")))
 (9 GEO:AREA 3)
 ```
 
-What remains of the phase is its gate — **the fixpoint**, the compiled compiler
-reproducing itself byte for byte (step F) — and the rest of tier 1.
+**The phase's gate passes:** the compiled compiler reproduces itself. Every
+compiled function is the same in the first build and in two rebuilds, and the
+two rebuilt worlds are the same word for word, apart from gensym names. That
+stays a standing test ([#50](https://github.com/quokka-lisp/quokka-lisp/issues/50)).
+What remains of phase 2 is the rest of tier 1.
 **How to build, run, rebuild and test it all is in the
 [developer manual](docs/manual.md).**
 
@@ -140,7 +143,7 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `--image` runs a compiled world in its own Lisp, `--rebuild-image` rebuilds one, `--compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-403 tests, green on native, under wasmtime, and with the GC torture mode on.
+406 tests, green on native, under wasmtime, and with the GC torture mode on.
 Twenty-two Common Lisp files produce byte-identical output on Quokka and SBCL:
 seventeen on Quokka interpreted, compiled and under WebAssembly, five more of
 tier 1 compiled only — and all twenty-two again in a world that has rebuilt
@@ -148,10 +151,8 @@ itself. The Rust core is 13,676 lines of the 15,000-line budget.
 
 ### What does not exist yet
 
-**The fixpoint, and the rest of tier 1.** A world rebuilds itself, and
-successive rebuilds come out the same size; proving that the compiled compiler
-reproduces itself *byte for byte* is phase 2's gate (step F). Tier 1 still
-lacks `setf` expanders, `progv`, `load-time-value` and `symbol-macrolet`,
+**The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
+which still lacks `setf` expanders, `progv`, `load-time-value` and `symbol-macrolet`,
 sequences, `format`, bignums and floats
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
 The first world is still built by the interpreter — the cold build — and is

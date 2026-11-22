@@ -107,6 +107,8 @@ Pronounced "could-er". Read it as "rest".
 
 **Cold build.** Making a world from nothing, from outside it: Quokka's `boot::build_image`, in Rust, with the interpreter. Contrast the *warm rebuild*, in which a running world remakes itself from its own source. The term is SBCL's, whose build makes a *cold core*. ([41](part-6-self-hosting/41-the-image-rebuilds-itself.md))
 
+**Diverse double-compiling.** Compiling a compiler's source with two *different* compilers and comparing the results, as a defence against a compiler that hides something in itself (Wheeler, 2005). Quokka's C1 (compiled by the interpreted compiler) against C2 (by the compiled one) is a small instance. ([42](part-6-self-hosting/42-the-fixpoint.md))
+
 **Cheney's algorithm.** The [copying collector](#copying-collector) Quokka uses.
 Its distinguishing trick is needing no extra memory to keep track of its work:
 the objects it has already copied *are* the list of things still to examine.
@@ -174,7 +176,7 @@ with no heap space used. Quokka's are 63 bits. The traditional Lisp word;
 contrast [bignum](#bignum).
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
-**Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. ([The bootstrap](the-bootstrap.md))
+**Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. Quokka's holds since step F: every named compiled function is the same in C1, C2 and C3, and C2 and C3 are the same world word for word apart from gensym names. ([The bootstrap](the-bootstrap.md), [42](part-6-self-hosting/42-the-fixpoint.md))
 
 **Flat closure.** A [closure](#closure) that copies the values it captured into
 itself when it is made, so each one is at a known index rather than found by

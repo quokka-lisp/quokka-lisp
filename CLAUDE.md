@@ -59,14 +59,23 @@ still holds its old function. `%library-files` there must match
 `boot::LIBRARY` (a test checks). A rebuild takes ~18 s. C1 (cold) 359,688
 bytes; C2 = C3 = 360,224. A bare compiled function runs in no scope, as
 `Vm::start` runs one — otherwise every `eval`'d `defun` captured an empty scope.
-Gensym *names* differ between generations (a counter), which step F must
-compare by position. **Next is step F, the fixpoint.** Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
+**Step F is done — phase 2's gate passes** (#50, chapter 42):
+`the_compiler_reproduces_itself` (every named compiled function equal in C1,
+C2, C3; gensyms numbered by first appearance) and
+`a_rebuilt_world_is_the_same_world` (C2 and C3 word for word, allowing only
+gensym names and the header's checksum, sequence and gensym counter), with
+`the_fixpoint_notices_a_change` guarding against a vacuous pass — all test
+code in `differential.rs`. **A change that makes them fail changed how the
+compiler compiles itself: find out why** (dumps in `target/fixpoint/`).
+**Next: the rest of tier 1** — step H, `setf` expanders, per #39's order;
+mind that a tier-1 `setf` must not change how the compiler's own source
+expands. Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
 the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` (#47, done) → the image rebuilds
-itself (#48, done) → the fixpoint → `setf` expanders, the last three special operators, sequences,
+itself (#48, done) → the fixpoint (#50, done) → `setf` expanders, the last three special operators, sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
 on. Streams (#42, closed): minimal string streams and the console in tier 1;
 generic streams stay tier 2.
@@ -130,7 +139,7 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**403 tests**; **22 differential files agree with SBCL** — 17 interpreted and
+**406 tests**; **22 differential files agree with SBCL** — 17 interpreted and
 compiled, plus five tier-1 files, compiled only, and all 22 also pass in a rebuilt world. The Rust core is **13,676** lines of the 15,000 budget.
 
 ## How phase 1 ended

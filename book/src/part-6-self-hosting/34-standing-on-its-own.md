@@ -203,6 +203,13 @@ Each of these has an issue, or will when its step begins:
   requests, or carried inside the image.
 - **The ansi-test suite** — its licence must be checked before anything is
   vendored (rule 8), and its groups mapped onto tier 1.
+
+*Later: three of these were settled as the steps reached them. Streams are
+minimal string streams and a console (chapters 38 and 39). A rebuilding image
+asks its host for its source (chapter 41). The fixpoint compares every named
+function across three generations, and C2 against C3 as whole worlds. The
+worry about allocation order did not apply, because saving collects
+(chapter 42).*
 - **Bignums and floats** (#16, #17) — decisions written long ago that this phase
   finally has to make.
 

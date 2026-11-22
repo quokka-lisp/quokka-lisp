@@ -129,6 +129,9 @@ which is a bug no ordinary test could find, because both outputs would run and
 both might look correct. It is the one check only a self-hosting system can
 perform, and it is phase 2's gate.
 
+*Later: it passes. Chapter 42 tells how it was measured, and what "byte for
+byte" had to mean for a file that records its own save count.*
+
 ## And then everything changes
 
 This is the part worth being clear about, because it is the payoff for all of
