@@ -2,10 +2,17 @@
 
 Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Common Lisp subset, browser-first via WASM, with a live, presentation-based UI. The full design is in `docs/design.md` — read it before making structural changes.
 
-Current phase: **1 · Bytecode and image** (#23), well into it. Phase 0's gate
-passed, **tier 0 is finished** (#18), and phase 1's gate — *an image saves,
-reloads and resumes where it left off* — **is met**. Phase 1 itself is not
-finished; see "What is left" below.
+**Phase 1 · Bytecode and image is finished** (#23). Phase 0's gate passed,
+**tier 0 is finished** (#18), phase 1's gate — *an image saves, reloads and
+resumes where it left off* — holds in a compiled world, and every differential
+file agrees interpreted, compiled and with SBCL (#38).
+
+**Next is phase 2 · Self-hosting**, and nothing in it is started. Per the
+working agreements, ask before beginning it: the compiled compiler rebuilds
+itself and the core library, and the gate is a byte-for-byte match with the
+first build. `docs/design.md` says packages belong at the *start* of phase 2,
+before the compiler's sources would need re-packaging mid-bootstrap. There is
+no tracking issue for phase 2 yet.
 
 ## What exists
 
@@ -47,27 +54,28 @@ The compiler compiles **every form of the prelude and every form of itself**
 and installs none of it; chapter 29 says why installing cannot happen in a
 running interpreter.
 
-**383 tests**; **17 differential files agree with SBCL**. The Rust core is
-**13,102** lines of the 15,000 budget.
+**385 tests**; **17 differential files agree interpreted, compiled and with
+SBCL**. The Rust core is **13,085** lines of the 15,000 budget.
 
-## What is left in phase 1
+## How phase 1 ended
 
 **The image is compiled (#33).** `boot::build_image` boots, compiles the
 prelude and the compiler (pass 1), runs the results on the VM (pass 2), and
-scans the heap to prove no interpreted closure or macro survives.
-`defmacro` and `macrolet` compile; every special operator does. An image is
-used through `vm::compile_and_run_forms`, which calls the image's own
-`compile-form` with a trampoline (`vm::call_global`) and never touches the
-interpreter. `tagbody` is a `TAG` record that survives a `go` plus a jump
-table, and a local `go` is one `JMP-TAG` (38 opcodes).
+scans the heap to prove no interpreted closure or macro survives. Every
+special operator compiles. An image is used through
+`vm::compile_and_run_forms`, which calls the image's own `compile-form` with a
+trampoline (`vm::call_global`) and never touches the interpreter. `tagbody` is
+a `TAG` record that survives a `go` plus a jump table, and a local `go` is one
+`JMP-TAG` (38 opcodes).
 
-- **step E**: the fourth differential leg — run every file in a compiled world
-  and compare with the baselines. The last piece of phase 1. Until it exists,
-  nothing checks the compiled world agrees with the interpreted one across the
-  suite, which is how #36's `error` drift went unnoticed. The compile leg in
-  `tests/differential.rs` still runs the *interpreted* bootstrap compiler; that
-  is why `values.lisp` is listed as waiting on a compiled closure (its
-  `macrolet`), and `structures.lisp` on being run, not just compiled.
+**The fourth differential leg (#38)** runs every file in a compiled world
+against the same baseline: each form compiled and run before the next, a
+compile error counting as `!! error`. It found `setq` compiling only its first
+pair, and a compiler that accepted malformed special forms the interpreter
+refuses — `%check-syntax` now applies the interpreter's conditions, read from
+`eval.rs`. The old compile leg (bootstrap compiler over the test files) was
+retired as strictly weaker. The compiled leg has not yet run under wasmtime on
+a developer machine; CI runs it.
 
 Also open: #34 (concurrency — what the code must not foreclose before phase
 3's processes; item 1, the host interface, is done as #35), #29 (build the VM

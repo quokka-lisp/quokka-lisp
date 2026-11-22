@@ -194,16 +194,12 @@ The compiled image is also *smaller*: 96 KB, against 107 KB for the
 interpreted one. Bytecode is more compact than the list structure it
 replaced.
 
-## What is still not true
+## What this chapter did not check
 
-**Nothing yet checks that the compiled world gives the same answers as the
-interpreted one across the whole test suite.** The tests here check what they
-check. The seventeen differential files have been run interpreted (and against
-SBCL) for weeks; they have never been run in a compiled world. Doing that is
-the fourth leg of the differential tests, step E of #23, and it is the last
-piece of phase 1. Chapter 28's lesson about two evaluators that pass their own
-tests and disagree with each other is the argument for doing it before
-anything else is built on top.
+**Whether the compiled world gives the same answers as the interpreted one
+across the whole test suite.** The tests here check what they check; the
+seventeen differential files had only ever run interpreted. Chapter 33 runs
+them compiled, and it found two disagreements.
 
 **`mapcar` does not exist** — not a compiled-world problem; the prelude never
 had it. Tier 1 will.

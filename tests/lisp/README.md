@@ -1,14 +1,20 @@
 # Differential tests
 
-Each `.lisp` file is ordinary Common Lisp. The same file runs three ways —
-Quokka natively, Quokka under wasmtime, and SBCL — and all three must produce
-the same output.
+Each `.lisp` file is ordinary Common Lisp. The same file runs four ways —
+Quokka interpreted, Quokka compiled (in the image `boot::build_image` makes),
+each of those natively and under wasmtime, and SBCL — and all of them must
+produce the same output.
 
-Two different comparisons share one file:
+Three different comparisons share one file:
 
 - **Quokka against SBCL** catches *we implemented Lisp wrong*. Semantics.
 - **Quokka native against Quokka wasm32** catches *the VM behaves differently
   depending on where it runs*. Portability.
+- **Quokka interpreted against Quokka compiled** catches *the compiler and the
+  interpreter disagree* (#38). In the compiled run, each form is compiled and
+  then run before the next is read, and a form that fails to compile counts as
+  `!! error` — a deliberately malformed form errs at compile time compiled and
+  at run time interpreted, and either way it is an error.
 
 ## Format
 

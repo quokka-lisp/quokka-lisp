@@ -17,7 +17,7 @@ be small enough to read.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 
-## Status: phase 1 — the compiler runs, and an image saves and resumes
+## Status: phase 1 finished — a compiled world, built by itself
 
 ```
 $ cargo run -p quokka-repl
@@ -103,20 +103,12 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `--compile` compiles each form and runs it on the VM, `--show-code` prints the instructions first |
 
-383 tests, green on native, under wasmtime, and with the GC torture mode on.
-Seventeen Common Lisp files produce byte-identical output on Quokka natively,
-Quokka under WebAssembly, and SBCL. The Rust core is 13,102 lines of the
+385 tests, green on native, under wasmtime, and with the GC torture mode on.
+Seventeen Common Lisp files produce byte-identical output on Quokka
+interpreted, Quokka compiled, Quokka under WebAssembly, and SBCL. The Rust core is 13,085 lines of the
 15,000-line budget.
 
 ### What does not exist yet
-
-**Nothing yet runs the whole test suite in a compiled world.** An image built
-by `--save-image` is compiled through and through — the prelude, every macro,
-the compiler itself — and a heap scan proves nothing interpreted is left in
-it. What remains of phase 1
-([#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)) is the fourth
-leg of the differential tests: the seventeen files that agree with SBCL when
-interpreted must also agree when compiled.
 
 No packages — keywords exist, the rest is phase 2
 ([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why), which
@@ -132,7 +124,7 @@ condition system, and the rest is phase 3. No renderer and no editor — phases
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Thirty-eight chapters in five parts — the substrate, reading and
+afterwards. Thirty-nine chapters in five parts — the substrate, reading and
 running, the machine, the compiler, and the image — assuming no prior
 knowledge of language implementation, including what a garbage collector is,
 what `car` and `cdr` are, what an opcode is, and why a program would want to
@@ -177,7 +169,7 @@ crates/quokka-repl    native terminal REPL
 crates/quokka-wasm    WASM bindings and a browser dev console
 lisp/prelude.lisp     the core library, interpreted at boot
 lisp/compiler/        the compiler, in Common Lisp (tier 0 only)
-tests/lisp/           differential tests — the same file run three ways
+tests/lisp/           differential tests — the same file run interpreted, compiled, and in SBCL
 book/                 The Road to Quokka
 docs/design.md        the design
 docs/bytecode.md      the instruction set

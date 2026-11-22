@@ -183,8 +183,9 @@ online. Its final draft is, and is what every rendering above is made from.
 
 An obvious idea, and worth stating what Quokka does and does not do with it.
 
-`tests/lisp/` holds Common Lisp files that run three ways — Quokka natively,
-Quokka under WebAssembly, and SBCL — and all three must agree (chapter 12).
+`tests/lisp/` holds Common Lisp files that run several ways — Quokka
+interpreted, Quokka compiled, each natively and under WebAssembly, and SBCL —
+and all of them must agree (chapters 12 and 33).
 Any example from the standard or the reference is, in principle, a ready-made
 test case: it is a form with a documented result, written by people who
 understood the specification better than we do.

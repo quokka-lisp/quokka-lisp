@@ -1345,6 +1345,44 @@ mod compiler {
         assert!(!out.contains("JMP-TAG"), "{out}");
     }
 
+    // ---- #38: what the fourth leg found ---------------------------------
+
+    /// Every pair, not just the first. Found by running `control.lisp`
+    /// compiled for the first time: `(setq a 1 b 2)` returned 1 and left `b`
+    /// alone.
+    #[test]
+    fn setq_assigns_every_pair() {
+        assert_eq!(
+            compile_and_run("(let ((a 0) (b 0)) (list (setq a 1 b 2) a b))"),
+            "(2 1 2)"
+        );
+        assert_eq!(compile_and_run("(setq)"), "NIL");
+    }
+
+    /// What the interpreter refuses as malformed, the compiler refuses too —
+    /// at compile time, which in a compiled world is when the error belongs.
+    #[test]
+    fn a_malformed_special_form_is_a_compile_error() {
+        for source in [
+            "(let)",
+            "(let 1)",
+            "(let ((1 2)) 3)",
+            "(block)",
+            "(catch)",
+            "(flet ((f)) 1)",
+            "(quote)",
+            "(quote 1 2)",
+            "(if 1)",
+            "(setq a)",
+            "(return-from)",
+            "(function 1)",
+        ] {
+            let out = compile_and_run(source);
+            assert!(out.starts_with("; compiling:"), "{source}: {out}");
+            assert!(out.contains("bad "), "{source}: {out}");
+        }
+    }
+
     /// The instruction list for a form, as the compiler produces it.
     fn compile_instructions(source: &str) -> String {
         let mut heap = Heap::new();

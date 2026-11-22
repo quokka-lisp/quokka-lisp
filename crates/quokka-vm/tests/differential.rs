@@ -1,4 +1,4 @@
-//! Differential tests: the same Lisp, three ways, all agreeing.
+//! Differential tests: the same Lisp, four ways, all agreeing.
 //!
 //! Each case is an ordinary Common Lisp file in `tests/lisp/` and a baseline
 //! beside it. Two different comparisons share those files:
@@ -9,6 +9,9 @@
 //! - **Quokka native against Quokka wasm32** catches *the VM behaves
 //!   differently depending on where it runs*. That is this file, run twice —
 //!   once natively and once under wasmtime.
+//! - **Quokka interpreted against Quokka compiled** catches *the compiler and
+//!   the interpreter disagree*. Every file also runs in a compiled world — the
+//!   image `boot::build_image` makes — against the same baseline (#38).
 //!
 //! # Why 99 unit tests do not cover this
 //!
@@ -46,6 +49,26 @@ macro_rules! differential_cases {
             }
         )*
 
+        /// **The fourth leg** (#38): the same files, the same baselines, run
+        /// in a *compiled* world — the image `boot::build_image` makes, where
+        /// the prelude, every macro and the compiler are bytecode and every
+        /// form is compiled by that compiler and run on the VM. One baseline,
+        /// three implementations: interpreted Quokka, compiled Quokka, SBCL.
+        ///
+        /// The leg that would have caught #36's `error` drift, where the two
+        /// evaluators disagreed for weeks and each passed its own tests.
+        mod compiled {
+            $(
+                #[test]
+                fn $name() {
+                    let source = include_str!(concat!("../../../tests/lisp/", $stem, ".lisp"));
+                    let expected = include_str!(concat!("../../../tests/lisp/", $stem, ".expected"));
+                    let actual = super::run_compiled(source);
+                    super::compare($stem, source, expected, &actual);
+                }
+            )*
+        }
+
         /// Every file listed above, for the coverage check in
         /// `scripts/check-differential.sh`.
         #[test]
@@ -76,100 +99,50 @@ differential_cases! {
     values => "values",
 }
 
-/// The other half of each file: does the **compiler** handle all of it?
-///
-/// Not yet the fourth leg — that is step E of #23, where a file compiled and
-/// run must print what it printed interpreted, and it needs #33's compiled
-/// prelude to run anything. This is its precondition, checked now: every
-/// form compiles, and the verifier accepts every function that comes out.
-///
-/// **Except a form that is meant to be an error.** A file like
-/// `control-flow.lisp` contains `(return-from nowhere 1)` on purpose, and its
-/// baseline says `!! error`; the compiler finds that at compile time where
-/// the interpreter found it at run time, and either way it is an error. So a
-/// form may fail to compile *only* where its baseline line is `!! error`.
-/// The first version stopped at the first failure, which left every form
-/// after a deliberate error unchecked.
-///
-/// A file still waiting on something is listed with a fragment of the error
-/// it gives. It fails the moment it starts compiling — *"now compiles"* — so
-/// the list cannot quietly go stale. #37 has the table this was built from.
-macro_rules! compile_cases {
-    ($($name:ident => $stem:literal : $why:expr),* $(,)?) => {
-        mod compiles {
-            use super::OK;
-            $(
-                #[test]
-                fn $name() {
-                    let source = include_str!(concat!("../../../tests/lisp/", $stem, ".lisp"));
-                    let expected = include_str!(concat!("../../../tests/lisp/", $stem, ".expected"));
-                    super::compile_file($stem, source, expected, $why);
+/// The compiled world, built once and kept as image bytes; each file loads
+/// its own copy, so no file can see what another defined.
+fn compiled_image() -> &'static [u8] {
+    static IMAGE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    IMAGE.get_or_init(|| {
+        let mut heap = quokka_vm::heap::Heap::new();
+        quokka_vm::boot::build_image(&mut heap).unwrap_or_else(|e| panic!("{e}"));
+        quokka_vm::image::save(&mut heap)
+    })
+}
+
+/// `run_forms`, in a compiled world: each form compiled by the image's own
+/// compiler and run on the VM, one at a time — so a `defstruct` has run
+/// before the form that uses its accessors is compiled, which is the order
+/// a file means. A compile error is a condition signalled inside
+/// `compile-form`, and so arrives as the form's `!! error`, exactly as a
+/// deliberately malformed form errs at run time when interpreted.
+fn run_compiled(source: &str) -> String {
+    use quokka_vm::printer::print;
+    let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
+    let mut host = quokka_vm::host::NullHost::default();
+    let mut out = String::new();
+    let read = quokka_vm::vm::compile_and_run_forms(
+        &mut heap,
+        source,
+        BUDGET,
+        2_000,
+        &mut host,
+        |mc, result| {
+            match result {
+                Ok(value) => {
+                    out.push_str("=> ");
+                    out.push_str(&print(mc, value));
+                    out.push('\n');
                 }
-            )*
-        }
-    };
-}
-
-/// Nothing is waiting on this file.
-const OK: Option<&str> = None;
-
-fn compile_file(stem: &str, source: &str, expected: &str, why: Option<&str>) {
-    let baseline: Vec<&str> = expected.lines().collect();
-    let mut heap = quokka_vm::heap::Heap::new();
-    quokka_vm::boot::install(&mut heap).expect("the prelude boots");
-    quokka_vm::boot::install_compiler(&mut heap).expect("the compiler loads");
-    let mut waiting = false;
-    let mut unexpected = Vec::new();
-    let read = quokka_vm::boot::compile_each(&mut heap, source, |form, outcome| {
-        if let Err(e) = outcome {
-            let meant = baseline.get(form - 1).is_some_and(|l| l.starts_with("!!"));
-            let known = why.is_some_and(|w| e.to_string().contains(w));
-            if known {
-                waiting = true;
-            } else if !meant {
-                unexpected.push(format!("form {form}: {e}"));
+                Err(_) => out.push_str("!! error\n"),
             }
-        }
-        true
-    });
-    read.unwrap_or_else(|e| panic!("{stem} does not read: {e}"));
-    assert!(
-        unexpected.is_empty(),
-        "{stem}: forms that should compile and do not:\n  {}",
-        unexpected.join("\n  ")
+            true
+        },
     );
-    if let Some(why) = why {
-        assert!(
-            waiting,
-            "{stem} now compiles — mark it `OK` (it was waiting on: {why})"
-        );
+    if read.is_err() {
+        out.push_str("!! read error\n");
     }
-}
-
-compile_cases! {
-    arithmetic => "arithmetic": OK,
-    lists => "lists": OK,
-    control => "control": OK,
-    functions => "functions": OK,
-    scopes => "scopes": OK,
-    control_flow => "control-flow": OK,
-    macros => "macros": OK,
-    prelude => "prelude": OK,
-    keywords => "keywords": OK,
-    lambda_lists => "lambda-lists": OK,
-    destructuring => "destructuring": OK,
-    macroexpand => "macroexpand": OK,
-    vectors => "vectors": OK,
-    hash_tables => "hash-tables": OK,
-    conditions => "conditions": OK,
-    // `defstruct` defines its `setf` expanders when it *runs*, and this
-    // compiles without running anything. Step E compiles and runs form by
-    // form, which is the order a file actually means.
-    structures => "structures": Some("SETF does not know"),
-    // `macrolet`: this leg runs the *interpreted* bootstrap compiler, which
-    // cannot call an expander it has just compiled. The compiled compiler in
-    // a built image can (#33), and step E runs these files there.
-    values => "values": Some("reached a compiled closure"),
+    out
 }
 
 /// Compare line by line, and on a mismatch say which form disagreed.
@@ -182,15 +155,19 @@ fn compare(stem: &str, source: &str, expected: &str, actual: &str) {
     let expected_lines: Vec<&str> = expected.lines().collect();
     let actual_lines: Vec<&str> = actual.lines().collect();
 
+    // Every disagreement, not just the first: one wrong form often explains
+    // the next three, and seeing them together is how that is noticed.
+    let mut wrong = Vec::new();
     for (i, (want, got)) in expected_lines.iter().zip(&actual_lines).enumerate() {
         if want != got {
             let form = forms.get(i).map(String::as_str).unwrap_or("<unknown form>");
-            panic!(
-                "{stem}.lisp, form {}:\n    {form}\n  expected  {want}\n  got       {got}",
+            wrong.push(format!(
+                "form {}:\n    {form}\n  expected  {want}\n  got       {got}",
                 i + 1
-            );
+            ));
         }
     }
+    assert!(wrong.is_empty(), "{stem}.lisp:\n{}", wrong.join("\n"));
     assert_eq!(
         actual_lines.len(),
         expected_lines.len(),

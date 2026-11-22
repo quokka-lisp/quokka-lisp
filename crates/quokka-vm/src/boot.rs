@@ -244,7 +244,7 @@ pub struct Tally {
 pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tally, BootError> {
     let mut tally = Tally::default();
     let mut failure = None;
-    let read = compile_each(heap, source, |form, outcome| match outcome {
+    let read = compile_each_in(heap, source, Mode::Check, |form, outcome| match outcome {
         Ok(Handled::Compiled) => {
             tally.compiled += 1;
             true
@@ -267,31 +267,14 @@ pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tall
     }
 }
 
-/// What [`compile_each`] did with one form.
+/// What a pass over a file did with one form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Handled {
+enum Handled {
     /// Compiled, and the verifier accepted every function that came out.
     Compiled,
     /// A macro definition, evaluated by the interpreter instead — see
     /// [`compile_source`] for why.
     Evaluated,
-}
-
-/// Compile every form of `source`, handing each outcome to `each` with the
-/// form's number, counting from 1.
-///
-/// [`compile_source`] stops at the first failure, which is right for the
-/// prelude and wrong for a test file that contains *deliberate* errors:
-/// stopping there leaves every form after it unchecked. The differential
-/// tests use this, and require that a form fails to compile only where its
-/// baseline says it is an error (#37).
-///
-/// `each` returns whether to carry on.
-pub fn compile_each<F>(heap: &mut crate::heap::Heap, source: &str, each: F) -> Result<(), ReadError>
-where
-    F: FnMut(usize, Result<Handled, EvalError>) -> bool,
-{
-    compile_each_in(heap, source, Mode::Check, each)
 }
 
 /// What a pass over a file is for.

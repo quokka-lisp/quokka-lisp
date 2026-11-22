@@ -434,7 +434,7 @@ check rather than eleven edits a reader has to trust.
 Fault 4 is the one to remember. The interpreter's `error` was right; the VM's
 was subtly different in two ways, and both evaluators had passed their own
 tests for weeks. Nothing compared them. That is precisely the gap the fourth
-leg of the differential tests (step E of #23) exists to close: the same file,
+leg of the differential tests (step E of #23, and chapter 33) exists to close: the same file,
 interpreted and compiled, must print the same thing. Until it exists, every
 feature implemented twice is a feature that can quietly disagree with itself.
 
@@ -679,25 +679,17 @@ same reason. Building either now would mean building it twice.
 
 ### The differential files, compiled
 
-The differential tests now have a second half: every file is compiled, form
-by form, and everything the compiler emits is verified. The rule is the one
-step E will use: **a form may fail to compile only if its baseline says it is
-an error.** Several files contain forms that are *meant* to fail —
-`(return-from nowhere 1)`, `(let* 1)` — and the compiler finds those at compile
-time where the interpreter found them at run time; either way, an error.
+For a while the differential tests had a second half here: every file compiled
+form by form by the bootstrap compiler, everything it emitted verified, and a
+form allowed to fail only where its baseline said it was an error. It was the
+best check possible before a compiled world existed — it proved the compiler
+could handle each form, without running any of them — and it found the
+`tagbody` gaps and the deliberate-error forms that a first version, stopping at
+the first failure, had silently skipped.
 
-The first version of this test stopped at the first failure, which quietly
-left every form after a deliberate error unchecked. It now compiles every
-form and compares each failure with the baseline.
-
-**Fifteen of the seventeen files compile completely.** The other two are each
-listed with what they are waiting on, and the test fails the moment either
-starts compiling, so the list cannot go stale:
-
-| file | waiting on |
-| --- | --- |
-| `values.lisp` | `macrolet` |
-| `structures.lisp` | `defstruct` defines how `setf` works on its accessors when it *runs*, and this test compiles without running anything — a note for step E, which compiles and runs one form at a time |
+It has since been retired in favour of something strictly stronger: chapter
+33 runs every file in a compiled world and compares each answer with the
+baseline. Chapter 33 says what that found, and what retiring this cost.
 
 
 ## Two things that do not work, and should not

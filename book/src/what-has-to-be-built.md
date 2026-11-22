@@ -239,9 +239,10 @@ made in Part I for unrelated reasons turn out to be what makes it possible.
 
 Phase 1's gate is met — an image saves, reloads and resumes a computation it
 stopped in the middle of — and since chapter 32 the world inside that image is
-compiled, with nothing interpreted left in it. What phase 1 still lacks is the
-check that the compiled world agrees with the interpreted one on every test
-file.
+compiled, with nothing interpreted left in it. Chapter 33 checks that the
+compiled world agrees with the interpreted one on every test file, and with
+that **phase 1 is finished**: the language is defined by a Lisp file compiled
+by itself, and the interpreter is only what builds the first image.
 
 Each chapter answers one question.
 
@@ -279,6 +280,7 @@ Each chapter answers one question.
 | 30 | [Saving the world](part-5-the-image/30-saving-the-world.md) | How does a whole running system become a file, and come back? |
 | 31 | [Asking the outside world](part-5-the-image/31-asking-the-outside-world.md) | How does a program read a file when the VM may never wait? |
 | 32 | [A world made of bytecode](part-5-the-image/32-a-world-made-of-bytecode.md) | How does a system built by an interpreter end up with no interpreted code in it? |
+| 33 | [Two evaluators, one answer](part-5-the-image/33-two-evaluators-one-answer.md) | How do you know the compiled world means what the interpreted one meant? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

@@ -233,10 +233,10 @@ step 3, compiling the prelude and the compiler *and keeping the results*, in
 exactly the heap this chapter said it belonged in — one that is saved and
 abandoned straight afterwards.
 
-What is still missing is the fourth leg of the differential tests, where an
-interpreted result and a compiled result must agree across every test file.
-That is what will catch the cases the verifier cannot see, because a program
-can be perfectly well-formed and still compute the wrong thing.
+And the check that the compiled world means what the interpreted one meant —
+every differential file, run compiled, against the same baseline — is chapter
+33's, and it found two things the verifier could never have seen, because a
+program can be perfectly well-formed and still compute the wrong thing.
 
 ---
 

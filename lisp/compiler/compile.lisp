@@ -227,11 +227,23 @@
 ;;; `(setq x v)` — the value stays on the stack, because `setq` returns it.
 ;;; `LSET` and `GSET` pop and push, so that is what they already do.
 (defun %compile-setq (form env)
-  (let ((place (%lookup (second form) env 0 ':variable)))
-    (%compile (third form) env nil)
+  (if (null (cdr form))
+      (%emit (list 'NIL))
+      (%compile-setq-pairs (cdr form) env)))
+
+;;; Every pair, in order, and the value of the last. Until step E (#38) this
+;;; compiled only the first pair, so `(setq a 1 b 2)` returned 1 and never set
+;;; `b` — and nothing noticed, because the only tests of `setq` with more than
+;;; one pair were in a differential file that had never been run compiled.
+(defun %compile-setq-pairs (pairs env)
+  (let ((place (%lookup (car pairs) env 0 ':variable)))
+    (%compile (second pairs) env nil)
     (if place
         (%emit (list 'LSET (car place) (cdr place)))
-        (%emit (list 'GSET (%constant-index (second form)))))))
+        (%emit (list 'GSET (%constant-index (car pairs)))))
+    (if (cddr pairs)
+        (progn (%emit (list 'POP))
+               (%compile-setq-pairs (cddr pairs) env)))))
 
 ;;; `(lambda (x) ...)`
 ;;;
@@ -777,6 +789,85 @@
   (%compile-mv-arguments (cddr form) env)
   (%emit (list 'MVCALL (length (cddr form)))))
 
+;;; The interpreter's syntax rules for the special operators, checked before
+;;; anything is compiled.
+;;;
+;;; Until step E (#38) the compiler checked almost nothing: `(let)` compiled
+;;; as a `let` with no bindings, `(block)` as a block named `nil`, `(flet ((f))
+;;; 1)` as a function with no parameters. The interpreter refuses all of them,
+;;; and so does SBCL, and the differential files say so — but no file had been
+;;; run compiled. Each condition below is the interpreter's, read from
+;;; `eval.rs` rather than guessed from its message, because two evaluators that
+;;; disagree about what is a program are two languages.
+(defun %malformed (operator detail)
+  (error (%string-append "bad " (%string-append operator (%string-append ": " detail)))))
+
+;;; A binding list: nil, or a list whose elements are each a symbol or a list
+;;; starting with one.
+(defun %bindings-p (bindings)
+  (cond ((not (consp bindings)) t)
+        ((symbolp (car bindings)) (%bindings-p (cdr bindings)))
+        ((and (consp (car bindings)) (symbolp (car (car bindings))))
+         (%bindings-p (cdr bindings)))
+        (t nil)))
+
+;;; Local function definitions: each `(name (params) body...)`.
+(defun %function-bindings-p (bindings)
+  (cond ((not (consp bindings)) t)
+        ((and (consp (car bindings))
+              (consp (cdr (car bindings)))
+              (symbolp (car (car bindings))))
+         (%function-bindings-p (cdr bindings)))
+        (t nil)))
+
+;;; `setq`'s arguments: symbol, value, symbol, value...
+(defun %setq-pairs-p (pairs)
+  (cond ((null pairs) t)
+        ((and (symbolp (car pairs)) (consp (cdr pairs))) (%setq-pairs-p (cddr pairs)))
+        (t nil)))
+
+(defun %check-syntax (head form)
+  (let ((rest (cdr form)))
+    (cond ((eq head 'quote)
+           (if (not (and (consp rest) (null (cdr rest))))
+               (%malformed "quote" "wants exactly one argument")))
+          ((eq head 'if)
+           (if (not (and (consp rest) (consp (cdr rest))))
+               (%malformed "if" "wants a test and a consequent")))
+          ((eq head 'setq)
+           (if (not (%setq-pairs-p rest))
+               (%malformed "setq" "wants alternating symbols and values")))
+          ((or (eq head 'let) (eq head 'let*))
+           (if (not (and (consp rest)
+                         (or (null (car rest)) (consp (car rest)))
+                         (%bindings-p (car rest))))
+               (%malformed (if (eq head 'let) "let" "let*")
+                           "wants a list of bindings, each (name init), (name) or name")))
+          ((or (eq head 'flet) (eq head 'labels) (eq head 'macrolet))
+           (if (not (and (consp rest)
+                         (or (null (car rest)) (consp (car rest)))
+                         (%function-bindings-p (car rest))))
+               (%malformed "flet" "wants a list of (name (params) body...)")))
+          ((eq head 'function)
+           (if (not (and (consp rest)
+                         (null (cdr rest))
+                         (or (symbolp (car rest))
+                             (and (consp (car rest)) (eq (car (car rest)) 'lambda)))))
+               (%malformed "function" "wants exactly one name or lambda")))
+          ((or (eq head 'block) (eq head 'return-from))
+           (if (not (and (consp rest) (symbolp (car rest))))
+               (%malformed (if (eq head 'block) "block" "return-from") "wants a name")))
+          ((eq head 'defmacro)
+           (if (not (and (consp rest) (consp (cdr rest)) (symbolp (car rest))))
+               (%malformed "defmacro" "wants a name, a parameter list and a body")))
+          ;; One required part, and nothing else to say about it.
+          ((or (eq head 'lambda) (eq head 'catch) (eq head 'throw) (eq head 'go)
+               (eq head 'unwind-protect) (eq head 'eval-when) (eq head 'the)
+               (eq head 'multiple-value-call) (eq head 'multiple-value-prog1)
+               (eq head '%handler-case))
+           (if (not (consp rest))
+               (%malformed (symbol-name head) "is missing a required part"))))))
+
 ;;; A list form: a special operator, a macro call, or a function call.
 ;;;
 ;;; The order matters and is the standard's. A special operator is not
@@ -785,6 +876,7 @@
 ;;; does anything a user defines with `defmacro`.
 (defun %compile-cons (form env tail)
   (let ((head (car form)))
+    (if (%special-operator-p head) (%check-syntax head form))
     (cond ((eq head 'quote) (%compile-value (second form)))
           ((eq head 'if) (%compile-if form env tail))
           ((eq head 'progn) (%compile-body (cdr form) env tail))
