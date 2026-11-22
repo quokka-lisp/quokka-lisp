@@ -111,6 +111,12 @@ pub enum Prim {
     Boundp = 58,
     SymbolValue = 59,
     Set = 60,
+    SymbolHome = 61,
+    SetSymbolHome = 62,
+    SystemSymbols = 63,
+    FindSystemSymbol = 64,
+    MakeSymbol = 65,
+    InternKeyword = 66,
 }
 
 impl Prim {
@@ -383,6 +389,23 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::Boundp, "BOUNDP", Arity::Exactly(1)),
     (Prim::SymbolValue, "SYMBOL-VALUE", Arity::Exactly(1)),
     (Prim::Set, "SET", Arity::Exactly(2)),
+    // Packages are Lisp objects in the tier-1 library (#41, #43); these are
+    // the few things about symbols the library cannot do itself. A symbol's
+    // home, read and written — the library adopts the system's symbols into
+    // packages by setting it. The Rust system table as a list, and a look-up
+    // in it that never creates. `make-symbol`, Common Lisp's own. And a
+    // keyword interned the Rust way, so that a keyword made by either side is
+    // one object.
+    (Prim::SymbolHome, "%SYMBOL-HOME", Arity::Exactly(1)),
+    (Prim::SetSymbolHome, "%SET-SYMBOL-HOME", Arity::Exactly(2)),
+    (Prim::SystemSymbols, "%SYSTEM-SYMBOLS", Arity::Exactly(0)),
+    (
+        Prim::FindSystemSymbol,
+        "%FIND-SYSTEM-SYMBOL",
+        Arity::Exactly(2),
+    ),
+    (Prim::MakeSymbol, "MAKE-SYMBOL", Arity::Exactly(1)),
+    (Prim::InternKeyword, "%INTERN-KEYWORD", Arity::Exactly(1)),
 ];
 
 /// The primitives the machine intercepts rather than calling.
@@ -826,6 +849,36 @@ pub fn call_slice<'h>(
         }),
         Prim::RewriteLambdaList => {
             rewrite_for_compiler(mc, args, crate::lambda_list::Kind::Ordinary)
+        }
+        Prim::SymbolHome | Prim::SetSymbolHome => {
+            if !mc.is_symbol(args[0]) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a symbol",
+                });
+            }
+            if prim == Prim::SymbolHome {
+                return Ok(mc.slot(args[0], symbol::HOME));
+            }
+            mc.set_slot(args[0], symbol::HOME, args[1]);
+            Ok(args[1])
+        }
+        Prim::SystemSymbols => Ok(mc.system_symbols()),
+        Prim::FindSystemSymbol | Prim::MakeSymbol | Prim::InternKeyword => {
+            if !(args[0].is_object() && mc.header(args[0]).object_type.is_string()) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a string",
+                });
+            }
+            let text = mc.string_to_rust(args[0]);
+            Ok(match prim {
+                Prim::FindSystemSymbol => mc
+                    .find_system_symbol(&text, args[1] != Value::NIL)
+                    .unwrap_or(Value::NIL),
+                Prim::MakeSymbol => mc.new_symbol(&text),
+                _ => mc.intern_keyword(&text),
+            })
         }
         Prim::Boundp | Prim::SymbolValue | Prim::Set => {
             if !mc.is_symbol(args[0]) {

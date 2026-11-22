@@ -94,7 +94,13 @@ fn the_table_order_is_pinned() {
             "%MAKE-MACRO",
             "BOUNDP",
             "SYMBOL-VALUE",
-            "SET"
+            "SET",
+            "%SYMBOL-HOME",
+            "%SET-SYMBOL-HOME",
+            "%SYSTEM-SYMBOLS",
+            "%FIND-SYSTEM-SYMBOL",
+            "MAKE-SYMBOL",
+            "%INTERN-KEYWORD"
         ]
     );
 }

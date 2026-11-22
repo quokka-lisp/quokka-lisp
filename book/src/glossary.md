@@ -15,6 +15,8 @@ be correct until the next collection and silently wrong afterwards. ([19](part-2
 slots follow. Cons cells have none.
 ([5](part-1-substrate/05-objects-in-the-heap.md))
 
+**External symbol.** One of a [package](#package)'s public symbols, written with one colon from outside it (`geometry:area`). The rest are *internal*, reachable with two colons (`geometry::helper`); and a symbol visible because the package *uses* another is *inherited*. `find-symbol` reports which. ([36](part-6-self-hosting/36-whose-symbol-is-it.md))
+
 **Fetch–decode–execute.** The loop a [VM](#vm) runs: read the next
 [opcode](#opcode), read however many operand bytes it takes, do the thing,
 repeat. Real processors are built around the same three steps. Quokka's loop

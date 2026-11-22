@@ -1894,3 +1894,33 @@ fn an_uncaught_error_undoes_its_bindings() {
     assert!(out[1].starts_with("; "), "{out:?}");
     assert_eq!(out[2], "0");
 }
+
+/// Adoption (#43) leaves no symbol behind: after a build, every symbol in the
+/// Rust system table has a package or is a keyword — none has the home `0`
+/// that means "not yet adopted". Checked on the heap directly, before
+/// anything is read, because reading a form would itself make new symbols.
+#[test]
+fn after_a_build_every_system_symbol_has_a_package() {
+    use crate::heap::{home, symbol};
+    let heap = compiled_world();
+    let mut heap = heap;
+    let (unadopted, total) = heap.mutate(|mc| {
+        let unadopted_home = crate::value::Value::fixnum(home::CURRENT).expect("small");
+        let mut cursor = mc.system_symbols();
+        let (mut unadopted, mut total) = (Vec::new(), 0usize);
+        while cursor.is_cons() {
+            let s = mc.car(cursor);
+            total += 1;
+            if mc.slot(s, symbol::HOME) == unadopted_home {
+                unadopted.push(mc.string_to_rust(mc.slot(s, symbol::NAME)));
+            }
+            cursor = mc.cdr(cursor);
+        }
+        (unadopted, total)
+    });
+    assert!(
+        total > 1_000,
+        "{total} symbols, which is fewer than COMMON-LISP alone"
+    );
+    assert!(unadopted.is_empty(), "never adopted: {unadopted:?}");
+}

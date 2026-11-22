@@ -96,6 +96,7 @@ cannot reach.
 | **Conditions** | `error`, `handler-case`, `ignore-errors`; the evaluator's own errors carry the standard's type names, so `(handler-case (car 5) (type-error () …))` means what it means in SBCL |
 | **`defstruct`** | one line generating a constructor, a predicate, a copier and a settable accessor per slot |
 | **Special variables** | `defvar`, `defparameter`, and dynamic binding by `let`, `let*` and parameters — the first of tier 1, in a library the compiled world loads; shallow binding, undone however a binding is left |
+| **Packages** | `defpackage`, `in-package`, `*package*`, `intern` and `find-symbol` with their statuses, `export`, `use-package`, nicknames; `COMMON-LISP` holds all 978 standard names, Quokka's internals live in `QUOKKA` — Lisp objects in the library, adopted from the system's symbol table after the build |
 | **Multiple values** | `values`, `multiple-value-bind`, `multiple-value-call`, `multiple-value-prog1` — and every form that should pass them through does |
 | **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or`, `setf`, `defstruct`, `handler-case`, the list and sequence functions — about six hundred lines of **Lisp**, compiled into the binary and interpreted at boot |
 | **A bytecode VM** | thirty-nine opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
@@ -105,9 +106,9 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `--image` runs a compiled world, `--compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-389 tests, green on native, under wasmtime, and with the GC torture mode on.
+391 tests, green on native, under wasmtime, and with the GC torture mode on.
 Seventeen Common Lisp files produce byte-identical output on Quokka
-interpreted, Quokka compiled, Quokka under WebAssembly, and SBCL. The Rust core is 13,246 lines of the
+interpreted, Quokka compiled, Quokka under WebAssembly, and SBCL. The Rust core is 13,354 lines of the
 15,000-line budget.
 
 ### What does not exist yet
@@ -119,9 +120,8 @@ printer in Lisp, `setf` expanders, sequences, `format`, bignums and floats
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
 Until then the interpreter is still what builds an image from source.
 
-No packages — keywords exist, the rest is phase 2
-([#20](https://github.com/quokka-lisp/quokka-lisp/issues/20) says why), which
-is also why the implementation's own names wear a `%` prefix instead. No
+Packages can be made and used, but not yet *read* or *printed* with a prefix
+— `pkg::sym` waits for the reader and printer in Lisp. No
 bignums ([#16](https://github.com/quokka-lisp/quokka-lisp/issues/16)) or floats
 ([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)). No `loop`, no
 CLOS, no `define-setf-expander` and therefore no `incf` or `push`. No restarts
@@ -133,7 +133,7 @@ condition system, and the rest is phase 3. No renderer and no editor — phases
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Forty-one chapters in six parts — the substrate, reading and
+afterwards. Forty-two chapters in six parts — the substrate, reading and
 running, the machine, the compiler, the image, and self-hosting — assuming no prior
 knowledge of language implementation, including what a garbage collector is,
 what `car` and `cdr` are, what an opcode is, and why a program would want to

@@ -76,10 +76,24 @@ pub const COMPILER: &[(&str, &str)] = &[(
 /// once [`build_image`] has built it — so it may use tier-1 features itself.
 /// `scripts/check-compiler.sh` fails if a file in `lisp/library/` is missing
 /// from here.
-pub const LIBRARY: &[(&str, &str)] = &[(
-    "specials.lisp",
-    include_str!("../../../lisp/library/specials.lisp"),
-)];
+///
+/// **`packages.lisp` must stay last** while the Rust reader reads the library:
+/// its final form adopts every symbol in the system table into a package
+/// (#43), and only symbols that exist then are adopted.
+pub const LIBRARY: &[(&str, &str)] = &[
+    (
+        "specials.lisp",
+        include_str!("../../../lisp/library/specials.lisp"),
+    ),
+    (
+        "cl-symbols.lisp",
+        include_str!("../../../lisp/library/cl-symbols.lisp"),
+    ),
+    (
+        "packages.lisp",
+        include_str!("../../../lisp/library/packages.lisp"),
+    ),
+];
 
 /// Load the compiler into a heap that already has the prelude.
 ///

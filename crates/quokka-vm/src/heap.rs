@@ -154,10 +154,19 @@ pub mod symbol {
     pub const FUNCTION: usize = 2;
     /// Its property list.
     pub const PLIST: usize = 3;
-    /// Which namespace the symbol was interned in — see [`crate::heap::home`].
+    /// Where the symbol belongs. Since packages (#43), one of four things:
     ///
-    /// `nil` for a symbol that is interned nowhere, which is what
-    /// [`crate::heap::Mutation::gensym`] makes.
+    /// | | |
+    /// | --- | --- |
+    /// | `nil` | interned nowhere — `gensym`, `make-symbol` |
+    /// | `0` ([`crate::heap::home::CURRENT`]) | in the system table, not yet adopted into a package |
+    /// | `1` ([`crate::heap::home::KEYWORD`]) | a keyword; the `KEYWORD` package is implied |
+    /// | a package object | adopted into that package by the tier-1 library |
+    ///
+    /// Keywords keep the integer because Rust must recognise them — for
+    /// `keywordp`, the printer's colon, a value cell bound to itself — without
+    /// knowing what a Lisp package object is. Everything else is the library's
+    /// business.
     pub const HOME: usize = 5;
     /// Non-nil if this names a special operator, as a small integer the
     /// evaluator dispatches on.
@@ -859,27 +868,65 @@ impl<'h> Mutation<'h> {
     /// The shared path: a symbol is identified by its namespace *and* its
     /// name, so `FOO` and `:FOO` are two symbols with one name.
     fn intern_in(&mut self, name: &str, home: i64) -> Value<'h> {
-        let wanted = Value::fixnum(home).expect("a namespace is a small number");
-        let mut cursor = Value::from_bits(self.storage.obarray);
-        while !cursor.is_nil() {
-            let symbol = self.car(cursor);
-            if self.slot(symbol, symbol::HOME) == wanted
-                && self.string_is(self.slot(symbol, symbol::NAME), name)
-            {
-                return symbol;
-            }
-            cursor = self.cdr(cursor);
+        if let Some(symbol) = self.find_system_symbol(name, home == home::KEYWORD) {
+            return symbol;
         }
-
-        let text = self.alloc_constant_string(name);
-        let symbol = self.alloc(ObjectType::Symbol, symbol::SLOTS);
-        self.set_slot(symbol, symbol::NAME, text);
-        self.set_slot(symbol, symbol::VALUE, Value::UNBOUND);
-        self.set_slot(symbol, symbol::FUNCTION, Value::UNBOUND);
+        let symbol = self.new_symbol(name);
+        let wanted = Value::fixnum(home).expect("a namespace is a small number");
         self.set_slot(symbol, symbol::HOME, wanted);
         let entry = self.cons(symbol, Value::from_bits(self.storage.obarray));
         self.storage.obarray = entry.bits();
         symbol
+    }
+
+    /// The symbol called `name` in the system table, if there is one — the
+    /// keyword if `keyword`, the ordinary symbol otherwise. Never creates.
+    ///
+    /// Since packages (#43) an ordinary symbol's home may be `0`, meaning not
+    /// yet adopted, or the package the library adopted it into; both are in
+    /// this table and both match. Only symbols the *Lisp* `intern` makes are
+    /// outside it, which is what lets two packages each have a `FOO`.
+    /// Keywords keep the small integer, because Rust has to recognise them
+    /// without knowing what a package object is.
+    ///
+    /// Linear in the table, as interning has always been; the table holds the
+    /// system's own names, a few thousand at most (rule 9).
+    pub fn find_system_symbol(&self, name: &str, keyword: bool) -> Option<Value<'h>> {
+        let keyword_home = Value::fixnum(home::KEYWORD).expect("small");
+        let unadopted = Value::fixnum(home::CURRENT).expect("small");
+        let mut cursor = Value::from_bits(self.storage.obarray);
+        while !cursor.is_nil() {
+            let symbol = self.car(cursor);
+            let home = self.slot(symbol, symbol::HOME);
+            let right_namespace = if keyword {
+                home == keyword_home
+            } else {
+                home == unadopted || (home.is_object() && home != Value::NIL)
+            };
+            if right_namespace && self.string_is(self.slot(symbol, symbol::NAME), name) {
+                return Some(symbol);
+            }
+            cursor = self.cdr(cursor);
+        }
+        None
+    }
+
+    /// Every symbol in the system table, as the list it is kept in. For the
+    /// library's adoption of them into packages (#43); not to be modified.
+    pub fn system_symbols(&self) -> Value<'h> {
+        Value::from_bits(self.storage.obarray)
+    }
+
+    /// A symbol called `name`, interned nowhere: no value, no function, home
+    /// `nil`. What `gensym` and `make-symbol` both make.
+    pub fn new_symbol(&mut self, name: &str) -> Value<'h> {
+        let text = self.alloc_constant_string(name);
+        let s = self.alloc(ObjectType::Symbol, symbol::SLOTS);
+        self.set_slot(s, symbol::NAME, text);
+        self.set_slot(s, symbol::VALUE, Value::UNBOUND);
+        self.set_slot(s, symbol::FUNCTION, Value::UNBOUND);
+        self.set_slot(s, symbol::HOME, Value::NIL);
+        s
     }
 
     /// Is this symbol a keyword?
@@ -917,14 +964,8 @@ impl<'h> Mutation<'h> {
     pub fn gensym(&mut self) -> Value<'h> {
         self.storage.gensym_counter += 1;
         let n = self.storage.gensym_counter;
-        let text = self.alloc_constant_string(&format!("G{n}"));
-        let s = self.alloc(ObjectType::Symbol, symbol::SLOTS);
-        self.set_slot(s, symbol::NAME, text);
-        self.set_slot(s, symbol::VALUE, Value::UNBOUND);
-        self.set_slot(s, symbol::FUNCTION, Value::UNBOUND);
         // Interned nowhere, which is the point.
-        self.set_slot(s, symbol::HOME, Value::NIL);
-        s
+        self.new_symbol(&format!("G{n}"))
     }
 
     /// Is this a symbol object?

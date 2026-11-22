@@ -123,6 +123,7 @@ macro_rules! tier1_cases {
 
 tier1_cases! {
     specials => "specials",
+    packages => "packages",
 }
 
 /// The compiled world, built once and kept as image bytes; each file loads
