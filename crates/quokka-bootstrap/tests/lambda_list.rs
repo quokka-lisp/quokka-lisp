@@ -1,4 +1,4 @@
-//! Tests for [`crate::lambda_list`].
+//! Tests for [`quokka_vm::lambda_list`].
 //!
 //! A child module of it, included with `#[path]`, so it still sees the
 //! module's private items. That is why these are a separate *file* and not
@@ -7,10 +7,10 @@
 //! `src/unit/` and `tests/` are different things: these see everything, and
 //! cargo's `tests/` is a separate crate that sees only the public API.
 
-use super::*;
-use crate::heap::Heap;
-use crate::printer::print;
-use crate::reader::Reader;
+use quokka_bootstrap::reader::Reader;
+use quokka_vm::heap::Heap;
+use quokka_vm::lambda_list::*;
+use quokka_vm::printer::print;
 
 /// Read `(params . body)` and show what the rewrite made of it.
 fn rewritten(source: &str) -> String {
@@ -181,12 +181,12 @@ fn the_names_match_what_bind_binds() {
             let (bound, _) = bind(mc, params, args).expect("binds");
             let mut a = String::new();
             for v in &expected {
-                a.push_str(&crate::printer::print(mc, *v));
+                a.push_str(&quokka_vm::printer::print(mc, *v));
                 a.push(' ');
             }
             let mut b = String::new();
             for v in &bound {
-                b.push_str(&crate::printer::print(mc, *v));
+                b.push_str(&quokka_vm::printer::print(mc, *v));
                 b.push(' ');
             }
             assert_eq!(a, b, "for {params_source} with {args_source}");

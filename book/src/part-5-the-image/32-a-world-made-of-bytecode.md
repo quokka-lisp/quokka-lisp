@@ -133,7 +133,7 @@ and runs it. A tiny piece of code whose only job is to jump into something
 else is called a **trampoline**. With it, `vm::compile_and_run_forms` reads a
 form, calls the image's `compile-form` through the trampoline, runs what comes
 back, and hands over the answer — and at no point is there an interpreter in
-the loop. That is the evaluator of a compiled image, and the REPL's `--image`
+the loop. That is the evaluator of a compiled image, and the REPL's `--image` (today `quokka WORLD.qi`)
 mode uses nothing else.
 
 ## Proving nothing interpreted survived
@@ -207,8 +207,8 @@ had it. Tier 1 will.
 ## Trying it
 
 ```bash
-cargo run -p quokka-repl -- --save-image world.qi
-cargo run -p quokka-repl -- --image world.qi
+cargo run -p quokka-repl -- build world.qi
+cargo run -p quokka-repl -- world.qi
 ```
 
 The first builds the compiled world and saves it. The second loads it and

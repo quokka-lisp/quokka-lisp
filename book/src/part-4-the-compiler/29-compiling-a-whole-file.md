@@ -63,7 +63,7 @@ from compiled code and it says so:
 ```
 
 The interpreter had no such refusal. Here is what it did instead, in
-`crates/quokka-vm/src/eval.rs`:
+`crates/quokka-bootstrap/src/eval.rs`:
 
 ```rust
 fn apply_closure(&mut self, function: Value<'h>, arguments: Value<'h>) -> Transition {
@@ -160,7 +160,7 @@ in the file compiler, where it belongs.
 ## Trying it
 
 ```bash
-cargo run -p quokka-repl -- --compile-file lisp/prelude.lisp
+cargo run -p quokka-repl -- bootstrap --compile-file lisp/prelude.lisp
 ```
 
 ```
@@ -176,7 +176,7 @@ values (chapter 23).
 And then the one that matters:
 
 ```bash
-cargo run -p quokka-repl -- --compile-file lisp/compiler/compile.lisp
+cargo run -p quokka-repl -- bootstrap --compile-file lisp/compiler/compile.lisp
 ```
 
 ```
@@ -225,7 +225,7 @@ position again. The interpreter does not have to be able to call compiled code
 
 ## Status
 
-Built and tested. `--compile-file` works on any tier-0 file; the prelude and
+Built and tested. `--compile-file` (today `quokka bootstrap --compile-file`) works on any tier-0 file; the prelude and
 the compiler both compile clean and verify clean.
 
 Steps 3, 4 and 5 are built too. Chapter 30 is the image; chapter 32 is

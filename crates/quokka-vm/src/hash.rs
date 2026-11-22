@@ -49,7 +49,7 @@
 //! `%make-vector`, written down in the same place rather than discovered
 //! later.
 
-use crate::eval::EvalError;
+use crate::error::EvalError;
 use crate::heap::{Mutation, ObjectType};
 use crate::value::Value;
 

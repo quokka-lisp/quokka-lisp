@@ -39,7 +39,7 @@
 //! the program. `docs/design.md` has heap exhaustion becoming a
 //! `storage-condition` in phase 3, when there is a hierarchy to put it in.
 
-use crate::eval::EvalError;
+use crate::error::EvalError;
 use crate::heap::{Mutation, ObjectType};
 use crate::value::Value;
 

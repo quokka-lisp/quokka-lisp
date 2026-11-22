@@ -8,10 +8,10 @@
 //! cargo's `tests/` is a separate crate that sees only the public API.
 
 use super::*;
-use crate::heap::Heap;
-use crate::primitives;
-use crate::printer::print;
 use crate::reader::Reader;
+use quokka_vm::heap::Heap;
+use quokka_vm::primitives;
+use quokka_vm::printer::print;
 
 const PLENTY: u64 = 100_000;
 
@@ -179,7 +179,7 @@ fn eval_all(source: &str) -> Result<String, EvalError> {
 /// about depth should be measured rather than inferred from the fact that
 /// nothing crashed.
 fn deepest_stack(source: &str, slice: u64) -> (usize, String) {
-    use crate::slice::{run_slice, Status};
+    use quokka_vm::slice::{run_slice, Status};
 
     let chars = Reader::chars_of(source);
     let mut heap = Heap::new();
@@ -875,11 +875,11 @@ fn running_out_of_budget_says_so() {
 
 // ---- the machine, rather than the language ---------------------------
 
-/// The property `crate::slice` was designed for, now on something real:
+/// The property `quokka_vm::slice` was designed for, now on something real:
 /// how a computation is cut up must not change what it computes.
 #[test]
 fn slicing_does_not_change_the_answer() {
-    use crate::slice::{run_slice, Status};
+    use quokka_vm::slice::{run_slice, Status};
 
     let source = "(+ 1 (* 2 (- 10 (+ 3 4))))";
     let chars = Reader::chars_of(source);
@@ -940,7 +940,7 @@ fn deep_nesting_does_not_touch_the_rust_stack() {
 /// through would reclaim the computation.
 #[test]
 fn a_computation_survives_collection_midway() {
-    use crate::slice::{run_slice, Status};
+    use quokka_vm::slice::{run_slice, Status};
 
     let chars = Reader::chars_of("(+ 1 (* 2 (+ 3 4)))");
     let mut heap = Heap::new();

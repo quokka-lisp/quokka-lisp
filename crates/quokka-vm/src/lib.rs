@@ -20,10 +20,11 @@
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
-pub mod boot;
+pub mod closure;
 pub mod code;
 pub mod condition;
-pub mod eval;
+pub mod env;
+pub mod error;
 pub mod hash;
 pub mod heap;
 pub mod host;
@@ -31,8 +32,8 @@ pub mod image;
 pub mod lambda_list;
 pub mod primitives;
 pub mod printer;
-pub mod reader;
 pub mod slice;
+pub mod special;
 pub mod value;
 pub mod vm;
 
@@ -41,46 +42,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The phase this build implements, for the banner.
 ///
-/// Phase 0 ended when the gate passed; tier 0 — the language the compiler is
-/// written in — is finished, so this build is the one phase 1 bootstraps from.
-pub const PHASE: &str = "1 · Bytecode and image";
-
-/// Evaluate every form in `source` and render the results in the differential
-/// testing format: one line per top-level form.
-///
-/// ```text
-/// => 42          the form's value
-/// !! error       the form signalled
-/// ```
-pub fn run_forms(source: &str, budget: u64) -> String {
-    use crate::heap::Heap;
-    use crate::printer::print;
-
-    let mut heap = Heap::new();
-    // The prelude is part of the system under test: `defun` is one of its
-    // macros now, and SBCL has it too.
-    crate::boot::install(&mut heap).expect("the prelude boots");
-    let mut out = String::new();
-    // Sliced, so the collector runs between slices. A test file that built a
-    // large structure in one form would otherwise have to fit in the heap
-    // with all of its garbage (#32).
-    let read = crate::eval::eval_forms(&mut heap, source, budget, 2_000, |mc, result| {
-        match result {
-            Ok(value) => {
-                out.push_str("=> ");
-                out.push_str(&print(mc, value));
-                out.push('\n');
-            }
-            Err(_) => out.push_str("!! error\n"),
-        }
-        true
-    });
-    // A malformed file is a fault in the test, not a result worth comparing.
-    if read.is_err() {
-        out.push_str("!! read error\n");
-    }
-    out
-}
+/// Phase 2: its gate, the fixpoint, passes (#50); its scope, all of tier 1,
+/// is under way (#39).
+pub const PHASE: &str = "2 · Self-hosting";
 
 #[cfg(test)]
 #[path = "unit/lib.rs"]

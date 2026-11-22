@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p quokka-vm --features gc-torture
+      - run: cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture
 
   wasm-browser:
     name: wasm32-unknown-unknown (browser build)
@@ -72,10 +72,10 @@ jobs:
       # It is still the portability half of the differential tests: the same
       # Lisp files and the same baselines, on a 32-bit target with a
       # different pointer story. The correctness half is the sbcl-oracle job.
-      - name: Core VM and differential tests under wasmtime
+      - name: VM, bootstrap and differential tests under wasmtime
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir=.
-        run: cargo test -p quokka-vm --target wasm32-wasip1
+        run: cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
 
   # SBCL is the differential-test oracle, never a build dependency. This job
   # is the only place it is installed, and nothing else needs it.

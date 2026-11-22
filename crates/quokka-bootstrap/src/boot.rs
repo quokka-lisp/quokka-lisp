@@ -37,11 +37,11 @@
 //! something the language cannot express, that is a fact worth finding out.
 
 use crate::eval::eval_now;
-use crate::eval::EvalError;
-use crate::heap::Mutation;
-use crate::heap::ObjectType;
-use crate::primitives;
 use crate::reader::{ReadError, Reader};
+use quokka_vm::error::EvalError;
+use quokka_vm::heap::Mutation;
+use quokka_vm::heap::ObjectType;
+use quokka_vm::primitives;
 
 /// The prelude source, compiled into the binary.
 ///
@@ -116,7 +116,7 @@ pub const LIBRARY: &[(&str, &str)] = &[
 ///
 /// Separate from [`install`] on purpose: see [`COMPILER`]. A REPL does not
 /// call this unless asked to; the image builder and the tests do.
-pub fn install_compiler(heap: &mut crate::heap::Heap) -> Result<(), BootError> {
+pub fn install_compiler(heap: &mut quokka_vm::heap::Heap) -> Result<(), BootError> {
     for (_file, source) in COMPILER {
         load(heap, source)?;
     }
@@ -180,13 +180,13 @@ impl core::fmt::Display for BootError {
 ///
 /// Sliced, so the collector runs during a form as well as between them —
 /// see [`crate::eval::eval_forms`] and issue #32.
-pub fn install(heap: &mut crate::heap::Heap) -> Result<(), BootError> {
+pub fn install(heap: &mut quokka_vm::heap::Heap) -> Result<(), BootError> {
     heap.mutate(primitives::install);
     load(heap, PRELUDE)
 }
 
 /// Load one source text, stopping at the first form that fails.
-fn load(heap: &mut crate::heap::Heap, source: &str) -> Result<(), BootError> {
+fn load(heap: &mut quokka_vm::heap::Heap, source: &str) -> Result<(), BootError> {
     let mut form_number = 0usize;
     let mut failure = None;
     let read = crate::eval::eval_forms(heap, source, BOOT_BUDGET, 2_000, |_mc, result| {
@@ -286,7 +286,7 @@ pub struct Tally {
 ///
 /// This is the bootstrap rule, and it is the host's job only until the image
 /// exists. The REPL was doing it by hand; now there is one copy.
-pub fn compile_source(heap: &mut crate::heap::Heap, source: &str) -> Result<Tally, BootError> {
+pub fn compile_source(heap: &mut quokka_vm::heap::Heap, source: &str) -> Result<Tally, BootError> {
     let mut tally = Tally::default();
     let mut failure = None;
     let read = compile_each_in(heap, source, Mode::Check, |form, outcome| match outcome {
@@ -340,7 +340,7 @@ enum Mode {
 const BUILT: &str = "%BUILT";
 
 fn compile_each_in<F>(
-    heap: &mut crate::heap::Heap,
+    heap: &mut quokka_vm::heap::Heap,
     source: &str,
     mode: Mode,
     mut each: F,
@@ -348,8 +348,8 @@ fn compile_each_in<F>(
 where
     F: FnMut(usize, Result<Handled, EvalError>) -> bool,
 {
-    use crate::heap::Register;
-    use crate::value::Value;
+    use quokka_vm::heap::Register;
+    use quokka_vm::value::Value;
 
     /// What the reader left behind, and what to do about it.
     enum Next {
@@ -417,21 +417,21 @@ where
                 if !f.is_object() || mc.header(f).object_type != ObjectType::Function {
                     return Err(EvalError::Malformed(format!(
                         "compile-form returned {}",
-                        crate::printer::print(mc, f)
+                        quokka_vm::printer::print(mc, f)
                     )));
                 }
-                crate::code::verify::function(mc, f)
+                quokka_vm::code::verify::function(mc, f)
                     .map_err(|e| EvalError::Malformed(format!("{e:?}")))?;
                 if mode == Mode::Build {
                     let built = mc.intern(BUILT);
-                    let kept = mc.slot(built, crate::heap::symbol::VALUE);
+                    let kept = mc.slot(built, quokka_vm::heap::symbol::VALUE);
                     let kept = if kept == Value::UNBOUND {
                         Value::NIL
                     } else {
                         kept
                     };
                     let kept = mc.cons(f, kept);
-                    mc.set_slot(built, crate::heap::symbol::VALUE, kept);
+                    mc.set_slot(built, quokka_vm::heap::symbol::VALUE, kept);
                 }
                 Ok(Handled::Compiled)
             }),
@@ -473,9 +473,9 @@ pub struct Built {
 /// that calls prelude functions: installing a compiled `length` part-way
 /// through pass 1 would hand the interpreter a compiled closure on the next
 /// form, which it refuses.
-pub fn build_image(heap: &mut crate::heap::Heap) -> Result<Built, BootError> {
-    use crate::heap::{symbol, Register};
-    use crate::value::Value;
+pub fn build_image(heap: &mut quokka_vm::heap::Heap) -> Result<Built, BootError> {
+    use quokka_vm::heap::{symbol, Register};
+    use quokka_vm::value::Value;
 
     install(heap)?;
     install_compiler(heap)?;
@@ -518,7 +518,7 @@ pub fn build_image(heap: &mut crate::heap::Heap) -> Result<Built, BootError> {
         }
         mc.set_slot(built, symbol::VALUE, in_order);
     });
-    let mut host = crate::host::NullHost::default();
+    let mut host = quokka_vm::host::NullHost::default();
     for form in 1..=forms {
         heap.mutate(|mc| {
             let built = mc.intern(BUILT);
@@ -526,7 +526,7 @@ pub fn build_image(heap: &mut crate::heap::Heap) -> Result<Built, BootError> {
             mc.set_register(Register::Value, mc.car(list));
             mc.set_slot(built, symbol::VALUE, mc.cdr(list));
         });
-        crate::vm::run_sliced(heap, BOOT_BUDGET, 2_000, &mut host)
+        quokka_vm::vm::run_sliced(heap, BOOT_BUDGET, 2_000, &mut host)
             .map_err(|error| BootError::Eval { form, error })?;
     }
 
@@ -535,7 +535,7 @@ pub fn build_image(heap: &mut crate::heap::Heap) -> Result<Built, BootError> {
     for (_file, source) in LIBRARY {
         let mut failure = None;
         let mut form = 0usize;
-        let read = crate::vm::compile_and_run_forms(
+        let read = crate::boot::compile_and_run_forms(
             heap,
             source,
             BOOT_BUDGET,
@@ -573,6 +573,65 @@ pub fn build_image(heap: &mut crate::heap::Heap) -> Result<Built, BootError> {
         });
     }
     Ok(Built { forms })
+}
+
+/// Read every form in `source`, compile it with the image's own compiler,
+/// run it, and hand the result to `each`.
+///
+/// The evaluator of a compiled image, and the bytecode VM's
+/// `eval::eval_forms`. Each form is compiled by calling the compiled
+/// `compile-form` through [`quokka_vm::vm::call_global`] and run with
+/// [`quokka_vm::vm::run_sliced`]; the
+/// interpreter is not involved at any point, which is #25's rule finally
+/// true of a running system rather than of a plan (#33).
+///
+/// A compile error is a condition signalled inside `compile-form`, so it
+/// arrives here as that form's error, like any other.
+pub fn compile_and_run_forms<F>(
+    heap: &mut quokka_vm::heap::Heap,
+    source: &str,
+    budget: u64,
+    slice: u64,
+    host: &mut dyn quokka_vm::host::Host,
+    mut each: F,
+) -> Result<(), crate::reader::ReadError>
+where
+    F: for<'h> FnMut(
+        &mut quokka_vm::heap::Mutation<'h>,
+        Result<quokka_vm::value::Value<'h>, quokka_vm::error::EvalError>,
+    ) -> bool,
+{
+    use quokka_vm::heap::Register;
+    use quokka_vm::vm::{call_global, run_sliced};
+    let chars = crate::reader::Reader::chars_of(source);
+    let mut reader = crate::reader::Reader::new(&chars);
+    loop {
+        let read = heap.mutate(|mc| match reader.read(mc) {
+            Err(e) => Some(Err(e)),
+            Ok(None) => None,
+            Ok(Some(form)) => {
+                mc.set_register(Register::Value, form);
+                Some(Ok(()))
+            }
+        });
+        match read {
+            None => return Ok(()),
+            Some(Err(e)) => return Err(e),
+            Some(Ok(())) => {}
+        }
+        let outcome = call_global(heap, "COMPILE-FORM", budget, slice, host)
+            .and_then(|()| run_sliced(heap, budget, slice, host));
+        let carry_on = heap.mutate(|mc| {
+            let result = match &outcome {
+                Ok(()) => Ok(mc.register(Register::Value)),
+                Err(e) => Err(e.clone()),
+            };
+            each(mc, result)
+        });
+        if !carry_on {
+            return Ok(());
+        }
+    }
 }
 
 #[cfg(test)]

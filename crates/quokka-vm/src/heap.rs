@@ -319,7 +319,7 @@ pub enum ObjectType {
     /// costs one object of six words instead of four cons cells of eight, and
     /// — the point — this is the layout lexical addressing uses, so when the
     /// compiler arrives it replaces the name scan with an index and the data
-    /// structure does not change. See `crate::eval::env`.
+    /// structure does not change. See `crate::env`.
     Environment = 7,
     /// One pending step of the evaluator: what to do once a value arrives.
     ///
@@ -1735,7 +1735,7 @@ impl Heap {
         let interpreted = |at: usize| -> bool {
             match Header::decode(words[at]) {
                 Some(h) if matches!(h.object_type, ObjectType::Closure | ObjectType::Macro) => {
-                    let body = words[at + HEADER_WORDS + crate::eval::closure::BODY];
+                    let body = words[at + HEADER_WORDS + crate::closure::BODY];
                     type_of(body) != Some(ObjectType::Function)
                 }
                 _ => false,

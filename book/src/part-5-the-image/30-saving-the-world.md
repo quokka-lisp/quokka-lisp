@@ -15,7 +15,7 @@ the heap of chapter 4.
 An **image** is that heap, written to a file.
 
 ```bash
-cargo run -p quokka-repl -- --save-image world.qi
+cargo run -p quokka-repl -- build world.qi
 ```
 
 ```
@@ -26,7 +26,7 @@ A hundred kilobytes is the entire system above the Rust line: the prelude, the
 compiler, every symbol either of them interned. And:
 
 ```bash
-cargo run -p quokka-repl -- --image world.qi
+cargo run -p quokka-repl -- world.qi
 ```
 
 ```
@@ -267,7 +267,7 @@ have gone wrong once.
 A world with your own code in it:
 
 ```bash
-cargo run -p quokka-repl -- --save-image mine.qi mine.lisp
+cargo run -p quokka-repl -- build mine.qi mine.lisp
 ```
 
 where `mine.lisp` is
@@ -293,6 +293,39 @@ A function, a macro and a record type — three quite different kinds of thing,
 one of which generates ten functions of its own (chapter 21) — all present in
 a process that never read a line of Lisp.
 
+## Saving from inside
+
+*Added in phase 2 (#51).* For a long time an image could be made only from
+outside: build one from source, or rebuild one. Anything typed into a running
+world was lost when the program ended, which for a system whose pitch is *one
+world you work inside* is backwards. Carsten noticed it while reading the
+developer manual: the REPL seemed to exist only to build images.
+
+The fix is a REPL command:
+
+```text
+quokka> (defun hello () :saved-in-the-world)
+HELLO
+quokka> :save mine.qi
+mine.qi: 360416 bytes, 45005 words, sequence 2
+```
+
+It is a command and not a Lisp function, and that was a choice. The more
+Lisp-machine-like design is a function, `(save-world "mine.qi")`, asking the
+host through a request like any other (chapter 31). This chapter has already
+shown what that would mean: the save would happen *during* the call, so the
+saved world would contain the call, and loading it would resume inside
+`save-world`, returning a second time in a different process. That is
+possible here, and it is exactly the kind of cleverness that needs thinking
+through first. The command is handled by the host *between* two forms, when
+nothing is running, so the world it saves is always at rest.
+
+The same change made the program say which machine you are talking to. Plain
+`quokka` now needs a world and refuses without one. The world's banner names
+it and says *compiled · tier 1*. The interpreter that builds the first world
+has its own subcommand, `quokka bootstrap`, introduces itself as the
+bootstrap, and prompts `boot>`.
+
 ## Status
 
 Built, and phase 1's gate is met: images save, reload, and resume mid-computation.
@@ -302,7 +335,7 @@ interpreted**: `prelude.lisp` had been interpreted into it, so `length` in
 `world.qi` was a tree being walked, not bytecode. Installing compiled code
 became possible here — a heap about to be written to a file and abandoned is
 exactly where it is safe — and chapter 32 does it, in two passes, with a scan
-that proves nothing interpreted survives. `--save-image` now builds that
+that proves nothing interpreted survives. `--save-image` (today `quokka build`) now builds that
 compiled world.
 
 ---

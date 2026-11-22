@@ -4,11 +4,11 @@
 //! [`quokka_vm::host::Host`] over the page and exposes a small surface to
 //! JavaScript for the dev console in `www/`.
 
-use quokka_vm::eval::eval_now;
+use quokka_bootstrap::eval::eval_now;
+use quokka_bootstrap::reader::Reader;
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{Host, HostError};
 use quokka_vm::printer::print;
-use quokka_vm::reader::Reader;
 use quokka_vm::{PHASE, VERSION};
 
 #[cfg(target_arch = "wasm32")]
@@ -57,7 +57,7 @@ impl Quokka {
                 let mut heap = Heap::new();
                 // The prelude is compiled into this binary, so a failure
                 // here means the build is broken rather than the input.
-                quokka_vm::boot::install(&mut heap).expect("the prelude boots");
+                quokka_bootstrap::boot::install(&mut heap).expect("the prelude boots");
                 heap
             },
         }

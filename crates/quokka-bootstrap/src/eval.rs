@@ -28,7 +28,7 @@
 //!
 //! **It could not stop.** Rule 4: the VM must hand control back to the browser
 //! mid-computation, and state on the Rust call stack is destroyed by returning.
-//! This is the reason `crate::slice` exists and is argued there in full.
+//! This is the reason `quokka_vm::slice` exists and is argued there in full.
 //!
 //! **Lisp recursion would become Rust recursion.** A Lisp function walking a
 //! hundred-thousand-element list recursively would need a hundred thousand Rust
@@ -70,10 +70,12 @@
 //! No Rust recursion anywhere. Stop between any two rows and the entire state
 //! is four heap values.
 
-use crate::heap::{symbol, Heap, Mutation, ObjectType, Register};
-use crate::primitives;
-use crate::slice::{Steppable, Transition};
-use crate::value::Value;
+pub use quokka_vm::error::EvalError;
+use quokka_vm::heap::{symbol, Heap, Mutation, ObjectType, Register};
+use quokka_vm::primitives;
+use quokka_vm::slice::{Steppable, Transition};
+use quokka_vm::value::Value;
+use quokka_vm::{closure, env, special};
 
 /// Which half of the cycle the machine is in.
 ///
@@ -111,111 +113,6 @@ impl Mode {
             Mode::Return => 1,
             Mode::Unwind => 2,
             Mode::Halt => 3,
-        }
-    }
-}
-
-/// What went wrong.
-///
-/// These become Lisp conditions in phase 3. Until then they stop the machine
-/// and are reported, rather than panicking — a REPL that dies on a typo is not
-/// a REPL.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalError {
-    /// A compiled function the verifier refused. Not a fault in the program
-    /// being run — a fault in whatever produced the bytecode, which after
-    /// phase 1 means the compiler.
-    Malformed(String),
-    /// A symbol with no value.
-    UnboundVariable(String),
-    /// A symbol with no function.
-    UndefinedFunction(String),
-    /// Something that is not a function in head position.
-    NotAFunction(String),
-    /// A `return-from`, `go` or `throw` with nowhere to go.
-    NoSuchExit(String),
-    /// A special operator written wrongly.
-    BadSyntax {
-        /// Which operator.
-        operator: &'static str,
-        /// What is wrong.
-        detail: &'static str,
-    },
-    /// A primitive given the wrong number of arguments.
-    WrongArgumentCount {
-        /// Which primitive.
-        name: &'static str,
-        /// How many it wanted.
-        wanted: usize,
-        /// How many it got.
-        got: usize,
-    },
-    /// A primitive given the wrong kind of thing.
-    WrongType {
-        /// Which primitive.
-        name: &'static str,
-        /// What it wanted.
-        wanted: &'static str,
-    },
-    /// A condition reached the top without being handled.
-    Signalled(String),
-    /// An index outside a sequence.
-    IndexOutOfBounds {
-        /// What was asked for.
-        index: i64,
-        /// How long the sequence is.
-        length: usize,
-    },
-    /// Arithmetic left fixnum range, and bignums do not exist.
-    IntegerOverflow,
-    /// The heap reached its hard ceiling. Common Lisp calls this a
-    /// `storage-condition`; it becomes one in phase 3.
-    HeapExhausted,
-    /// The step budget ran out. Not an error in the program so much as a
-    /// refusal to wait any longer — phase 3 replaces it with Ctrl-C landing in
-    /// the debugger, which is what a person actually wants.
-    BudgetExhausted,
-    /// The computation asked the host for something and the driver running it
-    /// has no host to answer. Not the program's fault — a test or a tool ran
-    /// it with [`crate::vm::run_now`], which cannot answer requests (#35).
-    Blocked,
-}
-
-impl core::fmt::Display for EvalError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            EvalError::UnboundVariable(n) => write!(f, "the variable {n} is unbound"),
-            EvalError::UndefinedFunction(n) => write!(f, "the function {n} is undefined"),
-            EvalError::NotAFunction(n) => write!(f, "{n} is not a function"),
-            EvalError::Malformed(what) => write!(f, "this compiled function is malformed: {what}"),
-            EvalError::NoSuchExit(n) => write!(f, "there is no exit named {n} here"),
-            EvalError::BadSyntax { operator, detail } => write!(f, "bad {operator}: {detail}"),
-            EvalError::WrongArgumentCount { name, wanted, got } => {
-                write!(f, "{name} wants {wanted} argument(s), got {got}")
-            }
-            EvalError::WrongType { name, wanted } => write!(f, "{name} wants {wanted}"),
-            EvalError::Signalled(what) => write!(f, "{what}"),
-            EvalError::IndexOutOfBounds { index, length } => {
-                write!(f, "index {index} is outside a sequence of length {length}")
-            }
-            EvalError::IntegerOverflow => {
-                write!(f, "integer overflow, and bignums do not exist yet")
-            }
-            EvalError::HeapExhausted => write!(
-                f,
-                "out of heap: this one mutation allocated more than the heap \
-                 holds, and nothing can be collected until it ends — either \
-                 the computation does not finish, or it needs driving a slice \
-                 at a time"
-            ),
-            EvalError::BudgetExhausted => write!(
-                f,
-                "gave up after the step budget — a computation that does not finish, perhaps?"
-            ),
-            EvalError::Blocked => write!(
-                f,
-                "waiting for the host to answer a request, and nothing here can answer it"
-            ),
         }
     }
 }
@@ -283,7 +180,7 @@ impl<'a, 'h> Machine<'a, 'h> {
     /// errors nobody can catch, including the one for running out of heap.
     fn fail(&mut self, e: EvalError) -> Transition {
         if self.has_handler() {
-            if let Some(condition) = crate::condition::from_eval_error(self.mc, &e) {
+            if let Some(condition) = quokka_vm::condition::from_eval_error(self.mc, &e) {
                 return self.signal(condition);
             }
         }
@@ -439,11 +336,11 @@ impl<'a, 'h> Machine<'a, 'h> {
         // defaults and `&aux` become a `let*` around the body, so what the
         // closure stores is something `lambda_list::bind` can match without
         // evaluating anything.
-        let (params, body) = match crate::lambda_list::rewrite(
+        let (params, body) = match quokka_vm::lambda_list::rewrite(
             self.mc,
             params,
             body,
-            crate::lambda_list::Kind::Ordinary,
+            quokka_vm::lambda_list::Kind::Ordinary,
         ) {
             Ok(pair) => pair,
             Err(e) => return self.fail(e),
@@ -501,15 +398,15 @@ impl<'a, 'h> Machine<'a, 'h> {
         }
         let datum = self.mc.car(arguments);
         let rest = self.mc.cdr(arguments);
-        if crate::condition::is_condition(self.mc, datum) {
+        if quokka_vm::condition::is_condition(self.mc, datum) {
             return Ok(datum);
         }
         if self.mc.is_symbol(datum) {
-            return Ok(crate::condition::make(self.mc, datum, Value::NIL, rest));
+            return Ok(quokka_vm::condition::make(self.mc, datum, Value::NIL, rest));
         }
         if datum.is_object() && self.mc.header(datum).object_type.is_string() {
             let simple = self.mc.intern("SIMPLE-ERROR");
-            return Ok(crate::condition::make(self.mc, simple, datum, rest));
+            return Ok(quokka_vm::condition::make(self.mc, simple, datum, rest));
         }
         Err(EvalError::WrongType {
             name: "ERROR",
@@ -865,12 +762,12 @@ impl<'a, 'h> Machine<'a, 'h> {
         };
         for (i, (params, fn_body)) in shapes.into_iter().enumerate() {
             let kind = if macros {
-                crate::lambda_list::Kind::Macro
+                quokka_vm::lambda_list::Kind::Macro
             } else {
-                crate::lambda_list::Kind::Ordinary
+                quokka_vm::lambda_list::Kind::Ordinary
             };
             let (params, fn_body) =
-                match crate::lambda_list::rewrite(self.mc, params, fn_body, kind) {
+                match quokka_vm::lambda_list::rewrite(self.mc, params, fn_body, kind) {
                     Ok(pair) => pair,
                     Err(e) => return self.fail(e),
                 };
@@ -1116,7 +1013,7 @@ impl<'a, 'h> Machine<'a, 'h> {
         let tag = self.mc.car(rest);
         let env = self.mc.register(Register::Env);
         let Some(marker) = env::lookup_marker(self.mc, env, env::TAG, tag) else {
-            let what = crate::printer::print(self.mc, tag);
+            let what = quokka_vm::printer::print(self.mc, tag);
             return self.fail(EvalError::NoSuchExit(what));
         };
         // The tag travels as the value; the tagbody frame reads it on arrival.
@@ -1152,11 +1049,11 @@ impl<'a, 'h> Machine<'a, 'h> {
         let body = self.mc.cdr(after);
         let env = self.mc.register(Register::Env);
         let m = {
-            let (params, body) = match crate::lambda_list::rewrite(
+            let (params, body) = match quokka_vm::lambda_list::rewrite(
                 self.mc,
                 params,
                 body,
-                crate::lambda_list::Kind::Macro,
+                quokka_vm::lambda_list::Kind::Macro,
             ) {
                 Ok(pair) => pair,
                 Err(e) => return self.fail(e),
@@ -1207,14 +1104,14 @@ impl<'a, 'h> Machine<'a, 'h> {
             let target = self.mc.register(Register::Unwind);
             // A condition nobody handled. The machine stops, which is what an
             // unhandled error means — phase 3 replaces this with the debugger.
-            if crate::condition::is_condition(self.mc, target) {
-                let what = crate::condition::describe(self.mc, target);
+            if quokka_vm::condition::is_condition(self.mc, target) {
+                let what = quokka_vm::condition::describe(self.mc, target);
                 self.mc.set_register(Register::Unwind, Value::NIL);
                 return self.fail(EvalError::Signalled(what));
             }
             // Nothing matched: a `throw` with no catch, which is an error
             // rather than a silent halt.
-            let what = crate::printer::print(self.mc, target);
+            let what = quokka_vm::printer::print(self.mc, target);
             return self.fail(EvalError::NoSuchExit(what));
         }
 
@@ -1238,7 +1135,7 @@ impl<'a, 'h> Machine<'a, 'h> {
 
         // A condition looking for a handler. The clauses are tried in order,
         // as CLHS says, and the first type that matches wins.
-        if kind == frame::HANDLER && crate::condition::is_condition(self.mc, target) {
+        if kind == frame::HANDLER && quokka_vm::condition::is_condition(self.mc, target) {
             let clauses = self.mc.slot(f, frame::HANDLER_CLAUSES);
             let env = self.mc.slot(f, frame::HANDLER_ENV);
             let mut cursor = clauses;
@@ -1249,7 +1146,7 @@ impl<'a, 'h> Machine<'a, 'h> {
                     continue;
                 }
                 let wanted = self.mc.car(clause);
-                if !crate::condition::matches(self.mc, wanted, target) {
+                if !quokka_vm::condition::matches(self.mc, wanted, target) {
                     continue;
                 }
                 let after = self.mc.cdr(clause);
@@ -1761,7 +1658,7 @@ impl<'a, 'h> Machine<'a, 'h> {
         if closure::is_callable(self.mc, function) {
             return self.apply_closure(function, arguments);
         }
-        let what = crate::printer::print(self.mc, function);
+        let what = quokka_vm::printer::print(self.mc, function);
         self.fail(EvalError::NotAFunction(what))
     }
 
@@ -1849,7 +1746,7 @@ impl<'a, 'h> Machine<'a, 'h> {
             });
         }
 
-        let (names, values) = match crate::lambda_list::bind(self.mc, params, arguments) {
+        let (names, values) = match quokka_vm::lambda_list::bind(self.mc, params, arguments) {
             Ok(pair) => pair,
             Err(e) => return self.fail(e),
         };
@@ -1952,113 +1849,6 @@ impl Steppable for Machine<'_, '_> {
             Mode::Halt => Transition::Halt,
         }
     }
-}
-
-/// Special operator codes, as stored in a symbol's `SPECIAL` slot.
-///
-/// Common Lisp has 25 special operators. These six are what the phase 0 gate
-/// needs; the rest arrive once the shape of one is settled by worked examples
-/// rather than written blind.
-pub mod special {
-    /// `(quote x)` — return `x` unevaluated.
-    pub const QUOTE: i64 = 1;
-    /// `(if test then else)` — evaluate one branch.
-    pub const IF: i64 = 2;
-    /// `(lambda (params) body...)` — make a closure.
-    pub const LAMBDA: i64 = 3;
-    /// `(progn forms...)` — evaluate in order, yield the last.
-    pub const PROGN: i64 = 4;
-    /// `(setq var value ...)` — assign.
-    pub const SETQ: i64 = 5;
-    // 6 was `defun`, which lives in `lisp/prelude.lisp` now — it is a macro
-    // in Common Lisp and never should have been an operator here. The number
-    // is left unused rather than reused, so an old image cannot silently mean
-    // something new.
-    //
-    // `lambda` (3) stays, and is the interesting case. It is *also* a macro in
-    // Common Lisp, expanding to `(function (lambda ...))` — but `function`
-    // still has to turn a lambda expression into a closure, so the Rust code
-    // below cannot leave. Making the symbol a macro as well would move no
-    // work, only a dispatch. The line is in the right place already.
-    /// `(let ((v init)...) body...)` — bind variables, all at once.
-    pub const LET: i64 = 7;
-    /// `(let* ((v init)...) body...)` — bind variables in order.
-    pub const LET_STAR: i64 = 8;
-    /// `(flet ((f (params) body)...) body...)` — bind functions, not visible
-    /// to each other.
-    pub const FLET: i64 = 9;
-    /// `(labels ((f (params) body)...) body...)` — bind functions that can see
-    /// themselves and each other.
-    pub const LABELS: i64 = 10;
-    /// `(function f)`, written `#'f` — the function a name denotes.
-    pub const FUNCTION: i64 = 11;
-    /// `(the type form)` — a declaration the interpreter may ignore.
-    pub const THE: i64 = 12;
-    /// `(locally decls... body...)` — a body with declarations.
-    pub const LOCALLY: i64 = 13;
-    /// `(eval-when (situations...) body...)` — when this is for.
-    pub const EVAL_WHEN: i64 = 14;
-    /// `(block name body...)` — a named region that can be left early.
-    pub const BLOCK: i64 = 15;
-    /// `(return-from name value)` — leave it.
-    pub const RETURN_FROM: i64 = 16;
-    /// `(catch tag body...)` — a region findable at run time.
-    pub const CATCH: i64 = 17;
-    /// `(throw tag value)` — leave the nearest matching catch.
-    pub const THROW: i64 = 18;
-    /// `(tagbody tag form... tag form...)` — a body with labels.
-    pub const TAGBODY: i64 = 19;
-    /// `(go tag)` — jump to one.
-    pub const GO: i64 = 20;
-    /// `(unwind-protect body cleanup...)` — cleanup however the body ends.
-    pub const UNWIND_PROTECT: i64 = 21;
-    /// `(defmacro name (params) body...)` — define a macro.
-    pub const DEFMACRO: i64 = 22;
-    /// `(%handler-case form (type (var) body...) ...)` — run `form`, and if a
-    /// condition is signalled inside it, hand it to a matching clause.
-    ///
-    /// Named with a `%` because **Common Lisp's `handler-case` is a macro**,
-    /// over `handler-bind` and `block`. Quokka has no `handler-bind`, so the
-    /// machinery is an operator — but the CL-visible `handler-case` is a
-    /// prelude macro over this, which keeps the special operator count honest.
-    pub const HANDLER_CASE: i64 = 23;
-    /// `(multiple-value-call f form...)` — call `f` with every value every
-    /// form returned, not just the first of each.
-    pub const MULTIPLE_VALUE_CALL: i64 = 24;
-    /// `(multiple-value-prog1 first rest...)` — all of `first`'s values,
-    /// after running the rest for effect.
-    pub const MULTIPLE_VALUE_PROG1: i64 = 25;
-    /// `(macrolet ((name (args) body)...) body...)` — macros, locally.
-    pub const MACROLET: i64 = 26;
-
-    /// Every special operator, by name.
-    pub const ALL: &[(&str, i64)] = &[
-        ("QUOTE", QUOTE),
-        ("IF", IF),
-        ("LAMBDA", LAMBDA),
-        ("PROGN", PROGN),
-        ("SETQ", SETQ),
-        ("LET", LET),
-        ("LET*", LET_STAR),
-        ("FLET", FLET),
-        ("LABELS", LABELS),
-        ("FUNCTION", FUNCTION),
-        ("THE", THE),
-        ("LOCALLY", LOCALLY),
-        ("EVAL-WHEN", EVAL_WHEN),
-        ("BLOCK", BLOCK),
-        ("RETURN-FROM", RETURN_FROM),
-        ("CATCH", CATCH),
-        ("THROW", THROW),
-        ("TAGBODY", TAGBODY),
-        ("GO", GO),
-        ("UNWIND-PROTECT", UNWIND_PROTECT),
-        ("DEFMACRO", DEFMACRO),
-        ("%HANDLER-CASE", HANDLER_CASE),
-        ("MULTIPLE-VALUE-CALL", MULTIPLE_VALUE_CALL),
-        ("MULTIPLE-VALUE-PROG1", MULTIPLE_VALUE_PROG1),
-        ("MACROLET", MACROLET),
-    ];
 }
 
 /// Frames: one pending step of the evaluator.
@@ -2351,18 +2141,18 @@ pub mod frame {
 /// Evaluate a form to completion inside one mutation.
 ///
 /// Convenience for the REPL and tests. A browser would instead call
-/// [`crate::slice::run_slice`] with a budget and return between slices — which
+/// [`quokka_vm::slice::run_slice`] with a budget and return between slices — which
 /// is the whole point of the machine above, and is what phase 4 will do.
 ///
 /// The budget is a guard against a program that never finishes: without an
 /// interrupt there is nothing else to stop one, and a frozen REPL is the
-/// failure `crate::slice` exists to prevent.
+/// failure `quokka_vm::slice` exists to prevent.
 pub fn eval_now<'h>(
     mc: &mut Mutation<'h>,
     form: Value<'h>,
     budget: u64,
 ) -> Result<Value<'h>, EvalError> {
-    use crate::slice::{run_slice, Status};
+    use quokka_vm::slice::{run_slice, Status};
     let mut machine = Machine::start(mc, form, Value::NIL);
     match run_slice(&mut machine, budget) {
         Status::Done { .. } => match machine.error.take() {
@@ -2391,7 +2181,7 @@ pub fn eval_now<'h>(
 /// *image* root: using that as a scratch channel would mean an image saved
 /// after an evaluation had the wrong root in it.
 pub fn eval_sliced(heap: &mut Heap, budget: u64, slice: u64) -> Result<(), EvalError> {
-    use crate::slice::{run_slice, Status};
+    use quokka_vm::slice::{run_slice, Status};
     heap.mutate(|mc| {
         let form = mc.register(Register::Value);
         Machine::start(mc, form, Value::NIL);
@@ -2476,222 +2266,3 @@ where
 #[cfg(test)]
 #[path = "unit/eval.rs"]
 mod tests;
-
-/// Lexical environments: a chain of scopes.
-///
-/// Each scope is one heap object: a parent link, then name/value pairs. Looking
-/// a name up scans this scope's names, then follows the parent, then falls back
-/// to the symbol's own value cell, which is where globals live.
-///
-/// # Why not an association list
-///
-/// The textbook tree-walker uses an alist — `((x . 1) (y . 2))`, extended by
-/// consing onto the front. It is shorter, and this is not.
-///
-/// Two reasons. A two-argument call costs one object of six words here against
-/// four cons cells of eight there, with better locality. And, decisively, this
-/// is the layout *lexical addressing* uses: once the compiler of phase 1 can
-/// resolve `x` to "scope 2, slot 0" at compile time, the name scan below
-/// becomes an index and the data structure does not change. An alist would have
-/// to be thrown away.
-///
-/// The genuinely fast option — lexical addressing — is not available yet,
-/// because resolving a name to a slot number requires a compiler to walk the
-/// body, and a tree-walking interpreter re-reads the source each time with
-/// nowhere to attach the answer. This is the efficient option that exists.
-pub mod env {
-    use super::*;
-
-    /// Slot 0: the enclosing scope, or `nil`.
-    pub const PARENT: usize = 0;
-    /// Slot 1: which namespace this scope binds in.
-    pub const NAMESPACE: usize = 1;
-    /// Name/value pairs begin here.
-    pub const FIRST_PAIR: usize = 2;
-
-    /// Variables — what `let` binds and a symbol evaluates to.
-    pub const VARIABLE: i64 = 0;
-    /// Block names — what `block` binds and `return-from` looks up.
-    ///
-    /// A third and fourth namespace, because `(block list ...)` must not
-    /// disturb either the variable `list` or the function. Common Lisp has
-    /// several namespaces, not two, and this is two of the others.
-    pub const BLOCK: i64 = 2;
-    /// `tagbody` tags — what `go` looks up.
-    pub const TAG: i64 = 3;
-
-    /// Functions — what `flet` and `labels` bind, and what the operator
-    /// position of a call looks up.
-    ///
-    /// Two namespaces rather than one is what makes this a Lisp-2, and the
-    /// separation has to reach into lexical scopes as well as symbols: `(flet
-    /// ((list (x) x)) (list 1))` must call the local function while `list` the
-    /// variable is untouched.
-    pub const FUNCTION: i64 = 1;
-
-    /// A scope binding `names` to `values` inside `parent`.
-    pub fn make<'h>(
-        mc: &mut Mutation<'h>,
-        parent: Value<'h>,
-        namespace: i64,
-        names: &[Value<'h>],
-        values: &[Value<'h>],
-    ) -> Value<'h> {
-        debug_assert_eq!(names.len(), values.len());
-        let scope = mc.alloc(ObjectType::Environment, FIRST_PAIR + names.len() * 2);
-        mc.set_slot(scope, PARENT, parent);
-        mc.set_slot(scope, NAMESPACE, Value::fixnum(namespace).expect("small"));
-        for (i, (name, value)) in names.iter().zip(values).enumerate() {
-            mc.set_slot(scope, FIRST_PAIR + i * 2, *name);
-            mc.set_slot(scope, FIRST_PAIR + 1 + i * 2, *value);
-        }
-        scope
-    }
-
-    /// Where `name` is bound in `namespace`: the scope and the slot holding it.
-    ///
-    /// Scopes of the other namespace are stepped over rather than searched,
-    /// which is how a local function and a local variable of the same name stay
-    /// apart.
-    fn find<'h>(
-        mc: &Mutation<'h>,
-        env: Value<'h>,
-        namespace: i64,
-        name: Value<'h>,
-    ) -> Option<(Value<'h>, usize)> {
-        let mut scope = env;
-        // Terminating on `is_object` was right until `nil` became one. The
-        // chain ends at `nil`, which is a *symbol* in the static area — so the
-        // loop asks what kind of object it is rather than whether it is one.
-        // That is also total: anything unexpected ends the walk rather than
-        // being read as a scope.
-        while scope.is_object() && mc.header(scope).object_type == ObjectType::Environment {
-            if mc.slot(scope, NAMESPACE).as_fixnum() == Some(namespace) {
-                let slots = mc.header(scope).slots;
-                let mut i = FIRST_PAIR;
-                while i < slots {
-                    if mc.slot(scope, i) == name {
-                        return Some((scope, i + 1));
-                    }
-                    i += 2;
-                }
-            }
-            scope = mc.slot(scope, PARENT);
-        }
-        None
-    }
-
-    /// The value of `name`, or `None` if it is unbound everywhere.
-    pub fn lookup<'h>(mc: &Mutation<'h>, env: Value<'h>, name: Value<'h>) -> Option<Value<'h>> {
-        if let Some((scope, slot)) = find(mc, env, VARIABLE, name) {
-            return Some(mc.slot(scope, slot));
-        }
-        // Globals live in the symbol's own value cell, which #4 already gave us.
-        let global = mc.slot(name, symbol::VALUE);
-        if global == Value::UNBOUND {
-            None
-        } else {
-            Some(global)
-        }
-    }
-
-    /// The function `name` denotes: a lexical binding from `flet` or `labels`
-    /// first, then the symbol's own function cell.
-    pub fn lookup_function<'h>(
-        mc: &Mutation<'h>,
-        env: Value<'h>,
-        name: Value<'h>,
-    ) -> Option<Value<'h>> {
-        if let Some((scope, slot)) = find(mc, env, FUNCTION, name) {
-            return Some(mc.slot(scope, slot));
-        }
-        let global = mc.slot(name, symbol::FUNCTION);
-        if global == Value::UNBOUND {
-            None
-        } else {
-            Some(global)
-        }
-    }
-
-    /// The marker a block name or a tag is bound to, if any.
-    ///
-    /// Lexical: `return-from` and `go` can only reach a block or tag that
-    /// encloses them in the source, which is what makes them safe. `throw`
-    /// is the dynamic alternative and does not come through here.
-    pub fn lookup_marker<'h>(
-        mc: &Mutation<'h>,
-        env: Value<'h>,
-        namespace: i64,
-        name: Value<'h>,
-    ) -> Option<Value<'h>> {
-        find(mc, env, namespace, name).map(|(scope, slot)| mc.slot(scope, slot))
-    }
-
-    /// Assign to `name`, creating a global if it is bound nowhere.
-    pub fn assign<'h>(mc: &mut Mutation<'h>, env: Value<'h>, name: Value<'h>, value: Value<'h>) {
-        if let Some((scope, slot)) = find(mc, env, VARIABLE, name) {
-            mc.set_slot(scope, slot, value);
-        } else {
-            mc.set_slot(name, symbol::VALUE, value);
-        }
-    }
-}
-
-/// Closures: a function plus the scope it was written in.
-///
-/// Capturing the environment is what makes `(let ((x 10)) (lambda () x))` still
-/// know that `x` is 10 after the `let` has finished. Without it a lambda could
-/// only see globals.
-pub mod closure {
-    use super::*;
-
-    /// The parameter list.
-    pub const PARAMS: usize = 0;
-    /// The body forms, an implicit `progn`.
-    pub const BODY: usize = 1;
-    /// The scope the lambda was evaluated in.
-    pub const ENV: usize = 2;
-
-    /// Make a closure.
-    pub fn make<'h>(
-        mc: &mut Mutation<'h>,
-        params: Value<'h>,
-        body: Value<'h>,
-        env: Value<'h>,
-    ) -> Value<'h> {
-        let c = mc.alloc(ObjectType::Closure, 3);
-        mc.set_slot(c, PARAMS, params);
-        mc.set_slot(c, BODY, body);
-        mc.set_slot(c, ENV, env);
-        c
-    }
-
-    /// Is this a closure?
-    pub fn is<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
-        v.is_object() && mc.header(v).object_type == ObjectType::Closure
-    }
-
-    /// Make a macro: the same three slots, a different type.
-    pub fn make_macro<'h>(
-        mc: &mut Mutation<'h>,
-        params: Value<'h>,
-        body: Value<'h>,
-        env: Value<'h>,
-    ) -> Value<'h> {
-        let m = mc.alloc(ObjectType::Macro, 3);
-        mc.set_slot(m, PARAMS, params);
-        mc.set_slot(m, BODY, body);
-        mc.set_slot(m, ENV, env);
-        m
-    }
-
-    /// Is this a macro?
-    pub fn is_macro<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
-        v.is_object() && mc.header(v).object_type == ObjectType::Macro
-    }
-
-    /// Is this either?
-    pub fn is_callable<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
-        is(mc, v) || is_macro(mc, v)
-    }
-}

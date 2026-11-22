@@ -25,8 +25,8 @@ The **warm rebuild**, `%rebuild-world` in `rebuild.lisp`, starts from a
 running world, and that world does all the work itself:
 
 ```bash
-cargo run -p quokka-repl -- --save-image c1.qi
-cargo run -p quokka-repl -- --rebuild-image c1.qi c2.qi
+cargo run -p quokka-repl -- build c1.qi
+cargo run -p quokka-repl -- rebuild c1.qi c2.qi
 ```
 
 The second command loads `c1.qi`, calls `(quokka::%rebuild-world)`, and saves
@@ -153,7 +153,7 @@ position, not by name.
 ## What it cost
 
 - **Rust: 41 lines.**
-  - The `--rebuild-image` flag and a `load_image` helper shared with `--image`.
+  - The `--rebuild-image` flag (today `quokka rebuild`) and a `load_image` helper shared with `--image`.
   - The scope fix in the VM.
 - **Lisp:** `rebuild.lisp`, about 130 lines.
 - **Tests:** a rebuilt world passes all 22 differential files, then rebuilds

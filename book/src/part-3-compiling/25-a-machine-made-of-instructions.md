@@ -613,6 +613,21 @@ in a manifest.
 Which is the same shape as the image-format question in chapter 24: the payoff
 is later, the structure that allows it is now.
 
+*Later (#29, in phase 2): done, as a separate crate rather than a manifest
+line.* Carsten chose a crate boundary over a feature flag, because the unease
+was about legibility. A feature that is on by default still leaves the
+interpreter in the VM's source tree; a crate puts it somewhere else, where
+`quokka-vm` cannot even name it. The four shared layouts moved first, into
+`closure.rs`, `env.rs`, `error.rs` and `special.rs`. Then `quokka-bootstrap`
+took the interpreter, the Rust reader and the cold build. The cost this
+section expected was items made public so that the interpreter could reach
+them, and the measured cost was none: everything it used was already public.
+The real work was the tests. A unit test inside `quokka-vm` cannot use a crate
+that depends on `quokka-vm`, so the tests that used the interpreter to set up
+their cases (saving a computation in mid-air, host requests, lambda lists)
+became integration tests of the bootstrap crate. The browser still runs the
+interpreter in its dev console, until it can load a world.
+
 ---
 
 **References.** `docs/bytecode.md` in this repository is the specification —

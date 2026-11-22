@@ -37,7 +37,7 @@ which calls are in tail position, when a primitive may be inlined, where a
 ## Trying it
 
 ```
-cargo run -p quokka-repl -- --compile
+cargo run -p quokka-repl -- bootstrap --compile
 ```
 
 Loads the prelude, then this directory, and evaluates every form by compiling
@@ -54,7 +54,7 @@ DONE
 ## Looking at what it produced
 
 ```
-cargo run -p quokka-repl -- --show-code
+cargo run -p quokka-repl -- bootstrap --show-code
 ```
 
 Prints each form's instructions before running them, with the constants their

@@ -1,15 +1,17 @@
-//! Tests for [`crate::host`]: the request protocol, end to end.
+//! Tests for [`quokka_vm::host`]: the request protocol, end to end.
 //!
 //! A child module of it, included with `#[path]`. Most of what is tested here
 //! is public; the record layout in `request` is the part that is not.
 
-use super::*;
-use crate::boot;
-use crate::eval::EvalError;
-use crate::heap::Heap;
-use crate::reader::Reader;
-use crate::slice::{run_slice, Status};
-use crate::vm::Vm;
+use quokka_bootstrap::boot;
+use quokka_bootstrap::reader::Reader;
+use quokka_vm::error::EvalError;
+use quokka_vm::heap::Heap;
+use quokka_vm::heap::Register;
+use quokka_vm::host::*;
+use quokka_vm::slice::{run_slice, Status};
+use quokka_vm::value::Value;
+use quokka_vm::vm::Vm;
 
 #[test]
 fn null_host_collects_output_and_has_no_files() {
@@ -59,7 +61,7 @@ fn compile(heap: &mut Heap, source: &str) {
         let call = mc.cons(compile, args);
         mc.set_register(Register::Value, call);
     });
-    crate::eval::eval_sliced(heap, 10_000_000, 2_000).expect("compiles");
+    quokka_bootstrap::eval::eval_sliced(heap, 10_000_000, 2_000).expect("compiles");
 }
 
 /// Compile one form and start the VM on it, without running anything.
@@ -124,7 +126,7 @@ fn the_answer_lands_where_a_return_value_would() {
     let mut heap = compiler();
     compile(&mut heap, r#"(cons (%read-source "a.lisp") 7)"#);
     let mut host = Files(&[("a.lisp", "A")]);
-    crate::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut host).expect("runs");
+    quokka_vm::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut host).expect("runs");
     let (car, cdr) = heap.mutate(|mc| {
         let v = mc.register(Register::Value);
         let car = mc.car(v);
@@ -147,7 +149,7 @@ fn every_road_to_the_primitive_blocks() {
         let mut heap = compiler();
         compile(&mut heap, source);
         let mut host = Files(&[("a.lisp", "A")]);
-        crate::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut host)
+        quokka_vm::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut host)
             .unwrap_or_else(|e| panic!("{source}: {e}"));
         assert_eq!(answer(&mut heap), "A", "{source}");
     }
@@ -162,7 +164,7 @@ fn a_missing_file_is_a_file_error() {
     let mut heap = compiler();
     compile(&mut heap, r#"(%read-source "missing.lisp")"#);
     let mut host = Files(&[]);
-    let e = crate::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut host)
+    let e = quokka_vm::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut host)
         .expect_err("there is no such file");
     let text = format!("{e}");
     assert!(text.contains("FILE-ERROR"), "{text}");
@@ -173,7 +175,7 @@ fn a_missing_file_is_a_file_error() {
 fn a_name_that_is_not_a_string_is_refused() {
     let mut heap = compiler();
     compile(&mut heap, "(%read-source 42)");
-    let e = crate::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut Files(&[]))
+    let e = quokka_vm::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut Files(&[]))
         .expect_err("not a string");
     assert!(matches!(e, EvalError::WrongType { .. }), "{e:?}");
 }
@@ -190,9 +192,9 @@ fn a_request_survives_being_saved_in_an_image() {
     start(&mut heap, r#"(cons (%read-source "hello.lisp") 7)"#);
     assert!(matches!(slice(&mut heap), (Status::Blocked { .. }, None)));
 
-    let bytes = crate::image::save(&mut heap);
+    let bytes = quokka_vm::image::save(&mut heap);
     drop(heap);
-    let mut reloaded = crate::image::load(&bytes, 1 << 22).expect("loads");
+    let mut reloaded = quokka_vm::image::load(&bytes, 1 << 22).expect("loads");
 
     assert_eq!(
         pending(&mut reloaded),
@@ -217,7 +219,7 @@ fn run_now_cannot_answer_and_says_so() {
     compile(&mut heap, r#"(%read-source "a.lisp")"#);
     let outcome = heap.mutate(|mc| {
         let f = mc.register(Register::Value);
-        crate::vm::run_now(mc, f, 100_000).map(|_| ())
+        quokka_vm::vm::run_now(mc, f, 100_000).map(|_| ())
     });
     assert_eq!(outcome, Err(EvalError::Blocked));
 }
@@ -232,7 +234,7 @@ fn the_interpreter_refuses_to_ask() {
         let chars = Reader::chars_of(r#"(%read-source "a.lisp")"#);
         let mut reader = Reader::new(&chars);
         let form = reader.read(mc).expect("reads").expect("a form");
-        crate::eval::eval_now(mc, form, 100_000).map(|_| ())
+        quokka_bootstrap::eval::eval_now(mc, form, 100_000).map(|_| ())
     });
     let text = format!("{}", e.expect_err("refused"));
     assert!(text.contains("only compiled code"), "{text}");
@@ -267,7 +269,7 @@ fn a_compiled_handler_case_catches_a_missing_file() {
         &mut heap,
         r#"(handler-case (%read-source "missing.lisp") (file-error () 'missing))"#,
     );
-    crate::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut Files(&[])).expect("caught");
-    let out = heap.mutate(|mc| crate::printer::print(mc, mc.register(Register::Value)));
+    quokka_vm::vm::run_sliced(&mut heap, 10_000_000, 2_000, &mut Files(&[])).expect("caught");
+    let out = heap.mutate(|mc| quokka_vm::printer::print(mc, mc.register(Register::Value)));
     assert_eq!(out, "MISSING");
 }

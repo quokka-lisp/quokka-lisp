@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 quokka-vm.workspace = true
+quokka-bootstrap.workspace = true
 
 [[bin]]
 name = "quokka"

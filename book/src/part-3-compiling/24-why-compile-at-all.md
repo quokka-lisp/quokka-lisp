@@ -43,7 +43,7 @@ macro written in Lisp, the accessor it expands into is a function written in
 Lisp. Several hundred lines of this system are already written in itself.
 
 And yet **the language is defined in Rust**. Open
-`crates/quokka-vm/src/eval.rs` and you will find, in a `match`, the decision
+`crates/quokka-bootstrap/src/eval.rs` and you will find, in a `match`, the decision
 that `let` makes a new scope and `if` evaluates one of two branches. Those are
 not library functions that a user could replace. They are a Rust program's
 opinion about what Lisp means, and rule 1 says that is exactly where the line

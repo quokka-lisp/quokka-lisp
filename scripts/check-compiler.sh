@@ -19,7 +19,7 @@ for path in lisp/compiler/*.lisp lisp/library/*.lisp; do
   [ -e "$path" ] || continue
   count=$((count + 1))
   name=$(basename "$path")
-  if ! grep -q "\"$name\"" crates/quokka-vm/src/boot.rs; then
+  if ! grep -q "\"$name\"" crates/quokka-bootstrap/src/boot.rs; then
     echo "not listed in boot.rs (COMPILER or LIBRARY): $path" >&2
     status=1
   fi

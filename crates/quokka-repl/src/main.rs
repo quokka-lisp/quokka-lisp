@@ -1,4 +1,4 @@
-//! Quokka native terminal REPL.
+//! `quokka`: the native program that runs a world, and makes one.
 //!
 //! This binary is the native *host*: it owns stdin, stdout and the filesystem,
 //! and hands them to the VM through [`quokka_vm::host::Host`]. All language
@@ -6,10 +6,10 @@
 
 use std::io::{self, BufRead, Write};
 
+use quokka_bootstrap::reader::Reader;
 use quokka_vm::heap::{Heap, Register};
 use quokka_vm::host::{Host, HostError};
 use quokka_vm::printer::print;
-use quokka_vm::reader::Reader;
 use quokka_vm::vm::Outcome;
 use quokka_vm::{PHASE, VERSION};
 
@@ -31,209 +31,280 @@ impl Host for NativeHost {
     }
 }
 
+/// What to type, printed when the arguments make no sense, or are missing.
+const USAGE: &str = "\
+usage:
+  quokka WORLD.qi                       run a world: read, evaluated and printed
+                                        by its own Lisp, compiled, tier 1
+  quokka build OUT.qi [SRC...]          make a world from nothing (the cold build),
+                                        with SRC files loaded into it, and save it
+  quokka rebuild IN.qi OUT.qi           have a world rebuild itself from lisp/ on
+                                        disk (run from the repository's root)
+  quokka bootstrap [--compile | --show-code]
+                                        the tier-0 interpreter's REPL, which makes
+                                        the first world; not Quokka itself
+  quokka bootstrap --run FILE           interpret FILE, in the differential format
+  quokka bootstrap --compile-file FILE  compile FILE with the bootstrap compiler
+";
+
+/// Say what went wrong, then how to use the program, and stop.
+fn usage_error(message: &str) -> ! {
+    eprintln!("quokka: {message}\n\n{USAGE}");
+    std::process::exit(2);
+}
+
+/// `quokka` runs a world (#51). Everything that makes or remakes one is a
+/// subcommand, and the interpreter that makes the first one is behind
+/// `bootstrap`, so the plain command is never the least capable mode.
 fn main() {
-    // `quokka --run FILE` evaluates a file and prints the differential testing
-    // format, which is how baselines are produced. Everything else is a REPL.
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() == 3 && args[1] == "--run" {
-        match std::fs::read_to_string(&args[2]) {
-            Ok(source) => print!("{}", quokka_vm::run_forms(&source, EVAL_BUDGET)),
-            Err(e) => {
-                eprintln!("cannot read {}: {e}", args[2]);
-                std::process::exit(1);
-            }
-        }
-        return;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        None => usage_error(
+            "no world to run. Quokka runs from an image: make one with \
+             `quokka build world.qi`, then run `quokka world.qi`.",
+        ),
+        Some("help" | "--help" | "-h") => print!("{USAGE}"),
+        Some("build") => build(&args[1..]),
+        Some("rebuild") => rebuild(&args[1..]),
+        Some("bootstrap") => bootstrap(&args[1..]),
+        Some(flag) if flag.starts_with('-') => usage_error(&format!("unknown option {flag}")),
+        Some(world) if args.len() == 1 => run_world(world),
+        Some(_) => usage_error("a world is run on its own: `quokka WORLD.qi`"),
     }
+}
 
-    // `quokka --save-image FILE` writes the booted world to a file, and
-    // `quokka --image FILE` starts from one instead of booting. Together
-    // they are phase 1's gate, in the form a person can actually hold:
-    // the second start does not interpret the prelude at all.
-    //
-    // The VM produces and consumes bytes; the file is the host's business
-    // (rule 2), which is also what lets the browser put the same bytes in
-    // OPFS or hand them to the user as a download.
-    if args.len() >= 3 && args[1] == "--save-image" {
-        // The compiled world: prelude, macros and compiler all bytecode, and
-        // a heap scan to prove nothing interpreted survived (#33).
-        let mut heap = Heap::new();
-        if let Err(e) = quokka_vm::boot::build_image(&mut heap) {
-            eprintln!("quokka: building the image: {e}");
-            std::process::exit(1);
-        }
-        // Any further arguments are source files loaded into the world before
-        // it is saved, which is how an image comes to hold work rather than
-        // just a boot. Read by the image's own reader and compiled by its own
-        // compiler (#47) — the interpreter has nothing left to run in here.
-        let mut native = NativeHost;
-        for path in &args[3..] {
-            let source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("cannot read {path}: {e}");
-                    std::process::exit(1);
-                }
-            };
-            let mut failed = None;
-            let ran = quokka_vm::vm::eval_source(
-                &mut heap,
-                &source,
-                EVAL_BUDGET,
-                2_000,
-                &mut native,
-                |outcome| match outcome {
-                    Outcome::Value(_) => true,
-                    Outcome::Error(e) => {
-                        failed = Some(e);
-                        false
-                    }
-                    Outcome::Failed(e) => {
-                        failed = Some(format!("{e}"));
-                        false
-                    }
-                },
-            );
-            if let Err(e) = ran {
-                failed = Some(format!("{e}"));
-            }
-            if let Some(e) = failed {
-                eprintln!("{path}: {e}");
-                std::process::exit(1);
-            }
-        }
-        let bytes = quokka_vm::image::save(&mut heap);
-        if let Err(e) = std::fs::write(&args[2], &bytes) {
-            eprintln!("cannot write {}: {e}", args[2]);
-            std::process::exit(1);
-        }
-        println!(
-            "{}: {} bytes, {} words, sequence {}",
-            args[2],
-            bytes.len(),
-            heap.used_words(),
-            heap.sequence()
-        );
-        return;
+/// `quokka build OUT [SRC...]`: the cold build, then any SRC files loaded into
+/// the new world, then saved.
+///
+/// The VM produces and consumes bytes; the file is the host's business
+/// (rule 2), which is also what lets the browser put the same bytes in OPFS
+/// or hand them to the user as a download.
+fn build(args: &[String]) {
+    let Some((out, sources)) = args.split_first() else {
+        usage_error("build needs a file to save the world in");
+    };
+    // The compiled world: prelude, macros and compiler all bytecode, and a
+    // heap scan to prove nothing interpreted survived (#33).
+    let mut heap = Heap::new();
+    if let Err(e) = quokka_bootstrap::boot::build_image(&mut heap) {
+        eprintln!("quokka: building the world: {e}");
+        std::process::exit(1);
     }
-
-    // `quokka --rebuild-image IN OUT` starts from the image IN, has it rebuild
-    // itself from the source files on disk — read, compiled and installed by
-    // its own Lisp (#48) — and saves the result as OUT. Run from the
-    // repository's root, which is where the file names it asks for are.
-    if args.len() == 4 && args[1] == "--rebuild-image" {
-        let mut heap = load_image(&args[2]);
-        let mut said = String::new();
+    // Further files are loaded into the world before it is saved, which is
+    // how a world comes to hold work rather than just a boot. Read by the
+    // world's own reader and compiled by its own compiler (#47).
+    for path in sources {
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            eprintln!("cannot read {path}: {e}");
+            std::process::exit(1);
+        });
+        let mut failed = None;
         let ran = quokka_vm::vm::eval_source(
             &mut heap,
-            "(quokka::%rebuild-world)",
-            EVAL_BUDGET * 20,
+            &source,
+            EVAL_BUDGET,
             2_000,
             &mut NativeHost,
-            |outcome| {
-                said = format!("{outcome:?}");
-                true
+            |outcome| match outcome {
+                Outcome::Value(_) => true,
+                Outcome::Error(e) => {
+                    failed = Some(e);
+                    false
+                }
+                Outcome::Failed(e) => {
+                    failed = Some(format!("{e}"));
+                    false
+                }
             },
         );
-        if ran.is_err() || !said.starts_with("Value") {
-            eprintln!("quokka: the rebuild failed: {said} {ran:?}");
+        if let Err(e) = ran {
+            failed = Some(format!("{e}"));
+        }
+        if let Some(e) = failed {
+            eprintln!("{path}: {e}");
             std::process::exit(1);
         }
-        let bytes = quokka_vm::image::save(&mut heap);
-        if let Err(e) = std::fs::write(&args[3], &bytes) {
-            eprintln!("cannot write {}: {e}", args[3]);
-            std::process::exit(1);
-        }
-        println!("{}: rebuilt, {said}; {} bytes", args[3], bytes.len());
-        return;
     }
+    save_world(&mut heap, out).unwrap_or_else(|e| {
+        eprintln!("quokka: {e}");
+        std::process::exit(1);
+    });
+}
 
-    // `quokka --compile-file FILE` compiles every form of a file and reports
-    // what happened, without installing any of it. That last part is the
-    // point rather than a shortcut — see `boot::compile_source` for why
-    // installing into a running interpreter cannot work, and why it has to
-    // wait for the image.
-    if args.len() == 3 && args[1] == "--compile-file" {
-        let source = match std::fs::read_to_string(&args[2]) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("cannot read {}: {e}", args[2]);
-                std::process::exit(1);
-            }
-        };
-        let mut heap = Heap::new();
-        let prepared = quokka_vm::boot::install(&mut heap)
-            .and_then(|()| quokka_vm::boot::install_compiler(&mut heap));
-        if let Err(e) = prepared {
-            eprintln!("quokka: {e}");
-            std::process::exit(1);
-        }
-        match quokka_vm::boot::compile_source(&mut heap, &source) {
-            Ok(tally) => {
-                println!(
-                    "{}: {} forms compiled and verified, {} macro definitions \
-                     evaluated",
-                    args[2], tally.compiled, tally.interpreted
-                );
-            }
-            Err(e) => {
-                eprintln!("{}: {e}", args[2]);
-                std::process::exit(1);
-            }
-        }
-        return;
+/// `quokka rebuild IN OUT`: the world in IN rebuilds itself from the source
+/// files on disk — read, compiled and installed by its own Lisp (#48) — and
+/// is saved as OUT.
+fn rebuild(args: &[String]) {
+    let [from, to] = args else {
+        usage_error("rebuild needs the world to start from and a file to save the result in");
+    };
+    let mut heap = load_image(from);
+    let mut said = String::new();
+    let ran = quokka_vm::vm::eval_source(
+        &mut heap,
+        "(quokka::%rebuild-world)",
+        EVAL_BUDGET * 20,
+        2_000,
+        &mut NativeHost,
+        |outcome| {
+            said = format!("{outcome:?}");
+            true
+        },
+    );
+    if ran.is_err() || !said.starts_with("Value") {
+        eprintln!("quokka: the rebuild failed: {said} {ran:?}");
+        std::process::exit(1);
     }
+    println!("rebuilt: {said}");
+    save_world(&mut heap, to).unwrap_or_else(|e| {
+        eprintln!("quokka: {e}");
+        std::process::exit(1);
+    });
+}
 
-    // `quokka --compile` loads the compiler and evaluates by *compiling*:
-    // each form becomes a function and the bytecode VM runs it. The ordinary
-    // REPL interprets, and does not load the compiler at all.
-    // `--show-code` also prints each form's instructions before running
-    // them, which is how to look at what the compiler actually produced.
-    let showing = args.iter().any(|a| a == "--show-code");
-    let compiling = showing || args.iter().any(|a| a == "--compile");
+/// Save a world to a file, and say so.
+fn save_world(heap: &mut Heap, path: &str) -> Result<(), String> {
+    let bytes = quokka_vm::image::save(heap);
+    std::fs::write(path, &bytes).map_err(|e| format!("cannot write {path}: {e}"))?;
+    println!(
+        "{path}: {} bytes, {} words, sequence {}",
+        bytes.len(),
+        heap.used_words(),
+        heap.sequence()
+    );
+    Ok(())
+}
 
+/// `quokka WORLD`: a REPL in a world. Every form is read, evaluated and
+/// printed by the world's own Lisp; the interpreter, the Rust reader and the
+/// Rust printer play no part. `:save FILE` saves the world between forms.
+fn run_world(path: &str) {
+    let mut heap = load_image(path);
     let mut host = NativeHost;
-    host.write_stdout(&format!("Quokka {VERSION} — phase {PHASE}\n"));
+    host.write_stdout(&format!(
+        "Quokka {VERSION} — phase {PHASE}\n\
+         {path}: {} words, sequence {} · compiled · tier 1\n\
+         :save FILE saves this world · Ctrl-D leaves\n",
+        heap.used_words(),
+        heap.sequence()
+    ));
+    repl(&mut heap, "quokka> ", |heap, line| {
+        if let Some(command) = line.trim().strip_prefix(':') {
+            return world_command(heap, command);
+        }
+        image_print(heap, line, &mut NativeHost)
+    });
+}
+
+/// A REPL command, as opposed to a form: handled by the host between forms,
+/// so the world is never saved in the middle of a computation (#51).
+fn world_command(heap: &mut Heap, command: &str) -> String {
+    let mut words = command.split_whitespace();
+    match (words.next(), words.next(), words.next()) {
+        (Some("save"), Some(file), None) => match save_world(heap, file) {
+            Ok(()) => String::new(),
+            Err(e) => format!("; {e}\n"),
+        },
+        (Some("save"), _, _) => "; :save takes one file name\n".to_string(),
+        _ => format!("; no command :{command} — the only one is :save FILE\n"),
+    }
+}
+
+/// `quokka bootstrap ...`: the tier-0 interpreter, and the bootstrap
+/// compiler running on it. This is how the first world gets made, and where
+/// the interpreter and the compiler are worked on; it is not Quokka.
+fn bootstrap(args: &[String]) {
+    match args {
+        // Interpret a file and print the differential format, which is how
+        // tier-0 baselines are produced.
+        [flag, file] if flag == "--run" => {
+            let source = std::fs::read_to_string(file).unwrap_or_else(|e| {
+                eprintln!("cannot read {file}: {e}");
+                std::process::exit(1);
+            });
+            print!("{}", quokka_bootstrap::run_forms(&source, EVAL_BUDGET));
+        }
+        // Compile every form of a file and report what happened, installing
+        // none of it — see `boot::compile_source` for why installing into a
+        // running interpreter cannot work.
+        [flag, file] if flag == "--compile-file" => compile_file(file),
+        [] => bootstrap_repl(false, false),
+        [flag] if flag == "--compile" => bootstrap_repl(true, false),
+        [flag] if flag == "--show-code" => bootstrap_repl(true, true),
+        _ => {
+            usage_error("bootstrap takes --compile, --show-code, --run FILE or --compile-file FILE")
+        }
+    }
+}
+
+fn compile_file(file: &str) {
+    let source = std::fs::read_to_string(file).unwrap_or_else(|e| {
+        eprintln!("cannot read {file}: {e}");
+        std::process::exit(1);
+    });
+    let mut heap = Heap::new();
+    let prepared = quokka_bootstrap::boot::install(&mut heap)
+        .and_then(|()| quokka_bootstrap::boot::install_compiler(&mut heap));
+    if let Err(e) = prepared {
+        eprintln!("quokka: {e}");
+        std::process::exit(1);
+    }
+    match quokka_bootstrap::boot::compile_source(&mut heap, &source) {
+        Ok(tally) => println!(
+            "{file}: {} forms compiled and verified, {} macro definitions evaluated",
+            tally.compiled, tally.interpreted
+        ),
+        Err(e) => {
+            eprintln!("{file}: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// The interpreter's REPL. `compiling` loads the compiler and compiles each
+/// form for the VM instead of interpreting it; `showing` also prints each
+/// form's instructions first, which is how to look at what the compiler made.
+fn bootstrap_repl(compiling: bool, showing: bool) {
+    let mut host = NativeHost;
+    host.write_stdout(&format!(
+        "Quokka {VERSION} — bootstrap · the tier-0 interpreter, which makes the first world\n\
+         Not Quokka itself: no packages, no Lisp reader, printer or eval. \
+         To run Quokka, give it a world: quokka WORLD.qi\n"
+    ));
     if compiling {
-        host.write_stdout("Compiling: every form is compiled and run on the VM.\n");
+        host.write_stdout("Compiling each form with the bootstrap compiler, for the VM.\n");
         if showing {
             host.write_stdout("Showing the instructions for each form.\n");
         }
     }
-    host.write_stdout("Ctrl-D to leave.\n");
+    host.write_stdout("Ctrl-D leaves.\n");
+    let mut heap = Heap::new();
+    if let Err(e) = quokka_bootstrap::boot::install(&mut heap) {
+        eprintln!("quokka: {e}");
+        std::process::exit(1);
+    }
+    if compiling {
+        if let Err(e) = quokka_bootstrap::boot::install_compiler(&mut heap) {
+            eprintln!("quokka: loading the compiler: {e}");
+            std::process::exit(1);
+        }
+    }
+    repl(&mut heap, "boot> ", |heap, line| {
+        if compiling {
+            compile_and_print(heap, line, showing, &mut NativeHost)
+        } else {
+            read_and_print(heap, line)
+        }
+    });
+}
 
-    // Either load a world or build one. Loading is what a finished Quokka
-    // does always; building from source is the fallback that keeps the
-    // system reproducible from `cargo` alone.
-    let from_image = args.iter().position(|a| a == "--image").map(|i| i + 1);
-    let mut heap = match from_image.and_then(|i| args.get(i)) {
-        Some(path) => {
-            let h = load_image(path);
-            host.write_stdout(&format!(
-                "Loaded {path}: {} words, sequence {}.\n",
-                h.used_words(),
-                h.sequence()
-            ));
-            h
-        }
-        None => {
-            let mut heap = Heap::new();
-            if let Err(e) = quokka_vm::boot::install(&mut heap) {
-                eprintln!("quokka: {e}");
-                std::process::exit(1);
-            }
-            if compiling {
-                if let Err(e) = quokka_vm::boot::install_compiler(&mut heap) {
-                    eprintln!("quokka: loading the compiler: {e}");
-                    std::process::exit(1);
-                }
-            }
-            heap
-        }
-    };
+/// Prompt, read a line, hand it to `evaluate`, print what it says; until the
+/// input ends.
+fn repl(heap: &mut Heap, prompt: &str, mut evaluate: impl FnMut(&mut Heap, &str) -> String) {
+    let mut host = NativeHost;
     let stdin = io::stdin();
     loop {
-        host.write_stdout("quokka> ");
+        host.write_stdout(prompt);
         let mut line = String::new();
         match stdin.lock().read_line(&mut line) {
             Ok(0) => {
@@ -241,13 +312,7 @@ fn main() {
                 return;
             }
             Ok(_) => {
-                let output = if from_image.is_some() {
-                    image_print(&mut heap, &line, &mut host)
-                } else if compiling {
-                    compile_and_print(&mut heap, &line, showing, &mut host)
-                } else {
-                    read_and_print(&mut heap, &line)
-                };
+                let output = evaluate(heap, &line);
                 host.write_stdout(&output);
 
                 // Between mutations is the only place collection may happen,
@@ -331,7 +396,7 @@ const DEFAULT_IMAGE_LIMIT: usize = 1 << 22;
 /// sessions before anyone looked at the mechanism.
 fn read_and_print(heap: &mut Heap, line: &str) -> String {
     let mut out = String::new();
-    let read = quokka_vm::eval::eval_forms(heap, line, EVAL_BUDGET, 2_000, |mc, result| {
+    let read = quokka_bootstrap::eval::eval_forms(heap, line, EVAL_BUDGET, 2_000, |mc, result| {
         match result {
             Ok(value) => {
                 out.push_str(&print(mc, value));
@@ -444,7 +509,7 @@ fn compile_one(
 
     // Drive the compilation a slice at a time, so the collector can run
     // between them — compiling allocates far more than evaluating does.
-    if let Err(e) = quokka_vm::eval::eval_sliced(heap, EVAL_BUDGET, 2_000) {
+    if let Err(e) = quokka_bootstrap::eval::eval_sliced(heap, EVAL_BUDGET, 2_000) {
         return Some(format!("; compiling: {e}"));
     }
 
@@ -484,7 +549,7 @@ fn defines_a_macro<'h>(
 fn interpret_one(heap: &mut Heap, line: &str, index: usize) -> String {
     let mut out = String::new();
     let mut seen = 0usize;
-    let _ = quokka_vm::eval::eval_forms(heap, line, EVAL_BUDGET, 2_000, |mc, result| {
+    let _ = quokka_bootstrap::eval::eval_forms(heap, line, EVAL_BUDGET, 2_000, |mc, result| {
         if seen == index {
             match result {
                 Ok(v) => out.push_str(&print(mc, v)),

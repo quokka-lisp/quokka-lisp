@@ -17,7 +17,7 @@
 ## Trying it
 
 ```
-cargo run -p quokka-repl -- --compile
+cargo run -p quokka-repl -- bootstrap --compile
 ```
 
 The ordinary REPL interprets and does not load the compiler at all. This one
@@ -41,7 +41,7 @@ run are two jumps.
 
 ### Looking at the output
 
-`--show-code` prints the instructions before running them, which is the only
+`--show-code` (today `quokka bootstrap --show-code`) prints the instructions before running them, which is the only
 way to check that a compiler is doing what you think:
 
 ```

@@ -276,7 +276,3 @@ pub fn serve(heap: &mut Heap, host: &mut dyn Host) -> bool {
     };
     complete(heap, reply)
 }
-
-#[cfg(test)]
-#[path = "unit/host.rs"]
-mod tests;

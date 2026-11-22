@@ -8,8 +8,8 @@
 //! cargo's `tests/` is a separate crate that sees only the public API.
 
 use super::*;
-use crate::heap::Heap;
-use crate::printer::print;
+use quokka_vm::heap::Heap;
+use quokka_vm::printer::print;
 
 fn after_boot(source: &str) -> String {
     let mut heap = Heap::new();
@@ -491,12 +491,12 @@ fn resource_limits_are_not_conditions() {
         let form = reader.read(mc).unwrap().unwrap();
         eval_now(mc, form, u64::MAX).map(|_| ())
     });
-    assert_eq!(outcome, Err(crate::eval::EvalError::HeapExhausted));
+    assert_eq!(outcome, Err(quokka_vm::error::EvalError::HeapExhausted));
 }
 
 fn install_in_small_heap(heap: &mut Heap) {
     heap.mutate(|mc| {
-        crate::primitives::install(mc);
+        quokka_vm::primitives::install(mc);
     });
 }
 
@@ -546,8 +546,8 @@ fn prelude_recursion_is_bounded_by_the_heap_not_the_stack() {
 /// bytecode, and the VM runs it.
 mod compiler {
     use super::*;
-    use crate::heap::Register;
-    use crate::vm::run_now;
+    use quokka_vm::heap::Register;
+    use quokka_vm::vm::run_now;
 
     /// Read `source` into the root and evaluate it there.
     ///
@@ -1109,7 +1109,7 @@ mod compiler {
         let mut heap = Heap::new();
         install(&mut heap).expect("the prelude boots");
         install_compiler(&mut heap).expect("the compiler loads");
-        for (name, _) in crate::eval::special::ALL {
+        for (name, _) in quokka_vm::special::ALL {
             let out = drive(&mut heap, &format!("(compile-form '({name}))")).err();
             let out = out.unwrap_or_default();
             assert!(
@@ -1481,9 +1481,9 @@ mod compiler {
             // the function object itself is enough: wrap it as a closure and
             // install it.
             let name = mc.intern("COMPILED-THING");
-            let nil = crate::value::Value::NIL;
-            let c = crate::eval::closure::make(mc, nil, compiled, nil);
-            mc.set_slot(name, crate::heap::symbol::FUNCTION, c);
+            let nil = quokka_vm::value::Value::NIL;
+            let c = quokka_vm::closure::make(mc, nil, compiled, nil);
+            mc.set_slot(name, quokka_vm::heap::symbol::FUNCTION, c);
             let chars = Reader::chars_of("(compiled-thing)");
             let mut reader = Reader::new(&chars);
             let form = reader.read(mc).expect("reads").expect("a form");
@@ -1508,7 +1508,7 @@ mod compiler {
         drive(&mut heap, "(compile-form '((lambda (x) (+ x 1)) 41))").expect("compiles");
         let text = heap.mutate(|mc| {
             let f = mc.register(Register::Value);
-            crate::code::disassemble_function(mc, f)
+            quokka_vm::code::disassemble_function(mc, f)
         });
         assert_eq!(
             text,
@@ -1539,7 +1539,7 @@ mod compiler {
         drive(&mut heap, "(compile-form '(if t 1 2))").expect("compiles");
         let text = heap.mutate(|mc| {
             let f = mc.register(Register::Value);
-            crate::code::disassemble_function(mc, f)
+            quokka_vm::code::disassemble_function(mc, f)
         });
         assert!(text.contains("JMP-NIL"), "{text}");
         assert!(text.contains("; -> "), "{text}");
@@ -1712,20 +1712,20 @@ fn compiled_image() -> &'static [u8] {
     IMAGE.get_or_init(|| {
         let mut heap = Heap::new();
         build_image(&mut heap).unwrap_or_else(|e| panic!("{e}"));
-        crate::image::save(&mut heap)
+        quokka_vm::image::save(&mut heap)
     })
 }
 
 fn compiled_world() -> Heap {
-    crate::image::load(compiled_image(), 1 << 22).expect("the compiled image loads")
+    quokka_vm::image::load(compiled_image(), 1 << 22).expect("the compiled image loads")
 }
 
 /// Run `source` in a compiled world — compiled by the world's own compiler,
 /// on the VM — and print what each form gave.
 fn in_compiled_world(heap: &mut Heap, source: &str) -> Vec<String> {
     let mut out = Vec::new();
-    let mut host = crate::host::NullHost::default();
-    crate::vm::compile_and_run_forms(heap, source, 10_000_000, 2_000, &mut host, |mc, r| {
+    let mut host = quokka_vm::host::NullHost::default();
+    crate::boot::compile_and_run_forms(heap, source, 10_000_000, 2_000, &mut host, |mc, r| {
         out.push(match r {
             Ok(v) => print(mc, v),
             Err(e) => format!("; {e}"),
@@ -1822,11 +1822,11 @@ fn the_interpreter_cannot_run_in_a_compiled_world() {
 /// stopped part-way, saved in an image, and finished in another heap.
 #[test]
 fn a_compiled_computation_resumes_from_an_image() {
-    use crate::heap::Register;
-    use crate::slice::{run_slice, Status};
+    use quokka_vm::heap::Register;
+    use quokka_vm::slice::{run_slice, Status};
 
     let mut heap = compiled_world();
-    let mut host = crate::host::NullHost::default();
+    let mut host = quokka_vm::host::NullHost::default();
     heap.mutate(|mc| {
         let chars = Reader::chars_of(
             "(let ((n 0)) (tagbody top (setq n (+ n 1)) (if (< n 500) (go top))) n)",
@@ -1835,23 +1835,23 @@ fn a_compiled_computation_resumes_from_an_image() {
         let form = reader.read(mc).expect("reads").expect("a form");
         mc.set_register(Register::Value, form);
     });
-    crate::vm::call_global(&mut heap, "COMPILE-FORM", 10_000_000, 2_000, &mut host)
+    quokka_vm::vm::call_global(&mut heap, "COMPILE-FORM", 10_000_000, 2_000, &mut host)
         .expect("compiles");
     heap.mutate(|mc| {
         let f = mc.register(Register::Value);
-        crate::vm::Vm::start(mc, f, crate::value::Value::NIL);
+        quokka_vm::vm::Vm::start(mc, f, quokka_vm::value::Value::NIL);
     });
-    let status = heap.mutate(|mc| run_slice(&mut crate::vm::Vm::resume(mc), 300));
+    let status = heap.mutate(|mc| run_slice(&mut quokka_vm::vm::Vm::resume(mc), 300));
     assert_eq!(
         status,
         Status::Yielded,
         "300 steps should not finish 500 trips"
     );
 
-    let bytes = crate::image::save(&mut heap);
+    let bytes = quokka_vm::image::save(&mut heap);
     drop(heap);
-    let mut reloaded = crate::image::load(&bytes, 1 << 22).expect("loads");
-    let status = reloaded.mutate(|mc| run_slice(&mut crate::vm::Vm::resume(mc), 1_000_000));
+    let mut reloaded = quokka_vm::image::load(&bytes, 1 << 22).expect("loads");
+    let status = reloaded.mutate(|mc| run_slice(&mut quokka_vm::vm::Vm::resume(mc), 1_000_000));
     assert!(matches!(status, Status::Done { .. }), "{status:?}");
     let n = reloaded.mutate(|mc| print(mc, mc.register(Register::Value)));
     assert_eq!(n, "500");
@@ -1862,25 +1862,25 @@ fn a_compiled_computation_resumes_from_an_image() {
 /// place. Starting the next computation undoes it (#40).
 #[test]
 fn an_abandoned_computation_leaves_no_binding_behind() {
-    use crate::heap::Register;
-    use crate::slice::{run_slice, Status};
+    use quokka_vm::heap::Register;
+    use quokka_vm::slice::{run_slice, Status};
 
     let mut heap = compiled_world();
     in_compiled_world(&mut heap, "(defvar *x* 0)");
-    let mut host = crate::host::NullHost::default();
+    let mut host = quokka_vm::host::NullHost::default();
     heap.mutate(|mc| {
         let chars = Reader::chars_of("(let ((*x* 1)) (tagbody top (go top)))");
         let mut reader = Reader::new(&chars);
         let form = reader.read(mc).expect("reads").expect("a form");
         mc.set_register(Register::Value, form);
     });
-    crate::vm::call_global(&mut heap, "COMPILE-FORM", 10_000_000, 2_000, &mut host)
+    quokka_vm::vm::call_global(&mut heap, "COMPILE-FORM", 10_000_000, 2_000, &mut host)
         .expect("compiles");
     heap.mutate(|mc| {
         let f = mc.register(Register::Value);
-        crate::vm::Vm::start(mc, f, crate::value::Value::NIL);
+        quokka_vm::vm::Vm::start(mc, f, quokka_vm::value::Value::NIL);
     });
-    let status = heap.mutate(|mc| run_slice(&mut crate::vm::Vm::resume(mc), 500));
+    let status = heap.mutate(|mc| run_slice(&mut quokka_vm::vm::Vm::resume(mc), 500));
     assert_eq!(status, Status::Yielded, "the loop never ends");
     assert_eq!(in_compiled_world(&mut heap, "*x*"), ["0"]);
 }
@@ -1901,11 +1901,11 @@ fn an_uncaught_error_undoes_its_bindings() {
 /// anything is read, because reading a form would itself make new symbols.
 #[test]
 fn after_a_build_every_system_symbol_has_a_package() {
-    use crate::heap::{home, symbol};
+    use quokka_vm::heap::{home, symbol};
     let heap = compiled_world();
     let mut heap = heap;
     let (unadopted, total) = heap.mutate(|mc| {
-        let unadopted_home = crate::value::Value::fixnum(home::CURRENT).expect("small");
+        let unadopted_home = quokka_vm::value::Value::fixnum(home::CURRENT).expect("small");
         let mut cursor = mc.system_symbols();
         let (mut unadopted, mut total) = (Vec::new(), 0usize);
         while cursor.is_cons() {

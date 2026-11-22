@@ -79,7 +79,7 @@
 //! passed *as an argument* is not honoured; only the `&allow-other-keys`
 //! declaration is.
 
-use crate::eval::EvalError;
+use crate::error::EvalError;
 use crate::heap::Mutation;
 use crate::value::Value;
 
@@ -829,7 +829,3 @@ fn bind_keys<'h>(
     }
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "unit/lambda_list.rs"]
-mod tests;

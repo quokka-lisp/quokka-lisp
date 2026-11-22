@@ -1,6 +1,6 @@
 [package]
 name = "quokka-vm"
-description = "Quokka core VM: tagged words, heap, GC, reader, interpreter. No host dependencies."
+description = "Quokka core VM: tagged words, heap, GC, bytecode VM, primitives, images, the host protocol. No host dependencies."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

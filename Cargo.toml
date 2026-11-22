@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/quokka-vm",
+    "crates/quokka-bootstrap",
     "crates/quokka-repl",
     "crates/quokka-wasm",
 ]
@@ -16,6 +17,7 @@ authors = ["The Quokka authors"]
 
 [workspace.dependencies]
 quokka-vm = { path = "crates/quokka-vm" }
+quokka-bootstrap = { path = "crates/quokka-bootstrap" }
 
 [profile.release]
 # Keep the wasm payload small; the VM is meant to be comprehensible, not fast yet.

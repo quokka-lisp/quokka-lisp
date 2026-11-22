@@ -44,7 +44,7 @@ say "rustdoc"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 say "GC torture (collect at every mutation, then verify)"
-cargo test -p quokka-vm --features gc-torture
+cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture
 
 say "wasm32-unknown-unknown (browser build)"
 cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
@@ -52,10 +52,10 @@ cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
 say "wasm32-wasip1 (tests)"
 if command -v wasmtime >/dev/null 2>&1; then
   CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=." \
-    cargo test -p quokka-vm --target wasm32-wasip1
+    cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
 else
   echo "wasmtime not installed — building only. Install: brew install wasmtime"
-  cargo build -p quokka-vm --target wasm32-wasip1
+  cargo build -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
 fi
 
 say "all green"

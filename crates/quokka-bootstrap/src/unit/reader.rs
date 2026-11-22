@@ -8,8 +8,8 @@
 //! cargo's `tests/` is a separate crate that sees only the public API.
 
 use super::*;
-use crate::heap::Heap;
-use crate::printer::print;
+use quokka_vm::heap::Heap;
+use quokka_vm::printer::print;
 
 /// Read one form and print it back. The cheapest way to test a reader: if
 /// text survives a round trip the structure was almost certainly right.
@@ -74,7 +74,7 @@ fn a_keyword_is_bound_to_itself() {
     let mut heap = Heap::new();
     heap.mutate(|mc| {
         let k = mc.intern_keyword("FOO");
-        assert_eq!(mc.slot(k, crate::heap::symbol::VALUE), k);
+        assert_eq!(mc.slot(k, quokka_vm::heap::symbol::VALUE), k);
     });
 }
 
@@ -266,7 +266,7 @@ fn symbols_are_interned() {
 
 #[test]
 fn a_symbol_starts_unbound_in_both_cells() {
-    use crate::heap::symbol;
+    use quokka_vm::heap::symbol;
     let mut heap = Heap::new();
     heap.mutate(|mc| {
         let s = mc.intern("UNUSED");

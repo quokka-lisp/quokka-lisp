@@ -16,11 +16,12 @@
 //! That is chapter 2's constraint collecting on a bill phase 0 paid.
 
 use crate::code::{self, function, CodeError, Op};
-use crate::eval::{closure, env, EvalError};
+use crate::error::EvalError;
 use crate::heap::{symbol, Mutation, ObjectType, Register};
 use crate::primitives;
 use crate::slice::{Steppable, Transition};
 use crate::value::Value;
+use crate::{closure, env};
 
 /// How many slots a new operand stack starts with.
 ///
@@ -1656,59 +1657,6 @@ pub fn call_global(
     run_sliced(heap, budget, slice, host)
 }
 
-/// Read every form in `source`, compile it with the image's own compiler,
-/// run it, and hand the result to `each`.
-///
-/// The evaluator of a compiled image, and the bytecode VM's
-/// `eval::eval_forms`. Each form is compiled by calling the compiled
-/// `compile-form` through [`call_global`] and run with [`run_sliced`]; the
-/// interpreter is not involved at any point, which is #25's rule finally
-/// true of a running system rather than of a plan (#33).
-///
-/// A compile error is a condition signalled inside `compile-form`, so it
-/// arrives here as that form's error, like any other.
-pub fn compile_and_run_forms<F>(
-    heap: &mut crate::heap::Heap,
-    source: &str,
-    budget: u64,
-    slice: u64,
-    host: &mut dyn crate::host::Host,
-    mut each: F,
-) -> Result<(), crate::reader::ReadError>
-where
-    F: for<'h> FnMut(&mut Mutation<'h>, Result<Value<'h>, EvalError>) -> bool,
-{
-    let chars = crate::reader::Reader::chars_of(source);
-    let mut reader = crate::reader::Reader::new(&chars);
-    loop {
-        let read = heap.mutate(|mc| match reader.read(mc) {
-            Err(e) => Some(Err(e)),
-            Ok(None) => None,
-            Ok(Some(form)) => {
-                mc.set_register(Register::Value, form);
-                Some(Ok(()))
-            }
-        });
-        match read {
-            None => return Ok(()),
-            Some(Err(e)) => return Err(e),
-            Some(Ok(())) => {}
-        }
-        let outcome = call_global(heap, "COMPILE-FORM", budget, slice, host)
-            .and_then(|()| run_sliced(heap, budget, slice, host));
-        let carry_on = heap.mutate(|mc| {
-            let result = match &outcome {
-                Ok(()) => Ok(mc.register(Register::Value)),
-                Err(e) => Err(e.clone()),
-            };
-            each(mc, result)
-        });
-        if !carry_on {
-            return Ok(());
-        }
-    }
-}
-
 /// What one form came to when a host ran it through [`eval_source`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
@@ -1724,8 +1672,8 @@ pub enum Outcome {
 /// read by the Lisp reader in `*package*`, evaluated by `eval`, printed by
 /// `prin1`. The loop is `%host-step` in `lisp/library/eval.lisp`; this only
 /// calls it until the input runs out, handing each [`Outcome`] to `each`,
-/// which says whether to go on. Unlike [`compile_and_run_forms`], the Rust
-/// reader and printer play no part.
+/// which says whether to go on. Unlike `quokka_bootstrap::boot::compile_and_run_forms`,
+/// the Rust reader and printer play no part.
 pub fn eval_source(
     heap: &mut crate::heap::Heap,
     source: &str,

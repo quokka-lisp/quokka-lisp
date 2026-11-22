@@ -37,7 +37,7 @@
 //! # Allocation
 //!
 //! Reading allocates — every list is cons cells. It is therefore the canonical
-//! place for the bug described in [`crate::heap`], where a value held across an
+//! place for the bug described in [`quokka_vm::heap`], where a value held across an
 //! allocation is reclaimed. It cannot happen here: everything runs inside one
 //! `mutate`, so no collection can intervene. That is the whole point of the
 //! arrangement, and it is why this module contains no rooting code at all.
@@ -46,13 +46,13 @@
 //! was built in, and the methods are generic over that brand rather than
 //! returning anything free of it. An earlier draft had a helper that converted
 //! to `Value<'static>` so the signatures would be shorter; that is precisely the
-//! escape [`crate::heap`] exists to prevent, and the compiler refused it.
+//! escape [`quokka_vm::heap`] exists to prevent, and the compiler refused it.
 //! Threading the brand is not a workaround — it is correct, because doing
 //! anything with a form needs the heap anyway.
 
-use crate::heap::Mutation;
-use crate::value::Value;
 use core::fmt;
+use quokka_vm::heap::Mutation;
+use quokka_vm::value::Value;
 
 /// How deeply lists may nest before the reader refuses.
 ///

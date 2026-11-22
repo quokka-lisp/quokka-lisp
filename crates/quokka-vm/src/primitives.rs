@@ -23,7 +23,7 @@
 //! same order. Adding an entry at the end is a format addition; reordering is a
 //! breaking change.
 
-use crate::eval::EvalError;
+use crate::error::EvalError;
 use crate::heap::{symbol, Mutation, ObjectType};
 use crate::value::Value;
 
@@ -520,7 +520,7 @@ pub fn name_of(index: u32) -> Option<&'static str> {
 /// them in the obarray, so they survive collection like any other symbol.
 pub fn install(mc: &mut Mutation<'_>) {
     // Special operators are marked on their own symbols; see `crate::eval`.
-    for (name, code) in crate::eval::special::ALL {
+    for (name, code) in crate::special::ALL {
         let symbol = mc.intern(name);
         let value = Value::fixnum(*code).expect("small");
         mc.set_slot(symbol, crate::heap::symbol::SPECIAL, value);
@@ -985,7 +985,7 @@ pub fn call_slice<'h>(
             rewrite_for_compiler(mc, args, crate::lambda_list::Kind::Macro)
         }
         Prim::MakeMacro => {
-            use crate::eval::closure;
+            use crate::closure;
             let f = args[0];
             if closure::is(mc, f) {
                 let params = mc.slot(f, closure::PARAMS);
@@ -1009,7 +1009,7 @@ pub fn call_slice<'h>(
             // `(%disassemble (compile-form ...))` and a closure work.
             let mut f = args[0];
             if f.is_object() && mc.header(f).object_type == ObjectType::Closure {
-                f = mc.slot(f, crate::eval::closure::BODY);
+                f = mc.slot(f, crate::closure::BODY);
             }
             if !(f.is_object() && mc.header(f).object_type == ObjectType::Function) {
                 return Err(EvalError::WrongType {
@@ -1044,7 +1044,7 @@ pub fn call_slice<'h>(
                 });
             }
             let f = mc.slot(args[0], symbol::FUNCTION);
-            if f != Value::UNBOUND && crate::eval::closure::is_macro(mc, f) {
+            if f != Value::UNBOUND && crate::closure::is_macro(mc, f) {
                 Ok(f)
             } else {
                 Ok(Value::NIL)

@@ -328,7 +328,7 @@ tests stayed true.
 ## Trying it
 
 ```bash
-cargo run -p quokka-repl -- --compile
+cargo run -p quokka-repl -- bootstrap --compile
 ```
 
 ```

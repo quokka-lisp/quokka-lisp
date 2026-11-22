@@ -1,0 +1,19 @@
+[package]
+name = "quokka-bootstrap"
+description = "Quokka's cold build: the Rust reader, the tree-walking interpreter, and the build of the first world. No host dependencies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# Like quokka-vm, no host dependencies (CLAUDE.md rule 2): the sources it
+# builds from are compiled in with include_str!.
+[dependencies]
+quokka-vm.workspace = true
+
+[features]
+default = []
+# Collect at every mutation boundary, in the VM this crate drives.
+gc-torture = ["quokka-vm/gc-torture"]

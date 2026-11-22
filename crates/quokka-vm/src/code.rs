@@ -1184,7 +1184,7 @@ pub mod verify {
 /// arithmetic, stack accounting.
 pub mod assemble {
     use super::*;
-    use crate::eval::EvalError;
+    use crate::error::EvalError;
 
     /// Assemble `instructions` into a function.
     ///

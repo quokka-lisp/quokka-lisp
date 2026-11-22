@@ -43,11 +43,11 @@ disagreement surfaces as a failing build rather than as nothing at all.
 ## Running them
 
 ```
-cargo test -p quokka-vm --test differential          # Quokka, native
+cargo test -p quokka-bootstrap --test differential          # Quokka, native
 CARGO_TARGET_WASM32_WASIP1_RUNNER='wasmtime --dir=.' \
-  cargo test -p quokka-vm --test differential --target wasm32-wasip1
+  cargo test -p quokka-bootstrap --test differential --target wasm32-wasip1
 ./scripts/oracle.sh                                  # SBCL, needs sbcl installed
-target/debug/quokka --run tests/lisp/arithmetic.lisp # regenerate a baseline
+target/debug/quokka bootstrap --run tests/lisp/arithmetic.lisp # regenerate a baseline
 ```
 
 `scripts/check.sh` runs all of them it can and says which it skipped.
@@ -79,10 +79,10 @@ These kinds of form would disagree for reasons that are nobody's fault:
   `type-error`; SBCL's interpreter lets the write through. Both conform, and
   the disagreement is the standard's, not either implementation's. Use
   `(copy-seq "abc")` when a test needs a string it can write to. The refusal
-  itself is tested in `crates/quokka-vm/src/boot.rs`, where behaviour the
+  itself is tested in `crates/quokka-bootstrap/src/boot.rs`, where behaviour the
   oracle cannot adjudicate belongs. See issue #26.
 
-Adding a file means adding a line to `crates/quokka-vm/tests/differential.rs`
+Adding a file means adding a line to `crates/quokka-bootstrap/tests/differential.rs`
 — `differential_cases!` for tier 0, `tier1_cases!` for tier 1;
 `scripts/check-differential.sh` fails if one is left out. A tier-1 baseline
 comes from SBCL: `sbcl --script scripts/oracle.lisp tests/lisp/NAME.lisp >

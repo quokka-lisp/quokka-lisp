@@ -25,10 +25,10 @@ reader, the printer and the read-eval-print loop into Lisp, and taught a running
 world to rebuild itself from its own source:
 
 ```
-$ cargo run --release -p quokka-repl -- --save-image c1.qi
-$ cargo run --release -p quokka-repl -- --rebuild-image c1.qi c2.qi
+$ cargo run --release -p quokka-repl -- build c1.qi
+$ cargo run --release -p quokka-repl -- rebuild c1.qi c2.qi
 c2.qi: rebuilt, Value("(:FORMS 373 :REPLACED 316)"); 360224 bytes
-$ cargo run --release -p quokka-repl -- --image c2.qi
+$ cargo run --release -p quokka-repl -- c2.qi
 quokka> (defpackage :geo (:use :cl) (:export :area))
 #<PACKAGE "GEO">
 quokka> (in-package :geo)
@@ -51,28 +51,29 @@ What remains of phase 2 is the rest of tier 1.
 
 ### Phase 1: a compiled world, built by itself
 
+At the end of phase 1 the plain REPL was the bootstrap interpreter; today
+that is `quokka bootstrap`, and the same session runs unchanged in a world.
+
 ```
-$ cargo run -p quokka-repl
-Quokka 0.0.0 — phase 1 · Bytecode and image
-Ctrl-D to leave.
-quokka> (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1)))))
+$ cargo run -p quokka-repl -- bootstrap
+boot> (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1)))))
 FACT
-quokka> (fact 20)
+boot> (fact 20)
 2432902008176640000
-quokka> (defun down (n) (if (= n 0) 'done (down (- n 1))))
+boot> (defun down (n) (if (= n 0) 'done (down (- n 1))))
 DOWN
-quokka> (down 100000)
+boot> (down 100000)
 DONE
-quokka> (defstruct point x y)
+boot> (defstruct point x y)
 POINT
-quokka> (let ((p (make-point :x 1 :y 2))) (setf (point-x p) 42) (point-x p))
+boot> (let ((p (make-point :x 1 :y 2))) (setf (point-x p) 42) (point-x p))
 42
-quokka> (handler-case (car 5) (type-error () 'that-was-not-a-list))
+boot> (handler-case (car 5) (type-error () 'that-was-not-a-list))
 THAT-WAS-NOT-A-LIST
-quokka> (multiple-value-bind (value present) (gethash 'absent (make-hash-table))
+boot> (multiple-value-bind (value present) (gethash 'absent (make-hash-table))
           (list value present))
 (NIL NIL)
-quokka> (macrolet ((twice (x) (list '+ x x))) (twice 21))
+boot> (macrolet ((twice (x) (list '+ x x))) (twice 21))
 42
 ```
 
@@ -84,11 +85,11 @@ phase 1's gate is met:
 > *An image saves, reloads and resumes where it left off.*
 
 ```
-$ cargo run -p quokka-repl -- --save-image world.qi
+$ cargo run -p quokka-repl -- build world.qi
 world.qi: 107144 bytes, 13347 words, sequence 1
 
-$ cargo run -p quokka-repl -- --image world.qi
-Loaded world.qi: 13347 words, sequence 1.
+$ cargo run -p quokka-repl -- world.qi
+world.qi: 13347 words, sequence 1 · compiled · tier 1
 quokka> (reverse '(1 2 3))
 (3 2 1)
 ```
@@ -118,7 +119,7 @@ cannot reach.
 | **Printer, in Lisp** | `prin1`, `princ`, `print`, `write` and their `-to-string` forms, with package prefixes and `\|...\|` escapes by SBCL's measured rules, and seven `*print-…*` variables |
 | **Output** | `*standard-output*` writes to the console through a host request; string output streams and `with-output-to-string` |
 | **`eval` and `load`** | `eval` compiles and calls — a built world never interprets; `load` reads a file through the host or a stream; the read-eval-print loop itself is Lisp |
-| **The warm rebuild** | `--rebuild-image`: a running world reads its source from disk with its own reader, compiles it with its own compiler in two passes, replaces every function, and proves it did |
+| **The warm rebuild** | `quokka rebuild`: a running world reads its source from disk with its own reader, compiles it with its own compiler in two passes, replaces every function, and proves it did |
 | **Evaluator** | an explicit-control machine — no recursive `eval`, so it can stop and resume, and Lisp recursion costs heap rather than Rust stack |
 | **Tail calls** | eliminated, so recursive loops run in constant space |
 | **Closures** | `lambda`, lexical scope, captured environments |
@@ -139,9 +140,9 @@ cannot reach.
 | **A bytecode VM** | thirty-nine opcodes, a contiguous operand stack in the heap, and a **verifier** that checks stack depth, jump targets and constant indices once at load — the same bargain the JVM makes |
 | **A compiler, in Lisp** | [`lisp/compiler/compile.lisp`](lisp/compiler/compile.lisp): tier-0 Common Lisp that compiles **every special operator**, the prelude, and **itself** — and refuses what the interpreter refuses, so the two agree on what a program is |
 | **Images** | the whole heap to a file and back, *including a computation stopped in mid-air*. Saving is `to_le_bytes` and loading is the inverse, with no pointer patching, because rule 3 made references word indices rather than addresses |
-| **A compiled world** | `--save-image` builds an image in which the prelude, every macro and the compiler are bytecode, and a scan of the whole heap proves nothing interpreted is left; `--image` compiles every form with the image's own compiler and never uses the interpreter |
+| **A compiled world** | `quokka build` builds an image in which the prelude, every macro and the compiler are bytecode, and a scan of the whole heap proves nothing interpreted is left; `--image` compiles every form with the image's own compiler and never uses the interpreter |
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
-| **REPL** | native terminal, and a browser dev console on the WASM build; `--image` runs a compiled world in its own Lisp, `--rebuild-image` rebuilds one, `--compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
+| **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
 406 tests, green on native, under wasmtime, and with the GC torture mode on.
 Twenty-two Common Lisp files produce byte-identical output on Quokka and SBCL:
@@ -201,15 +202,16 @@ Requires a rustup-managed stable toolchain; `rust-toolchain.toml` pins it and
 installs the `wasm32-unknown-unknown` and `wasm32-wasip1` targets.
 
 ```
-./scripts/check.sh       # everything CI runs
-cargo run -p quokka-repl # the REPL
+./scripts/check.sh                                     # everything CI runs
+cargo run --release -p quokka-repl -- build world.qi   # make a world
+cargo run --release -p quokka-repl -- world.qi         # work in it; :save FILE keeps it
 ```
 
 `wasmtime`, `wasm-pack` and `sbcl` are optional — `check.sh` skips those legs
 and says which.
 
 **[`docs/manual.md`](docs/manual.md) is the developer manual**: the three ways
-to start Quokka (only `--image` is the whole system), making a world with the
+the `quokka` program (`quokka WORLD.qi` runs a world, and `:save` keeps your work), making a world with the
 cold build and rebuilding it warm, the bootstrap round, every kind of test,
 and how to add a test, a library file, a primitive or a chapter.
 [`CLAUDE.md`](CLAUDE.md) has the rules that must not be broken.

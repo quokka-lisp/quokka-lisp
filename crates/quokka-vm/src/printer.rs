@@ -1,6 +1,7 @@
 //! The printer: heap objects out, text in.
 //!
-//! The counterpart to [`crate::reader`], and the P in REPL. Minimal by design —
+//! The counterpart to the Rust reader (`quokka_bootstrap::reader`), and the P
+//! in the bootstrap's REPL. Minimal by design —
 //! enough to see what was read and to compare against another Lisp, which is
 //! what the differential tests need.
 //!
@@ -134,7 +135,7 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
             // The name is worth printing when there is one: a backtrace of
             // `#<function>` six times tells you nothing, and a compiled
             // closure knows what it was called.
-            let body = mc.slot(v, crate::eval::closure::BODY);
+            let body = mc.slot(v, crate::closure::BODY);
             if body.is_object() && mc.header(body).object_type == ObjectType::Function {
                 let _ = write!(out, "#<function {}>", name_of_function(mc, body));
             } else {

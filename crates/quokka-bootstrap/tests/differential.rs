@@ -44,7 +44,7 @@ macro_rules! differential_cases {
             fn $name() {
                 let source = include_str!(concat!("../../../tests/lisp/", $stem, ".lisp"));
                 let expected = include_str!(concat!("../../../tests/lisp/", $stem, ".expected"));
-                let actual = quokka_vm::run_forms(source, BUDGET);
+                let actual = quokka_bootstrap::run_forms(source, BUDGET);
                 compare($stem, source, expected, &actual);
             }
         )*
@@ -158,7 +158,7 @@ fn the_lisp_printer_prints_the_system_as_the_rust_printer_does() {
 /// reader and print it with the Rust printer; read it again with the Lisp
 /// reader and print it with PRINTER; and insist the two agree.
 fn read_the_system_both_ways(printer: Printer, disagree: &str) {
-    use quokka_vm::boot::{COMPILER, LIBRARY, PRELUDE};
+    use quokka_bootstrap::boot::{COMPILER, LIBRARY, PRELUDE};
     let sources = std::iter::once(("prelude.lisp", PRELUDE))
         .chain(COMPILER.iter().copied())
         .chain(LIBRARY.iter().copied());
@@ -218,8 +218,8 @@ fn the_lisp_reader_refuses_ratios_and_floats() {
 /// prints a result.
 fn read_with_rust(source: &str) -> Vec<String> {
     let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
-    let chars = quokka_vm::reader::Reader::chars_of(source);
-    let mut reader = quokka_vm::reader::Reader::new(&chars);
+    let chars = quokka_bootstrap::reader::Reader::chars_of(source);
+    let mut reader = quokka_bootstrap::reader::Reader::new(&chars);
     heap.mutate(|mc| {
         let mut forms = Vec::new();
         while let Some(form) = reader.read(mc).expect("the Rust reader reads it") {
@@ -248,7 +248,7 @@ fn compiled_image() -> &'static [u8] {
     static IMAGE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     IMAGE.get_or_init(|| {
         let mut heap = quokka_vm::heap::Heap::new();
-        quokka_vm::boot::build_image(&mut heap).unwrap_or_else(|e| panic!("{e}"));
+        quokka_bootstrap::boot::build_image(&mut heap).unwrap_or_else(|e| panic!("{e}"));
         quokka_vm::image::save(&mut heap)
     })
 }
@@ -257,7 +257,7 @@ fn compiled_image() -> &'static [u8] {
 /// `rebuild.lisp` uses, answered from the copies the binary embeds for the
 /// cold build, which is what a host without files does.
 fn embedded_sources() -> Vec<(String, &'static str)> {
-    use quokka_vm::boot::{COMPILER, LIBRARY, PRELUDE};
+    use quokka_bootstrap::boot::{COMPILER, LIBRARY, PRELUDE};
     let mut files = vec![("lisp/prelude.lisp".to_string(), PRELUDE)];
     for (name, text) in COMPILER {
         files.push((format!("lisp/compiler/{name}"), *text));
@@ -688,7 +688,7 @@ fn the_fixpoint_notices_a_change() {
 /// build loads.
 #[test]
 fn the_rebuild_reads_the_library_the_cold_build_loads() {
-    let names: Vec<String> = quokka_vm::boot::LIBRARY
+    let names: Vec<String> = quokka_bootstrap::boot::LIBRARY
         .iter()
         .map(|(name, _)| format!("\"lisp/library/{name}\""))
         .collect();
@@ -801,8 +801,8 @@ fn run_compiled_rust_read(source: &str, printer: Printer) -> String {
     let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
     let mut host = quokka_vm::host::NullHost::default();
     let mut out = String::new();
-    let chars = quokka_vm::reader::Reader::chars_of(source);
-    let mut reader = quokka_vm::reader::Reader::new(&chars);
+    let chars = quokka_bootstrap::reader::Reader::chars_of(source);
+    let mut reader = quokka_bootstrap::reader::Reader::new(&chars);
     loop {
         let read = heap.mutate(|mc| match reader.read(mc) {
             Err(_) => Some(false),

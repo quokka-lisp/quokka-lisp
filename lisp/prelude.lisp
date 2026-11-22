@@ -2,7 +2,7 @@
 ;;;;
 ;;;; This file is compiled into the VM binary with `include_str!` and
 ;;;; interpreted at boot, after the primitives are installed and before any
-;;;; user code. See `crates/quokka-vm/src/boot.rs`.
+;;;; user code. See `crates/quokka-bootstrap/src/boot.rs`.
 ;;;;
 ;;;; Everything here could have been written in Rust, and was going to be.
 ;;;; Rule 1 says it should not be: the evaluator provides `if`, `let`, `block`

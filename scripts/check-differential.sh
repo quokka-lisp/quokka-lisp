@@ -7,7 +7,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TEST=crates/quokka-vm/tests/differential.rs
+TEST=crates/quokka-bootstrap/tests/differential.rs
 status=0
 
 for file in tests/lisp/*.lisp; do
@@ -19,7 +19,7 @@ for file in tests/lisp/*.lisp; do
     status=1
   fi
   if [ ! -f "${file%.lisp}.expected" ]; then
-    echo "missing: ${file%.lisp}.expected — run 'target/debug/quokka --run $file'" >&2
+    echo "missing: ${file%.lisp}.expected — run 'target/debug/quokka bootstrap --run $file'" >&2
     status=1
   fi
 done
