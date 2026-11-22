@@ -63,6 +63,7 @@
 - [The loop closes](part-6-self-hosting/40-the-loop-closes.md)
 - [The image rebuilds itself](part-6-self-hosting/41-the-image-rebuilds-itself.md)
 - [The fixpoint](part-6-self-hosting/42-the-fixpoint.md)
+- [Places](part-6-self-hosting/43-places.md)
 
 ---
 

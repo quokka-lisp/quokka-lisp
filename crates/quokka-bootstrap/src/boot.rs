@@ -93,6 +93,7 @@ pub const LIBRARY: &[(&str, &str)] = &[
         "numbers.lisp",
         include_str!("../../../lisp/library/numbers.lisp"),
     ),
+    ("setf.lisp", include_str!("../../../lisp/library/setf.lisp")),
     (
         "reader.lisp",
         include_str!("../../../lisp/library/reader.lisp"),

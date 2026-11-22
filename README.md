@@ -129,7 +129,7 @@ cannot reach.
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
 | **Vectors and strings** | `#(1 2 3)`, `aref`, `length` and `elt` over lists, vectors and strings alike; a string written in source is **read-only**, so a literal cannot be edited by accident ([#26](https://github.com/quokka-lisp/quokka-lisp/issues/26)) |
 | **Hash tables** | keyed by content rather than address, because the collector moves things |
-| **`setf`** | `(setf (aref v i) x)`, `(setf (gethash k h) v)` — pulled forward from tier 1 so that mutation could be tested against SBCL, and extensible, which is what `defstruct` needs |
+| **`setf`** | `(setf (aref v i) x)`, `(setf (gethash k h) v)` — pulled forward into tier 0 so that mutation could be tested against SBCL; in the library, **places anyone can define** (`defsetf`, `define-setf-expander`, `get-setf-expansion`) and the macros that update them, `incf`, `decf`, `push`, `pop`, `pushnew`, `rotatef`, `shiftf`, `psetf`, each subform evaluated once, left to right |
 | **Conditions** | `error`, `handler-case`, `ignore-errors`; the evaluator's own errors carry the standard's type names, so `(handler-case (car 5) (type-error () …))` means what it means in SBCL |
 | **`defstruct`** | one line generating a constructor, a predicate, a copier and a settable accessor per slot |
 | **Special variables** | `defvar`, `defparameter`, and dynamic binding by `let`, `let*` and parameters — the first of tier 1, in a library the compiled world loads; shallow binding, undone however a binding is left |
@@ -144,16 +144,16 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-406 tests, green on native, under wasmtime, and with the GC torture mode on.
-Twenty-two Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, five more of
-tier 1 compiled only — and all twenty-two again in a world that has rebuilt
-itself. The Rust core is 13,676 lines of the 15,000-line budget.
+407 tests, green on native, under wasmtime, and with the GC torture mode on.
+Twenty-three Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, six more of
+tier 1 compiled only — and all twenty-three again in a world that has rebuilt
+itself. The Rust core is 13,767 lines of the 15,000-line budget.
 
 ### What does not exist yet
 
 **The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
-which still lacks `setf` expanders, `progv`, `load-time-value` and `symbol-macrolet`,
+which still lacks `progv`, `load-time-value` and `symbol-macrolet`,
 sequences, `format`, bignums and floats
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
 The first world is still built by the interpreter — the cold build — and is

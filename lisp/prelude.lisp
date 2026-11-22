@@ -415,8 +415,9 @@
 ;; **This is not Common Lisp's `setf`.** The real one is extensible:
 ;; `define-setf-expander` and `defsetf` let any program teach it a new place,
 ;; and `defstruct` relies on that to make its accessors settable. This one
-;; knows a fixed list of places, which is enough for tier 0 and will have to
-;; grow a proper expander before `defstruct` does anything useful.
+;; knows a fixed list of places, which is enough for tier 0. The extensible
+;; one is tier 1, in `lisp/library/setf.lisp` (#52), and it is built on top
+;; of this one rather than beside it.
 
 ;; Reader name -> writer name, for places the prelude does not know about.
 ;; `defstruct` fills it in. A hash table rather than an alist because a
@@ -430,6 +431,16 @@
 ;; Called while a `setf` form is being expanded, so an unknown place is
 ;; reported then rather than at run time.
 (defun %setf-place (place value)
+  (or (%setf-known-place place value)
+      (%setf-unknown-place place)))
+
+;; The code that stores VALUE into PLACE, or nil for a place this table does
+;; not know. Split out of `%setf-place` for the tier-1 library (#52): its
+;; `setf` and `get-setf-expansion` both ask this function first, so a place
+;; known here expands the same before and after the library loads — which
+;; the fixpoint needs, since the rebuild compiles the compiler with the
+;; library's `setf` (chapter 43).
+(defun %setf-known-place (place value)
   (cond
     ;; A plain variable is just setq.
     ((symbolp place) (list 'setq place value))
@@ -458,20 +469,25 @@
          ;; place, so a place can evaluate its subforms exactly once even
          ;; when something like `incf` reads and writes it. This table maps a
          ;; reader's name to a writer's name and nothing more. It is enough
-         ;; for `defstruct` and is not enough for `incf`.
+         ;; for `defstruct`; for `incf`, the library's `get-setf-expansion`
+         ;; makes the five values out of this same entry.
          (t (let ((setter (gethash head %setf-setters)))
               (if setter
                   (cons setter (append args (list value)))
-                  (%setf-unknown-place place)))))))
-    (t (%setf-unknown-place place))))
+                  nil))))))
+    (t nil)))
 
 (defun %setf-unknown-place (place)
   (error "SETF does not know how to set this place" place))
 
+;; The cons is bound before the value, because Common Lisp evaluates a
+;; place's subforms before the new value (CLHS 5.1.1.1). This bound the value
+;; alone until #52, so `(setf (car (f)) (g))` called `g` first; SBCL calls `f`.
 (defun %setf-through (setter cons-form value)
-  (let ((once (gensym)))
-    (list 'let (list (list once value))
-          (list setter cons-form once)
+  (let ((cell (gensym))
+        (once (gensym)))
+    (list 'let (list (list cell cons-form) (list once value))
+          (list setter cell once)
           once)))
 
 ;; `(setf place value place value ...)`, left to right, yielding the last

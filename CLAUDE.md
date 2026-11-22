@@ -67,15 +67,25 @@ gensym names and the header's checksum, sequence and gensym counter), with
 `the_fixpoint_notices_a_change` guarding against a vacuous pass — all test
 code in `differential.rs`. **A change that makes them fail changed how the
 compiler compiles itself: find out why** (dumps in `target/fixpoint/`).
-**The layout was split** (#29, #51): the interpreter, the Rust reader and the cold build are `crates/quokka-bootstrap`, and `quokka-vm` cannot reach them; `quokka WORLD.qi` runs a world (`:save FILE` saves it), and `quokka bootstrap` is the tier-0 interpreter. **Next: the rest of tier 1** — step H, `setf` expanders, per #39's order;
-mind that a tier-1 `setf` must not change how the compiler's own source
-expands. Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
+**The layout was split** (#29, #51): the interpreter, the Rust reader and the cold build are `crates/quokka-bootstrap`, and `quokka-vm` cannot reach them; `quokka WORLD.qi` runs a world (`:save FILE` saves it), and `quokka bootstrap` is the tier-0 interpreter. **Step H is done** (#52, chapter 43): `lisp/library/setf.lisp` —
+`get-setf-expansion`, both `defsetf` forms, `define-setf-expander`,
+`define-modify-macro`, `incf`/`decf`/`push`/`pop`/`pushnew`/`rotatef`/`shiftf`/`psetf`/`remf`,
+and places `cadr`…`third`, `nth`, `elt`, `symbol-value`, `values`, `the`, `getf`.
+The library **redefines `setf`**, so the rebuild compiles the compiler with it:
+a place the prelude knows goes to the prelude's `%setf-known-place` (nil for
+an unknown place) and expands exactly as before, and `get-setf-expansion`
+builds a known place's five values from that same function — never give the
+library's `setf` its own path for a place the prelude knows. `&environment` is
+accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
+`(:FORMS 421 :REPLACED 348)` (asserted in `differential.rs`; a new library file
+changes it). **Next: step I**, `progv`, `load-time-value`, `symbol-macrolet`
+(which makes symbols places: `get-setf-expansion` must then ask). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
 the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` (#47, done) → the image rebuilds
-itself (#48, done) → the fixpoint (#50, done) → `setf` expanders, the last three special operators, sequences,
+itself (#48, done) → the fixpoint (#50, done) → `setf` expanders (#52, done) → the last three special operators, sequences,
 `format`, bignums (#16), floats (#17), with the ansi-test harness from early
 on. Streams (#42, closed): minimal string streams and the console in tier 1;
 generic streams stay tier 2.
@@ -86,7 +96,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,234 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90).
+- **The Rust budget: 1,233 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -139,8 +149,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**406 tests**; **22 differential files agree with SBCL** — 17 interpreted and
-compiled, plus five tier-1 files, compiled only, and all 22 also pass in a rebuilt world. The Rust core is **13,766** lines of the 15,000 budget.
+**407 tests**; **23 differential files agree with SBCL** — 17 interpreted and
+compiled, plus six tier-1 files, compiled only, and all 23 also pass in a rebuilt world. The Rust core is **13,767** lines of the 15,000 budget.
 
 ## How phase 1 ended
 

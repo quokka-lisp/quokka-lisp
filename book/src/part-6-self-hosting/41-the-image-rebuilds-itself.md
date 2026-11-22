@@ -110,7 +110,8 @@ interpreted (chapter 32). The rebuild's equivalent: before starting, it
 records what every symbol in `COMMON-LISP` and `QUOKKA` holds. Afterwards,
 every name the source defines with `defun` or `defmacro` must hold something
 different. A name still holding its old function was not rebuilt, and the
-rebuild fails, naming it. Each rebuild reports `(:FORMS 373 :REPLACED 316)`.
+rebuild fails, naming it. Each rebuild reported `(:FORMS 373 :REPLACED 316)`
+when this was written; the library grows, and chapter 43 made it 421 and 348.
 
 ## What the first rebuild found
 

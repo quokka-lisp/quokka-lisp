@@ -399,6 +399,15 @@ and how wide — is fixed by the opcode, which is what spares the assembler a
 
 **Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
+**Place.** Anything `setf` can write, written as the form that reads it: a
+variable, `(aref v i)`, `(gethash k h)`, a structure slot, `(getf plist :k)`.
+The standard also calls it a *generalized reference*. ([43](part-6-self-hosting/43-places.md))
+
+**Property list (plist).** A list of alternating keys and values,
+`(:colour red :size 3)`, read with `getf`. Adding a key puts it on the front,
+which makes a new list — why `(setf (getf …))` must write the place that holds
+the list as well. ([43](part-6-self-hosting/43-places.md))
+
 **Package.** Common Lisp's namespace for symbols: a symbol table plus rules
 about which names are visible where. Quokka does not have them — tier 1, phase
 2 — but symbols do carry a *home namespace*, with two possible values, because
@@ -517,15 +526,22 @@ they were given. ([19](part-2-reading-and-running/19-things-with-an-index.md))
 **setf.** The general way to write a place in Common Lisp: `(setf (aref v i)
 x)`, `(setf (gethash k h) v)`, `(setf x 1)`. A macro that turns a *reader* —
 `aref`, `gethash` — into the corresponding writer, so a program names what it
-wants to change in the same words it would use to read it. Quokka's knows a
-fixed list of places; the real one can be taught new ones. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+wants to change in the same words it would use to read it. Tier 0's knows a
+fixed list of places; the tier-1 library's can be taught new ones, and expands
+a place tier 0 knows exactly as tier 0 did. ([19](part-2-reading-and-running/19-things-with-an-index.md), [43](part-6-self-hosting/43-places.md))
 
-**setf expander.** How `setf` is taught a place it has never seen.
-Quokka's is a table from a reader's name to a writer's name, which is what
-`defstruct` needs. Common Lisp's `define-setf-expander` hands back five
-values instead, so that a place's subforms can be evaluated exactly once even
-when something reads *and* writes it — which is why Quokka has no `incf`.
-([21](part-2-reading-and-running/21-records.md))
+**setf expander.** How `setf` is taught a place it has never seen. Tier 0's
+is a table from a reader's name to a writer's name, which is what `defstruct`
+needs and what `defsetf`'s short form still is. `define-setf-expander` is the
+general kind: a function from the place's subforms to its five-value
+[setf expansion](#setf-expansion), so that a place inside a place, such as
+`(getf plist :k)`, can be written. ([21](part-2-reading-and-running/21-records.md), [43](part-6-self-hosting/43-places.md))
+
+**setf expansion.** The five values `get-setf-expansion` returns for a
+[place](#place): temporaries, the subforms they hold, store variables, a form
+that writes and a form that reads. A macro that reads *and* writes a place —
+`incf`, `push` — binds the temporaries once and uses both forms, so each
+subform is evaluated exactly once, left to right. ([43](part-6-self-hosting/43-places.md))
 
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.
