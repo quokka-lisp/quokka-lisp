@@ -50,3 +50,17 @@
 (eval-test::whose)
 (eq 'eval-test::fresh-here (find-symbol "FRESH-HERE" :eval-test))
 (find-symbol "WHOSE" :cl-user)
+
+;; eval inside a macro expander, which runs while the form using the macro is
+;; still being compiled. compile-form saves and restores its work around a
+;; nested call (#47), so the outer compilation carries on intact.
+(defmacro at-expansion () (list 'quote (eval '(list 1 (+ 1 1)))))
+(list (at-expansion) :between (at-expansion))
+(let ((x 10)) (list x (at-expansion) (+ x 1)))
+;; Three deep: the eval'd form itself uses a macro whose expander evals.
+(defmacro nested-expansion () (eval '(list 'quote (list (at-expansion) (at-expansion)))))
+(list (nested-expansion) :after)
+;; A nested compilation that fails half-way still gives the outer one back.
+(defmacro recovering () (list 'quote (list (ignore-errors (eval '(if))) (eval '(+ 1 1)))))
+(list (recovering) :after)
+(list (at-expansion) :still-fine)

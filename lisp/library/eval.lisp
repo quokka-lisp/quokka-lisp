@@ -15,10 +15,10 @@
 
 ;;; `(eval form)` — compile FORM into a function of no arguments and call it.
 ;;;
-;;; `compile-form` keeps its work in global variables, so it is not
-;;; re-entrant: an `eval` inside a macro expander, which runs while another
-;;; form is being compiled, would overwrite that compilation. An `eval` at run
-;;; time is fine, and is the only kind anything does yet (#47).
+;;; An `eval` inside a macro expander runs while another form is being
+;;; compiled, and so compiles inside a compilation; `compile-form` saves and
+;;; restores the outer one's work around it (#47). Two *processes* compiling
+;;; at once is a different matter, and phase 3's (#34).
 (defun eval (form)
   (funcall (compile-form form)))
 

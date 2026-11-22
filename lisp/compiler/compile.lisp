@@ -1041,13 +1041,36 @@
 
 ;;; Compile FORM into a function of no arguments.
 ;;;
-;;; The entry point, and the only place the accumulators are reset from
-;;; nothing — `%compile-rewritten-lambda` saves and restores them instead.
+;;; The entry point. The compiler keeps its work in five global variables, and
+;;; one compilation can begin while another is half done: a macro's expander
+;;; runs in the middle of compiling the form that uses it, and if the expander
+;;; calls `eval`, that compiles too. Resetting the globals from nothing, as
+;;; this once did, handed the outer compilation the inner one's code: no
+;;; error, just a wrong answer (#47). So whatever was being compiled is saved
+;;; first and given back afterwards — the save and restore `%assemble-lambda`
+;;; already does for a lambda inside a form — under `unwind-protect`, so that
+;;; a nested compilation that fails half-way gives it back as well.
+;;;
+;;; That makes compiling re-entrant, which is not the same as safe for two
+;;; processes compiling at once: a switch between them would land in the
+;;; middle of both. That is phase 3's question, and #34's.
 (defun compile-form (form)
-  (setq %code nil)
-  (setq %open nil)
-  (setq %local-macros nil)
-  (%reset-constants)
-  (%compile form nil t)
-  (%emit (list 'RET))
-  (%assemble (reverse %code) (%constants-vector) nil 'compiled-form))
+  (let ((outer-code %code)
+        (outer-open %open)
+        (outer-macros %local-macros)
+        (outer-constants %constants)
+        (outer-count %constant-count))
+    (unwind-protect
+         (progn
+           (setq %code nil)
+           (setq %open nil)
+           (setq %local-macros nil)
+           (%reset-constants)
+           (%compile form nil t)
+           (%emit (list 'RET))
+           (%assemble (reverse %code) (%constants-vector) nil 'compiled-form))
+      (setq %code outer-code)
+      (setq %open outer-open)
+      (setq %local-macros outer-macros)
+      (setq %constants outer-constants)
+      (setq %constant-count outer-count))))

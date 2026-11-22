@@ -31,3 +31,11 @@
 => :EVAL-TEST
 => T
 => NIL
+=> AT-EXPANSION
+=> ((1 2) :BETWEEN (1 2))
+=> (10 (1 2) 11)
+=> NESTED-EXPANSION
+=> (((1 2) (1 2)) :AFTER)
+=> RECOVERING
+=> ((NIL 2) :AFTER)
+=> ((1 2) :STILL-FINE)

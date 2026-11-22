@@ -48,7 +48,7 @@ the compiled differential leg (`run_compiled`); `vm::compile_and_run_forms`
 two tests that hold the Lisp reader and printer to the Rust ones
 (`run_compiled_rust_read`). A special variable must be proclaimed before
 anything binds it: `reader.lisp` opens with `(defvar *package*)` for that
-reason. `compile-form` is not re-entrant. Image now 348 KB. **Next is step E,
+reason. `compile-form` is re-entrant (it saves and restores its globals, so `eval` in a macro expander works) but not safe for two processes at once (#34). Image now 348 KB. **Next is step E,
 the image rebuilds itself** (the build driver to Lisp; the library read by the
 Lisp reader). Quokka has no `eql` yet (the library uses `eq`; `eql` comes with bignums). Its scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

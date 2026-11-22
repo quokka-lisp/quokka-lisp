@@ -46,10 +46,47 @@ is compiled on its own, in an empty scope, so the compiler has no way to know
 that `lexical` was a local somewhere else. A special variable's value lives in
 the symbol (chapter 35), and the compiled code finds it there.
 
-One limit is recorded rather than fixed. `compile-form` keeps its
-work-in-progress in global variables, so it is not **re-entrant**: a call to
-`eval` from inside a macro expander, which runs *while another form is being
-compiled*, would overwrite that compilation. Nothing does that yet.
+### Compiling inside a compilation
+
+`compile-form` keeps its work in progress in five global variables:
+`%code`, `%constants`, `%constant-count`, `%open` and `%local-macros`. It
+started each compilation by resetting them. That made it not **re-entrant**,
+meaning not safe to call again before the previous call had finished.
+
+Nothing seemed to call it that way, until you notice when macros run. A
+macro's expander runs *during* the compilation of the form that uses it. An
+expander that calls `eval` therefore starts a second compilation while the
+first is half done. Carsten asked whether this limit would cause trouble
+later, so it was tested:
+
+```lisp
+(defmacro at-expansion () (list 'quote (eval '(list 1 (+ 1 1)))))
+(list (at-expansion) :between (at-expansion))
+```
+
+SBCL answers `((1 2) :BETWEEN (1 2))`. Quokka answered `(1 2)`, with no error.
+The inner compilation reset the globals, and the outer one finished with the
+inner one's code. That is the worst kind of failure, a wrong answer that looks
+like a right one.
+
+The compiler already knew the cure. A `lambda` inside a form is compiled on its
+own, and `%assemble-lambda` saves the outer accumulators first and restores
+them afterwards. `compile-form` now does the same, inside an `unwind-protect`:
+a nested compilation that fails halfway, such as `(eval '(if))` caught by
+`ignore-errors`, still gives the outer one its work back. It cost ten lines of
+Lisp and no Rust, and the tests now cover three levels of nesting and a
+nested failure.
+
+Re-entrant is not the same as safe for concurrency, though. Once phase 3 has
+processes, the scheduler can switch from one compilation to another in the
+middle of both. Saving and restoring around a call doesn't help with that,
+because the two compilations are interleaved, not nested. That case is
+recorded in #34, the issue collecting what the code must not rule out before
+phase 3. The options there are a lock that lets one process compile at a
+time, or compiler state passed explicitly instead of kept in globals.
+Special variables would be the idiomatic third option, but they are out for
+now: the Rust interpreter that runs the compiler during the bootstrap has no
+dynamic binding.
 
 ## load
 
@@ -176,8 +213,8 @@ crate rather than being copied into each host. 1,365 lines are left.
 
 - **The library read in Lisp.** The build still reads `lisp/library/` with
   the Rust reader, which is why `packages.lisp` must stay last. Step E.
-- **`eval` inside a macro expander**, because `compile-form` is not
-  re-entrant.
+- **Two processes compiling at once.** Compiling is re-entrant, but its state
+  is still global; phase 3 decides how to share it (#34).
 - **`load`'s keyword arguments**, `:verbose`, `:print` and
   `:if-does-not-exist`; and pathnames, so a file is just a name the host
   understands.

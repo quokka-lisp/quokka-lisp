@@ -535,7 +535,7 @@ many steps. ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 Popped slots are cleared, because every slot of a traced object is traced and
 a dead one would keep what it last held alive. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
 
-**Re-entrant.** Safe to call again while a call is still in progress. Quokka's `compile-form` is not: it keeps its work in global variables, so compiling inside a compilation would overwrite it. ([40](part-6-self-hosting/40-the-loop-closes.md))
+**Re-entrant.** Safe to call again while a call is still in progress. Quokka's `compile-form` keeps its work in global variables, so it became re-entrant by saving and restoring them around each call. That is not the same as safe for two processes at once, whose calls interleave rather than nest. ([40](part-6-self-hosting/40-the-loop-closes.md))
 
 **Special variable.** A variable whose binding is visible to everything *called* while the binding is in force, not only to the code written inside it — what other languages call dynamic scope. Common Lisp names them with asterisks, like `*package*`, and makes them with `defvar` and `defparameter`. ([34](part-6-self-hosting/34-standing-on-its-own.md))
 
