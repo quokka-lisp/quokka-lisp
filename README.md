@@ -151,10 +151,10 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-423 tests, green on native, under wasmtime, and with the GC torture mode on.
-Thirty-seven Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, twenty more
-of tier 1 compiled only — and all thirty-seven again in a world that has rebuilt
+424 tests, green on native, under wasmtime, and with the GC torture mode on.
+Thirty-eight Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, twenty-one more
+of tier 1 compiled only — and all thirty-eight again in a world that has rebuilt
 itself. The Rust core is 15,248 lines of the 15,500-line budget, raised from
 15,000 when arrays moved into tier 1 (#67).
 

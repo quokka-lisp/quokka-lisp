@@ -767,3 +767,5 @@ simple copying collector here does not.
 **Restart.** A way of carrying on from an error that the code signalling it offers, chosen by a handler or by the person at the keyboard: `ccase`'s `store-value` stores a new value and tries again. Part of Common Lisp's full condition system, which is tier 2 in Quokka; until then `ccase` signals its error like `ecase`. ([56](part-6-self-hosting/56-small-functions.md))
 
 **Unit in the last place (ulp).** The gap between a floating-point number and the next one, and so the smallest error a result can have. Most C libraries promise their logarithms and hyperbolic functions to within one ulp, not exactly, which is why two of them can disagree in the last digit. ([56](part-6-self-hosting/56-small-functions.md))
+
+**Byte specifier.** What `(byte size position)` returns: the name of a field of SIZE bits in an integer, starting POSITION bits from the least significant. Not eight bits, despite the name. `ldb` reads such a field and `dpb` replaces it; in Quokka, as in SBCL, a byte specifier is a cons of the two numbers. ([57](part-6-self-hosting/57-bit-fields.md))

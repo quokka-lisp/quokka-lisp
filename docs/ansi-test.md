@@ -12,19 +12,19 @@ A test can need several things.
 | cons | 1452 | 23 | 0 | 1 | 6 | 156 | 1638 |
 | sequences | 2480 | 70 | 0 | 2 | 0 | 606 | 3158 |
 | strings | 370 | 23 | 0 | 0 | 4 | 104 | 501 |
-| arrays | 629 | 0 | 0 | 1 | 20 | 584 | 1234 |
+| arrays | 629 | 0 | 0 | 1 | 13 | 591 | 1234 |
 | characters | 130 | 0 | 0 | 0 | 32 | 97 | 259 |
 | symbols | 104 | 23 | 0 | 1 | 2 | 1015 | 1145 |
 | packages | 254 | 17 | 0 | 2 | 1 | 66 | 340 |
-| numbers | 432 | 23 | 0 | 4 | 180 | 799 | 1438 |
+| numbers | 528 | 21 | 0 | 4 | 20 | 865 | 1438 |
 | reader | 75 | 8 | 0 | 1 | 52 | 29 | 165 |
 | printer | 208 | 19 | 0 | 4 | 77 | 514 | 822 |
-| data-and-control-flow | 1070 | 79 | 13 | 0 | 20 | 238 | 1420 |
+| data-and-control-flow | 1073 | 79 | 13 | 0 | 17 | 238 | 1420 |
 | eval-and-compile | 237 | 28 | 5 | 0 | 25 | 23 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 42 | 9 | 0 | 0 | 63 | 53 | 167 |
 | structures | 22 | 50 | 0 | 0 | 10 | 33 | 115 |
-| **all** | **7600** | **372** | **18** | **16** | **492** | **5060** | **13558** |
+| **all** | **7699** | **370** | **18** | **16** | **322** | **5133** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -33,32 +33,15 @@ A test can need several things.
 | `load-error[*HASH-TABLES*]` | 111 |
 | `load-error[*STREAMS*]` | 111 |
 | `READTABLE-CASE[tier-1]` | 75 |
-| `BYTE[tier-1]` | 48 |
 | `READ-PRESERVING-WHITESPACE[tier-1]` | 27 |
 | `SXHASH[tier-1]` | 24 |
 | `NAME-CHAR[tier-1]` | 18 |
-| `LOGORC1[tier-1]` | 17 |
-| `LOGORC2[tier-1]` | 17 |
 | `WITH-HASH-TABLE-ITERATOR[tier-1]` | 17 |
-| `LOGANDC1[tier-1]` | 16 |
-| `LOGANDC2[tier-1]` | 16 |
-| `LOGEQV[tier-1]` | 16 |
-| `LOGNAND[tier-1]` | 16 |
-| `LOGNOR[tier-1]` | 16 |
-| `BOOLE[tier-1]` | 12 |
-| `LDB[tier-1]` | 12 |
-| `MASK-FIELD[tier-1]` | 11 |
 | `SET-SYNTAX-FROM-CHAR[tier-1]` | 11 |
-| `DEPOSIT-FIELD[tier-1]` | 9 |
-| `DPB[tier-1]` | 9 |
-| `LOGTEST[tier-1]` | 8 |
 | `HASH-TABLE-TEST[tier-1]` | 7 |
-| `BYTE-POSITION[tier-1]` | 6 |
-| `BYTE-SIZE[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-SIZE[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-THRESHOLD[tier-1]` | 6 |
 | `reader[#=]` | 6 |
-| `load-error[*BOOLE-VALS*]` | 4 |
 | `reader[#.]` | 4 |
 | `HASH-TABLE-SIZE[tier-1]` | 3 |
 | `load-error[STRUCT-INCLUDE-02B]` | 3 |
@@ -66,7 +49,6 @@ A test can need several things.
 | `reader[#A]` | 3 |
 | `load-error[STRUCT-INCLUDE-01B-D]` | 2 |
 | `load-error[STRUCT-INCLUDE-04B]` | 2 |
-| `LDB-TEST[tier-1]` | 1 |
 | `load-error[DEFSETF.5-ACCESSOR]` | 1 |
 | `load-error[STRUCT-INCLUDE-03B]` | 1 |
 

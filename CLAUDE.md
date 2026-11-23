@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1073 :REPLACED 887)` (asserted in `differential.rs`; any new library
+`(:FORMS 1110 :REPLACED 906)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -212,8 +212,12 @@ reached when `%symbol-macro` runs out of scopes — like `%compiler-macros`,
 empty when the compiler compiles itself. Found: `set-exclusive-or` swapped
 the test's arguments; `symbol-macrolet` ignored body declarations.
 ansi-test after U: **7,600 of 13,558 pass**; needs tier 1 492; plain failures 372.
-**Next:** V, integer bit fields (#69: `byte`, `ldb`, `dpb`, `boole`);
-W, the reader (#70: `readtable-case`, `read-preserving-whitespace`); X, hash
+**Step V is done** (#69, chapter 57): the logical operations (`logeqv` is a
+fold, not `lognot` of `logxor`), `boole` and its constants (SBCL's 0–15), byte
+specifiers as conses, `ldb`/`dpb`/`mask-field`/`deposit-field`/`ldb-test`,
+`setf` of `ldb`/`mask-field` through any place. No Rust. ansi-test: **7,699**;
+needs tier 1 322.
+**Next:** W, the reader (#70: `readtable-case`, `read-preserving-whitespace`); X, hash
 tables (#71: `equalp` tables, a function as `:test`, `sxhash`) and the
 standard streams; then the plain failures. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
@@ -284,8 +288,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**423 tests**; **37 differential files agree with SBCL** — 17 interpreted and
-compiled, plus twenty tier-1 files, compiled only, and all 37 also pass in a rebuilt world. The Rust core is **15,248** lines of the 15,500 budget (raised from 15,000 by #67).
+**424 tests**; **38 differential files agree with SBCL** — 17 interpreted and
+compiled, plus twenty-one tier-1 files, compiled only, and all 38 also pass in a rebuilt world. The Rust core is **15,248** lines of the 15,500 budget (raised from 15,000 by #67).
 
 ## How phase 1 ended
 

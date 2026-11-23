@@ -217,7 +217,7 @@ quokka rebuild c2.qi c3.qi
 What to expect today:
 - C1 is 853,080 bytes; C2 and C3 are 853,616 each. A rebuild takes about
   twelve seconds.
-- Every rebuild reports `(:FORMS 1073 :REPLACED 887)`.
+- Every rebuild reports `(:FORMS 1110 :REPLACED 906)`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
   are numbered by a counter that keeps rising, the image checksum covers those
   numbers, and the header counts saves.

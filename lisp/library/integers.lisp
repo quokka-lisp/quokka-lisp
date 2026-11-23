@@ -448,3 +448,103 @@
         (do () ((= limb 0))
           (if (oddp limb) (setq count (+ count 1)))
           (setq limb (%quotient limb 2)))))))
+
+;;; ------------------------------------------------------------------------
+;;; The rest of the logical operations (#69, step V)
+;;;
+;;; Each is a combination of the three above and `lognot`, exactly as CLHS
+;;; defines it, so integers of every size work alike.
+
+;;; `logeqv` folds the two-argument one, whose identity is -1; it is not
+;;; `lognot` of the whole `logxor`, which differs for three or more.
+(defun logeqv (&rest integers)
+  (let ((r -1)) (dolist (n integers r) (setq r (lognot (logxor r n))))))
+(defun lognand (a b) (lognot (logand a b)))
+(defun lognor (a b) (lognot (logior a b)))
+(defun logandc1 (a b) (logand (lognot a) b))
+(defun logandc2 (a b) (logand a (lognot b)))
+(defun logorc1 (a b) (logior (lognot a) b))
+(defun logorc2 (a b) (logior a (lognot b)))
+(defun logtest (a b) (not (zerop (logand a b))))
+
+;;; `(boole op a b)`: the sixteen operations on two integers, named by
+;;; constants. Their values are SBCL's, 0 to 15, so that a printed one means
+;;; the same in both.
+(defconstant boole-clr 0)
+(defconstant boole-set 1)
+(defconstant boole-1 2)
+(defconstant boole-2 3)
+(defconstant boole-c1 4)
+(defconstant boole-c2 5)
+(defconstant boole-and 6)
+(defconstant boole-ior 7)
+(defconstant boole-xor 8)
+(defconstant boole-eqv 9)
+(defconstant boole-nand 10)
+(defconstant boole-nor 11)
+(defconstant boole-andc1 12)
+(defconstant boole-andc2 13)
+(defconstant boole-orc1 14)
+(defconstant boole-orc2 15)
+
+(defun boole (op a b)
+  (case op
+    (0 0) (1 -1) (2 a) (3 b) (4 (lognot a)) (5 (lognot b))
+    (6 (logand a b)) (7 (logior a b)) (8 (logxor a b)) (9 (logeqv a b))
+    (10 (lognand a b)) (11 (lognor a b)) (12 (logandc1 a b)) (13 (logandc2 a b))
+    (14 (logorc1 a b)) (15 (logorc2 a b))
+    (t (error 'type-error "boole takes one of the sixteen boole- constants" op))))
+
+;;; ------------------------------------------------------------------------
+;;; Bit fields (#69)
+;;;
+;;; `(byte size position)` names the SIZE bits of an integer starting at bit
+;;; POSITION, counting from the least significant. CLHS leaves what the
+;;; object is to the implementation; it is a cons, as SBCL's (decision 1).
+
+(defun byte (size position) (cons size position))
+(defun byte-size (bytespec) (car bytespec))
+(defun byte-position (bytespec) (cdr bytespec))
+
+;;; SIZE one bits, moved up to POSITION.
+(defun %byte-mask (bytespec)
+  (ash (- (ash 1 (byte-size bytespec)) 1) (byte-position bytespec)))
+
+;;; `ldb`: the field, shifted down to bit 0. `mask-field`: the field where
+;;; it is, every other bit zero. `ldb-test`: is any bit of it set?
+(defun ldb (bytespec integer)
+  (logand (ash integer (- (byte-position bytespec))) (- (ash 1 (byte-size bytespec)) 1)))
+(defun mask-field (bytespec integer) (logand integer (%byte-mask bytespec)))
+(defun ldb-test (bytespec integer) (not (zerop (ldb bytespec integer))))
+
+;;; `dpb`: INTEGER with the field replaced by the low bits of NEWBYTE.
+;;; `deposit-field`: the same with NEWBYTE's bits already in place.
+(defun dpb (newbyte bytespec integer)
+  (let ((mask (%byte-mask bytespec)))
+    (logior (logand integer (lognot mask))
+            (logand (ash newbyte (byte-position bytespec)) mask))))
+(defun deposit-field (newbyte bytespec integer)
+  (let ((mask (%byte-mask bytespec)))
+    (logior (logand integer (lognot mask)) (logand newbyte mask))))
+
+;;; `(setf (ldb bytespec place) new)` stores `(dpb new bytespec place)` back
+;;; into PLACE, and `mask-field` likewise with `deposit-field`: the place
+;;; inside is any place, so each is a setf expander built on that place's
+;;; own expansion (#52).
+(define-setf-expander ldb (bytespec place &environment environment)
+  (%field-setf-expansion 'ldb 'dpb bytespec place environment))
+(define-setf-expander mask-field (bytespec place &environment environment)
+  (%field-setf-expansion 'mask-field 'deposit-field bytespec place environment))
+
+(defun %field-setf-expansion (reader writer bytespec place environment)
+  (multiple-value-bind (temps values stores store-form access-form)
+      (get-setf-expansion place environment)
+    (let ((byte-temp (gensym "BYTE"))
+          (new (gensym "NEW")))
+      (values (cons byte-temp temps)
+              (cons bytespec values)
+              (list new)
+              `(let ((,(car stores) (,writer ,new ,byte-temp ,access-form)))
+                 ,store-form
+                 ,new)
+              `(,reader ,byte-temp ,access-form)))))

@@ -150,9 +150,10 @@ the compiler's own source has no `symbol-macrolet` with declarations.
 
 ## What did it cost?
 
-Eleven lines of Rust for the three primitives (the core is 15,248 lines of
-15,500) and about 200 of Lisp, 30 of them in the compiler.
-`tests/lisp/small-functions.lisp` checks all of it against SBCL.
+This step took eleven lines of Rust, for the three primitives, which brings
+the core to 15,248 lines of 15,500. The rest is about 200 lines of Lisp, 30
+of them in the compiler, and `tests/lisp/small-functions.lisp` checks all of
+it against SBCL.
 
 ansi-test went from 7,280 passing tests to 7,600, of 13,558, with the
 three fixes above; the tests needing a tier-1 feature from 865 to 492, and
@@ -161,9 +162,11 @@ tests, most of them the `c…r` accessors.
 
 ## What is still missing?
 
-`ccase`'s restart, with the rest of the restarts in tier 2. The complex
-results `acosh` and `atanh` have outside their real domains, with complex
-numbers. A source for `function-lambda-expression` to return (#55).
+Three things are still missing. `ccase` has no restart yet; it arrives with
+the rest of the restarts in tier 2. Outside their real domains `acosh` and
+`atanh` signal an error where CL answers a complex number, which waits for
+complex numbers. And `function-lambda-expression` has no source to return
+until definitions keep theirs (#55).
 
 ---
 
