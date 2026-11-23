@@ -153,6 +153,11 @@ from the reference that points at it. "Cons" is short for "construct".
 
 **Continuation.** What remains to be done after the current computation finishes. In Quokka they are [frames](#frame) on the evaluator's stack — ordinary heap objects rather than an abstraction, which is what will let a debugger show you one. ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
+**Control string.** The template `format` fills in: text with directives in
+it, each starting with `~`. `"~A has ~D item~:P"` is one. It is a small
+program, with loops (`~{`) and conditionals (`~[`), which Quokka parses into
+a tree and then runs. ([46](part-6-self-hosting/46-format.md))
+
 **Copying collector.** A [garbage collector](#garbage-collection) that reclaims
 memory by copying everything still wanted into a fresh region and abandoning the
 old one. The garbage costs nothing to reclaim — you simply stop using the space

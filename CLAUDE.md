@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 680 :REPLACED 575)` (asserted in `differential.rs`; a new library file
+`(:FORMS 711 :REPLACED 602)` (asserted in `differential.rs`; a new library file
 changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -106,14 +106,20 @@ replaced the compiler's. **J3 is done**: `lisp/library/strings.lisp` —
 character and string comparisons (n-ary `char=` etc., the twelve string
 comparisons over one walk, `%string-compare`), case changes, trimming,
 `char`/`schar`; `string` moved there from the printer. **Step J is done.**
-**Next: step K, basic `format`.** Phase 2's scope is
+**Step K is done** (#57, chapter 46): `lisp/library/format.lisp`, after the
+printer — basic `format` (`~A ~S ~D ~B ~O ~X ~nR ~C ~% ~& ~| ~~ ~P ~* ~[ ~{
+~( ~? ~^`, tilde-newline; parameters, `V`, `#`) and `formatter`. Control
+strings are parsed into directive records (`%format-directive`), then run;
+interpreted every call (compiling them is #58, later). `~^` throws to the tag
+in the special `%format-escape-tag`. Error messages are not control strings
+yet (conditions, phase 3). **Next: step L, bignums (#16).** Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
 the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` (#47, done) → the image rebuilds
-itself (#48, done) → the fixpoint (#50, done) → `setf` expanders (#52, done) → the last three special operators (#53, done) → sequences (#54, done) →
-`format`, bignums (#16), floats (#17), with the ansi-test harness from early
+itself (#48, done) → the fixpoint (#50, done) → `setf` expanders (#52, done) → the last three special operators (#53, done) → sequences (#54, done) → basic `format` (#57, done) →
+bignums (#16), floats (#17), with the ansi-test harness from early
 on. Streams (#42, closed): minimal string streams and the console in tier 1;
 generic streams stay tier 2.
 
@@ -123,7 +129,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 1,179 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4 — their `boot::LIBRARY` entries).
+- **The Rust budget: 1,175 lines left, for phases 2 to 6** (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -176,8 +182,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**411 tests**; **27 differential files agree with SBCL** — 17 interpreted and
-compiled, plus ten tier-1 files, compiled only, and all 27 also pass in a rebuilt world. The Rust core is **13,821** lines of the 15,000 budget.
+**412 tests**; **28 differential files agree with SBCL** — 17 interpreted and
+compiled, plus eleven tier-1 files, compiled only, and all 28 also pass in a rebuilt world. The Rust core is **13,825** lines of the 15,000 budget.
 
 ## How phase 1 ended
 

@@ -118,6 +118,10 @@ pub const LIBRARY: &[(&str, &str)] = &[
         "printer.lisp",
         include_str!("../../../lisp/library/printer.lisp"),
     ),
+    (
+        "format.lisp",
+        include_str!("../../../lisp/library/format.lisp"),
+    ),
     ("eval.lisp", include_str!("../../../lisp/library/eval.lisp")),
     (
         "rebuild.lisp",

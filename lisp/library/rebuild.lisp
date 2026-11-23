@@ -36,7 +36,7 @@
     "lisp/library/numbers.lisp" "lisp/library/operators.lisp"
     "lisp/library/setf.lisp" "lisp/library/lists.lisp"
     "lisp/library/sequences.lisp" "lisp/library/strings.lisp" "lisp/library/reader.lisp"
-    "lisp/library/printer.lisp" "lisp/library/eval.lisp"
+    "lisp/library/printer.lisp" "lisp/library/format.lisp" "lisp/library/eval.lisp"
     "lisp/library/rebuild.lisp" "lisp/library/packages.lisp"))
 
 ;;; `(%rebuild-world)` — rebuild every function from source, and say how many
