@@ -8,9 +8,10 @@
 ;;;; Decided in #57 (Carsten):
 ;;;;
 ;;;; 1. "Basic" is `~A ~S ~D ~B ~O ~X ~nR ~C ~% ~& ~| ~~ ~P ~* ~[ ~{ ~( ~? ~^`
-;;;;    and tilde-newline, with parameters as numbers, 'c, V and #. Floats,
-;;;;    English and Roman numerals, tabulation, justification and the pretty
-;;;;    printer's directives wait (floats for step M, the rest for tier 2).
+;;;;    and tilde-newline, with parameters as numbers, 'c, V and #. English
+;;;;    and Roman numerals, tabulation, justification and the pretty
+;;;;    printer's directives wait for tier 2. The float directives `~F ~E ~G
+;;;;    ~$` came with floats (step M, #17), at the end of this file.
 ;;;; 2. Control strings are interpreted, every time. Compiling literal ones,
 ;;;;    as SBCL does, is #58, for a later phase.
 ;;;; 3. Parse, then run: the control string becomes a tree of literal strings
@@ -184,6 +185,10 @@
            (%format-integer directive stream args nil t)
            (error "format: ~R without a radix (English and Roman numerals) is not supported")))
       ((char= c #\C) (%format-character (%next-arg args) stream colon at))
+      ((char= c #\F) (%format-fixed directive stream args))
+      ((char= c #\E) (%format-exponential directive stream args))
+      ((char= c #\G) (%format-general directive stream args))
+      ((char= c #\$) (%format-money directive stream args))
       ((char= c #\%) (dotimes (i (car (%params directive args '(1)))) (terpri stream)))
       ((char= c #\&)
        (let ((n (car (%params directive args '(1)))))
@@ -395,3 +400,154 @@
   (let ((stream (gensym "STREAM")) (arguments (gensym "ARGUMENTS")))
     `(lambda (,stream &rest ,arguments)
        (%format-to ,stream ,control ,arguments))))
+
+;;; ------------------------------------------------------------------------
+;;; Floats (step M, #17)
+;;;
+;;; Each directive turns the number into text and then pads it on the left
+;;; to the width W. Digits come from two places in `floats.lisp`: the
+;;; shortest ones that read back as the double (Rust's, decision 5), when no
+;;; number of digits is asked for; and an exact rounding of the double's own
+;;; bits, halves up, when one is — which is how SBCL rounds: (format nil
+;;; "~,1F" 0.25) is "0.3", but 2.675 is really 2.67499999..., so "~,2F"
+;;; gives "2.67". A rational argument is made a float first; anything else is
+;;; printed as ~A would.
+
+;;; The sign a float directive writes: "-" for a negative number, -0.0
+;;; included, and "+" for any other when `@` was given.
+(defun %float-sign-text (float at)
+  (cond ((%negative-float-p float) "-")
+        (at "+")
+        (t "")))
+
+;;; TEXT padded on the left to W with PADCHAR — or, if it does not fit and
+;;; there is an OVERFLOWCHAR, W of those instead.
+(defun %fit-float-text (text stream w overflowchar padchar)
+  (cond ((and w overflowchar (> (length text) w))
+         (dotimes (i w) (write-char overflowchar stream)))
+        (t (%write-padded text stream (or w 0) 1 0 padchar t))))
+
+;;; The float directives' argument, a float — or nil for a non-number, which
+;;; the directive has already printed.
+(defun %float-argument (directive stream args)
+  (let ((arg (%next-arg args)))
+    (cond ((floatp arg) arg)
+          ((rationalp arg) (float arg))
+          (t (%write-padded (princ-to-string arg) stream
+                            (or (car (%format-directive-params directive)) 0)
+                            1 0 #\Space t)
+             nil))))
+
+;;; ~w,d,k,overflowchar,padcharF — positional notation. With D, exactly D
+;;; digits after the point; without D or W, every shortest digit; with only
+;;; W, as many as fit. K scales by a power of ten. A leading zero goes when
+;;; it is all that stops the number fitting: (format nil "~3,2F" 0.5) is
+;;; ".50".
+(defun %format-fixed (directive stream args)
+  (destructuring-bind (w d k overflowchar padchar)
+      (%params directive args '(nil nil 0 nil #\Space))
+    (let ((x (%float-argument directive stream args)))
+      (when x
+        (let* ((sign (%float-sign-text x (%format-directive-at directive)))
+               (body (%fixed-body x w d k (length sign))))
+          (if (and w (> (+ (length sign) (length body)) w)
+                   (> (length body) 1) (string= (subseq body 0 2) "0."))
+              (setq body (subseq body 1)))
+          (%fit-float-text (concatenate 'string sign body) stream w overflowchar padchar))))))
+
+;;; The digits and point of |X| for ~F; SIGN-LENGTH is what the sign will
+;;; take of W.
+(defun %fixed-body (x w d k sign-length)
+  (cond (d (%point-from-right (princ-to-string (%scaled-integer x (+ d k))) d))
+        ((null w) (%fixed-shortest (if (zerop k) x (* x (expt 10 k)))))
+        (t (let* ((shortest (%fixed-shortest x))
+                  (point (position #\. shortest))
+                  (room (- w sign-length)))
+             (if (<= (length shortest) room)
+                 shortest
+                 (%fixed-body x nil (max 0 (- room point 1)) k sign-length))))))
+
+;;; ~w,d,e,k,overflowchar,padchar,exptcharE — a mantissa and a power of
+;;; ten. K digits before the point (default 1); with D, D-K+1 after it, or
+;;; for K of zero or less, -K zeros and then D+K digits. The exponent comes
+;;; from the shortest digits and is not adjusted when rounding carries, as
+;;; SBCL does not: (format nil "~,3E" 9.9996) is "10.000e+0". E pads the
+;;; exponent's digits with zeros.
+(defun %format-exponential (directive stream args)
+  (destructuring-bind (w d e k overflowchar padchar exptchar)
+      (%params directive args '(nil nil nil 1 nil #\Space nil))
+    (let ((x (%float-argument directive stream args)))
+      (when x
+        (%fit-float-text (%exponential-text x d e k exptchar (%format-directive-at directive))
+                         stream w overflowchar padchar)))))
+
+(defun %exponential-text (x d e k exptchar at)
+  (multiple-value-bind (digits exponent)
+      (if (zerop x) (values "0" 0) (%float-digits x))
+    (let* ((power (- exponent k -1))
+           (places (cond ((null d) (max 1 (- (length digits) k)))
+                         ((> k 0) (- d k -1))
+                         (t d)))
+           (mantissa (if (and (null d) (> k 0))
+                         (%point-from-right
+                          (concatenate 'string digits
+                                       (make-string (max 0 (- (+ k places) (length digits)))
+                                                    :initial-element #\0))
+                          places)
+                         (%point-from-right
+                          (princ-to-string (%scaled-integer x (- places power)))
+                          places)))
+           (power-digits (princ-to-string (abs power))))
+      (concatenate 'string
+                   (%float-sign-text x at)
+                   mantissa
+                   (string (or exptchar #\e))
+                   (if (minusp power) "-" "+")
+                   (make-string (max 0 (- (or e 0) (length power-digits))) :initial-element #\0)
+                   power-digits))))
+
+;;; ~w,d,e,k,overflowchar,padchar,exptcharG — ~F when the number is of a
+;;; size ~F shows well, followed by as many spaces as an exponent would
+;;; have taken, and otherwise ~E: CLHS 22.3.3.3's rule, with D's default
+;;; counted as SBCL counts it, every digit of the positional form.
+(defun %format-general (directive stream args)
+  (destructuring-bind (w d e k overflowchar padchar exptchar)
+      (%params directive args '(nil nil nil 1 nil #\Space nil))
+    (let ((x (%float-argument directive stream args)))
+      (when x
+        (multiple-value-bind (digits exponent)
+            (if (zerop x) (values "0" 0) (%float-digits x))
+          (let* ((n (+ exponent 1))
+                 (d (or d (max (if (minusp exponent)
+                                   (+ (length digits) (- exponent) -1)
+                                   (max (length digits) n))
+                               (min n 7))))
+                 (ee (if e (+ e 2) 4))
+                 (dd (- d n))
+                 (at (%format-directive-at directive)))
+            (if (<= 0 dd d)
+                (let* ((sign (%float-sign-text x at))
+                       (text (concatenate 'string sign (%fixed-body x nil dd 0 (length sign)))))
+                  (%fit-float-text text stream (and w (- w ee)) overflowchar padchar)
+                  (dotimes (i ee) (write-char #\Space stream)))
+                (%fit-float-text (%exponential-text x d e k exptchar at)
+                                 stream w overflowchar padchar))))))))
+
+;;; ~d,n,w,padchar$ — money: D digits after the point (default 2), at least
+;;; N before it (default 1), padded on the left to W. `@` always shows the
+;;; sign; `:` puts it before the padding.
+(defun %format-money (directive stream args)
+  (destructuring-bind (d n w padchar)
+      (%params directive args '(2 1 0 #\Space))
+    (let ((x (%float-argument directive stream args)))
+      (when x
+        (let* ((sign (%float-sign-text x (%format-directive-at directive)))
+               (body (%point-from-right (princ-to-string (%scaled-integer x d)) d))
+               (whole (position #\. body))
+               (body (if (< whole n)
+                         (concatenate 'string (make-string (- n whole) :initial-element #\0) body)
+                         body)))
+          (if (%format-directive-colon directive)
+              (progn (write-string sign stream)
+                     (%write-padded body stream (- w (length sign)) 1 0 padchar t))
+              (%write-padded (concatenate 'string sign body) stream w 1 0 padchar t)))))))

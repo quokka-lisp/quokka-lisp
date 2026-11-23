@@ -123,7 +123,31 @@ fn the_table_order_is_pinned() {
             "%INTEGER-COMPARE",
             "%FIXNUM-LOGAND",
             "%FIXNUM-LOGIOR",
-            "%FIXNUM-LOGXOR"
+            "%FIXNUM-LOGXOR",
+            "/",
+            "FLOATP",
+            "%FLOAT",
+            "%DOUBLE-EQL",
+            "%DOUBLE-ROUND",
+            "%DOUBLE-INTEGER",
+            "%DECODE-DOUBLE",
+            "%SCALE-DOUBLE",
+            "%PARSE-DOUBLE",
+            "%DOUBLE-DIGITS",
+            "%SQRT",
+            "%EXP",
+            "%LOG",
+            "%SIN",
+            "%COS",
+            "%TAN",
+            "%ASIN",
+            "%ACOS",
+            "%ATAN",
+            "%SINH",
+            "%COSH",
+            "%TANH",
+            "%ATAN2",
+            "%POW"
         ]
     );
 }

@@ -143,7 +143,9 @@ fn rebuild(args: &[String]) {
     let ran = quokka_vm::vm::eval_source(
         &mut heap,
         "(quokka::%rebuild-world)",
-        EVAL_BUDGET * 20,
+        // As `differential.rs` gives it. Twenty was too few once the library
+        // gained floats (#17): a rebuild compiles every form of the system.
+        EVAL_BUDGET * 40,
         2_000,
         &mut NativeHost,
         |outcome| {

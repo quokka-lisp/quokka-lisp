@@ -219,6 +219,7 @@
 
 (defun %print-object (object out level)
   (cond ((integerp object) (%print-integer object out))
+        ((floatp object) (%print-float object out))
         ((characterp object) (%print-character object out))
         ((symbolp object) (%print-symbol object out))
         ((stringp object) (%print-string object out))
@@ -312,6 +313,30 @@
 ;;; ------------------------------------------------------------------------
 ;;; Integers, in `*print-base*`
 
+;;; A float as SBCL prints one (step M, #17): the shortest digits that read
+;;; back as the same double (Rust finds them, decision 5), between 10^-3 and
+;;; 10^7 in positional notation — 0.001, 123.5, 9999999.0 — and outside it
+;;; with an exponent — 1.0e7, 9.99e-4. Always in decimal, whatever
+;;; `*print-base*` says. No exponent marker says which format, because the
+;;; double is the only one and so always `*read-default-float-format*`.
+(defun %print-float (float out)
+  (if (%negative-float-p float) (write-char #\- out))
+  (if (zerop float)
+      (write-string "0.0" out)
+      (multiple-value-bind (digits exponent) (%float-digits float)
+        (if (and (>= exponent -3) (< exponent 7))
+            (write-string (%fixed-shortest float) out)
+            (progn
+              (write-string (subseq digits 0 1) out)
+              (write-char #\. out)
+              (write-string (if (> (length digits) 1) (subseq digits 1) "0") out)
+              (write-char #\e out)
+              (%print-integer-in-decimal exponent out))))))
+
+(defun %print-integer-in-decimal (integer out)
+  (if (< integer 0) (write-char #\- out))
+  (%print-digits (%integer-digits integer 10 nil) out))
+
 (defun %print-integer (integer out)
   (if (and *print-radix* (not (eq *print-base* 10)))
       (write-string (%radix-prefix *print-base*) out))
@@ -383,7 +408,7 @@
     (or (eq end 0)
         (%all-dots-p name 0 end)
         (%token-integer name)
-        (%unsupported-number-p name)
+        (%ratio-or-float-p name)
         (and (not (eq *print-base* 10)) (%digits-in-base-p name *print-base*))
         (%special-char-in-p name 0 end))))
 

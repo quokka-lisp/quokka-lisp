@@ -34,8 +34,10 @@
               (t (return nil)))))
 
 ;;; The one exception: binding a standardized special variable with LET, such
-;;; as *PACKAGE* or *READTABLE*. Each one's own CLHS entry expects programs to
-;;; bind it — that is what it is for — so it is not the undefined case.
+;;; as *PACKAGE* or *READTABLE*, or assigning one with SETF, as
+;;; tests/lisp/floats.lisp does to *READ-DEFAULT-FLOAT-FORMAT*. Each one's own
+;;; CLHS entry expects programs to set it — that is what it is for — so it is
+;;; not the undefined case.
 (defun standard-special-p (s)
   (and (cl-symbol-p s) (eq (sb-int:info :variable :kind s) :special)))
 
@@ -58,7 +60,8 @@
          (when (proper-list-p (cdr form))
            (loop for rest on (cdr form) by #'cddr
                  for name = (car rest)
-                 when (cl-symbol-p name) do (note name "assigned"))))
+                 when (and (cl-symbol-p name) (not (standard-special-p name)))
+                   do (note name "assigned"))))
         ((defun defmacro block return-from)
          (let ((name (and (consp (cdr form)) (second form))))
            (when (cl-symbol-p name) (note name (string-downcase (string head))))))

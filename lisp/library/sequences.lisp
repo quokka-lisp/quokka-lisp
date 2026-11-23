@@ -125,10 +125,12 @@
       (%do-sequence (element sequence) (push element items)))
     (%from-list (%kind-of-type result-type) (nreverse items))))
 
-;;; `coerce`, for sequences only: the type system is phase 3. `t` asks for
-;;; the object as it is.
+;;; `coerce`, for sequences and floats only: the type system is phase 3.
+;;; `t` asks for the object as it is.
 (defun coerce (object type)
   (cond ((eq type t) object)
+        ((member type '(float double-float single-float short-float long-float))
+         (float object))
         ((and (eq (%kind-of-type type) :list) (listp object)) object)
         ((and (eq (%kind-of-type type) :string) (stringp object)) object)
         ((and (eq (%kind-of-type type) :vector) (vectorp object)) object)

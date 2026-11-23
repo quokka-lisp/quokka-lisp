@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 771 :REPLACED 654)` (asserted in `differential.rs`; a new library file
+`(:FORMS 839 :REPLACED 712)` (asserted in `differential.rs`; a new library file
 changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -120,15 +120,26 @@ when an arithmetic primitive overflows or meets a bignum
 (`primitives::fallback`). The heap has a **symbol cache**
 (`Mutation::cached_symbol`, slots in `heap::symbol_cache`): use it for any
 symbol the machine needs by name on a hot path — `intern` walks the whole
-table. Ratios and `/` are #59. **Next: step M, floats (#17).** Phase 2's scope is
+table. Ratios are #59. **Step M is done** (#17, chapter 48): double floats.
+One format, the IEEE double, boxed (`ObjectType::DoubleFloat`,
+`crates/quokka-vm/src/float.rs`); `+ - * / = < >` and `rem` take fixnums and
+doubles in Rust after the fixnum path fails, so only bignum×double reaches
+the Lisp fallback (`lisp/library/floats.lisp`: `%contagion`,
+`%compare-real`); results that would be infinite or NaN signal, as in SBCL;
+Rust parses and finds shortest digits, Lisp lays them out; `format`'s `~F ~E
+~G ~$` round exactly, halves up, as SBCL's do; transcendentals come from the
+`libm` crate on every target. `/` exists (a ratio is an error until #59). No
+float literal may appear in the library: the Rust reader reads it at build
+time and knows none (`%parse-double` on a string instead). A float test file
+binds `*read-default-float-format*` to `double-float` first (SBCL's default
+is single-float). **Next: step N, the ansi-test harness.** Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
 the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` (#47, done) → the image rebuilds
 itself (#48, done) → the fixpoint (#50, done) → `setf` expanders (#52, done) → the last three special operators (#53, done) → sequences (#54, done) → basic `format` (#57, done) →
-bignums (#16, done) → floats (#17), with the ansi-test harness from early
-on. Streams (#42, closed): minimal string streams and the console in tier 1;
+bignums (#16, done) → floats (#17, done) → the ansi-test harness (N). Streams (#42, closed): minimal string streams and the console in tier 1;
 generic streams stay tier 2.
 
 Three things to hold on to while working in phase 2:
@@ -137,7 +148,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 794 lines left, for phases 2 to 6** — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache).
+- **The Rust budget: 279 lines left, for phases 2 to 6** — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -190,8 +201,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**413 tests**; **29 differential files agree with SBCL** — 17 interpreted and
-compiled, plus twelve tier-1 files, compiled only, and all 29 also pass in a rebuilt world. The Rust core is **14,206** lines of the 15,000 budget.
+**415 tests**; **30 differential files agree with SBCL** — 17 interpreted and
+compiled, plus thirteen tier-1 files, compiled only, and all 30 also pass in a rebuilt world. The Rust core is **14,721** lines of the 15,000 budget.
 
 ## How phase 1 ended
 

@@ -215,8 +215,9 @@ quokka rebuild c2.qi c3.qi
 **C3** is made by C2's compiler.
 
 What to expect today:
-- C1 is 359,688 bytes; C2 and C3 are 360,224 each.
-- Every rebuild reports `(:FORMS 771 :REPLACED 654)`.
+- C1 is 726,320 bytes; C2 and C3 are 726,856 each. A rebuild takes about ten
+  seconds.
+- Every rebuild reports `(:FORMS 839 :REPLACED 712)`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
   are numbered by a counter that keeps rising, the image checksum covers those
   numbers, and the header counts saves.
@@ -300,7 +301,7 @@ several **legs**, and every leg must match the baseline:
 | compiled, rebuilt world | `a_rebuilt_world_passes_every_differential_file` | the same | the same |
 | SBCL | `./scripts/oracle.sh` | SBCL | SBCL |
 
-**Tier 0** files (17) run in every leg. **Tier 1** files (12) use the library,
+**Tier 0** files (17) run in every leg. **Tier 1** files (13) use the library,
 which the interpreter never learns, so they skip the interpreted leg.
 `tests/lisp/README.md` lists what a test file must not contain. In short: no
 bignums in a tier-0 file, no printed functions, nothing the standard leaves unspecified, and no

@@ -141,6 +141,10 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> Result<u64, Ev
     if crate::bignum::is(mc, key) {
         return Ok(crate::bignum::hash(mc, key, mix(OFFSET, 5), mix));
     }
+    // A double by its bits, which is `eql`'s test: 0.0 and -0.0 differ.
+    if crate::float::is(mc, key) {
+        return Ok(mix(mix(OFFSET, 6), mc.raw_slot(key, 0)));
+    }
     if equal && key.is_object() && mc.header(key).object_type.is_string() {
         let mut h = mix(OFFSET, 4);
         for ch in mc.string_to_rust(key).chars() {
@@ -165,6 +169,9 @@ fn same_key<'h>(mc: &Mutation<'h>, a: Value<'h>, b: Value<'h>, equal: bool) -> b
     }
     if crate::bignum::is(mc, a) && crate::bignum::is(mc, b) {
         return crate::bignum::compare(mc, a, b) == Some(std::cmp::Ordering::Equal);
+    }
+    if crate::float::is(mc, a) && crate::float::is(mc, b) {
+        return mc.raw_slot(a, 0) == mc.raw_slot(b, 0);
     }
     if equal
         && a.is_object()

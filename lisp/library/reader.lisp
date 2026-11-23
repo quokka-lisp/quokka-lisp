@@ -337,8 +337,10 @@
 (defun %interpret-token (text escaped colons)
   (let ((integer (if (or escaped colons) nil (%token-integer text))))
     (cond (integer integer)
-          ((and (not escaped) (not colons) (%unsupported-number-p text))
-           (error "Quokka reads only integers until ratios and floats exist"))
+          ((and (not escaped) (not colons) (%ratio-or-float-p text))
+           (if (%ratio-token-p text)
+               (error "Quokka reads no ratios until they exist (#59)")
+               (%read-float text)))
           ((and (not escaped) (%all-dots-p text 0 (length text)))
            (error "a token of only dots"))
           ((null colons) (values (intern text *package*)))
@@ -406,10 +408,10 @@
   (if (< at end) (and (eq (aref text at) #\.) (%all-dots-p text (+ at 1) end)) t))
 
 ;;; Does TEXT have the syntax of a ratio (`1/2`) or a float (`1.5`, `.5`,
-;;; `1e5`, `1.5d0`)? CLHS 2.3.1. Quokka has neither yet, and reading `1.5` as
-;;; a symbol would succeed quietly and mean something else once floats exist,
-;;; so the reader refuses it now instead.
-(defun %unsupported-number-p (text)
+;;; `1e5`, `1.5d0`)? CLHS 2.3.1. Floats are read (step M, #17); ratios do not
+;;; exist yet (#59), and reading `1/2` as a symbol would succeed quietly and
+;;; mean something else once they do, so the reader refuses it instead.
+(defun %ratio-or-float-p (text)
   (let* ((end (length text))
          (start (%skip-sign text 0 end))
          (int-end (%skip-digits text start end)))
@@ -423,6 +425,34 @@
                       (member (aref text fraction-end) '(#\E #\S #\F #\D #\L)))
                  (%digits-to-end-p text (%skip-sign text (+ fraction-end 1) end) end))
                 (t nil))))))
+
+;;; A ratio is digits, a slash, digits; any other token `%ratio-or-float-p`
+;;; accepts is a float.
+(defun %ratio-token-p (text)
+  (let ((end (length text)))
+    (%position-of-char #\/ text 0 end)))
+
+(defun %position-of-char (char text at end)
+  (cond ((eq at end) nil)
+        ((eq (aref text at) char) at)
+        (t (%position-of-char char text (+ at 1) end))))
+
+;;; A float (step M, #17). The token's syntax was checked above; Rust turns
+;;; the digits into the nearest double (decision 5), once they are in its
+;;; syntax: CL's exponent markers `e s f d l` all become `e`, since every
+;;; float format is the double (decision 2), and a point with no digits after
+;;; it gets a zero, so that `1.e5` is `1.0e5`.
+(defun %read-float (text)
+  (let ((out (make-string-output-stream))
+        (end (length text)))
+    (dotimes (i end)
+      (let ((char (aref text i)))
+        (cond ((member char '(#\E #\S #\F #\D #\L)) (write-char #\e out))
+              (t (write-char char out)))
+        (if (and (eq char #\.)
+                 (or (eq (+ i 1) end) (not (digit-char-p (aref text (+ i 1))))))
+            (write-char #\0 out))))
+    (%parse-double (get-output-stream-string out))))
 
 ;;; ------------------------------------------------------------------------
 ;;; The standard macro characters (CLHS 2.4)

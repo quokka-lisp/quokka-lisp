@@ -54,6 +54,14 @@ pub enum EvalError {
     },
     /// Arithmetic left fixnum range, and bignums do not exist.
     IntegerOverflow,
+    /// Division by zero, or a float operation whose result would be an
+    /// infinity or a NaN (#17, decision 4).
+    Arithmetic {
+        /// The Common Lisp condition type, such as `DIVISION-BY-ZERO`.
+        condition: &'static str,
+        /// What happened, for a person.
+        detail: &'static str,
+    },
     /// The heap reached its hard ceiling. Common Lisp calls this a
     /// `storage-condition`; it becomes one in phase 3.
     HeapExhausted,
@@ -87,6 +95,7 @@ impl core::fmt::Display for EvalError {
             EvalError::IntegerOverflow => {
                 write!(f, "integer overflow, and bignums do not exist yet")
             }
+            EvalError::Arithmetic { detail, .. } => write!(f, "{detail}"),
             EvalError::HeapExhausted => write!(
                 f,
                 "out of heap: this one mutation allocated more than the heap \

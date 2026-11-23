@@ -111,6 +111,7 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
             "ARITHMETIC-ERROR",
             String::from("integer overflow, and bignums do not exist yet"),
         ),
+        EvalError::Arithmetic { condition, detail } => (*condition, String::from(*detail)),
         // Already a condition that nobody wanted; re-signalling it would
         // loop. It reaches here only after the stack has been exhausted.
         EvalError::Signalled(_) => return None,

@@ -385,6 +385,11 @@ pub enum ObjectType {
     /// name and literal, which is what fills an image (#44). Lisp cannot tell
     /// the two constant layouts apart: both are `string`, both refuse writes.
     PackedString = 68,
+    /// An IEEE 754 double, its 64 bits in raw slot 0. **Not traced.**
+    ///
+    /// Boxed because a double needs all 64 bits of a word and three are the
+    /// tag's (#17, decision 1). See `crate::float`.
+    DoubleFloat = 69,
 }
 
 impl ObjectType {
@@ -429,6 +434,7 @@ impl ObjectType {
             66 => Bignum,
             67 => ConstantString,
             68 => PackedString,
+            69 => DoubleFloat,
             _ => return None,
         })
     }

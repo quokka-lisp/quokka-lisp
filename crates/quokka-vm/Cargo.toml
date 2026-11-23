@@ -12,6 +12,9 @@ authors.workspace = true
 # No std::fs, no threads, no wall clock, no networking. Keep this list empty
 # unless the dependency is pure computation.
 [dependencies]
+# The transcendental functions, the same bits on every target (#17,
+# decision 7): a pure-Rust port of musl's libm. MIT or Apache-2.0.
+libm = "0.2"
 
 [features]
 default = []

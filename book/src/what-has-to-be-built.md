@@ -297,6 +297,7 @@ Each chapter answers one question.
 | 45 | [Lists, loops and sequences](part-6-self-hosting/45-sequences.md) | How do you write fifty similar functions without repeating yourself or paying for an abstraction at run time? |
 | 46 | [A little language for output](part-6-self-hosting/46-format.md) | How does a template with loops and conditionals in it fill itself in, and why parse it before running it? |
 | 47 | [Numbers without a ceiling](part-6-self-hosting/47-bignums.md) | How does an integer grow past the machine word, and which half of that belongs in Rust? |
+| 48 | [Numbers with a point](part-6-self-hosting/48-floats.md) | Where does a 64-bit float live in a 64-bit tagged word, and how does it become text and back exactly? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -311,9 +312,10 @@ Still to come, and deliberately so:
   system**, `defstruct` and multiple values; `progv`, `load-time-value` and
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
   sequence and string functions (chapter 45); basic `format` (chapter
-  46); and integers of any size (chapter 47). Still to come in tier 1:
-  floats; beyond it, `loop`, CLOS and the rest, in
-  later phases.
+  46); integers of any size (chapter 47); and double floats (chapter 48).
+  Still to come in tier 1: measuring it against ansi-test; then ratios
+  (#59, tier undecided); beyond it, `loop`, CLOS and the rest, in later
+  phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.

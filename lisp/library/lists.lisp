@@ -24,9 +24,12 @@
 ;;; them; a bignum (step L, #16) is boxed, and two are compared by value.
 ;;; Every `:test` that defaults to `eql` became right for bignums with this
 ;;; one change (decision 2); floats (M) will add their own case.
+;;; A double (step M) is the same as another with the same bits — so 0.0
+;;; and -0.0 are not `eql`, though they are `=`.
 (defun eql (a b)
   (or (eq a b)
-      (and (%bignump a) (%bignump b) (eq (%integer-compare a b) 0))))
+      (and (%bignump a) (%bignump b) (eq (%integer-compare a b) 0))
+      (%double-eql a b)))
 
 ;;; Structure: conses by their parts, strings by their characters, anything
 ;;; else by `eql`. Down the `cdr` by iteration, so a long list costs no depth.
@@ -46,7 +49,7 @@
 (defun equalp (a b)
   (cond ((eq a b) t)
         ((characterp a) (and (characterp b) (eq (char-upcase a) (char-upcase b))))
-        ((integerp a) (and (integerp b) (= a b)))
+        ((numberp a) (and (numberp b) (= a b)))
         ((consp a)
          (and (consp b)
               (equalp (car a) (car b))

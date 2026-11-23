@@ -235,24 +235,49 @@
         (values (%make-integer (not (eq an bn)) q)
                 (%make-integer an r))))))
 
+;;; Two at a time from the left, as SBCL combines them. A double among
+;;; bignums makes both doubles first (`%contagion`, in `floats.lisp`, step
+;;; M); the Rust primitives do every other mix of fixnums and doubles.
 (defun %generic-+ (&rest numbers)
-  (let ((sum 0))
-    (dolist (n numbers sum) (setq sum (%add2 sum n)))))
+  (if (null numbers)
+      0
+      (let ((sum (car numbers)))
+        (dolist (n (cdr numbers) sum)
+          (setq sum (or (%contagion #'+ sum n) (%add2 sum n)))))))
 
 (defun %generic-- (number &rest more)
   (if (null more)
       (%negate number)
       (let ((difference number))
-        (dolist (n more difference) (setq difference (%add2 difference (%negate n)))))))
+        (dolist (n more difference)
+          (setq difference (or (%contagion #'- difference n) (%add2 difference (%negate n))))))))
 
 (defun %generic-* (&rest numbers)
-  (let ((product 1))
-    (dolist (n numbers product) (setq product (%mul2 product n)))))
+  (if (null numbers)
+      1
+      (let ((product (car numbers)))
+        (dolist (n (cdr numbers) product)
+          (setq product (or (%contagion #'* product n) (%mul2 product n)))))))
+
+;;; `/` arrives with floats (step M). Between integers it is exact or it is
+;;; a ratio, and ratios do not exist yet (#59).
+(defun %generic-/ (number &rest more)
+  (if (null more)
+      (%divide-real 1 number)
+      (let ((quotient number))
+        (dolist (n more quotient) (setq quotient (%divide-real quotient n))))))
+
+(defun %divide-real (a b)
+  (or (%contagion #'/ a b)
+      (multiple-value-bind (quotient remainder) (%divide2 a b)
+        (if (zerop remainder)
+            quotient
+            (error "/ would make a ratio, and ratios do not exist yet (#59)" a b)))))
 
 (defun %compare-chain (test numbers)
   (do ((rest numbers (cdr rest)))
       ((null (cdr rest)) t)
-    (if (not (funcall test (%integer-compare (car rest) (car (cdr rest))))) (return nil))))
+    (if (not (funcall test (%compare-real (car rest) (car (cdr rest))))) (return nil))))
 
 (defun %generic-= (number &rest more)
   (%compare-chain (lambda (order) (= order 0)) (cons number more)))
@@ -261,16 +286,24 @@
 (defun %generic-> (number &rest more)
   (%compare-chain (lambda (order) (= order 1)) (cons number more)))
 
-(defun %generic-quotient (a b) (nth-value 0 (%divide2 a b)))
-(defun %generic-rem (a b) (nth-value 1 (%divide2 a b)))
+(defun %generic-quotient (a b)
+  (if (or (floatp a) (floatp b)) (nth-value 0 (truncate a b)) (nth-value 0 (%divide2 a b))))
+(defun %generic-rem (a b)
+  (or (%contagion #'rem a b) (nth-value 1 (%divide2 a b))))
 
 ;;; ------------------------------------------------------------------------
 ;;; More of CLHS chapter 12
 
-(defun numberp (object) (integerp object))
+;;; Integers and floats; ratios are #59, and complex numbers are not
+;;; planned.
+(defun numberp (object) (or (integerp object) (floatp object)))
+(defun realp (object) (numberp object))
+(defun rationalp (object) (integerp object))
 
+;;; A float's sign is a float, and a zero is itself: (signum -0.0) is -0.0.
 (defun signum (number)
-  (cond ((plusp number) 1) ((minusp number) -1) (t 0)))
+  (cond ((floatp number) (if (zerop number) number (float-sign number)))
+        ((plusp number) 1) ((minusp number) -1) (t 0)))
 
 ;;; `ceiling` and `round` from `truncate`: the quotient moved one step when
 ;;; the remainder says truncation went the wrong way.
@@ -307,10 +340,17 @@
                       (truncate (abs (* l n)) (%gcd2 l (abs n)))))))))
 
 ;;; Square and multiply: the bits of POWER, from the bottom, each squaring
-;;; the base. A negative power would make a ratio (#59).
+;;; the base. A negative power of an integer would make a ratio (#59); of a
+;;; float, it is the reciprocal. A float power is Rust's `pow` (step M).
 (defun expt (base power)
-  (if (minusp power) (error "EXPT: a negative power makes a ratio, which Quokka has not got (#59)" power))
-  (let ((result 1))
+  (cond ((floatp power) (%expt-float base power))
+        ((and (minusp power) (floatp base)) (/ (expt base (- power))))
+        ((minusp power)
+         (error "EXPT: a negative power makes a ratio, which Quokka has not got (#59)" power))
+        (t (%expt-integer base power))))
+
+(defun %expt-integer (base power)
+  (let ((result (if (floatp base) (float 1) 1)))
     (do () ((zerop power) result)
       (if (oddp power) (setq result (* result base)))
       (setq power (truncate power 2))

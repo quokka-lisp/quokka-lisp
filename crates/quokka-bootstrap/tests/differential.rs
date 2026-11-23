@@ -134,6 +134,7 @@ tier1_cases! {
     string_functions => "string-functions",
     format => "format",
     bignums => "bignums",
+    floats => "floats",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -200,15 +201,24 @@ fn read_the_system_both_ways(printer: Printer, disagree: &str) {
 }
 
 /// What the Lisp reader refuses that SBCL reads, so no baseline can hold it:
-/// ratios and floats, until steps L and M. Reading `1.5` as a symbol would
-/// succeed quietly and mean something else once floats exist. The tokens
-/// around them that are *not* numbers by CLHS 2.3.1 must still be symbols.
+/// ratios, until #59. Reading `1/2` as a symbol would succeed quietly and
+/// mean something else once ratios exist. Floats are read since step M
+/// (#17), in every syntax CLHS 2.3.1 gives them. The tokens around them that
+/// are *not* numbers must still be symbols.
 #[test]
-fn the_lisp_reader_refuses_ratios_and_floats() {
-    let refused = ["1.5", ".5", "-1.5e3", "1e5", "2d0", "1/2", "-3/4"];
-    let symbols = ["1+", "1-", "e5", "1/", "/2", "1.2.3", "+.", "a1.5"];
+fn the_lisp_reader_refuses_ratios_and_reads_floats() {
+    let refused = ["1/2", "-3/4", "+10/3"];
+    let floats = [
+        "1.5", ".5", "-1.5e3", "1e5", "2d0", "1.e2", "+.5", "1.5s0", "1L-3",
+    ];
+    let symbols = [
+        "1+", "1-", "e5", "1/", "/2", "1.2.3", "+.", "a1.5", "1.5e", "1e+",
+    ];
     let mut program = String::new();
-    for text in refused.iter().chain(&symbols) {
+    for text in refused.iter().chain(&floats) {
+        program.push_str(&format!("(symbolp (read-from-string \"{text}\"))\n"));
+    }
+    for text in &symbols {
         program.push_str(&format!("(symbolp (read-from-string \"{text}\"))\n"));
     }
     let out = run_compiled(&program);
@@ -216,9 +226,64 @@ fn the_lisp_reader_refuses_ratios_and_floats() {
     for (text, line) in refused.iter().zip(&lines) {
         assert_eq!(*line, "!! error", "{text} should be refused");
     }
-    for (text, line) in symbols.iter().zip(&lines[refused.len()..]) {
+    let rest = &lines[refused.len()..];
+    for (text, line) in floats.iter().zip(rest) {
+        assert_eq!(*line, "=> NIL", "{text} should read as a float");
+    }
+    for (text, line) in symbols.iter().zip(&rest[floats.len()..]) {
         assert_eq!(*line, "=> T", "{text} should read as a symbol");
     }
+}
+
+/// Reading and printing floats, against the bits (#17, decisions 5 and 6).
+///
+/// For three hundred doubles spread over every exponent, written in the
+/// syntaxes CLHS 2.3.1 allows, the Lisp reader must produce exactly the
+/// double Rust's own `{:e}` stands for — checked through
+/// `integer-decode-float` against the bits — and the Lisp printer's text
+/// must read back as the same double. SBCL cannot be the oracle here: the
+/// values are random, so there is no baseline to keep.
+#[test]
+fn floats_read_exactly_and_print_back() {
+    // xorshift64: a deterministic stream of bit patterns, no dependency.
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut program = String::new();
+    let mut expected = Vec::new();
+    while expected.len() < 300 {
+        let x = f64::from_bits(next());
+        if !x.is_finite() {
+            continue;
+        }
+        let bits = x.to_bits();
+        let field = ((bits >> 52) & 0x7ff) as i64;
+        let fraction = (bits & ((1 << 52) - 1)) as i64;
+        let (m, e) = match (field, fraction) {
+            (0, 0) => (0, 0),
+            (0, f) => (f, -1074),
+            (field, f) => (f | (1 << 52), field - 1075),
+        };
+        let sign = if bits >> 63 == 0 { 1 } else { -1 };
+        // `1.2345e-7` → one of `1.2345e-7`, `1.2345d-7`, `1.2345D-7`.
+        let text = format!("{x:e}");
+        let marker = ["e", "d", "D"][expected.len() % 3];
+        let text = text.replacen('e', marker, 1);
+        program.push_str(&format!(
+            "(let ((x {text})) (list (multiple-value-list (integer-decode-float x)) \
+             (eql x (read-from-string (prin1-to-string x)))))\n"
+        ));
+        expected.push(format!("=> (({m} {e} {sign}) T)"));
+    }
+    let out = run_compiled(&program);
+    for (line, (want, form)) in out.lines().zip(expected.iter().zip(program.lines())) {
+        assert_eq!(line, want, "{form}");
+    }
+    assert_eq!(out.lines().count(), expected.len());
 }
 
 /// Every form of SOURCE as the Rust reader reads it, printed as `run_compiled`
@@ -300,7 +365,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 771 :REPLACED 654)".into())],
+        [Outcome::Value("(:FORMS 839 :REPLACED 712)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

@@ -59,10 +59,10 @@ character codes. ([19](part-2-reading-and-running/19-things-with-an-index.md))
 **Boxing.** Storing a value as a separate heap object rather than inside
 the word that refers to it. A fixnum or a character is *unboxed* — the word
 is the value — while a bignum or a float is *boxed*, so two equal ones can be
-two objects. Why `eql` exists beside `eq`. ([45](part-6-self-hosting/45-sequences.md))
+two objects. Why `eql` exists beside `eq`. ([45](part-6-self-hosting/45-sequences.md), [48](part-6-self-hosting/48-floats.md))
 
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
-as several. Contrast [fixnum](#fixnum). Not yet implemented.
+as several. Contrast [fixnum](#fixnum). ([47](part-6-self-hosting/47-bignums.md))
 
 **Blocking.** Stopping until something outside answers — a file is read, a
 packet arrives. A program that blocks is fine; a *VM* that blocks inside a step
@@ -207,6 +207,10 @@ the matching Lisp function (`%generic-+` and so on) with the same arguments.
 The fast path stays in Rust and the slow path is Lisp.
 ([47](part-6-self-hosting/47-bignums.md))
 
+**Float (floating-point number).** A number held as a whole number of binary digits, the [significand](#significand), times a power of two, with a sign. Quokka's only float format is the IEEE 754 *double*: 64 bits, with 53 significant binary digits (about 16 decimal ones). Most decimals, 0.1 among them, have no exact binary form, which is why `(+ 0.1 0.2)` is `0.30000000000000004`. ([48](part-6-self-hosting/48-floats.md))
+
+**Float contagion.** Common Lisp's rule for mixing a rational with a float in arithmetic: the rational is converted to the nearest float first, so `(+ 1 2.5)` is `3.5`. Comparison is the exception and is exact: `(= (1+ (expt 2 70)) (float (expt 2 70)))` is false. CLHS 12.1.4.1. ([48](part-6-self-hosting/48-floats.md))
+
 **Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. Quokka's holds since step F: every named compiled function is the same in C1, C2 and C3, and C2 and C3 are the same world word for word apart from gensym names. ([The bootstrap](the-bootstrap.md), [42](part-6-self-hosting/42-the-fixpoint.md))
 
 **Flat closure.** A [closure](#closure) that copies the values it captured into
@@ -274,6 +278,8 @@ error the language lets you make, and [gensym](#gensym) is the cure. ([15](part-
 introduced by a macro, so they cannot collide with the caller's, and names
 *used* by a macro keep the meaning they had where it was written. Kohlbecker's
 algorithm (1986). Quokka does not have it; see [gensym](#gensym). ([17](part-2-reading-and-running/17-why-macros-matter.md))
+
+**IEEE 754.** The standard for floating-point arithmetic that nearly every processor follows. It fixes the formats (the 64-bit double among them), the result of `+ - * /` and the square root to the last bit, rounding to nearest with ties to even, and the special values infinity and [NaN](#nan). It does not fix `sin`, `exp` or `log` to the last bit. ([48](part-6-self-hosting/48-floats.md))
 
 **Image.** The entire contents of a running system, written to a file and
 loadable again — not a saved document but a saved *world*, resuming exactly
@@ -418,6 +424,8 @@ surrounding variables, because at expansion time they do not have values yet.
 value safe. ([4](part-1-substrate/04-rooting.md))
 
 **nil.** The empty list, false, and the symbol named "NIL" — one value doing three jobs, which is both the convenience and the problem. A real [symbol](#symbol) in the [static area](#static-area), not an immediate; it took four chapters and four special cases to get that right. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
+
+**NaN.** "Not a number": the IEEE 754 value for a result with no sensible answer, such as 0.0 / 0.0. *NaN boxing* is a representation trick, used by JavaScript engines, that stores every double raw in a 64-bit word and hides all other values inside the unused NaN bit patterns; Quokka [boxes](#boxing) its doubles instead. Quokka, like SBCL, signals an error rather than make a NaN or an infinity. ([48](part-6-self-hosting/48-floats.md))
 
 **Non-local exit.** Leaving a computation from the middle of it — `return-from`, `throw`. All of them are one mechanism differing only in how the target is found, and it is the same machinery a condition system needs. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
@@ -600,6 +608,10 @@ Reading one is an error. Inside, an unbound variable holds a marker only Rust
 can see; `boundp` asks, and `makunbound` puts the marker back.
 ([44](part-6-self-hosting/44-the-last-three.md))
 
+**Shortest round-trip printing.** Printing a float as the fewest decimal digits that read back as exactly the same float: `0.1`, though the double nearest 0.1 is 0.1000000000000000055511151231257827.... Solved by Steele and White (1990); made fast by Grisu (2010) and Ryu (2018). The reverse problem, reading a decimal into the nearest float, is Clinger's (1990). ([48](part-6-self-hosting/48-floats.md))
+
+**Significand.** The digits of a [float](#float-floating-point-number), as a whole number, before the power of two scales them; also called the *mantissa*. `integer-decode-float` returns it with the exponent and the sign. ([48](part-6-self-hosting/48-floats.md))
+
 **Shallow binding.** One way to implement [special variables](#special-variable): the current value lives in the symbol, binding saves the old value and stores the new one, and ending the binding puts the old one back. Reading is one load; switching threads has to swap bindings. Its alternative, *deep binding*, keeps bindings in a per-thread list that every read searches. Quokka uses shallow binding. ([34](part-6-self-hosting/34-standing-on-its-own.md))
 
 **Slice.** A bounded stretch of execution after which the VM returns control to
@@ -657,6 +669,12 @@ its last form returned — `block`, `let`, `progn`, `if`, `unwind-protect` and
 most others. Mostly free here, because a form in [tail position](#tail-call)
 never re-delivers; the three that were not free each read the value register
 and delivered it again, which was *almost* right. ([23](part-2-reading-and-running/23-more-than-one-answer.md))
+
+**Subnormal.** A float too small for the normal range, which gives up leading bits of its [significand](#significand) to reach closer to zero. The smallest double, about 4.9 × 10^-324, has one significant bit. IEEE 754 calls producing one *underflow*. ([48](part-6-self-hosting/48-floats.md))
+
+**Transcendental function.** A function such as `sin`, `exp` or `log` that no finite sequence of additions and multiplications computes exactly. Maths libraries compute them to within a last-bit error, and different libraries differ in that bit, which is why Quokka uses one library, `libm`, on every target. ([48](part-6-self-hosting/48-floats.md))
+
+**Trap (floating-point).** Stopping with an error when a float operation overflows, divides by zero or has no answer, instead of quietly producing an infinity or a [NaN](#nan). SBCL traps those three, and so does Quokka, by checking each result in Rust. ([48](part-6-self-hosting/48-floats.md))
 
 **Tail call.** A call whose result is immediately the result of the enclosing function, so the caller's [frame](#frame) is no longer needed. Eliminating it is what makes recursive loops run in constant space — which matters in Lisp, where recursion *is* iteration. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 

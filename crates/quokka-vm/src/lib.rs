@@ -26,6 +26,7 @@ pub mod code;
 pub mod condition;
 pub mod env;
 pub mod error;
+pub mod float;
 pub mod hash;
 pub mod heap;
 pub mod host;

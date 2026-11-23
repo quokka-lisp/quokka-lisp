@@ -8,16 +8,18 @@
 ;;;; (step L) redo arithmetic as a whole.
 
 ;;; `(truncate n d)` — the quotient rounded towards zero, and the remainder.
+;;; A float, either side, is `floats.lisp`'s (step M, #17).
 (defun truncate (number &optional (divisor 1))
-  (values (%quotient number divisor) (rem number divisor)))
+  (if (or (floatp number) (floatp divisor))
+      (%truncate-float number divisor)
+      (values (%quotient number divisor) (rem number divisor))))
 
 ;;; `(floor n d)` — the quotient rounded towards negative infinity. It differs
 ;;; from `truncate` only when the remainder is not zero and its sign is not
 ;;; the divisor's: -7/2 truncates to -3 rem -1, and floors to -4 rem 1.
 (defun floor (number &optional (divisor 1))
-  (let ((quotient (%quotient number divisor))
-        (remainder (rem number divisor)))
-    (if (and (not (eq remainder 0)) (not (eq (< remainder 0) (< divisor 0))))
+  (multiple-value-bind (quotient remainder) (truncate number divisor)
+    (if (and (not (zerop remainder)) (not (eq (< remainder 0) (< divisor 0))))
         (values (- quotient 1) (+ remainder divisor))
         (values quotient remainder))))
 
@@ -25,8 +27,13 @@
 (defun mod (number divisor)
   (nth-value 1 (floor number divisor)))
 
-(defun abs (number) (if (< number 0) (- number) number))
-(defun zerop (number) (eq number 0))
+;;; A float by its sign bit, so that (abs -0.0) is 0.0, as in SBCL.
+(defun abs (number)
+  (if (floatp number)
+      (if (%negative-float-p number) (- number) number)
+      (if (< number 0) (- number) number)))
+;;; `=`, not `eq`, since 0.0 and -0.0 are zero too (step M).
+(defun zerop (number) (= number 0))
 (defun plusp (number) (> number 0))
 (defun minusp (number) (< number 0))
 

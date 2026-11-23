@@ -24,8 +24,10 @@
 //! breaking change.
 
 use crate::error::EvalError;
+use crate::float::{self, Op};
 use crate::heap::{symbol, Mutation, ObjectType};
 use crate::value::Value;
+use core::cmp::Ordering;
 
 /// Which primitive.
 ///
@@ -140,6 +142,30 @@ pub enum Prim {
     FixnumLogand = 87,
     FixnumLogior = 88,
     FixnumLogxor = 89,
+    Divide = 90,
+    Floatp = 91,
+    Float = 92,
+    DoubleEql = 93,
+    DoubleRound = 94,
+    DoubleInteger = 95,
+    DecodeDouble = 96,
+    ScaleDouble = 97,
+    ParseDouble = 98,
+    DoubleDigits = 99,
+    Sqrt = 100,
+    Exp = 101,
+    Log = 102,
+    Sin = 103,
+    Cos = 104,
+    Tan = 105,
+    Asin = 106,
+    Acos = 107,
+    Atan = 108,
+    Sinh = 109,
+    Cosh = 110,
+    Tanh = 111,
+    Atan2 = 112,
+    Pow = 113,
 }
 
 impl Prim {
@@ -479,6 +505,37 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::FixnumLogand, "%FIXNUM-LOGAND", Arity::Exactly(2)),
     (Prim::FixnumLogior, "%FIXNUM-LOGIOR", Arity::Exactly(2)),
     (Prim::FixnumLogxor, "%FIXNUM-LOGXOR", Arity::Exactly(2)),
+    // Step M (#17): double floats, `crate::float`. `/`, which arrives with
+    // them: a fixnum quotient when the division is exact, a double when one
+    // is involved, an error for a ratio (#59). Then what Lisp cannot do
+    // without touching the bits — making a double, rounding one, taking one
+    // apart and scaling it — the two conversions to and from text (decision
+    // 5), and the functions IEEE arithmetic and `libm` provide (decision 7).
+    // Each takes a fixnum or a double; Lisp converts a bignum first.
+    (Prim::Divide, "/", Arity::AtLeast(1)),
+    (Prim::Floatp, "FLOATP", Arity::Exactly(1)),
+    (Prim::Float, "%FLOAT", Arity::Exactly(1)),
+    (Prim::DoubleEql, "%DOUBLE-EQL", Arity::Exactly(2)),
+    (Prim::DoubleRound, "%DOUBLE-ROUND", Arity::Exactly(2)),
+    (Prim::DoubleInteger, "%DOUBLE-INTEGER", Arity::Exactly(1)),
+    (Prim::DecodeDouble, "%DECODE-DOUBLE", Arity::Exactly(1)),
+    (Prim::ScaleDouble, "%SCALE-DOUBLE", Arity::Exactly(2)),
+    (Prim::ParseDouble, "%PARSE-DOUBLE", Arity::Exactly(1)),
+    (Prim::DoubleDigits, "%DOUBLE-DIGITS", Arity::Exactly(1)),
+    (Prim::Sqrt, "%SQRT", Arity::Exactly(1)),
+    (Prim::Exp, "%EXP", Arity::Exactly(1)),
+    (Prim::Log, "%LOG", Arity::Exactly(1)),
+    (Prim::Sin, "%SIN", Arity::Exactly(1)),
+    (Prim::Cos, "%COS", Arity::Exactly(1)),
+    (Prim::Tan, "%TAN", Arity::Exactly(1)),
+    (Prim::Asin, "%ASIN", Arity::Exactly(1)),
+    (Prim::Acos, "%ACOS", Arity::Exactly(1)),
+    (Prim::Atan, "%ATAN", Arity::Exactly(1)),
+    (Prim::Sinh, "%SINH", Arity::Exactly(1)),
+    (Prim::Cosh, "%COSH", Arity::Exactly(1)),
+    (Prim::Tanh, "%TANH", Arity::Exactly(1)),
+    (Prim::Atan2, "%ATAN2", Arity::Exactly(2)),
+    (Prim::Pow, "%POW", Arity::Exactly(2)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -495,6 +552,7 @@ pub fn fallback(index: u32) -> Option<(usize, &'static str)> {
         Prim::Gt => (5, "%GENERIC->"),
         Prim::Quotient => (6, "%GENERIC-QUOTIENT"),
         Prim::Rem => (7, "%GENERIC-REM"),
+        Prim::Divide => (8, "%GENERIC-/"),
         _ => return None,
     };
     Some((crate::heap::symbol_cache::FALLBACKS + n, name))
@@ -651,24 +709,25 @@ pub fn call_slice<'h>(
     // No catch-all, on purpose: a row added to the table without an arm here
     // is a compile error rather than a surprise at run time.
     match prim {
-        Prim::Add => fold(name, args, 0, |a, b| a.checked_add(b)),
-        Prim::Mul => fold(name, args, 1, |a, b| a.checked_mul(b)),
-        Prim::Sub => {
-            let first = fixnum(name, args[0])?;
-            if got == 1 {
-                return make(first.checked_neg());
-            }
-            let mut acc = first;
-            for v in &args[1..] {
-                acc = acc
-                    .checked_sub(fixnum(name, *v)?)
-                    .ok_or(EvalError::IntegerOverflow)?;
-            }
-            make(Some(acc))
+        // The fixnum fast path first, exactly as it was; only if it fails is
+        // a double looked for (#17, decision 3).
+        Prim::Add => {
+            fold(name, args, 0, |a, b| a.checked_add(b)).or_else(|e| doubles(mc, Op::Add, args, e))
         }
-        Prim::NumEq => compare(name, args, |a, b| a == b),
-        Prim::Lt => compare(name, args, |a, b| a < b),
-        Prim::Gt => compare(name, args, |a, b| a > b),
+        Prim::Mul => {
+            fold(name, args, 1, |a, b| a.checked_mul(b)).or_else(|e| doubles(mc, Op::Mul, args, e))
+        }
+        Prim::Sub => subtract(name, args).or_else(|e| doubles(mc, Op::Sub, args, e)),
+        Prim::Divide => float::arithmetic(mc, Op::Div, args).unwrap_or(Err(EvalError::WrongType {
+            name,
+            wanted: "a number",
+        })),
+        Prim::NumEq => compare(name, args, |a, b| a == b)
+            .or_else(|e| float::compare(mc, args, Ordering::is_eq).unwrap_or(Err(e))),
+        Prim::Lt => compare(name, args, |a, b| a < b)
+            .or_else(|e| float::compare(mc, args, Ordering::is_lt).unwrap_or(Err(e))),
+        Prim::Gt => compare(name, args, |a, b| a > b)
+            .or_else(|e| float::compare(mc, args, Ordering::is_gt).unwrap_or(Err(e))),
         Prim::Cons => Ok(mc.cons(args[0], args[1])),
         Prim::Car => list_part(mc, name, args[0], true),
         Prim::Cdr => list_part(mc, name, args[0], false),
@@ -937,6 +996,15 @@ pub fn call_slice<'h>(
         // blocking twice for an evaluator nothing runs after #33. A loud
         // refusal rather than a quiet one, because a rule enforced on one side
         // only is enforced where it happened to be tested.
+        Prim::Rem if !(args[0].is_fixnum() && args[1].is_fixnum()) => doubles(
+            mc,
+            Op::Rem,
+            args,
+            EvalError::WrongType {
+                name,
+                wanted: "a number",
+            },
+        ),
         Prim::Quotient | Prim::Rem => {
             let (n, d) = (fixnum(name, args[0])?, fixnum(name, args[1])?);
             if d == 0 {
@@ -1023,6 +1091,70 @@ pub fn call_slice<'h>(
                 Prim::FixnumLogior => a | b,
                 _ => a ^ b,
             }))
+        }
+        Prim::Floatp => Ok(truth(float::is(mc, args[0]))),
+        Prim::Float => float::float(mc, args[0]),
+        Prim::DoubleEql => Ok(truth(
+            float::is(mc, args[0])
+                && float::is(mc, args[1])
+                && mc.raw_slot(args[0], 0) == mc.raw_slot(args[1], 0),
+        )),
+        Prim::DoubleRound => {
+            let x = float::value(mc, name, args[0])?;
+            float::make(mc, float::round(x, fixnum(name, args[1])?))
+        }
+        Prim::DoubleInteger => {
+            Ok(float::integer(float::value(mc, name, args[0])?).unwrap_or(Value::NIL))
+        }
+        Prim::DecodeDouble => {
+            let (m, e, s) = float::decode(float::value(mc, name, args[0])?);
+            let list = [m, e, s].map(|n| Value::fixnum(n).expect("53 bits fit a fixnum"));
+            Ok(list
+                .iter()
+                .rev()
+                .fold(Value::NIL, |tail, v| mc.cons(*v, tail)))
+        }
+        Prim::ScaleDouble => {
+            let x = float::value(mc, name, args[0])?;
+            float::make(mc, float::scale(x, fixnum(name, args[1])?))
+        }
+        Prim::ParseDouble => {
+            if !(args[0].is_object() && mc.header(args[0]).object_type.is_string()) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a string",
+                });
+            }
+            let text = mc.string_to_rust(args[0]);
+            float::parse(mc, &text)
+        }
+        Prim::DoubleDigits => {
+            let x = float::value(mc, name, args[0])?;
+            Ok(mc.alloc_string(&float::digits(x)))
+        }
+        Prim::Sqrt => float::unary(mc, name, args[0], f64::sqrt),
+        Prim::Exp => float::unary(mc, name, args[0], libm::exp),
+        Prim::Log => float::unary(mc, name, args[0], libm::log),
+        Prim::Sin => float::unary(mc, name, args[0], libm::sin),
+        Prim::Cos => float::unary(mc, name, args[0], libm::cos),
+        Prim::Tan => float::unary(mc, name, args[0], libm::tan),
+        Prim::Asin => float::unary(mc, name, args[0], libm::asin),
+        Prim::Acos => float::unary(mc, name, args[0], libm::acos),
+        Prim::Atan => float::unary(mc, name, args[0], libm::atan),
+        Prim::Sinh => float::unary(mc, name, args[0], libm::sinh),
+        Prim::Cosh => float::unary(mc, name, args[0], libm::cosh),
+        Prim::Tanh => float::unary(mc, name, args[0], libm::tanh),
+        Prim::Atan2 | Prim::Pow => {
+            let (y, x) = (
+                float::value(mc, name, args[0])?,
+                float::value(mc, name, args[1])?,
+            );
+            let f = if prim == Prim::Pow {
+                libm::pow
+            } else {
+                libm::atan2
+            };
+            float::make(mc, f(y, x))
         }
         Prim::ReadSource | Prim::WriteConsole => Err(EvalError::BadSyntax {
             operator: name,
@@ -1263,6 +1395,33 @@ fn fixnum(name: &'static str, v: Value<'_>) -> Result<i64, EvalError> {
         name,
         wanted: "a number",
     })
+}
+
+/// `-` on fixnums: negation of one, or the first less the rest.
+fn subtract<'h>(name: &'static str, args: &[Value<'h>]) -> Result<Value<'h>, EvalError> {
+    let first = fixnum(name, args[0])?;
+    if args.len() == 1 {
+        return make(first.checked_neg());
+    }
+    let mut acc = first;
+    for v in &args[1..] {
+        acc = acc
+            .checked_sub(fixnum(name, *v)?)
+            .ok_or(EvalError::IntegerOverflow)?;
+    }
+    make(Some(acc))
+}
+
+/// An arithmetic primitive's second try, once its fixnum path has failed
+/// with `error`: the same operation with doubles among the arguments, or the
+/// error as it was if there are none.
+fn doubles<'h>(
+    mc: &mut Mutation<'h>,
+    op: Op,
+    args: &[Value<'h>],
+    error: EvalError,
+) -> Result<Value<'h>, EvalError> {
+    float::arithmetic(mc, op, args).unwrap_or(Err(error))
 }
 
 fn make<'h>(n: Option<i64>) -> Result<Value<'h>, EvalError> {

@@ -60,6 +60,16 @@ These kinds of form would disagree for reasons that are nobody's fault:
   bignums, so `(* 2432902008176640000 21)` is an error there and an answer in
   SBCL. Tier-1 files run compiled, where bignums exist since #16, and
   `bignums.lisp` is about nothing else.
+- **A float SBCL would make a single-float** (#17). Quokka's only float is
+  the double; SBCL reads `1.5` as a 32-bit single-float and makes one from
+  integers alone, as in `(sqrt 2)` or `(float 1)`. A file about floats
+  starts with `(setf *read-default-float-format* 'double-float)`, after
+  which SBCL reads unmarked floats as doubles too, and gives every float
+  function a double argument. And no complex results — `(sqrt -1)` is a
+  number in SBCL and an error in Quokka — and no transcendental result
+  (`sin`, `exp`, `log` …) printed in full: maths libraries differ in the last
+  bit, so print it rounded, `(format nil "~,10F" x)`. `floats.lisp` does all
+  of this.
 - **Printing a function.** SBCL prints `#<FUNCTION (LAMBDA (X)) {1001A2B3}>`,
   with an address. Nothing will ever match that.
 - **Anything the standard leaves unspecified.** `(eq 1 1)` is the trap: the
