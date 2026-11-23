@@ -7,9 +7,11 @@ with the chapter that explains it properly.
 
 
 **Hash table.** A collection that finds a value from a key in roughly one
-step rather than by searching. Quokka's hashes the key's *contents*, never its
-address, because the collector moves objects and an address-based hash would
-be correct until the next collection and silently wrong afterwards. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+step rather than by searching. Quokka's hashes a key's *contents* where it has
+any (numbers, characters, symbols, strings in an `equal` table), and any other
+key by its *address*. The collector moves objects, so an address-based hash is
+right only until the next collection: the collector marks a table holding such
+a key stale as it moves it, and the table rehashes on its next use. ([19](part-2-reading-and-running/19-things-with-an-index.md), [52](part-6-self-hosting/52-printing-for-another-lisp.md))
 
 **Header.** The first word of a heap object, saying what kind it is and how many
 slots follow. Cons cells have none.
@@ -733,3 +735,17 @@ must be able to stop and hand control back.
 a new one. A [generational](#generational-collector) collector needs it; the
 simple copying collector here does not.
 ([6](part-1-substrate/06-cheneys-algorithm.md))
+
+**Printing readably.** Printing with `*print-readably*` true: the printer must write each object so that `read` gives back an equal one, or signal a `print-not-readable` error. A package, a stream or a function cannot be printed readably. `with-standard-io-syntax` turns it on, along with every other printer and reader variable's standard value. ([52](part-6-self-hosting/52-printing-for-another-lisp.md))
+
+**Shared structure.** Parts of a data structure reached by more than one path, such as one list that is two elements of another, or a list whose last cons points back at its first (a *circular* list). With `*print-circle*` true the printer labels such a part `#1=` where it first appears and writes `#1#` for it afterwards, and the reader rebuilds the sharing from the labels. ([52](part-6-self-hosting/52-printing-for-another-lisp.md))
+
+**Pretty printer.** The part of a Common Lisp printer that lays a long form out over several lines with indentation, controlled by `*print-pretty*`, `*print-right-margin*` and their kin. Tier 2 in Quokka: the variables exist and are not yet consulted. ([52](part-6-self-hosting/52-printing-for-another-lisp.md))
+
+**Compiler macro.** An optional rewrite of calls to a global function, applied by the compiler before it compiles the call: `(define-compiler-macro square (&whole form x) (if (numberp x) (* x x) form))` turns `(square 5)` into `25` and leaves `(square y)` alone by returning its own form. The function itself is unchanged and still callable. Quokka's compiler applies them, except where a local function of the same name is in scope. ([53](part-6-self-hosting/53-compiling-on-request.md))
+
+**Present and accessible.** A symbol is *present* in a [package](#package) when the package's own tables hold it, and *accessible* when it is present or inherited from a package the package uses. ([54](part-6-self-hosting/54-packages-that-disagree.md))
+
+**Name conflict.** Two different symbols of one name both accessible in a [package](#package), so that the name read there would mean two things. `use-package`, `import`, `export` and `unintern` check for one before they change anything and signal a `package-error` if they would create it. ([54](part-6-self-hosting/54-packages-that-disagree.md))
+
+**Shadowing symbol.** A symbol a [package](#package) has declared will win any [name conflict](#name-conflict) over its name, made with `shadow` or `shadowing-import`. It hides the inherited symbols of the same name. ([54](part-6-self-hosting/54-packages-that-disagree.md))

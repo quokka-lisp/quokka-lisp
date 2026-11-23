@@ -236,7 +236,7 @@
   (let* ((text (%double-digits double))
          (e (%position-of-char #\e text 0 (length text)))
          (digits (remove #\. (subseq text 0 e))))
-    (values digits (%token-integer (subseq text (+ e 1))))))
+    (values digits (%token-integer (subseq text (+ e 1)) 10))))
 
 ;;; |DOUBLE| × 10^PLACES, rounded to an integer, halves up — exactly, from
 ;;; the double's own bits, as SBCL's `format` rounds: (format nil "~,1F"

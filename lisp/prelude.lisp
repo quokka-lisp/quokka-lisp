@@ -359,14 +359,13 @@
 ;;; Hash tables
 ;;; ------------------------------------------------------------------
 
-;; Keys are hashed by **content**, never by address, because the collector
-;; moves objects and an address-based hash would be correct until the next
-;; collection and silently wrong afterwards. `crates/quokka-vm/src/hash.rs`
-;; and issue #22 have the reasoning and what it costs.
-;;
-;; In short: an `eql` table takes fixnums, characters and symbols; an `equal`
-;; table also takes strings. Any other key is refused rather than hashed by
-;; something unreliable.
+;; Keys are hashed by **content** where they have one — numbers,
+;; characters, symbols, and strings in an `equal` table — and every other key
+;; by its address. The collector moves objects, so a table holding an
+;; address-hashed key is marked stale whenever it does, and rehashed on its
+;; next use (#64). An `equal` table refuses a cons, which `equal` compares by
+;; contents. `crates/quokka-vm/src/hash.rs` and issues #22 and #64 have the
+;; reasoning.
 
 (defun make-hash-table (&key (test 'eql))
   ;; CLHS also takes :size, :rehash-size and :rehash-threshold, all of which

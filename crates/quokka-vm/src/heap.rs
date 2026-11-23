@@ -1591,6 +1591,12 @@ impl Heap {
             let (size, slots) = match Header::decode(to[scan]) {
                 Some(header) => {
                     let size = HEADER_WORDS + header.slots;
+                    // Everything is moving, so a table that hashed a key by
+                    // its address must rehash before its next use (hash.rs).
+                    if header.object_type == ObjectType::HashTable {
+                        let stamp = scan + HEADER_WORDS + crate::hash::STAMP;
+                        to[stamp] = crate::hash::moved(to[stamp]);
+                    }
                     // A string's characters and a code object's bytecode are
                     // not references. Tracing them would follow numbers.
                     let slots = if header.object_type.slots_are_values() {

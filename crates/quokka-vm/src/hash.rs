@@ -13,21 +13,26 @@
 //! collector mark live tables stale and rehash them lazily, which is what SBCL
 //! does; or pin hashed objects where the collector cannot move them.
 //!
-//! Quokka hashes **contents**, and the collector is not involved at all. What
-//! is actually blocked by not having hash tables is content-keyed: the obarray
-//! is keyed by string, and the compiler's tables are keyed by symbol.
+//! Quokka hashes **contents** wherever an object has contents that stand for
+//! it: numbers, characters, symbols, and strings in an `equal` table. What
+//! was blocked without hash tables was content-keyed: the obarray is keyed by
+//! string, and the compiler's tables are keyed by symbol.
 //!
-//! # What that costs
+//! # Identity keys (step Q, #64)
 //!
-//! | Test | Keys allowed |
-//! | --- | --- |
-//! | `eq`, `eql` | fixnums, characters, symbols |
-//! | `equal` | the above, and strings |
+//! Every other object — a cons, a vector, a function — is the same key only as
+//! itself, and has nothing to hash but its address. Until step Q such keys were
+//! refused, a divergence from SBCL under rule 6; `*print-circle*`, which must
+//! notice a cons it has met before, made them necessary. They are hashed by
+//! address, and the third answer of #22 keeps that honest: a table that holds
+//! one says so in its [`STAMP`] slot, the collector marks such a table stale
+//! as it moves it (`moved`), and the next use rehashes it. An `equal` table
+//! still refuses a cons, which `equal` compares by contents.
 //!
-//! Anything else — a cons, a vector — is **refused with an error**. A real
-//! Common Lisp takes any object as an `eq` key, so this is a divergence from
-//! SBCL under rule 6, and it signals rather than guessing precisely because a
-//! quiet wrong answer is the failure mode being avoided.
+//! | Test | Keys hashed by content | Keys hashed by address |
+//! | --- | --- | --- |
+//! | `eq`, `eql` | numbers, characters, symbols | everything else |
+//! | `equal` | the above, and strings | everything else but conses |
 //!
 //! Note that symbols are safe to hash by name even though they are heap
 //! objects, because interning (chapter 8) guarantees one symbol per name per
@@ -35,7 +40,7 @@
 //!
 //! # Shape
 //!
-//! A table is three slots: a vector of buckets, a count, and the test. Each
+//! A table is four slots: a vector of buckets, a count, the test, and the stamp. Each
 //! bucket is an association list of `(key . value)` conses — the simplest
 //! thing that works, and a chain short enough not to matter once the table
 //! grows. All of it is ordinary traced storage, so the collector needs to know
@@ -59,8 +64,43 @@ pub const BUCKETS: usize = 0;
 pub const COUNT: usize = 1;
 /// The test, as the symbol `EQ`, `EQL` or `EQUAL`.
 pub const TEST: usize = 2;
+/// How the keys were hashed: a fixnum, `BY_CONTENT`, `BY_ADDRESS` or
+/// `STALE` (step Q, #64).
+pub const STAMP: usize = 3;
 /// How many slots a hash table has.
-pub const SLOTS: usize = 3;
+pub const SLOTS: usize = 4;
+
+/// Every key was hashed by its content, which no collection changes.
+const BY_CONTENT: u64 = stamp(0);
+/// Some key was hashed by its address, and nothing has moved since.
+const BY_ADDRESS: u64 = stamp(1);
+/// Some key was hashed by its address, and the collector has moved it since:
+/// the table must be rehashed before it is next used.
+const STALE: u64 = stamp(2);
+
+/// The word for a small fixnum, at compile time (a `match`, since the
+/// minimum Rust version cannot call `Option::expect` in a constant).
+const fn stamp(n: i64) -> u64 {
+    match Value::fixnum(n) {
+        Some(v) => v.bits(),
+        None => panic!("a stamp is a small fixnum"),
+    }
+}
+
+/// The collector calls this for every hash table it scans, with the word in
+/// its [`STAMP`] slot, and stores what it returns. A copying collector moves
+/// every live object, so a table that hashed any key by address is wrong from
+/// now on — and saying so here, where the move happens, is the one place that
+/// cannot be forgotten: images (saved after a collection), torture mode and
+/// ordinary running all pass through it. This is what SBCL does, and the
+/// third answer #22 weighed.
+pub(crate) fn moved(stamp: u64) -> u64 {
+    if stamp == BY_ADDRESS {
+        STALE
+    } else {
+        stamp
+    }
+}
 
 /// How many buckets a new table starts with.
 ///
@@ -87,6 +127,7 @@ pub fn make<'h>(mc: &mut Mutation<'h>, test: Value<'h>) -> Result<Value<'h>, Eva
     mc.set_slot(table, BUCKETS, buckets);
     mc.set_slot(table, COUNT, Value::fixnum(0).expect("small"));
     mc.set_slot(table, TEST, test);
+    mc.set_slot(table, STAMP, Value::from_bits(BY_CONTENT));
     Ok(table)
 }
 
@@ -152,14 +193,39 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> Result<u64, Ev
         }
         return Ok(h);
     }
-    Err(EvalError::WrongType {
-        name: "GETHASH",
-        wanted: if equal {
-            "a fixnum, character, symbol or string as a key"
-        } else {
-            "a fixnum, character or symbol as a key — an EQUAL table also takes strings"
-        },
-    })
+    // `equal` compares conses by their contents, which an address cannot
+    // stand for, so an `equal` table still refuses them.
+    if equal && key.is_cons() {
+        return Err(EvalError::WrongType {
+            name: "GETHASH",
+            wanted: "a key other than a cons in an EQUAL table",
+        });
+    }
+    // Anything else is the same key only as itself, so its address will do,
+    // for as long as the collector leaves it where it is (see `moved`).
+    Ok(mix(OFFSET, key.bits()))
+}
+
+/// Was this key hashed by its address? A string is, in an `eq` or `eql`
+/// table, where two strings are the same key only if they are one object.
+fn by_address<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> bool {
+    !(key.as_fixnum().is_some()
+        || key.as_character().is_some()
+        || mc.is_symbol(key)
+        || crate::bignum::is(mc, key)
+        || crate::float::is(mc, key)
+        || (equal && key.is_object() && mc.header(key).object_type.is_string()))
+}
+
+/// Make the table right before using it: rehashed if the collector has moved
+/// a key hashed by address since it was last hashed.
+fn refresh<'h>(mc: &mut Mutation<'h>, table: Value<'h>) -> Result<(), EvalError> {
+    if mc.slot(table, STAMP).bits() == STALE {
+        let size = mc.header(mc.slot(table, BUCKETS)).slots;
+        rehash(mc, table, size)?;
+        mc.set_slot(table, STAMP, Value::from_bits(BY_ADDRESS));
+    }
+    Ok(())
 }
 
 /// Are these the same key, under this table's test?
@@ -212,12 +278,13 @@ fn find<'h>(mc: &Mutation<'h>, table: Value<'h>, key: Value<'h>) -> Result<Value
 /// absence should look like — which is `gethash`'s optional third argument,
 /// and covers everything except telling a stored nil from a missing key.
 pub fn get<'h>(
-    mc: &Mutation<'h>,
+    mc: &mut Mutation<'h>,
     table: Value<'h>,
     key: Value<'h>,
     missing: Value<'h>,
 ) -> Result<Value<'h>, EvalError> {
     check_table(mc, table, "GETHASH")?;
+    refresh(mc, table)?;
     let entry = find(mc, table, key)?;
     if entry.is_cons() {
         Ok(mc.cdr(entry))
@@ -234,6 +301,7 @@ pub fn put<'h>(
     value: Value<'h>,
 ) -> Result<Value<'h>, EvalError> {
     check_table(mc, table, "SET-GETHASH")?;
+    refresh(mc, table)?;
     let entry = find(mc, table, key)?;
     if entry.is_cons() {
         mc.set_cdr(entry, value);
@@ -246,6 +314,9 @@ pub fn put<'h>(
     let bucket_count = mc.header(buckets).slots;
     let index = hash as usize % bucket_count;
 
+    if by_address(mc, key, equal) {
+        mc.set_slot(table, STAMP, Value::from_bits(BY_ADDRESS));
+    }
     let cell = mc.cons(key, value);
     let chain = mc.slot(buckets, index);
     let chain = mc.cons(cell, chain);
@@ -255,7 +326,7 @@ pub fn put<'h>(
     mc.set_slot(table, COUNT, Value::fixnum(count).expect("small"));
 
     if count as usize > bucket_count * LOAD_FACTOR {
-        grow(mc, table)?;
+        rehash(mc, table, bucket_count * 2)?;
     }
     Ok(value)
 }
@@ -267,6 +338,7 @@ pub fn remove<'h>(
     key: Value<'h>,
 ) -> Result<bool, EvalError> {
     check_table(mc, table, "REMHASH")?;
+    refresh(mc, table)?;
     let equal = uses_equal(mc, table);
     let hash = hash_of(mc, key, equal)?;
     let buckets = mc.slot(table, BUCKETS);
@@ -330,16 +402,17 @@ pub fn entries<'h>(mc: &mut Mutation<'h>, table: Value<'h>) -> Result<Value<'h>,
     Ok(out)
 }
 
-/// Double the bucket count and redistribute.
+/// Redistribute every entry into NEW_COUNT buckets: twice as many when the
+/// table grows, as many as before when a collection has moved its keys.
 ///
 /// Every entry is rehashed, so this is one long step — the rule 9 note in the
-/// module documentation. It happens on an insertion that crosses the load
-/// factor, so the cost is amortised, which is a different claim from bounded.
-fn grow<'h>(mc: &mut Mutation<'h>, table: Value<'h>) -> Result<(), EvalError> {
+/// module documentation. Growing happens on an insertion that crosses the
+/// load factor, so the cost is amortised, which is a different claim from
+/// bounded; rehashing after a move happens at most once per collection.
+fn rehash<'h>(mc: &mut Mutation<'h>, table: Value<'h>, new_count: usize) -> Result<(), EvalError> {
     let equal = uses_equal(mc, table);
     let old = mc.slot(table, BUCKETS);
     let old_count = mc.header(old).slots;
-    let new_count = old_count * 2;
 
     let mut moving: Vec<Value<'h>> = Vec::new();
     for i in 0..old_count {

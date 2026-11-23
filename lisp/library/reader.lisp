@@ -44,6 +44,9 @@
 (defvar *read-suppress* nil)
 (defvar *read-eval* t)
 
+;;; The radix integers are read in (step Q, #64).
+(defvar *read-base* 10)
+
 ;;; ------------------------------------------------------------------------
 ;;; Characters
 ;;;
@@ -385,29 +388,34 @@
         symbol
         (error "that symbol is not external in its package"))))
 
-;;; An integer in decimal: a sign, digits, and an optional trailing point —
-;;; `12.` is twelve. Too large a value is an error, as fixnum arithmetic is,
-;;; until bignums (step L).
-(defun %token-integer (text)
+;;; An integer: a sign, digits in `*read-base*`, and an optional trailing
+;;; point, which makes the digits decimal whatever the base — `12.` is twelve
+;;; even in base 16, where `ff` is 255 and `1e5` an integer, not a float
+;;; (CLHS 2.3.1, step Q). The printer and `floats.lisp` pass 10, since they
+;;; ask about decimal text.
+(defun %token-integer (text &optional (base *read-base*))
   (let* ((length (length text))
          (start (%skip-sign text 0 length))
-         (end (if (and (> length (+ start 1)) (eq (aref text (- length 1)) #\.))
-                  (- length 1)
-                  length)))
-    (if (and (< start end) (eq (%skip-digits text start end) end))
-        (let ((value (%digits-value text start end 0)))
+         (point (and (> length (+ start 1)) (eq (aref text (- length 1)) #\.)))
+         (end (if point (- length 1) length))
+         (radix (if point 10 base)))
+    (if (and (< start end) (eq (%skip-digits text start end radix) end))
+        (let ((value (%digits-value text start end 0 radix)))
           (if (eq (aref text 0) #\-) (- value) value))
         nil)))
 
 (defun %skip-sign (text at end)
   (if (and (< at end) (or (eq (aref text at) #\+) (eq (aref text at) #\-))) (+ at 1) at))
 
-(defun %skip-digits (text at end)
-  (if (and (< at end) (digit-char-p (aref text at))) (%skip-digits text (+ at 1) end) at))
+(defun %skip-digits (text at end &optional (radix 10))
+  (if (and (< at end) (digit-char-p (aref text at) radix))
+      (%skip-digits text (+ at 1) end radix)
+      at))
 
-(defun %digits-value (text at end value)
+(defun %digits-value (text at end value &optional (radix 10))
   (if (< at end)
-      (%digits-value text (+ at 1) end (+ (* value 10) (digit-char-p (aref text at))))
+      (%digits-value text (+ at 1) end (+ (* value radix) (digit-char-p (aref text at) radix))
+                     radix)
       value))
 
 ;;; One or more digits, and nothing after them.

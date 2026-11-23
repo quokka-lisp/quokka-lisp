@@ -116,9 +116,9 @@ cannot reach.
 | **Garbage collector** | Cheney's copying collector, with a torture mode that collects at every opportunity and verifies the heap afterwards |
 | **Rooting** | holding a value across a collection is a **compile error**, not a convention |
 | **Reader** | in Rust for the bootstrap: lists, dotted pairs, symbols, fixnums, strings, characters, vectors, keywords, `quote`, backquote, nested comments; **and in Lisp** for everything a built world reads — driven by a readtable (`set-macro-character`, `#` dispatch), reading `pkg:sym` and `pkg::sym` through `*package*`, from string input streams |
-| **Printer, in Lisp** | `prin1`, `princ`, `print`, `write` and their `-to-string` forms, with package prefixes and `\|...\|` escapes by SBCL's measured rules, and seven `*print-…*` variables |
+| **Printer, in Lisp** | `prin1`, `princ`, `print`, `write` and their `-to-string` forms, with package prefixes and `\|...\|` escapes by SBCL's measured rules; every standard `*print-…*` variable, `*print-readably*`, shared and circular structure as `#1=`/`#1#` under `*print-circle*`, and `with-standard-io-syntax` |
 | **Output** | `*standard-output*` writes to the console through a host request; string output streams and `with-output-to-string` |
-| **`eval` and `load`** | `eval` compiles and calls — a built world never interprets; `load` reads a file through the host or a stream; the read-eval-print loop itself is Lisp |
+| **`eval` and `load`** | `eval` compiles and calls — a built world never interprets; `load` reads a file through the host or a stream; the read-eval-print loop itself is Lisp; `compile`, and compiler macros the compiler applies |
 | **The warm rebuild** | `quokka rebuild`: a running world reads its source from disk with its own reader, compiles it with its own compiler in two passes, replaces every function, and proves it did |
 | **Evaluator** | an explicit-control machine — no recursive `eval`, so it can stop and resume, and Lisp recursion costs heap rather than Rust stack |
 | **Tail calls** | eliminated, so recursive loops run in constant space |
@@ -134,12 +134,12 @@ cannot reach.
 | **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux`, `&body`, and destructuring in macros |
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
 | **Vectors and strings** | `#(1 2 3)`, `aref`, `length` and `elt` over lists, vectors and strings alike; a string written in source is **read-only**, so a literal cannot be edited by accident ([#26](https://github.com/quokka-lisp/quokka-lisp/issues/26)) |
-| **Hash tables** | keyed by content rather than address, because the collector moves things |
+| **Hash tables** | any object as a key: by content where it has one, otherwise by address, with the collector marking a table stale as it moves the keys |
 | **`setf`** | `(setf (aref v i) x)`, `(setf (gethash k h) v)` — pulled forward into tier 0 so that mutation could be tested against SBCL; in the library, **places anyone can define** (`defsetf`, `define-setf-expander`, `get-setf-expansion`) and the macros that update them, `incf`, `decf`, `push`, `pop`, `pushnew`, `rotatef`, `shiftf`, `psetf`, each subform evaluated once, left to right |
 | **Conditions** | `error`, `handler-case`, `ignore-errors`; the evaluator's own errors carry the standard's type names, so `(handler-case (car 5) (type-error () …))` means what it means in SBCL |
 | **`defstruct`** | one line generating a constructor, a predicate, a copier and a settable accessor per slot |
 | **Special variables** | `defvar`, `defparameter`, and dynamic binding by `let`, `let*` and parameters — the first of tier 1, in a library the compiled world loads; shallow binding, undone however a binding is left |
-| **Packages** | `defpackage`, `in-package`, `*package*`, `intern` and `find-symbol` with their statuses, `export`, `use-package`, nicknames; `COMMON-LISP` holds all 978 standard names, Quokka's internals live in `QUOKKA` — Lisp objects in the library, adopted from the system's symbol table after the build, and read and printed with prefixes |
+| **Packages** | `defpackage` with all its options, `in-package`, `*package*`, `intern` and `find-symbol` with their statuses, `export`/`unexport`, `use-package`/`unuse-package`, `import`, `shadow`, `unintern`, `delete-package`, `rename-package`, `do-symbols` and `with-package-iterator`, nicknames; name conflicts are refused; `COMMON-LISP` holds all 978 standard names, Quokka's internals live in `QUOKKA` — Lisp objects in the library, adopted from the system's symbol table after the build, and read and printed with prefixes |
 | **Strings, packed** | a constant string of Latin-1 characters takes one byte a character, not eight; the image shrank from 478 KB to 254 KB ([#44](https://github.com/quokka-lisp/quokka-lisp/issues/44)) |
 | **Multiple values** | `values`, `multiple-value-bind`, `multiple-value-call`, `multiple-value-prog1` — and every form that should pass them through does |
 | **A prelude** | [`lisp/prelude.lisp`](lisp/prelude.lisp): `defun`, `when`, `unless`, `cond`, `and`, `or`, `setf`, `defstruct`, `handler-case`, the list and sequence functions — about six hundred lines of **Lisp**, compiled into the binary and interpreted at boot |
@@ -150,11 +150,11 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-417 tests, green on native, under wasmtime, and with the GC torture mode on.
-Thirty-two Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, fifteen more of
-tier 1 compiled only — and all thirty-two again in a world that has rebuilt
-itself. The Rust core is 14,811 lines of the 15,000-line budget.
+421 tests, green on native, under wasmtime, and with the GC torture mode on.
+Thirty-five Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, eighteen more
+of tier 1 compiled only — and all thirty-five again in a world that has rebuilt
+itself. The Rust core is 14,892 lines of the 15,000-line budget.
 
 ### What does not exist yet
 

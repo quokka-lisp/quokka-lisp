@@ -1,8 +1,8 @@
 ;;; Hash tables — the part the oracle can see.
 ;;;
-;;; Keys are hashed by content rather than by address, because the collector
-;;; moves objects — so an `eql` table takes fixnums, characters and symbols,
-;;; and an `equal` table also takes strings. Anything else is refused.
+;;; Keys are hashed by content where they have one, and otherwise by
+;;; address, which the collector invalidates whenever it moves things, so a
+;;; table holding such a key rehashes after a collection (#64).
 ;;;
 ;;; This file could not exist in any useful form until `setf` did: writing an
 ;;; entry has no name in Common Lisp other than `(setf (gethash k h) v)`.
@@ -87,3 +87,33 @@
   (setf (gethash 'c h) 3)
   (maphash (lambda (k v) (setq total (+ total v))) h)
   total)
+;; Any object is a key, as itself (#64): a list finds its own entry and not
+;; that of an equal list; a vector likewise, in an equal table too.
+(let ((h (make-hash-table)) (k (list 1 2)) (v (vector 1)))
+  (setf (gethash k h) 'list)
+  (setf (gethash v h) 'vector)
+  (list (gethash k h) (gethash (list 1 2) h 'other) (gethash v h)))
+
+(let ((h (make-hash-table :test 'equal)) (v (vector 1)))
+  (setf (gethash v h) 'vector)
+  (list (gethash v h) (gethash (vector 1) h 'other)))
+
+;; Still found after the collector has moved every key: enough garbage to
+;; collect several times between storing and finding.
+(defun churn (n)
+  (if (> n 0) (progn (make-string 64 :initial-element #\x) (churn (- n 1))) nil))
+
+(let ((h (make-hash-table :test 'eq)) (a (list 'a)) (b (list 'b)) (c (vector 'c)))
+  (setf (gethash a h) 1)
+  (setf (gethash b h) 2)
+  (setf (gethash c h) 3)
+  (churn 20000)
+  (remhash b h)
+  (churn 20000)
+  (list (gethash a h) (gethash b h 'gone) (gethash c h) (hash-table-count h)))
+
+;; A string in an eql table is the same key only as itself, after collections too.
+(let ((h (make-hash-table)) (s (copy-seq "ab")))
+  (setf (gethash s h) 'found)
+  (churn 20000)
+  (list (gethash s h) (gethash (copy-seq "ab") h 'other)))

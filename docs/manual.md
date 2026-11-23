@@ -215,9 +215,9 @@ quokka rebuild c2.qi c3.qi
 **C3** is made by C2's compiler.
 
 What to expect today:
-- C1 is 726,320 bytes; C2 and C3 are 726,856 each. A rebuild takes about ten
-  seconds.
-- Every rebuild reports `(:FORMS 881 :REPLACED 743)`.
+- C1 is 813,168 bytes; C2 and C3 are 813,704 each. A rebuild takes about
+  twelve seconds.
+- Every rebuild reports `(:FORMS 950 :REPLACED 797)`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
   are numbered by a counter that keeps rising, the image checksum covers those
   numbers, and the header counts saves.
@@ -331,7 +331,10 @@ library, the change made the compiler compile itself differently. Read
 doing anything else. Chapter 34 gives one way this can happen: a tier-1 macro
 that expands differently from the prelude's. Chapter 43 shows how the
 library's `setf` avoids it: a place the prelude knows goes to the prelude's
-own `%setf-known-place`.
+own `%setf-known-place`. Chapter 53 gives another: a compiler macro
+(`define-compiler-macro`) in the library for a function the compiler calls.
+The compiler applies compiler macros, so one would rewrite the compiler's
+own calls in C2 and not in C1. Keep the library free of them.
 
 ### ansi-test: conformance, measured
 

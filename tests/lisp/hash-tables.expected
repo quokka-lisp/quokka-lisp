@@ -23,3 +23,8 @@
 => (T NIL 0)
 => (200 0 49 39601 ABSENT)
 => 6
+=> (LIST OTHER VECTOR)
+=> (VECTOR OTHER)
+=> CHURN
+=> (1 GONE 3 2)
+=> (FOUND OTHER)

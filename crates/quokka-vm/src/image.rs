@@ -77,8 +77,10 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 /// rather than forever.
 ///
 /// **Version 3** packs constant strings eight Latin-1 characters to a word
-/// (#44), a new object type an older reader would refuse anyway.
-pub const FORMAT_VERSION: u64 = 3;
+/// (#44), a new object type an older reader would refuse anyway. **Version 4**
+/// gives a hash table a fourth slot, saying whether a key was hashed by its
+/// address (#64).
+pub const FORMAT_VERSION: u64 = 4;
 
 /// Words before the heap's own: magic, version, length, checksum, scalars.
 pub const HEADER_WORDS: usize = 4 + Scalars::WORDS;

@@ -348,16 +348,12 @@ fn keys_are_hashed_by_content() {
     );
 }
 
-/// The divergence the decision bought, and the reason it is loud: a key
-/// the collector could move is refused rather than hashed unreliably.
+/// What is still refused (#64): a cons in an EQUAL table, which `equal`
+/// compares by contents an address cannot stand for, and an unknown test.
 #[test]
 fn unhashable_keys_are_refused_rather_than_guessed() {
     for source in [
-        "(let ((h (make-hash-table))) (%set-gethash '(1) h 'x))",
-        "(let ((h (make-hash-table))) (%set-gethash (vector 1) h 'x))",
-        // A string is not an EQL key, because that would mean comparing
-        // string objects by identity.
-        "(let ((h (make-hash-table))) (%set-gethash \"s\" h 'x))",
+        "(let ((h (make-hash-table :test 'equal))) (%set-gethash '(1) h 'x))",
         "(make-hash-table :test 'bogus)",
     ] {
         assert!(
@@ -365,6 +361,27 @@ fn unhashable_keys_are_refused_rather_than_guessed() {
             "should have been refused: {source}"
         );
     }
+}
+
+/// Any other key is the same key only as itself (#64): a list, a vector, or
+/// a string in an EQL table is found by the object and not by an equal one —
+/// and still found after collections have moved it, the table having been
+/// marked stale by the collector and rehashed.
+#[test]
+fn keys_without_contents_are_found_by_identity() {
+    assert_eq!(
+        after_boot(
+            "(let ((h (make-hash-table)) (k (list 1)) (v (vector 1)) (s (make-string 1 :initial-element #\\a)))
+               (%set-gethash k h 'list)
+               (%set-gethash v h 'vector)
+               (%set-gethash s h 'string)
+               (labels ((churn (n) (if (> n 0) (progn (make-string 64 :initial-element #\\x) (churn (- n 1))))))
+                 (churn 20000))
+               (list (gethash k h) (gethash v h) (gethash s h)
+                     (gethash (list 1) h 'other) (gethash \"a\" h 'other)))"
+        ),
+        "(LIST VECTOR STRING OTHER OTHER)"
+    );
 }
 
 /// Growing past the load factor rehashes everything, and must not lose or

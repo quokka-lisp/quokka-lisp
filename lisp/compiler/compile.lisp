@@ -831,6 +831,43 @@
       (list ':environment %expansion-scopes %local-macros)
       nil))
 
+;;; ------------------------------------------------------------------------
+;;; Compiler macros (#65)
+;;;
+;;; A compiler macro is an optional rewrite of calls to a global function: a
+;;; function of the call form and the environment, which returns a form to
+;;; compile instead, or the call itself to decline. CLHS 3.2.2.1.3 lets a
+;;; compiler ignore them; this one applies them (decision 1). The table is
+;;; here, in the compiler, because the compiler must be able to read it even
+;;; when it runs interpreted in the cold build — where it is always empty, and
+;;; so is in a rebuild until a program defines one. That emptiness is what
+;;; keeps the fixpoint: no compiler macro applies to the compiler's own calls.
+(setq %compiler-macros (make-hash-table))
+
+;;; The compiler macro for this call, if one applies: the call is to a global
+;;; function — named in operator position or as `(funcall #'name ...)` — that
+;;; no local function shadows, and that has one.
+(defun %compiler-macro-for (form env)
+  (let ((head (car form)))
+    (cond ((and (eq head 'funcall) (consp (cdr form)) (consp (second form))
+                (eq (car (second form)) 'function) (consp (cdr (second form)))
+                (symbolp (second (second form))))
+           (%global-compiler-macro (second (second form)) env))
+          ((symbolp head) (%global-compiler-macro head env))
+          (t nil))))
+
+(defun %global-compiler-macro (name env)
+  (if (%lookup name env 0 ':function) nil (gethash name %compiler-macros)))
+
+;;; FORM rewritten by its compiler macro, or FORM itself.
+(defun %apply-compiler-macro (form env)
+  (let ((expander (%compiler-macro-for form env)))
+    (if expander
+        (%expand expander
+                 (list form (if (or env %local-macros) (list ':environment env %local-macros) nil))
+                 env %local-macros)
+        form)))
+
 (defun %environment-symbol-macro (environment name)
   (if environment (%symbol-macro name (second environment)) nil))
 
@@ -1253,10 +1290,14 @@
           ;; the expander runs in this ENV (#53) — and so that the library
           ;; may redefine `macroexpand-1` without touching how the compiler
           ;; compiles itself.
+          ;; Otherwise a call — unless a compiler macro rewrites it (#65).
           (t (let ((expander (if (symbolp head) (%macro-function head) nil)))
                (if expander
                    (%compile (%expand expander (cdr form) env %local-macros) env tail)
-                   (%compile-call form env tail)))))))
+                   (let ((rewritten (%apply-compiler-macro form env)))
+                     (if (eq rewritten form)
+                         (%compile-call form env tail)
+                         (%compile rewritten env tail)))))))))
 
 ;;; One form, emitting instructions that leave exactly one value.
 ;;;

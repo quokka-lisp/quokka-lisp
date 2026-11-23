@@ -146,6 +146,20 @@
 (defmacro psetq (&rest pairs)
   `(psetf ,@pairs))
 
+;;; A loop body's leading `(declare ...)` forms, and the forms after them.
+;;; The declarations go on the loop's bindings, where they cover the body and
+;;; the result form; left in the `tagbody` they would be no-ops (`declare` is
+;;; a macro expanding to nil), and a `special` one would be lost (#66).
+(defun %body-declarations (body)
+  (if (and (consp (car body)) (eq (car (car body)) 'declare))
+      (cons (car body) (%body-declarations (cdr body)))
+      nil))
+
+(defun %body-forms (body)
+  (if (and (consp (car body)) (eq (car (car body)) 'declare))
+      (%body-forms (cdr body))
+      body))
+
 (defmacro dolist ((var list-form &optional result) &body body)
   (let ((tail (gensym "TAIL"))
         (top (gensym "TOP"))
@@ -153,11 +167,12 @@
     `(block nil
        (let ((,tail ,list-form)
              (,var nil))
+         ,@(%body-declarations body)
          (tagbody
           ,top
             (if (endp ,tail) (go ,end))
             (setq ,var (car ,tail))
-            ,@body
+            ,@(%body-forms body)
             (setq ,tail (cdr ,tail))
             (go ,top)
           ,end)
@@ -171,10 +186,11 @@
     `(block nil
        (let ((,count ,count-form)
              (,var 0))
+         ,@(%body-declarations body)
          (tagbody
           ,top
             (if (>= ,var ,count) (go ,end))
-            ,@body
+            ,@(%body-forms body)
             (setq ,var (+ ,var 1))
             (go ,top)
           ,end)
@@ -194,10 +210,11 @@
         (end (gensym "END")))
     `(block nil
        (,binder ,(%do-inits bindings)
+        ,@(%body-declarations body)
         (tagbody
          ,top
            (if ,end-test (go ,end))
-           ,@body
+           ,@(%body-forms body)
            (,stepper ,@(%do-steps bindings))
            (go ,top)
          ,end)

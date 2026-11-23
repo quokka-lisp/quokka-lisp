@@ -157,9 +157,18 @@
         (t (code-char (+ weight 55)))))
 
 ;;; ------------------------------------------------------------------------
-;;; Print variables (CLHS 22.1.1). Quokka prints on one line and does not
-;;; label shared structure, so `*print-pretty*` and `*print-circle*` are not
-;;; here: a variable that existed and was ignored would be worse than none.
+;;; Print variables (CLHS 22.1.1).
+;;;
+;;; #46 left out the ones for features Quokka lacked, on the grounds that a
+;;; variable that existed and was ignored would be worse than none. Step Q
+;;; (#64) reversed that: CLHS makes all of them part of every program's world
+;;; — `with-standard-io-syntax` binds them, and code that only binds or reads
+;;; them broke without them although it printed exactly what Quokka prints.
+;;; So every one exists now. Those of the pretty printer, which is tier 2,
+;;; hold their values and are not yet consulted: `*print-pretty*`,
+;;; `*print-lines*`, `*print-miser-width*`, `*print-right-margin*` and
+;;; `*print-pprint-dispatch*`, which will hold a dispatch table and holds nil
+;;; until there are any.
 
 (defvar *print-escape* t)
 (defvar *print-base* 10)
@@ -168,34 +177,87 @@
 (defvar *print-length* nil)
 (defvar *print-level* nil)
 (defvar *print-gensym* t)
+(defvar *print-array* t)
+(defvar *print-readably* nil)
+(defvar *print-circle* nil)
+(defvar *print-pretty* nil)
+(defvar *print-lines* nil)
+(defvar *print-miser-width* nil)
+(defvar *print-right-margin* nil)
+(defvar *print-pprint-dispatch* nil)
+
+;;; `(with-standard-io-syntax body...)` — BODY with every variable that
+;;; controls reading and printing at its standard value (CLHS), so that what
+;;; is printed inside reads back in any Lisp. `*readtable*` is a fresh copy of
+;;; the standard readtable each time (decision 4): CLHS forbids modifying the
+;;; standard one, and a copy makes that impossible rather than an error.
+(defmacro with-standard-io-syntax (&body body)
+  `(let ((*package* (find-package "COMMON-LISP-USER"))
+         (*print-array* t)
+         (*print-base* 10)
+         (*print-case* :upcase)
+         (*print-circle* nil)
+         (*print-escape* t)
+         (*print-gensym* t)
+         (*print-length* nil)
+         (*print-level* nil)
+         (*print-lines* nil)
+         (*print-miser-width* nil)
+         (*print-pprint-dispatch* nil)
+         (*print-pretty* nil)
+         (*print-radix* nil)
+         (*print-readably* t)
+         (*print-right-margin* nil)
+         (*read-base* 10)
+         (*read-default-float-format* 'single-float)
+         (*read-eval* t)
+         (*read-suppress* nil)
+         (*readtable* (copy-readtable nil)))
+     ,@body))
 
 ;;; ------------------------------------------------------------------------
 ;;; The entry points
 
+;;; Every way of printing comes here: `write-to-string` binds a variable for
+;;; each keyword, then prints the object once into a string.
 (defun write-to-string (object &key (escape *print-escape*) (base *print-base*)
                                     (radix *print-radix*) (case *print-case*)
                                     (length *print-length*) (level *print-level*)
-                                    (gensym *print-gensym*))
+                                    (gensym *print-gensym*) (array *print-array*)
+                                    (readably *print-readably*) (circle *print-circle*)
+                                    (pretty *print-pretty*) (lines *print-lines*)
+                                    (miser-width *print-miser-width*)
+                                    (right-margin *print-right-margin*)
+                                    (pprint-dispatch *print-pprint-dispatch*))
   (let ((*print-escape* escape) (*print-base* base) (*print-radix* radix)
         (*print-case* case) (*print-length* length) (*print-level* level)
-        (*print-gensym* gensym))
+        (*print-gensym* gensym) (*print-array* array) (*print-readably* readably)
+        (*print-circle* circle) (*print-pretty* pretty) (*print-lines* lines)
+        (*print-miser-width* miser-width) (*print-right-margin* right-margin)
+        (*print-pprint-dispatch* pprint-dispatch))
     (let ((out (make-string-output-stream)))
-      (%print-object object out 0)
+      (if *print-readably*
+          ;; CLHS 22.1.3: printing readably implies escapes, arrays and
+          ;; gensym prefixes, and nothing cut short by length or level.
+          (let ((*print-escape* t) (*print-array* t) (*print-gensym* t)
+                (*print-length* nil) (*print-level* nil) (*print-lines* nil))
+            (%print-top object out))
+          (%print-top object out))
       (get-output-stream-string out))))
 
+;;; `princ` is `write` with neither escapes nor readability (CLHS 22.4).
 (defun prin1-to-string (object) (write-to-string object :escape t))
-(defun princ-to-string (object) (write-to-string object :escape nil))
+(defun princ-to-string (object) (write-to-string object :escape nil :readably nil))
 
 ;;; Each builds the whole text first and writes it once, so printing to the
-;;; console is one request to the host, not one per character.
-(defun write (object &key stream (escape *print-escape*) (base *print-base*)
-                          (radix *print-radix*) (case *print-case*)
-                          (length *print-length*) (level *print-level*)
-                          (gensym *print-gensym*))
-  (write-string (write-to-string object :escape escape :base base :radix radix
-                                        :case case :length length :level level
-                                        :gensym gensym)
-                stream)
+;;; console is one request to the host, not one per character. `write` takes
+;;; every keyword `write-to-string` does, and `:stream`.
+(defun write (object &rest keys &key stream escape base radix case length level gensym
+                                     array readably circle pretty lines miser-width
+                                     right-margin pprint-dispatch)
+  (let ((keys (copy-list keys)))
+    (remf keys :stream)
+    (write-string (apply #'write-to-string object keys) stream))
   object)
 
 (defun prin1 (object &optional stream)
@@ -217,7 +279,105 @@
 ;;; ------------------------------------------------------------------------
 ;;; Objects
 
+;;; ------------------------------------------------------------------------
+;;; Shared structure: `*print-circle*` (step Q, #64)
+;;;
+;;; With `*print-circle*` true, an object the printout would reach twice is
+;;; written once, labelled — `#1=(a b)` — and referred to afterwards by its
+;;; label, `#1#`. That is what lets a circular list be printed at all, and it
+;;; is how the reader rebuilds the sharing (CLHS 22.1.3, 2.4.8.15).
+;;;
+;;; Two passes. The first walks the object as the printer would and records,
+;;; in an `eq` hash table, every object it meets: `:once`, or `:many` when it
+;;; meets it again, and it does not walk into an object a second time, which
+;;; is why a cycle ends. The second pass prints, and the first time it comes
+;;; to a `:many` object it gives it the next label. Which objects can be
+;;; shared is SBCL's answer, measured: anything but a number, a character or
+;;; a symbol with a home package — strings and gensyms included.
+;;;
+;;; The table needs keys compared by identity, which hash tables gained in
+;;; this step for the purpose (decision 5): before it, Quokka's tables took
+;;; only keys with contents to hash.
+
+;;; The table of this printout, or nil when `*print-circle*` is false, and
+;;; the last label given.
+(defvar %circle-table nil)
+(defvar %circle-label 0)
+
+;;; The top of printing one object. Every printout binds its own table, so a
+;;; `prin1-to-string` called while printing starts afresh.
+(defun %print-top (object out)
+  (let ((%circle-table (if *print-circle* (%find-shared object) nil))
+        (%circle-label 0))
+    (%print-object object out 0)))
+
+(defun %shareable-p (object)
+  (not (or (numberp object)
+           (characterp object)
+           (and (symbolp object) (symbol-package object)))))
+
+;;; Does the printer write OBJECT's elements? Lists and vectors only: the
+;;; structures the library makes are vectors underneath but print as `#<...>`.
+(defun %printed-as-vector-p (object)
+  (and (vectorp object)
+       (not (stringp object))
+       *print-array*
+       (not (%unreadable-structure-p object))))
+
+(defun %unreadable-structure-p (object)
+  (or (%package-p object) (%string-input-stream-p object) (%string-output-stream-p object)
+      (%console-stream-p object) (%readtable-p object)))
+
+(defun %find-shared (object)
+  (let ((table (make-hash-table :test 'eq)))
+    (%note-shared object table)
+    table))
+
+(defun %note-shared (object table)
+  (if (%shareable-p object)
+      (if (gethash object table)
+          (setf (gethash object table) :many)
+          (progn
+            (setf (gethash object table) :once)
+            (cond ((consp object)
+                   (%note-shared (car object) table)
+                   (%note-shared (cdr object) table))
+                  ((%printed-as-vector-p object)
+                   (dotimes (i (length object))
+                     (%note-shared (aref object i) table))))))))
+
+;;; Is OBJECT shared in this printout? Its mark: `:many` before its label is
+;;; given, the label after.
+(defun %circle-mark (object)
+  (if (and %circle-table (%shareable-p object))
+      (let ((mark (gethash object %circle-table)))
+        (if (eq mark :once) nil mark))
+      nil))
+
+(defun %print-label (label suffix out)
+  (write-char #\# out)
+  (%print-integer-in-decimal label out)
+  (write-char suffix out))
+
+;;; Every object is printed through here: `#n#` if it has been labelled,
+;;; `#n=` and the object if this is its first appearance and it is shared.
 (defun %print-object (object out level)
+  (let ((mark (%circle-mark object)))
+    (cond ((null mark) (%print-plain object out level))
+          ((integerp mark) (%print-label mark #\# out))
+          (t (setq %circle-label (+ %circle-label 1))
+             (setf (gethash object %circle-table) %circle-label)
+             (%print-label %circle-label #\= out)
+             (%print-plain object out level)))))
+
+;;; The text for an object nothing can read back: `#<...>`, or, when printing
+;;; readably, the error CLHS asks for instead.
+(defun %print-unreadable (object text out)
+  (if *print-readably*
+      (error 'print-not-readable "this object cannot be printed readably" object)
+      (write-string text out)))
+
+(defun %print-plain (object out level)
   (cond ((integerp object) (%print-integer object out))
         ((floatp object) (%print-float object out))
         ((characterp object) (%print-character object out))
@@ -228,18 +388,29 @@
         ;; makes vectors until there are structure types), but they are not
         ;; data anyone reads back, and SBCL writes them as `#<...>`.
         ((%package-p object)
-         (write-string "#<PACKAGE " out)
-         (%print-string (package-name object) out)
-         (write-char #\> out))
-        ((%string-input-stream-p object) (write-string "#<STRING-INPUT-STREAM>" out))
-        ((%string-output-stream-p object) (write-string "#<STRING-OUTPUT-STREAM>" out))
-        ((%console-stream-p object) (write-string "#<CONSOLE-STREAM>" out))
-        ((%readtable-p object) (write-string "#<READTABLE>" out))
-        ((vectorp object) (%print-vector object out level))
+         (%print-unreadable object
+                            (if (package-name object)
+                                (%string-append (%string-append "#<PACKAGE " (prin1-to-string (package-name object)))
+                                                ">")
+                                "#<PACKAGE (deleted)>")
+                            out))
+        ((%string-input-stream-p object) (%print-unreadable object "#<STRING-INPUT-STREAM>" out))
+        ((%string-output-stream-p object) (%print-unreadable object "#<STRING-OUTPUT-STREAM>" out))
+        ((%console-stream-p object) (%print-unreadable object "#<CONSOLE-STREAM>" out))
+        ((%readtable-p object) (%print-unreadable object "#<READTABLE>" out))
+        ;; `*print-array*` false: a vector by its type and size alone.
+        ((vectorp object)
+         (if *print-array*
+             (%print-vector object out level)
+             (%print-unreadable object
+                                (%string-append (%string-append "#<(SIMPLE-VECTOR "
+                                                                (princ-to-string (length object)))
+                                                ")>")
+                                out)))
         ;; Functions, conditions, hash tables: nothing reads them back, so
         ;; CLHS lets each implementation print them its own way. The Rust
         ;; printer's way, so that both printers agree.
-        (t (write-string (%printed object) out))))
+        (t (%print-unreadable object (%printed object) out))))
 
 ;;; `*print-level*`: deeper than this, a list or vector is just `#`.
 (defun %too-deep-p (level) (and *print-level* (not (< level *print-level*))))
@@ -261,7 +432,9 @@
         (%print-object (car list) out level)
         (let ((rest (cdr list)))
           (cond ((null rest) nil)
-                ((consp rest)
+                ;; A shared tail is printed after a dot, so that its label
+                ;; stands for the rest of the list: `(a . #1#)`.
+                ((and (consp rest) (null (%circle-mark rest)))
                  (write-char #\Space out)
                  (%print-list-items rest out level (+ count 1)))
                 ;; An improper list: the dot is why a cons is a pair.
@@ -407,7 +580,7 @@
   (let ((end (length name)))
     (or (eq end 0)
         (%all-dots-p name 0 end)
-        (%token-integer name)
+        (%token-integer name 10)
         (%ratio-or-float-p name)
         (and (not (eq *print-base* 10)) (%digits-in-base-p name *print-base*))
         (%special-char-in-p name 0 end))))

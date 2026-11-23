@@ -72,6 +72,9 @@
 - [Measuring against the standard](part-6-self-hosting/49-ansi-test.md)
 - [What the first measurement asked for](part-6-self-hosting/50-first-gaps.md)
 - [The rest of a symbol](part-6-self-hosting/51-symbol-cells.md)
+- [Printing for another Lisp to read](part-6-self-hosting/52-printing-for-another-lisp.md)
+- [Compiling on request](part-6-self-hosting/53-compiling-on-request.md)
+- [When two packages disagree](part-6-self-hosting/54-packages-that-disagree.md)
 
 ---
 

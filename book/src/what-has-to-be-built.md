@@ -301,6 +301,9 @@ Each chapter answers one question.
 | 49 | [Measuring against the standard](part-6-self-hosting/49-ansi-test.md) | How much of Common Lisp does tier 1 cover, and how do you count a test that cannot run yet? |
 | 50 | [What the first measurement asked for](part-6-self-hosting/50-first-gaps.md) | Which small gaps block the most tests, and how does a dynamic variable declared in one place stay dynamic only there? |
 | 51 | [The rest of a symbol](part-6-self-hosting/51-symbol-cells.md) | What else does a symbol hold besides a value and a function, and how does a compiler stop a constant from being rebound? |
+| 52 | [Printing for another Lisp to read](part-6-self-hosting/52-printing-for-another-lisp.md) | How do you print a list that contains itself, and how does a hash table key on an object the collector keeps moving? |
+| 53 | [Compiling on request](part-6-self-hosting/53-compiling-on-request.md) | What is left for `compile` to do when everything is compiled already, and can a compiler change without changing how it compiles itself? |
+| 54 | [When two packages disagree](part-6-self-hosting/54-packages-that-disagree.md) | What happens when two symbols of one name meet in a package, and how does a package choose in advance? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -316,8 +319,10 @@ Still to come, and deliberately so:
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
   sequence and string functions (chapter 45); basic `format` (chapter
   46); integers of any size (chapter 47); and double floats (chapter 48).
-  Tier 1 is measured against ansi-test (chapter 49); still to come is
-  closing the gaps that measurement lists; then ratios
+  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 54
+  close the gaps it listed first: declarations, symbols' cells, printing
+  readably and with shared structure, `compile`, and the rest of the package
+  system. Still to come are the gaps after those; then ratios
   (#59, tier undecided); beyond it, `loop`, CLOS and the rest, in later
   phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

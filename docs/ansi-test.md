@@ -9,58 +9,45 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1286 | 31 | 0 | 1 | 221 | 99 | 1638 |
-| sequences | 1741 | 277 | 0 | 2 | 63 | 1075 | 3158 |
+| cons | 1286 | 31 | 0 | 1 | 171 | 149 | 1638 |
+| sequences | 1741 | 277 | 0 | 2 | 33 | 1105 | 3158 |
 | strings | 293 | 90 | 0 | 0 | 13 | 105 | 501 |
 | characters | 123 | 0 | 0 | 0 | 42 | 94 | 259 |
-| symbols | 90 | 19 | 0 | 1 | 46 | 989 | 1145 |
-| packages | 55 | 21 | 0 | 0 | 251 | 13 | 340 |
-| numbers | 366 | 23 | 0 | 4 | 315 | 730 | 1438 |
-| reader | 50 | 8 | 0 | 2 | 82 | 23 | 165 |
-| printer | 80 | 37 | 0 | 2 | 422 | 281 | 822 |
-| data-and-control-flow | 939 | 93 | 13 | 0 | 156 | 219 | 1420 |
-| eval-and-compile | 216 | 28 | 5 | 0 | 57 | 12 | 318 |
-| iteration | 81 | 14 | 0 | 0 | 15 | 728 | 838 |
+| symbols | 96 | 24 | 0 | 1 | 9 | 1015 | 1145 |
+| packages | 225 | 44 | 0 | 2 | 4 | 65 | 340 |
+| numbers | 371 | 23 | 0 | 4 | 264 | 776 | 1438 |
+| reader | 75 | 8 | 0 | 2 | 51 | 29 | 165 |
+| printer | 154 | 47 | 0 | 2 | 91 | 528 | 822 |
+| data-and-control-flow | 948 | 93 | 13 | 0 | 106 | 260 | 1420 |
+| eval-and-compile | 232 | 29 | 5 | 0 | 29 | 23 | 318 |
+| iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 42 | 9 | 0 | 0 | 57 | 59 | 167 |
 | structures | 20 | 50 | 0 | 0 | 12 | 33 | 115 |
-| **all** | **5382** | **700** | **18** | **12** | **1752** | **4460** | **12324** |
+| **all** | **5701** | **725** | **18** | **14** | **882** | **4984** | **12324** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
 | needs | tests |
 | --- | ---: |
-| `WITH-STANDARD-IO-SYNTAX[tier-1]` | 494 |
-| `COMPILE[tier-1]` | 380 |
-| `DELETE-PACKAGE[tier-1]` | 202 |
-| `PACKAGE-USED-BY-LIST[tier-1]` | 171 |
-| `UNUSE-PACKAGE[tier-1]` | 170 |
 | `load-error[*HASH-TABLES*]` | 98 |
 | `load-error[*STREAMS*]` | 98 |
 | `READTABLE-CASE[tier-1]` | 77 |
 | `PARSE-INTEGER[tier-1]` | 56 |
 | `NSET-EXCLUSIVE-OR[tier-1]` | 52 |
 | `BYTE[tier-1]` | 48 |
-| `DO-SYMBOLS[tier-1]` | 43 |
-| `PACKAGE-SHADOWING-SYMBOLS[tier-1]` | 41 |
 | `CCASE[tier-1]` | 38 |
-| `DO-EXTERNAL-SYMBOLS[tier-1]` | 34 |
 | `READ-PRESERVING-WHITESPACE[tier-1]` | 27 |
 | `MULTIPLE-VALUE-SETQ[tier-1]` | 26 |
 | `NSUBST-IF[tier-1]` | 23 |
 | `NSUBST-IF-NOT[tier-1]` | 22 |
 | `SXHASH[tier-1]` | 21 |
-| `WITH-PACKAGE-ITERATOR[tier-1]` | 21 |
-| `IMPORT[tier-1]` | 20 |
 | `PROG[tier-1]` | 20 |
-| `DO-ALL-SYMBOLS[tier-1]` | 19 |
 | `NAME-CHAR[tier-1]` | 18 |
 | `PROG*[tier-1]` | 17 |
 | `WITH-HASH-TABLE-ITERATOR[tier-1]` | 17 |
 | `BYTE-SIZE[tier-1]` | 16 |
-| `DEFINE-COMPILER-MACRO[tier-1]` | 16 |
 | `LOGORC1[tier-1]` | 16 |
 | `LOGORC2[tier-1]` | 16 |
-| `SHADOW[tier-1]` | 16 |
 | `LOGANDC1[tier-1]` | 15 |
 | `LOGANDC2[tier-1]` | 15 |
 | `LOGEQV[tier-1]` | 15 |
@@ -68,26 +55,19 @@ A test can need several things.
 | `LOGNOR[tier-1]` | 15 |
 | `SIMPLE-STRING-P[tier-1]` | 15 |
 | `CHAR-INT[tier-1]` | 14 |
-| `RENAME-PACKAGE[tier-1]` | 13 |
 | `ATANH[tier-1]` | 12 |
 | `BOOLE[tier-1]` | 12 |
 | `LDB[tier-1]` | 12 |
-| `UNINTERN[tier-1]` | 12 |
 | `load-error[*SEARCHED-VECTOR*]` | 12 |
-| `FIND-ALL-SYMBOLS[tier-1]` | 11 |
 | `MASK-FIELD[tier-1]` | 11 |
 | `ACOSH[tier-1]` | 10 |
 | `ASINH[tier-1]` | 10 |
 | `SET-SYNTAX-FROM-CHAR[tier-1]` | 10 |
 | `DEPOSIT-FIELD[tier-1]` | 9 |
 | `DPB[tier-1]` | 9 |
-| `GENTEMP[tier-1]` | 9 |
-| `SPECIAL-OPERATOR-P[tier-1]` | 9 |
-| `COMPILED-FUNCTION-P[tier-1]` | 8 |
 | `DEFINE-SYMBOL-MACRO[tier-1]` | 8 |
 | `LOGTEST[tier-1]` | 8 |
 | `STANDARD-CHAR-P[tier-1]` | 8 |
-| `UNEXPORT[tier-1]` | 8 |
 | `COPY-SYMBOL[tier-1]` | 7 |
 | `FUNCTION-LAMBDA-EXPRESSION[tier-1]` | 7 |
 | `HASH-TABLE-TEST[tier-1]` | 7 |
@@ -109,15 +89,12 @@ A test can need several things.
 | `CDDDAR[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-SIZE[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-THRESHOLD[tier-1]` | 6 |
-| `SHADOWING-IMPORT[tier-1]` | 6 |
 | `reader[#=]` | 6 |
-| `COMPILER-MACRO-FUNCTION[tier-1]` | 4 |
 | `SIMPLE-VECTOR-P[tier-1]` | 4 |
 | `load-error[*BOOLE-VALS*]` | 4 |
 | `reader[#.]` | 4 |
 | `HASH-TABLE-SIZE[tier-1]` | 3 |
 | `load-error[STRUCT-INCLUDE-02B]` | 3 |
-| `reader[other]` | 3 |
 | `ARRAYP[tier-1]` | 2 |
 | `COPY-STRUCTURE[tier-1]` | 2 |
 | `load-error[STRUCT-INCLUDE-01B-D]` | 2 |
