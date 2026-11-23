@@ -215,9 +215,9 @@ quokka rebuild c2.qi c3.qi
 **C3** is made by C2's compiler.
 
 What to expect today:
-- C1 is 813,168 bytes; C2 and C3 are 813,704 each. A rebuild takes about
+- C1 is 853,080 bytes; C2 and C3 are 853,616 each. A rebuild takes about
   twelve seconds.
-- Every rebuild reports `(:FORMS 950 :REPLACED 797)`.
+- Every rebuild reports `(:FORMS 1022 :REPLACED 860)`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
   are numbered by a counter that keeps rising, the image checksum covers those
   numbers, and the header counts saves.
@@ -320,7 +320,7 @@ sbcl --script scripts/oracle.lisp tests/lisp/reader.lisp
 | GC torture: collect at every mutation boundary, verify the heap | `cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture` |
 | the tests under WebAssembly | `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
 | the browser build | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
-| the Rust line budget (15,000, tests not counted) | `./scripts/check-budget.sh` |
+| the Rust line budget (15,500, tests not counted) | `./scripts/check-budget.sh` |
 
 The slowest tests are the rebuild and fixpoint tests, about 40 seconds
 together. They rebuild the system twice, and share the two rebuilt worlds.
@@ -347,7 +347,7 @@ scripts/ansi-test.sh
 ```
 
 The script clones the suite into `target/ansi-test/` at the commit it pins,
-runs the fourteen groups tier 1 is measured by, and fails if a test listed in
+runs the fifteen groups tier 1 is measured by (`arrays` joined in #67), and fails if a test listed in
 `tests/ansi/baseline.txt` no longer passes: that list only grows. When a
 change makes more tests pass, record them:
 

@@ -40,6 +40,16 @@
               (equal (car a) (car b))
               (equal (cdr a) (cdr b))))
         ((stringp a) (and (stringp b) (string= a b)))
+        ;; Bit vectors too, element by element (#67). A `labels` loop, as
+        ;; `equalp`'s below: `dotimes` is defined further down this file.
+        ((bit-vector-p a)
+         (and (bit-vector-p b)
+              (= (length a) (length b))
+              (labels ((walk (i)
+                         (cond ((= i (length a)) t)
+                               ((eql (aref a i) (aref b i)) (walk (+ i 1)))
+                               (t nil))))
+                (walk 0))))
         (t nil)))
 
 ;;; Looser still: characters ignoring case, numbers by `=`, and vectors and
@@ -60,6 +70,16 @@
               (labels ((walk (i)
                          (cond ((= i (length a)) t)
                                ((equalp (aref a i) (aref b i)) (walk (+ i 1)))
+                               (t nil))))
+                (walk 0))))
+        ;; Arrays of several dimensions: the same dimensions, and the
+        ;; elements in row-major order (#67).
+        ((arrayp a)
+         (and (arrayp b)
+              (equal (array-dimensions a) (array-dimensions b))
+              (labels ((walk (i)
+                         (cond ((= i (array-total-size a)) t)
+                               ((equalp (row-major-aref a i) (row-major-aref b i)) (walk (+ i 1)))
                                (t nil))))
                 (walk 0))))
         (t nil)))

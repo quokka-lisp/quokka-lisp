@@ -93,9 +93,9 @@
 ;;; does not have, wherever it appears — in the operator position, under
 ;;; #', or quoted inside a macro's expansion — and the reasons of every
 ;;; broken helper it mentions. Nil if there are none. A circular form (#1=)
-;;; would be walked for ever, and Quokka's hash tables cannot be keyed by a
-;;; cons to remember where the walk has been, so the walk stops after
-;;; *walk-limit* nodes instead.
+;;; would be walked for ever, so the walk stops after *walk-limit* nodes.
+;;; (An `eq` table of the conses met could do it exactly since #64; a limit
+;;; has been enough.)
 (defvar *walk-limit* 20000)
 
 (defun %needs (form)
@@ -155,6 +155,13 @@
                 (dotimes (i (length x) same)
                   (if (not (%same (aref x i) (aref y i))) (setq same nil))))))
         ((and (stringp x) (stringp y)) (string= x y))
+        ;; Arrays of other ranks (#67): the same dimensions, and the same
+        ;; elements in row-major order, as rt.lsp's EQUALP-WITH-CASE.
+        ((and (arrayp x) (arrayp y))
+         (and (equal (array-dimensions x) (array-dimensions y))
+              (let ((same t))
+                (dotimes (i (array-total-size x) same)
+                  (if (not (%same (row-major-aref x i) (row-major-aref y i))) (setq same nil))))))
         (t (eql x y))))
 
 ;;; ------------------------------------------------------------------------

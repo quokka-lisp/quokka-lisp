@@ -158,6 +158,7 @@ fn raw_types_are_not_traced() {
         ObjectType::ConstantString,
         ObjectType::PackedString,
         ObjectType::DoubleFloat,
+        ObjectType::BitVector,
     ] {
         assert!(!t.slots_are_values(), "{t:?} must not be traced");
     }
@@ -167,6 +168,7 @@ fn raw_types_are_not_traced() {
         ObjectType::Closure,
         ObjectType::Instance,
         ObjectType::HashTable,
+        ObjectType::ArrayHeader,
     ] {
         assert!(t.slots_are_values(), "{t:?} must be traced");
     }

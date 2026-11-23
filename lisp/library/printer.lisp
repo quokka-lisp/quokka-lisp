@@ -66,7 +66,8 @@
       (progn
         (if (%console-stream-p stream)
             (progn
-              (%write-console (if (and (eq start 0) (eq end (length string)))
+              (%write-console (if (and (eq start 0) (eq end (length string))
+                                       (simple-string-p string))
                                   string
                                   (%substring string start end)))
               (setf (%console-stream-fresh stream) (eq (aref string (- end 1)) #\Newline)))
@@ -318,9 +319,12 @@
 
 ;;; Does the printer write OBJECT's elements? Lists and vectors only: the
 ;;; structures the library makes are vectors underneath but print as `#<...>`.
+;;; Arrays of several dimensions too (#67), whose elements are walked in
+;;; row-major order; a vector's are its active ones, up to its fill pointer.
 (defun %printed-as-vector-p (object)
-  (and (vectorp object)
+  (and (arrayp object)
        (not (stringp object))
+       (not (bit-vector-p object))
        *print-array*
        (not (%unreadable-structure-p object))))
 
@@ -342,9 +346,12 @@
             (cond ((consp object)
                    (%note-shared (car object) table)
                    (%note-shared (cdr object) table))
-                  ((%printed-as-vector-p object)
+                  ((and (%printed-as-vector-p object) (vectorp object))
                    (dotimes (i (length object))
-                     (%note-shared (aref object i) table))))))))
+                     (%note-shared (aref object i) table)))
+                  ((%printed-as-vector-p object)
+                   (dotimes (i (array-total-size object))
+                     (%note-shared (row-major-aref object i) table))))))))
 
 ;;; Is OBJECT shared in this printout? Its mark: `:many` before its label is
 ;;; given, the label after.
@@ -398,19 +405,51 @@
         ((%string-output-stream-p object) (%print-unreadable object "#<STRING-OUTPUT-STREAM>" out))
         ((%console-stream-p object) (%print-unreadable object "#<CONSOLE-STREAM>" out))
         ((%readtable-p object) (%print-unreadable object "#<READTABLE>" out))
-        ;; `*print-array*` false: a vector by its type and size alone.
-        ((vectorp object)
-         (if *print-array*
-             (%print-vector object out level)
+        ;; Not an array — a function, a condition, a hash table: nothing
+        ;; reads them back, so CLHS lets each implementation print them its
+        ;; own way, and this is the Rust printer's, so both agree. Or
+        ;; `*print-array*` false: an array by its dimensions alone.
+        ((not (and (arrayp object) *print-array*))
+         (if (arrayp object)
              (%print-unreadable object
-                                (%string-append (%string-append "#<(SIMPLE-VECTOR "
-                                                                (princ-to-string (length object)))
+                                (%string-append (%string-append "#<(ARRAY "
+                                                                (princ-to-string (array-dimensions object)))
                                                 ")>")
-                                out)))
-        ;; Functions, conditions, hash tables: nothing reads them back, so
-        ;; CLHS lets each implementation print them its own way. The Rust
-        ;; printer's way, so that both printers agree.
-        (t (%print-unreadable object (%printed object) out))))
+                                out)
+             (%print-unreadable object (%printed object) out)))
+        ;; `#*1011`: every bit, `*print-length*` or not, as SBCL prints one.
+        ((bit-vector-p object)
+         (write-string "#*" out)
+         (dotimes (i (length object)) (write-char (if (eql (aref object i) 1) #\1 #\0) out)))
+        ((vectorp object) (%print-vector object out level))
+        (t (%print-array object out level))))
+
+;;; `#2A((1 2) (3 4))`: the rank, then the elements as nested lists, one
+;;; level of nesting per dimension, each counting against `*print-level*`
+;;; and each list cut short by `*print-length*`. A rank-0 array is `#0A`
+;;; and its one element.
+(defun %print-array (array out level)
+  (let ((dimensions (array-dimensions array)))
+    (write-char #\# out)
+    (%print-integer-in-decimal (length dimensions) out)
+    (write-char #\A out)
+    (if (null dimensions)
+        (%print-object (aref array) out level)
+        (%print-array-slice array dimensions 0 out level))))
+
+(defun %print-array-slice (array dimensions start out level)
+  (if (%too-deep-p level)
+      (write-char #\# out)
+      (let ((stride (%product (cdr dimensions))))
+        (write-char #\( out)
+        (dotimes (i (car dimensions))
+          (if (> i 0) (write-char #\Space out))
+          (if (%too-long-p i)
+              (progn (write-string "..." out) (return))
+              (if (cdr dimensions)
+                  (%print-array-slice array (cdr dimensions) (+ start (* i stride)) out (+ level 1))
+                  (%print-object (row-major-aref array (+ start i)) out (+ level 1)))))
+        (write-char #\) out))))
 
 ;;; `*print-level*`: deeper than this, a list or vector is just `#`.
 (defun %too-deep-p (level) (and *print-level* (not (< level *print-level*))))

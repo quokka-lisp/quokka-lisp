@@ -37,6 +37,7 @@
     "lisp/library/setf.lisp" "lisp/library/lists.lisp"
     "lisp/library/symbols.lisp"
     "lisp/library/sequences.lisp" "lisp/library/strings.lisp"
+    "lisp/library/arrays.lisp"
     "lisp/library/integers.lisp" "lisp/library/floats.lisp"
     "lisp/library/reader.lisp"
     "lisp/library/printer.lisp" "lisp/library/format.lisp" "lisp/library/eval.lisp"

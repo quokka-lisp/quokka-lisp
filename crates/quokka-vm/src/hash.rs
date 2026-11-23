@@ -186,9 +186,11 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> Result<u64, Ev
     if crate::float::is(mc, key) {
         return Ok(mix(mix(OFFSET, 6), mc.raw_slot(key, 0)));
     }
-    if equal && key.is_object() && mc.header(key).object_type.is_string() {
-        let mut h = mix(OFFSET, 4);
-        for ch in mc.string_to_rust(key).chars() {
+    // `equal` compares strings and bit vectors element by element, a fill
+    // pointer's worth of them (#67), so that is what is hashed.
+    if let Some((bits, text)) = equal.then(|| crate::array::equal_text(mc, key)).flatten() {
+        let mut h = mix(OFFSET, if bits { 7 } else { 4 });
+        for ch in text.chars() {
             h = mix(h, ch as u64);
         }
         return Ok(h);
@@ -214,7 +216,7 @@ fn by_address<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> bool {
         || mc.is_symbol(key)
         || crate::bignum::is(mc, key)
         || crate::float::is(mc, key)
-        || (equal && key.is_object() && mc.header(key).object_type.is_string()))
+        || (equal && crate::array::equal_text(mc, key).is_some()))
 }
 
 /// Make the table right before using it: rehashed if the collector has moved
@@ -239,13 +241,13 @@ fn same_key<'h>(mc: &Mutation<'h>, a: Value<'h>, b: Value<'h>, equal: bool) -> b
     if crate::float::is(mc, a) && crate::float::is(mc, b) {
         return mc.raw_slot(a, 0) == mc.raw_slot(b, 0);
     }
-    if equal
-        && a.is_object()
-        && b.is_object()
-        && mc.header(a).object_type.is_string()
-        && mc.header(b).object_type.is_string()
-    {
-        return mc.string_to_rust(a) == mc.string_to_rust(b);
+    if equal {
+        if let (Some(x), Some(y)) = (
+            crate::array::equal_text(mc, a),
+            crate::array::equal_text(mc, b),
+        ) {
+            return x == y;
+        }
     }
     false
 }

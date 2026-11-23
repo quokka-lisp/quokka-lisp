@@ -46,7 +46,7 @@
 ;;; symbol stands for its name — so `:cl`, `cl` and `"CL"` all name the same
 ;;; package.
 (defun %designator-name (designator)
-  (cond ((stringp designator) designator)
+  (cond ((stringp designator) (%simple-string designator))
         ((symbolp designator) (symbol-name designator))
         ((characterp designator) (string designator))
         (t (error "a package or symbol name must be a string or a symbol"))))
@@ -167,7 +167,8 @@
 ;;; in PACKAGE, and how: `:external`, `:internal` or `:inherited`. Two values,
 ;;; and `nil nil` if there is none.
 (defun find-symbol (string &optional (package *package*))
-  (let ((package (%the-package package)))
+  (let ((package (%the-package package))
+        (string (%simple-string string)))
     (if (eq package %keyword-package)
         (let ((keyword (%find-system-symbol string t)))
           (if keyword (values keyword :external) (values nil nil)))
@@ -210,7 +211,10 @@
 ;;; symbol, a new one, internal to PACKAGE. The second value is the status of
 ;;; the symbol found, or `nil` if it had to be made.
 (defun intern (string &optional (package *package*))
-  (let ((package (%the-package package)))
+  (let ((package (%the-package package))
+        ;; A string with a fill pointer is copied: the name is kept, and
+        ;; Rust's symbol table takes simple strings only (#67).
+        (string (%simple-string string)))
     (multiple-value-bind (symbol status) (find-symbol string package)
       (cond (status (values symbol status))
             ;; A keyword is made the Rust way, so that a keyword made by the

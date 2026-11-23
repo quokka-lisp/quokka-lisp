@@ -171,6 +171,11 @@ pub enum Prim {
     Fboundp = 116,
     Fmakunbound = 117,
     Functionp = 118,
+    MakeArrayHeader = 119,
+    ArrayHeaderSlot = 120,
+    SetArrayHeaderSlot = 121,
+    MakeBitVector = 122,
+    ArrayKind = 123,
 }
 
 impl Prim {
@@ -281,10 +286,12 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // as APPEND, and the same answer: chunk it when slices start to matter.
     (Prim::MakeVector, "%MAKE-VECTOR", Arity::Exactly(2)),
     (Prim::Vector, "VECTOR", Arity::AtLeast(0)),
-    (Prim::Aref, "AREF", Arity::Exactly(2)),
+    // Any array, one subscript per dimension (#67, `crate::array`).
+    (Prim::Aref, "AREF", Arity::AtLeast(1)),
     // Common Lisp spells this `(setf (aref v i) x)`. `setf` is tier 1, and it
     // is a macro that has to expand into something; this is the something.
-    (Prim::SetAref, "%SET-AREF", Arity::Exactly(3)),
+    // The subscripts, then the value.
+    (Prim::SetAref, "%SET-AREF", Arity::AtLeast(2)),
     (Prim::SequenceLength, "%SEQUENCE-LENGTH", Arity::Exactly(1)),
     (Prim::Vectorp, "VECTORP", Arity::Exactly(1)),
     (Prim::Stringp, "STRINGP", Arity::Exactly(1)),
@@ -552,6 +559,26 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::Fboundp, "FBOUNDP", Arity::Exactly(1)),
     (Prim::Fmakunbound, "FMAKUNBOUND", Arity::Exactly(1)),
     (Prim::Functionp, "FUNCTIONP", Arity::Exactly(1)),
+    // ---- arrays (#67) ---------------------------------------------------
+    // A header's six slots are Lisp's to fill and read (`arrays.lisp`); Rust
+    // only follows them, in `aref`, `%set-aref` and `length`.
+    (
+        Prim::MakeArrayHeader,
+        "%MAKE-ARRAY-HEADER",
+        Arity::Exactly(6),
+    ),
+    (
+        Prim::ArrayHeaderSlot,
+        "%ARRAY-HEADER-SLOT",
+        Arity::Exactly(2),
+    ),
+    (
+        Prim::SetArrayHeaderSlot,
+        "%SET-ARRAY-HEADER-SLOT",
+        Arity::Exactly(3),
+    ),
+    (Prim::MakeBitVector, "%MAKE-BIT-VECTOR", Arity::Exactly(1)),
+    (Prim::ArrayKind, "%ARRAY-KIND", Arity::Exactly(1)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -587,60 +614,13 @@ pub const fn index(prim: Prim) -> u32 {
     prim as u32
 }
 
-/// Is `v` a heap object of this type?
+/// A Rust truth value as Lisp's.
 fn boolean<'h>(yes: bool) -> Value<'h> {
     if yes {
         Value::T
     } else {
         Value::NIL
     }
-}
-
-fn is_type<'h>(mc: &Mutation<'h>, v: Value<'h>, want: ObjectType) -> Value<'h> {
-    if v.is_object() && mc.header(v).object_type == want {
-        Value::T
-    } else {
-        Value::NIL
-    }
-}
-
-/// How long `v` is, and whether its slots are raw characters.
-///
-/// Common Lisp calls both a general vector and a string a vector, so `aref`
-/// and `length` work on both. The difference is only whether a slot holds a
-/// `Value` or a character code — the line `ObjectType::slots_are_values`
-/// draws, which the collector also depends on.
-fn sequence_shape<'h>(
-    mc: &Mutation<'h>,
-    v: Value<'h>,
-    name: &'static str,
-) -> Result<(usize, bool), EvalError> {
-    if v.is_object() {
-        let header = mc.header(v);
-        match header.object_type {
-            ObjectType::Vector => return Ok((header.slots, false)),
-            t if t.is_string() => return Ok((mc.string_length(v), true)),
-            _ => {}
-        }
-    }
-    Err(EvalError::WrongType {
-        name,
-        wanted: "a vector or a string",
-    })
-}
-
-/// A fixnum index inside `length`, or an error naming both.
-fn checked_index(index: Value<'_>, length: usize) -> Result<usize, EvalError> {
-    let Some(i) = index.as_fixnum() else {
-        return Err(EvalError::WrongType {
-            name: "AREF",
-            wanted: "a fixnum index",
-        });
-    };
-    if i < 0 || i as usize >= length {
-        return Err(EvalError::IndexOutOfBounds { index: i, length });
-    }
-    Ok(i as usize)
 }
 
 /// What primitive `index` is called, for printing.
@@ -943,58 +923,30 @@ pub fn call_slice<'h>(
             }
             Ok(v)
         }
-        Prim::Aref => {
-            let (length, is_string) = sequence_shape(mc, args[0], "AREF")?;
-            let index = checked_index(args[1], length)?;
-            if is_string {
-                Ok(Value::character(mc.string_char(args[0], index)))
-            } else {
-                Ok(mc.slot(args[0], index))
-            }
-        }
-        Prim::SetAref => {
-            // A literal is readable everywhere and writable nowhere. CLHS
-            // 3.7.1 leaves modifying one undefined, which is permission to
-            // share literals and no help when a program modifies one anyway —
-            // before this check, `(setf (aref (greeting) 0) #\J)` edited the
-            // source of `greeting` and said nothing. See issue #26.
-            //
-            // Both constant layouts refuse; only `String` is writable, and it
-            // is the one layout where any character fits anywhere (#44).
-            let kind = args[0].is_object().then(|| mc.header(args[0]).object_type);
-            if kind.is_some_and(|t| t.is_string() && t != ObjectType::String) {
-                return Err(EvalError::WrongType {
-                    name: "SET-AREF",
-                    wanted:
-                        "a mutable string — this one is a literal, so copy it with COPY-SEQ first",
-                });
-            }
-            let (length, is_string) = sequence_shape(mc, args[0], "SET-AREF")?;
-            let index = checked_index(args[1], length)?;
-            if is_string {
-                let Some(ch) = args[2].as_character() else {
-                    return Err(EvalError::WrongType {
-                        name: "SET-AREF",
-                        wanted: "a character, to store in a string",
-                    });
-                };
-                mc.set_raw_slot(args[0], index, ch as u64);
-            } else {
-                mc.set_slot(args[0], index, args[2]);
-            }
-            Ok(args[2])
-        }
+        Prim::Aref => crate::array::aref(mc, args),
+        Prim::SetAref => crate::array::set_aref(mc, args),
         Prim::SequenceLength => {
-            let (length, _) = sequence_shape(mc, args[0], "LENGTH")?;
+            let length = crate::array::length(mc, args[0])?;
             Ok(Value::fixnum(length as i64).expect("a heap object cannot be that long"))
         }
-        Prim::Vectorp => Ok(is_type(mc, args[0], ObjectType::Vector)),
-        // Both string types answer yes: a literal is a string, it just
-        // cannot be written. The distinction is `%set-aref`'s business and
-        // nothing else's.
-        Prim::Stringp => Ok(boolean(
-            args[0].is_object() && mc.header(args[0]).object_type.is_string(),
-        )),
+        // Every one-dimensional array is a vector, strings and bit vectors
+        // included (CLHS 15.1.2); every one of characters is a string. A
+        // literal is a string too: it just cannot be written, which is
+        // `%set-aref`'s business and nothing else's.
+        Prim::Vectorp => Ok(boolean(crate::array::is_vector(mc, args[0]))),
+        Prim::Stringp => Ok(boolean(crate::array::is_string(mc, args[0]))),
+        Prim::MakeArrayHeader => Ok(crate::array::make_header(mc, args)),
+        Prim::ArrayHeaderSlot => {
+            let slot = crate::array::header_slot(mc, args[0], args[1])?;
+            Ok(mc.slot(args[0], slot))
+        }
+        Prim::SetArrayHeaderSlot => {
+            let slot = crate::array::header_slot(mc, args[0], args[1])?;
+            mc.set_slot(args[0], slot, args[2]);
+            Ok(args[2])
+        }
+        Prim::MakeBitVector => crate::array::make_bits(mc, args[0]),
+        Prim::ArrayKind => Ok(Value::fixnum(crate::array::kind_code(mc, args[0])).expect("small")),
         Prim::Integerp => Ok(truth(
             args[0].as_fixnum().is_some() || crate::bignum::is(mc, args[0]),
         )),

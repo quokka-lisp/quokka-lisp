@@ -63,7 +63,10 @@
          (end (if end end length)))
     (if (or (not (integerp start)) (not (integerp end))
             (< start 0) (> end length) (> start end))
-        (error "the range does not fit the sequence" (list start end length)))
+        ;; A `type-error`, as SBCL's `bounding-indices-bad-error` is one.
+        ;; ansi-test checks the type; found when arrays let its vectors be
+        ;; made at all (#67).
+        (error 'type-error "the range does not fit the sequence" (list start end length)))
     (values start end)))
 
 (defun %indexed-range-reversed (list start end)
@@ -79,6 +82,7 @@
 (defun %kind-of (sequence)
   (cond ((listp sequence) :list)
         ((stringp sequence) :string)
+        ((bit-vector-p sequence) :bit-vector)
         (t :vector)))
 
 ;;; The kind a type specifier asks for: `list`, `vector`, `string` and
@@ -91,15 +95,18 @@
           ((and (eq head 'vector) (consp type) (consp (cdr type))
                 (member (car (cdr type)) '(character base-char standard-char)))
            :string)
+          ((member head '(bit-vector simple-bit-vector)) :bit-vector)
+          ((and (eq head 'vector) (consp type) (consp (cdr type)) (eq (car (cdr type)) 'bit))
+           :bit-vector)
           ((member head '(vector simple-vector array simple-array)) :vector)
           (t (error "not a sequence type Quokka knows" type)))))
 
 ;;; A sequence of KIND holding ITEMS, a list.
 (defun %from-list (kind items)
   (cond ((eq kind :list) items)
-        (t (let ((out (if (eq kind :string)
-                          (make-string (length items))
-                          (make-array (length items))))
+        (t (let ((out (cond ((eq kind :string) (make-string (length items)))
+                            ((eq kind :bit-vector) (%make-bit-vector (length items)))
+                            (t (make-array (length items)))))
                  (i 0))
              (dolist (item items out)
                (setf (aref out i) item)
@@ -133,6 +140,7 @@
          (float object))
         ((and (eq (%kind-of-type type) :list) (listp object)) object)
         ((and (eq (%kind-of-type type) :string) (stringp object)) object)
+        ((and (eq (%kind-of-type type) :bit-vector) (bit-vector-p object)) object)
         ((and (eq (%kind-of-type type) :vector) (vectorp object)) object)
         (t (%from-list (%kind-of-type type) (%range-list object 0 nil)))))
 

@@ -140,6 +140,7 @@ tier1_cases! {
     standard_io_syntax => "standard-io-syntax",
     compile => "compile",
     package_system => "package-system",
+    arrays => "arrays",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -370,7 +371,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 950 :REPLACED 797)".into())],
+        [Outcome::Value("(:FORMS 1022 :REPLACED 860)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

@@ -34,7 +34,7 @@
 
 (%deferred "phase-3:types"
   :typep :subtypep :type-of :deftype :typecase :etypecase :ctypecase :check-type
-  :upgraded-array-element-type :upgraded-complex-part-type)
+  :upgraded-complex-part-type)
 
 (%deferred "tier-2:streams"
   :open :close :with-open-file :with-open-stream :read-line :read-byte :write-byte
@@ -68,14 +68,6 @@
 (%deferred "issue-59:ratios" :numerator :denominator :rational :rationalize)
 
 (%deferred "deferred:compile-file" :compile-file :compile-file-pathname :with-compilation-unit)
-
-(%deferred "tier-2:arrays"
-  :array-rank :array-dimensions :array-dimension :array-total-size :array-in-bounds-p
-  :array-row-major-index :row-major-aref :adjust-array :adjustable-array-p
-  :array-displacement :array-has-fill-pointer-p :fill-pointer :vector-push
-  :vector-push-extend :vector-pop :array-element-type :bit :sbit :bit-and :bit-andc1
-  :bit-andc2 :bit-eqv :bit-ior :bit-nand :bit-nor :bit-not :bit-orc1 :bit-orc2
-  :bit-xor :bit-vector-p :simple-bit-vector-p)
 
 (%deferred "tier-2:environment"
   :get-universal-time :get-decoded-time :decode-universal-time :encode-universal-time

@@ -459,7 +459,9 @@
      (let ((head (car place))
            (args (cdr place)))
        (cond
-         ((eq head 'aref) (list '%set-aref (car args) (car (cdr args)) value))
+         ;; Every subscript, then the value: an array may have several
+         ;; dimensions (#67). One subscript expands exactly as it always did.
+         ((eq head 'aref) (cons '%set-aref (append args (list value))))
          ((eq head 'svref) (list '%set-aref (car args) (car (cdr args)) value))
          ((eq head 'gethash) (list '%set-gethash (car args) (car (cdr args)) value))
          ((eq head 'symbol-function) (list '%set-symbol-function (car args) value))

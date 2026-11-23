@@ -27,10 +27,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// The groups tier 1 is measured by (#60, decision 3), in this order.
+/// `arrays` joined when step T moved arrays into tier 1 (#67).
 const GROUPS: &[&str] = &[
     "cons",
     "sequences",
     "strings",
+    "arrays",
     "characters",
     "symbols",
     "packages",
@@ -82,8 +84,18 @@ impl Host for DiskHost {
 
 /// Run SOURCE, one form, and return what it printed, or the failure.
 fn run_one(heap: &mut quokka_vm::heap::Heap, host: &mut DiskHost, source: &str) -> Outcome {
+    run_with_budget(heap, host, source, STEP_BUDGET)
+}
+
+/// Run SOURCE with BUDGET steps.
+fn run_with_budget(
+    heap: &mut quokka_vm::heap::Heap,
+    host: &mut DiskHost,
+    source: &str,
+    budget: u64,
+) -> Outcome {
     let mut outcome = Outcome::Failed(quokka_vm::error::EvalError::Blocked);
-    let ran = eval_source(heap, source, STEP_BUDGET, 2_000, host, |o| {
+    let ran = eval_source(heap, source, budget, 2_000, host, |o| {
         outcome = o;
         false
     });
@@ -242,7 +254,11 @@ fn ansi_test() {
         "(load \"tests/ansi/deferred.lisp\")",
         "(rt::%prepare)",
     ] {
-        match run_one(&mut heap, &mut host, setup) {
+        // Loading a whole file is one form here, so it gets a file's budget
+        // rather than a test's, as `quokka build` gives its sources: the
+        // runner alone came to just under one test's ten million steps, and
+        // step T's arrays tipped it over (#67).
+        match run_with_budget(&mut heap, &mut host, setup, STEP_BUDGET * 40) {
             Outcome::Value(_) => {}
             other => panic!("{setup}: {other:?}"),
         }
@@ -331,8 +347,6 @@ fn ansi_test() {
 const DEFERRED_SYNTAX: &[(&str, &str)] = &[
     ("reader[#C]", "deferred:complex-numbers"),
     ("reader[#P]", "tier-2:pathnames-and-files"),
-    ("reader[#A]", "tier-2:arrays"),
-    ("reader[#*]", "tier-2:arrays"),
     ("reader[ratio]", "issue-59:ratios"),
 ];
 

@@ -134,6 +134,7 @@ cannot reach.
 | **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux`, `&body`, and destructuring in macros |
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
 | **Vectors and strings** | `#(1 2 3)`, `aref`, `length` and `elt` over lists, vectors and strings alike; a string written in source is **read-only**, so a literal cannot be edited by accident ([#26](https://github.com/quokka-lisp/quokka-lisp/issues/26)) |
+| **Arrays** | all of CLHS 15: any number of dimensions (`#2A((1 2) (3 4))`), fill pointers, `vector-push-extend`, adjustable and displaced arrays, bit vectors (`#*1011`) and the bit operations; a non-simple array is a header Rust's `aref` follows ([#67](https://github.com/quokka-lisp/quokka-lisp/issues/67)) |
 | **Hash tables** | any object as a key: by content where it has one, otherwise by address, with the collector marking a table stale as it moves the keys |
 | **`setf`** | `(setf (aref v i) x)`, `(setf (gethash k h) v)` — pulled forward into tier 0 so that mutation could be tested against SBCL; in the library, **places anyone can define** (`defsetf`, `define-setf-expander`, `get-setf-expansion`) and the macros that update them, `incf`, `decf`, `push`, `pop`, `pushnew`, `rotatef`, `shiftf`, `psetf`, each subform evaluated once, left to right |
 | **Conditions** | `error`, `handler-case`, `ignore-errors`; the evaluator's own errors carry the standard's type names, so `(handler-case (car 5) (type-error () …))` means what it means in SBCL |
@@ -150,11 +151,12 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-421 tests, green on native, under wasmtime, and with the GC torture mode on.
-Thirty-five Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, eighteen more
-of tier 1 compiled only — and all thirty-five again in a world that has rebuilt
-itself. The Rust core is 14,892 lines of the 15,000-line budget.
+422 tests, green on native, under wasmtime, and with the GC torture mode on.
+Thirty-six Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, nineteen more
+of tier 1 compiled only — and all thirty-six again in a world that has rebuilt
+itself. The Rust core is 15,237 lines of the 15,500-line budget, raised from
+15,000 when arrays moved into tier 1 (#67).
 
 ### What does not exist yet
 

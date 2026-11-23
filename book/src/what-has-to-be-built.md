@@ -304,6 +304,7 @@ Each chapter answers one question.
 | 52 | [Printing for another Lisp to read](part-6-self-hosting/52-printing-for-another-lisp.md) | How do you print a list that contains itself, and how does a hash table key on an object the collector keeps moving? |
 | 53 | [Compiling on request](part-6-self-hosting/53-compiling-on-request.md) | What is left for `compile` to do when everything is compiled already, and can a compiler change without changing how it compiles itself? |
 | 54 | [When two packages disagree](part-6-self-hosting/54-packages-that-disagree.md) | What happens when two symbols of one name meet in a package, and how does a package choose in advance? |
+| 55 | [Arrays, all of them](part-6-self-hosting/55-arrays.md) | How can an array grow and stay the same object, share another's elements, or have several dimensions, and what does Rust need to know about it? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -319,10 +320,10 @@ Still to come, and deliberately so:
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
   sequence and string functions (chapter 45); basic `format` (chapter
   46); integers of any size (chapter 47); and double floats (chapter 48).
-  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 54
+  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 55
   close the gaps it listed first: declarations, symbols' cells, printing
-  readably and with shared structure, `compile`, and the rest of the package
-  system. Still to come are the gaps after those; then ratios
+  readably and with shared structure, `compile`, the rest of the package
+  system, and every kind of array, which moved from tier 2 into tier 1. Still to come are the gaps after those; then ratios
   (#59, tier undecided); beyond it, `loop`, CLOS and the rest, in later
   phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

@@ -749,3 +749,17 @@ simple copying collector here does not.
 **Name conflict.** Two different symbols of one name both accessible in a [package](#package), so that the name read there would mean two things. `use-package`, `import`, `export` and `unintern` check for one before they change anything and signal a `package-error` if they would create it. ([54](part-6-self-hosting/54-packages-that-disagree.md))
 
 **Shadowing symbol.** A symbol a [package](#package) has declared will win any [name conflict](#name-conflict) over its name, made with `shadow` or `shadowing-import`. It hides the inherited symbols of the same name. ([54](part-6-self-hosting/54-packages-that-disagree.md))
+
+**Simple array.** An array with one dimension and nothing else to it: no fill pointer, not adjustable, not displaced. In Quokka a general vector, a string or a [bit vector](#bit-vector), each the object it always was; every other array is an [array header](#array-header). ([55](part-6-self-hosting/55-arrays.md))
+
+**Array header.** A small heap object in front of a [simple array](#simple-array) that holds an array's elements, recording the array's dimensions, its fill pointer, where in the simple array its elements start, and whether it is displaced or adjustable. Rust's `aref` and `length` look through it. ([55](part-6-self-hosting/55-arrays.md))
+
+**Row-major order.** Laying a grid out as a line, one row after another: element (i, j) of an array with three columns is element 3i + j of the line. How an array of several dimensions keeps its elements, and what `row-major-aref` indexes. ([55](part-6-self-hosting/55-arrays.md))
+
+**Fill pointer.** An index into a vector saying how many of its elements are in use: `length` answers it, `vector-push` stores at it and moves it on, and the elements after it stay in the vector unseen. ([55](part-6-self-hosting/55-arrays.md))
+
+**Adjustable array.** An array that `adjust-array` can resize while it stays the same object, so every reference to it sees the new size. In Quokka its header gets new data. ([55](part-6-self-hosting/55-arrays.md))
+
+**Displaced array.** An array with no elements of its own, which shares another array's, starting at an offset: writing through either is seen through both. ([55](part-6-self-hosting/55-arrays.md))
+
+**Bit vector.** A vector whose elements are 0 or 1, written `#*1011`. Quokka packs 64 to a word. ([55](part-6-self-hosting/55-arrays.md))

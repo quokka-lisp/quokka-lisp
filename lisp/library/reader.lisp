@@ -702,6 +702,36 @@
 (defun %read-sharp-paren (stream sub-char argument)
   (apply #'vector (%read-list-items stream nil)))
 
+;;; `#*1011` — a bit vector (#67). With a length, `#5*101` is five bits, the
+;;; last digit repeated to fill them (CLHS 2.4.8.4).
+(defun %read-sharp-star (stream sub-char argument)
+  (let ((bits nil))
+    (do ((char (peek-char nil stream nil nil) (peek-char nil stream nil nil)))
+        ((not (and char (member char '(#\0 #\1)))))
+      (push (if (eql (read-char stream) #\1) 1 0) bits))
+    (setq bits (nreverse bits))
+    (let ((next (peek-char nil stream nil nil)))
+      (if (and next (not (%terminatorp next)))
+          (error "a bit vector holds only 0 and 1")))
+    (cond ((null argument) (coerce bits 'bit-vector))
+          ((> (length bits) argument) (error "more bits than the length given"))
+          ((and (null bits) (> argument 0)) (error "a length but no bits to fill it with"))
+          (t (let ((vector (make-array argument :element-type 'bit
+                                                :initial-element (if bits (car (last bits)) 0))))
+               (dotimes (i (length bits) vector)
+                 (setf (aref vector i) (nth i bits))))))))
+
+;;; `#2A((1 2) (3 4))` — an array of that rank, its elements nested as deep
+;;; as it has dimensions; each dimension is the length at that depth.
+(defun %read-sharp-a (stream sub-char argument)
+  (let ((contents (%read-required stream)))
+    (if (null argument) (error "#A wants a rank: #2A"))
+    (let ((dimensions nil) (level contents))
+      (dotimes (i argument)
+        (push (length level) dimensions)
+        (setq level (if (> (length level) 0) (elt level 0) nil)))
+      (make-array (nreverse dimensions) :initial-contents contents))))
+
 ;;; `#:name` — a symbol in no package, new every time it is read.
 (defun %read-sharp-colon (stream sub-char argument)
   (multiple-value-bind (text escaped colons) (%collect-token stream (read-char stream) nil 0 nil nil)
@@ -735,6 +765,8 @@
 (set-dispatch-macro-character #\# #\\ #'%read-sharp-backslash %standard-readtable)
 (set-dispatch-macro-character #\# #\' #'%read-sharp-quote %standard-readtable)
 (set-dispatch-macro-character #\# #\( #'%read-sharp-paren %standard-readtable)
+(set-dispatch-macro-character #\# #\* #'%read-sharp-star %standard-readtable)
+(set-dispatch-macro-character #\# #\A #'%read-sharp-a %standard-readtable)
 (set-dispatch-macro-character #\# #\: #'%read-sharp-colon %standard-readtable)
 (set-dispatch-macro-character #\# #\| #'%read-block-comment %standard-readtable)
 (set-dispatch-macro-character #\# #\x #'%read-sharp-radix %standard-readtable)

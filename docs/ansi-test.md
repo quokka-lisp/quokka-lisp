@@ -9,60 +9,58 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1286 | 31 | 0 | 1 | 171 | 149 | 1638 |
-| sequences | 1741 | 277 | 0 | 2 | 33 | 1105 | 3158 |
-| strings | 293 | 90 | 0 | 0 | 13 | 105 | 501 |
+| cons | 1289 | 28 | 0 | 1 | 171 | 149 | 1638 |
+| sequences | 2480 | 70 | 0 | 2 | 0 | 606 | 3158 |
+| strings | 370 | 23 | 0 | 0 | 4 | 104 | 501 |
+| arrays | 629 | 0 | 0 | 1 | 20 | 584 | 1234 |
 | characters | 123 | 0 | 0 | 0 | 42 | 94 | 259 |
-| symbols | 96 | 24 | 0 | 1 | 9 | 1015 | 1145 |
-| packages | 225 | 44 | 0 | 2 | 4 | 65 | 340 |
+| symbols | 97 | 23 | 0 | 1 | 9 | 1015 | 1145 |
+| packages | 252 | 17 | 0 | 2 | 4 | 65 | 340 |
 | numbers | 371 | 23 | 0 | 4 | 264 | 776 | 1438 |
-| reader | 75 | 8 | 0 | 2 | 51 | 29 | 165 |
-| printer | 154 | 47 | 0 | 2 | 91 | 528 | 822 |
-| data-and-control-flow | 948 | 93 | 13 | 0 | 106 | 260 | 1420 |
+| reader | 75 | 8 | 0 | 1 | 52 | 29 | 165 |
+| printer | 208 | 19 | 0 | 4 | 89 | 502 | 822 |
+| data-and-control-flow | 997 | 79 | 13 | 0 | 106 | 225 | 1420 |
 | eval-and-compile | 232 | 29 | 5 | 0 | 29 | 23 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
-| hash-tables | 42 | 9 | 0 | 0 | 57 | 59 | 167 |
+| hash-tables | 42 | 9 | 0 | 0 | 63 | 53 | 167 |
 | structures | 20 | 50 | 0 | 0 | 12 | 33 | 115 |
-| **all** | **5701** | **725** | **18** | **14** | **882** | **4984** | **12324** |
+| **all** | **7280** | **378** | **18** | **16** | **865** | **5001** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
 | needs | tests |
 | --- | ---: |
-| `load-error[*HASH-TABLES*]` | 98 |
-| `load-error[*STREAMS*]` | 98 |
-| `READTABLE-CASE[tier-1]` | 77 |
+| `load-error[*HASH-TABLES*]` | 111 |
+| `load-error[*STREAMS*]` | 111 |
+| `READTABLE-CASE[tier-1]` | 75 |
 | `PARSE-INTEGER[tier-1]` | 56 |
 | `NSET-EXCLUSIVE-OR[tier-1]` | 52 |
 | `BYTE[tier-1]` | 48 |
 | `CCASE[tier-1]` | 38 |
 | `READ-PRESERVING-WHITESPACE[tier-1]` | 27 |
 | `MULTIPLE-VALUE-SETQ[tier-1]` | 26 |
+| `SXHASH[tier-1]` | 24 |
 | `NSUBST-IF[tier-1]` | 23 |
 | `NSUBST-IF-NOT[tier-1]` | 22 |
-| `SXHASH[tier-1]` | 21 |
 | `PROG[tier-1]` | 20 |
 | `NAME-CHAR[tier-1]` | 18 |
+| `LOGORC1[tier-1]` | 17 |
+| `LOGORC2[tier-1]` | 17 |
 | `PROG*[tier-1]` | 17 |
 | `WITH-HASH-TABLE-ITERATOR[tier-1]` | 17 |
-| `BYTE-SIZE[tier-1]` | 16 |
-| `LOGORC1[tier-1]` | 16 |
-| `LOGORC2[tier-1]` | 16 |
-| `LOGANDC1[tier-1]` | 15 |
-| `LOGANDC2[tier-1]` | 15 |
-| `LOGEQV[tier-1]` | 15 |
-| `LOGNAND[tier-1]` | 15 |
-| `LOGNOR[tier-1]` | 15 |
-| `SIMPLE-STRING-P[tier-1]` | 15 |
+| `LOGANDC1[tier-1]` | 16 |
+| `LOGANDC2[tier-1]` | 16 |
+| `LOGEQV[tier-1]` | 16 |
+| `LOGNAND[tier-1]` | 16 |
+| `LOGNOR[tier-1]` | 16 |
 | `CHAR-INT[tier-1]` | 14 |
 | `ATANH[tier-1]` | 12 |
 | `BOOLE[tier-1]` | 12 |
 | `LDB[tier-1]` | 12 |
-| `load-error[*SEARCHED-VECTOR*]` | 12 |
 | `MASK-FIELD[tier-1]` | 11 |
+| `SET-SYNTAX-FROM-CHAR[tier-1]` | 11 |
 | `ACOSH[tier-1]` | 10 |
 | `ASINH[tier-1]` | 10 |
-| `SET-SYNTAX-FROM-CHAR[tier-1]` | 10 |
 | `DEPOSIT-FIELD[tier-1]` | 9 |
 | `DPB[tier-1]` | 9 |
 | `DEFINE-SYMBOL-MACRO[tier-1]` | 8 |
@@ -73,6 +71,7 @@ A test can need several things.
 | `HASH-TABLE-TEST[tier-1]` | 7 |
 | `PRINT-UNREADABLE-OBJECT[tier-1]` | 7 |
 | `BYTE-POSITION[tier-1]` | 6 |
+| `BYTE-SIZE[tier-1]` | 6 |
 | `CAAAAR[tier-1]` | 6 |
 | `CAAADR[tier-1]` | 6 |
 | `CAADAR[tier-1]` | 6 |
@@ -90,12 +89,12 @@ A test can need several things.
 | `HASH-TABLE-REHASH-SIZE[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-THRESHOLD[tier-1]` | 6 |
 | `reader[#=]` | 6 |
-| `SIMPLE-VECTOR-P[tier-1]` | 4 |
 | `load-error[*BOOLE-VALS*]` | 4 |
 | `reader[#.]` | 4 |
 | `HASH-TABLE-SIZE[tier-1]` | 3 |
 | `load-error[STRUCT-INCLUDE-02B]` | 3 |
-| `ARRAYP[tier-1]` | 2 |
+| `reader[#*]` | 3 |
+| `reader[#A]` | 3 |
 | `COPY-STRUCTURE[tier-1]` | 2 |
 | `load-error[STRUCT-INCLUDE-01B-D]` | 2 |
 | `load-error[STRUCT-INCLUDE-04B]` | 2 |
@@ -107,33 +106,29 @@ A test can need several things.
 
 | needs | tests |
 | --- | ---: |
-| `LOOP[tier-2:loop]` | 3898 |
-| `reader[ratio]` | 628 |
-| `TYPEP[phase-3:types]` | 596 |
-| `reader[#*]` | 578 |
-| `ASSERT[tier-2:conditions]` | 561 |
-| `RANDOM[tier-2:random]` | 503 |
-| `HANDLER-BIND[tier-2:conditions]` | 260 |
-| `TYPE-ERROR-DATUM[tier-2:conditions]` | 249 |
-| `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 249 |
-| `MUFFLE-WARNING[tier-2:conditions]` | 244 |
-| `reader[#C]` | 210 |
-| `COMPLEX[deferred:complex-numbers]` | 170 |
-| `DEFGENERIC[tier-2:clos]` | 132 |
-| `RATIONAL[issue-59:ratios]` | 119 |
-| `MAKE-RANDOM-STATE[tier-2:random]` | 114 |
-| `MAKE-CONDITION[tier-2:conditions]` | 110 |
-| `FIND-CLASS[tier-2:clos]` | 109 |
-| `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 101 |
-| `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 101 |
-| `FIND-METHOD[tier-2:clos]` | 98 |
-| `SUBTYPEP[phase-3:types]` | 88 |
+| `LOOP[tier-2:loop]` | 4127 |
+| `TYPEP[phase-3:types]` | 1135 |
+| `reader[ratio]` | 663 |
+| `ASSERT[tier-2:conditions]` | 596 |
+| `RANDOM[tier-2:random]` | 511 |
+| `HANDLER-BIND[tier-2:conditions]` | 277 |
+| `TYPE-ERROR-DATUM[tier-2:conditions]` | 266 |
+| `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 266 |
+| `MUFFLE-WARNING[tier-2:conditions]` | 261 |
+| `FIND-CLASS[tier-2:clos]` | 259 |
+| `reader[#C]` | 223 |
+| `SUBTYPEP[phase-3:types]` | 193 |
+| `COMPLEX[deferred:complex-numbers]` | 175 |
+| `DEFGENERIC[tier-2:clos]` | 145 |
+| `MAKE-RANDOM-STATE[tier-2:random]` | 127 |
+| `MAKE-CONDITION[tier-2:conditions]` | 123 |
+| `RATIONAL[issue-59:ratios]` | 123 |
+| `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 114 |
+| `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 114 |
+| `FIND-METHOD[tier-2:clos]` | 111 |
 | `ETYPECASE[phase-3:types]` | 74 |
 | `REALPART[deferred:complex-numbers]` | 72 |
-| `BIT[tier-2:arrays]` | 54 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 54 |
-| `ARRAY-ELEMENT-TYPE[tier-2:arrays]` | 45 |
-| `FILL-POINTER[tier-2:arrays]` | 45 |
 | `TYPECASE[phase-3:types]` | 29 |
 | `WITH-OPEN-STREAM[tier-2:streams]` | 29 |
 | `DOCUMENTATION[tier-2:clos]` | 28 |
@@ -141,7 +136,6 @@ A test can need several things.
 | `IMAGPART[deferred:complex-numbers]` | 26 |
 | `COPY-PPRINT-DISPATCH[tier-2:pretty-printer]` | 25 |
 | `PPRINT-NEWLINE[tier-2:pretty-printer]` | 25 |
-| `reader[#A]` | 21 |
 | `COMPLEXP[deferred:complex-numbers]` | 20 |
 | `CTYPECASE[phase-3:types]` | 20 |
 | `LOOP-FINISH[tier-2:loop]` | 20 |
@@ -154,7 +148,6 @@ A test can need several things.
 | `PPRINT-POP[tier-2:pretty-printer]` | 13 |
 | `RATIONALIZE[issue-59:ratios]` | 12 |
 | `PPRINT-FILL[tier-2:pretty-printer]` | 11 |
-| `ADJUST-ARRAY[tier-2:arrays]` | 10 |
 | `COMPUTE-RESTARTS[tier-2:conditions]` | 10 |
 | `PHASE[deferred:complex-numbers]` | 10 |
 | `PPRINT-TABULAR[tier-2:pretty-printer]` | 10 |
@@ -169,9 +162,6 @@ A test can need several things.
 | `PACKAGE-ERROR-PACKAGE[tier-2:conditions]` | 6 |
 | `PPRINT-TAB[tier-2:pretty-printer]` | 6 |
 | `reader[#P]` | 6 |
-| `ARRAY-DIMENSIONS[tier-2:arrays]` | 5 |
-| `ARRAY-RANK[tier-2:arrays]` | 5 |
-| `ARRAY-TOTAL-SIZE[tier-2:arrays]` | 5 |
 | `CHECK-TYPE[phase-3:types]` | 5 |
 | `CIS[deferred:complex-numbers]` | 5 |
 | `DEFMETHOD[tier-2:clos]` | 5 |
@@ -198,13 +188,7 @@ A test can need several things.
 | `CELL-ERROR-NAME[tier-2:conditions]` | 3 |
 | `CLASS-NAME[tier-2:clos]` | 3 |
 | `PPRINT-DISPATCH[tier-2:pretty-printer]` | 3 |
-| `ARRAY-DIMENSION[tier-2:arrays]` | 2 |
-| `BREAK[tier-2:conditions]` | 2 |
-| `SBIT[tier-2:arrays]` | 2 |
 | `STORE-VALUE[tier-2:conditions]` | 2 |
-| `VECTOR-PUSH-EXTEND[tier-2:arrays]` | 2 |
-| `ARRAY-HAS-FILL-POINTER-P[tier-2:arrays]` | 1 |
-| `BIT-VECTOR-P[tier-2:arrays]` | 1 |
 | `COMPILE-FILE-PATHNAME[deferred:compile-file]` | 1 |
 | `COMPILE-FILE[deferred:compile-file]` | 1 |
 | `CONTINUE[tier-2:conditions]` | 1 |

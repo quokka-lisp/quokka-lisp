@@ -20,6 +20,7 @@
 #![deny(rust_2018_idioms)]
 #![warn(missing_docs)]
 
+pub mod array;
 pub mod bignum;
 pub mod closure;
 pub mod code;

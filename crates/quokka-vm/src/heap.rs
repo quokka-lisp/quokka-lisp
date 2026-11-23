@@ -306,6 +306,10 @@ pub enum ObjectType {
     HashTable = 5,
     /// A compiled function: code, constants, parameters. See `crate::code`.
     Function = 10,
+    /// An array that is not simple: the array holding its elements, the
+    /// offset into it, the fill pointer, the dimensions, and whether it is
+    /// displaced and adjustable (#67). See `crate::array`.
+    ArrayHeader = 11,
     /// A signalled condition: type, message, data. See `crate::condition`.
     ///
     /// Its own type rather than an `Instance`, which it was at first — and
@@ -385,6 +389,9 @@ pub enum ObjectType {
     /// name and literal, which is what fills an image (#44). Lisp cannot tell
     /// the two constant layouts apart: both are `string`, both refuse writes.
     PackedString = 68,
+    /// A simple bit vector: the count in raw slot 0, then the bits, 64 to a
+    /// word (#67). **Not traced.** See `crate::array`.
+    BitVector = 70,
     /// An IEEE 754 double, its 64 bits in raw slot 0. **Not traced.**
     ///
     /// Boxed because a double needs all 64 bits of a word and three are the
@@ -429,12 +436,14 @@ impl ObjectType {
             8 => Macro,
             9 => Condition,
             10 => Function,
+            11 => ArrayHeader,
             64 => String,
             65 => Code,
             66 => Bignum,
             67 => ConstantString,
             68 => PackedString,
             69 => DoubleFloat,
+            70 => BitVector,
             _ => return None,
         })
     }

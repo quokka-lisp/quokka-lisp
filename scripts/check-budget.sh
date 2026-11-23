@@ -18,7 +18,12 @@ cd "$(dirname "$0")/.."
 #               see private items
 #   tests/      cargo's integration tests: a separate crate that can only
 #               reach the public API, which is the point of it
-LIMIT=15000
+# Raised to 15,500 by step T (#67, Carsten, 23 Nov 2026): arrays of every
+# rank, fill pointers, adjustable and displaced arrays and bit vectors were
+# pulled from tier 2 into phase 2, and their representation is Rust's side of
+# rule 1 (`crates/quokka-vm/src/array.rs`, ~345 lines). The budget is a guide,
+# not a ceiling; this is the deliberate raise it allows.
+LIMIT=15500
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

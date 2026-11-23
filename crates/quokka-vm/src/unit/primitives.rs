@@ -152,7 +152,12 @@ fn the_table_order_is_pinned() {
             "%SET-SYMBOL-PLIST",
             "FBOUNDP",
             "FMAKUNBOUND",
-            "FUNCTIONP"
+            "FUNCTIONP",
+            "%MAKE-ARRAY-HEADER",
+            "%ARRAY-HEADER-SLOT",
+            "%SET-ARRAY-HEADER-SLOT",
+            "%MAKE-BIT-VECTOR",
+            "%ARRAY-KIND"
         ]
     );
 }
