@@ -179,6 +179,13 @@
             ;; A keyword is made the Rust way, so that a keyword made by the
             ;; reader and one made here are one object.
             ((eq package %keyword-package) (values (%intern-keyword string) nil))
+            ;; In `COMMON-LISP-USER`, a new symbol is made in the system table
+            ;; too, for the same reason: the Rust reader, which the build and
+            ;; some tests still use, interns there, and must find the symbol
+            ;; this made — `defstruct`'s `point-x` (#62, part 2) — rather than
+            ;; make a second one. The other direction is `%find-unadopted`.
+            ((and (eq package %cl-user-package) (null (%find-system-symbol string nil)))
+             (values (%adopt (%intern string) package nil) nil))
             (t (values (%adopt (make-symbol string) package nil) nil))))))
 
 ;;; Make SYMBOLS external in PACKAGE. An inherited symbol becomes present as
@@ -280,6 +287,16 @@
       (progn (if (eq (%symbol-home (car symbols)) 0)
                  (%adopt (car symbols) %quokka-package nil))
              (%adopt-the-rest (cdr symbols)))))
+
+;;; `defstruct`'s derived names — `make-point`, `point-x` — in the package
+;;; current when the `defstruct` is expanded, as CLHS says (#62, part 2). The
+;;; prelude's version interns by name alone, which is all there was before
+;;; packages, and such a symbol ends up in `CL-USER` whatever `*package*`
+;;; is. Redefined here, where packages exist; calls are late-bound, so
+;;; `defstruct` uses this one from now on. The compiler and the prelude use no
+;;; `defstruct`, so the fixpoint does not see the change.
+(defun %symbol-concat (a b)
+  (values (intern (%string-append (symbol-name a) (symbol-name b)) *package*)))
 
 ;;; The last form of the library: from here on, every symbol has a package.
 (%adopt-system-symbols)
