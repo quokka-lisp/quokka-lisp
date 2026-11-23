@@ -56,9 +56,10 @@ target/debug/quokka bootstrap --run tests/lisp/arithmetic.lisp # regenerate a ba
 
 These kinds of form would disagree for reasons that are nobody's fault:
 
-- **Anything needing a bignum.** SBCL has them and Quokka does not yet, so
-  `(* 2432902008176640000 21)` is an error here and an answer there. That is a
-  real difference and not one a test should be asserting about.
+- **Anything needing a bignum, in a tier-0 file.** The interpreter has no
+  bignums, so `(* 2432902008176640000 21)` is an error there and an answer in
+  SBCL. Tier-1 files run compiled, where bignums exist since #16, and
+  `bignums.lisp` is about nothing else.
 - **Printing a function.** SBCL prints `#<FUNCTION (LAMBDA (X)) {1001A2B3}>`,
   with an address. Nothing will ever match that.
 - **Anything the standard leaves unspecified.** `(eq 1 1)` is the trap: the

@@ -111,7 +111,19 @@ fn the_table_order_is_pinned() {
             "%QUOTIENT",
             "REM",
             "%PRINTED",
-            "MAKUNBOUND"
+            "MAKUNBOUND",
+            "%MAKE-BIGNUM",
+            "%BIGNUM-LENGTH",
+            "%BIGNUM-NEGATIVE-P",
+            "%BIGNUM-LIMB",
+            "%SET-BIGNUM-LIMB",
+            "%BIGNUM-NORMALIZE",
+            "%BIGNUMP",
+            "%FIXNUM-TO-BIGNUM",
+            "%INTEGER-COMPARE",
+            "%FIXNUM-LOGAND",
+            "%FIXNUM-LOGIOR",
+            "%FIXNUM-LOGXOR"
         ]
     );
 }

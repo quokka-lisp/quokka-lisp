@@ -201,6 +201,12 @@ value; `equal` compares conses and strings by content; `equalp` also ignores
 case and compares vectors element by element.
 ([45](part-6-self-hosting/45-sequences.md))
 
+**Fallback (arithmetic).** What the machine does when a fixnum primitive
+cannot answer — on overflow, or given a bignum: instead of an error, it calls
+the matching Lisp function (`%generic-+` and so on) with the same arguments.
+The fast path stays in Rust and the slow path is Lisp.
+([47](part-6-self-hosting/47-bignums.md))
+
 **Fixpoint.** The self-hosting test: the compiled compiler recompiles its own source, and the output must be identical to what the interpreted compiler produced. A mismatch means compilation changed its own meaning, which is a bug no ordinary test could find. Quokka's holds since step F: every named compiled function is the same in C1, C2 and C3, and C2 and C3 are the same world word for word apart from gensym names. ([The bootstrap](the-bootstrap.md), [42](part-6-self-hosting/42-the-fixpoint.md))
 
 **Flat closure.** A [closure](#closure) that copies the values it captured into
@@ -355,7 +361,7 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 
 **Package prefix.** The `pkg:` or `pkg::` before a symbol's name, saying which package it comes from: one colon for an external symbol, two for an internal one. The printer writes one only when the reader would not find the symbol without it. ([36](part-6-self-hosting/36-whose-symbol-is-it.md), [39](part-6-self-hosting/39-printing-in-lisp.md))
 
-**Two's complement.** How machines store signed integers: the top bit counts as a large negative value. A fixed width therefore holds one more negative number than positive, so negating the most negative one overflows. ([39](part-6-self-hosting/39-printing-in-lisp.md))
+**Two's complement.** How machines store signed integers: the top bit counts as a large negative value. A fixed width therefore holds one more negative number than positive, so negating the most negative one overflows. Common Lisp's bit operations behave as if every integer were stored this way, infinitely wide; Quokka stores bignums as sign and magnitude and converts for `logand` and its relatives. ([39](part-6-self-hosting/39-printing-in-lisp.md), [47](part-6-self-hosting/47-bignums.md))
 
 **Generation (of a compiler).** One complete build of a compiler by the previous one. Quokka's cold build makes C1; C1 rebuilding itself makes C2; C2 makes C3. A *bootstrap stage*, in GCC's term. Comparing generations is how a self-compiling compiler is checked. ([41](part-6-self-hosting/41-the-image-rebuilds-itself.md))
 
@@ -432,6 +438,11 @@ The standard also calls it a *generalized reference*. ([43](part-6-self-hosting/
 `(:colour red :size 3)`, read with `getf`. Adding a key puts it on the front,
 which makes a new list — why `(setf (getf …))` must write the place that holds
 the list as well. ([43](part-6-self-hosting/43-places.md))
+
+**Limb.** One fixed-size piece of a bignum, like one digit in a very large
+base. Quokka's limbs are 30 bits, least significant first, so that a limb
+times a limb plus a carry still fits in a fixnum.
+([47](part-6-self-hosting/47-bignums.md))
 
 **Lexical environment.** What the code around a point in a program means:
 which names are variables, local functions, local macros or symbol macros

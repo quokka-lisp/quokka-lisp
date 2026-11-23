@@ -67,6 +67,7 @@
 - [The last three, and what a macro can see](part-6-self-hosting/44-the-last-three.md)
 - [Lists, loops and sequences](part-6-self-hosting/45-sequences.md)
 - [A little language for output](part-6-self-hosting/46-format.md)
+- [Numbers without a ceiling](part-6-self-hosting/47-bignums.md)
 
 ---
 

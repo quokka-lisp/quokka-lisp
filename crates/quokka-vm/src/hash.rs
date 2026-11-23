@@ -137,6 +137,10 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> Result<u64, Ev
         // symbols (chapter 8), so the namespace has to go into the hash.
         return Ok(mix(h, if mc.is_keyword(key) { 2 } else { 3 }));
     }
+    // A bignum by its value, so two equal ones (different objects) meet.
+    if crate::bignum::is(mc, key) {
+        return Ok(crate::bignum::hash(mc, key, mix(OFFSET, 5), mix));
+    }
     if equal && key.is_object() && mc.header(key).object_type.is_string() {
         let mut h = mix(OFFSET, 4);
         for ch in mc.string_to_rust(key).chars() {
@@ -158,6 +162,9 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, equal: bool) -> Result<u64, Ev
 fn same_key<'h>(mc: &Mutation<'h>, a: Value<'h>, b: Value<'h>, equal: bool) -> bool {
     if a == b {
         return true;
+    }
+    if crate::bignum::is(mc, a) && crate::bignum::is(mc, b) {
+        return crate::bignum::compare(mc, a, b) == Some(std::cmp::Ordering::Equal);
     }
     if equal
         && a.is_object()

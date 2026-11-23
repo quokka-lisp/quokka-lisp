@@ -129,6 +129,7 @@ cannot reach.
 | **Sequences** | `find`, `position`, `count`, `remove`, `substitute`, `remove-duplicates`, `search`, `mismatch`, `map`, `reduce`, `every`/`some`, `fill`, `replace`, `subseq`, `concatenate`, a stable merge `sort` — CLHS chapter 17, on lists, vectors and strings alike, each written once over one iteration macro |
 | **Strings and characters** | `char=` and `char-equal` families with any number of arguments, the twelve string comparisons with ranges, `string-upcase`/`-downcase`/`-capitalize`, `string-trim`, `char`/`schar` — CLHS chapters 13 and 16 |
 | **`format`** | basic `format`: `~A` `~S` with padding, integers in any radix with grouping and signs, `~C`, `~P`, `~*`, conditionals `~[`, iteration `~{` with `~^`, case conversion `~(`, `~?`, and `formatter` — control strings parsed to a tree, then run |
+| **Integers of any size** | bignums: arithmetic, comparison, `truncate`/`floor`/`ceiling`/`round`, `gcd`, `expt`, `isqrt`, and `ash`/`logand`/`logior`/`logxor` on two's complement — the representation and the fixnum boundary in Rust, the algorithms in Lisp, with the fixnum fast path untouched |
 | **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux`, `&body`, and destructuring in macros |
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
 | **Vectors and strings** | `#(1 2 3)`, `aref`, `length` and `elt` over lists, vectors and strings alike; a string written in source is **read-only**, so a literal cannot be edited by accident ([#26](https://github.com/quokka-lisp/quokka-lisp/issues/26)) |
@@ -148,24 +149,24 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-412 tests, green on native, under wasmtime, and with the GC torture mode on.
-Twenty-eight Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, eleven more of
-tier 1 compiled only — and all twenty-eight again in a world that has rebuilt
-itself. The Rust core is 13,825 lines of the 15,000-line budget.
+413 tests, green on native, under wasmtime, and with the GC torture mode on.
+Twenty-nine Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, twelve more of
+tier 1 compiled only — and all twenty-nine again in a world that has rebuilt
+itself. The Rust core is 14,206 lines of the 15,000-line budget.
 
 ### What does not exist yet
 
 **The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
-which still lacks bignums and floats
+which still lacks floats
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
 The first world is still built by the interpreter — the cold build — and is
 then rebuilt by itself.
 
 No
-bignums ([#16](https://github.com/quokka-lisp/quokka-lisp/issues/16)) or floats
-([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)). No `loop`, no
-CLOS, no `define-setf-expander` and therefore no `incf` or `push`. No restarts
+floats ([#17](https://github.com/quokka-lisp/quokka-lisp/issues/17)) and no
+ratios ([#59](https://github.com/quokka-lisp/quokka-lisp/issues/59)), so no `/`.
+No `loop`, no CLOS. No restarts
 or `define-condition`: `handler-case` is the exception-shaped half of the
 condition system, and the rest is phase 3. No renderer and no editor — phases
 4 through 6 in [`docs/design.md`](docs/design.md).

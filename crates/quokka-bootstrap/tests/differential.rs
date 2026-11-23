@@ -133,6 +133,7 @@ tier1_cases! {
     sequence_functions => "sequence-functions",
     string_functions => "string-functions",
     format => "format",
+    bignums => "bignums",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -299,7 +300,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 711 :REPLACED 602)".into())],
+        [Outcome::Value("(:FORMS 771 :REPLACED 654)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

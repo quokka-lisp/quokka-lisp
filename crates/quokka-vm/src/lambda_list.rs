@@ -674,7 +674,10 @@ pub fn bind<'h>(
     let mut has_rest = false;
     let mut keys: Vec<(Value<'h>, Value<'h>)> = Vec::new();
     let mut allow_other_keys = false;
-    let marker = mc.intern(crate::lambda_list::UNSUPPLIED);
+    let marker = mc.cached_symbol(
+        crate::heap::symbol_cache::UNSUPPLIED,
+        crate::lambda_list::UNSUPPLIED,
+    );
 
     while param.is_cons() {
         let name = mc.car(param);

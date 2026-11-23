@@ -237,6 +237,17 @@ pub mod statics {
     pub const T_INDEX: usize = NIL_INDEX + HEADER_WORDS + symbol::SLOTS;
 }
 
+/// The slots of the symbol cache ([`Mutation::cached_symbol`]).
+pub mod symbol_cache {
+    /// `UNSUPPLIED MARKER`, which `lambda_list::bind` gives a parameter that
+    /// got no argument.
+    pub const UNSUPPLIED: usize = 0;
+    /// The first of the arithmetic fallbacks, one slot each from here.
+    pub const FALLBACKS: usize = 1;
+    /// How many slots the cache has.
+    pub const SLOTS: usize = 16;
+}
+
 /// Default soft limit: 1 MiB of heap before a collection is wanted.
 pub const DEFAULT_SOFT_LIMIT_WORDS: usize = 128 * 1024;
 
@@ -597,6 +608,12 @@ struct Storage {
     operands: u64,
     /// The pending host request, or `nil`. A root like the rest.
     request: u64,
+    /// System symbols the machine needs by name, remembered once found
+    /// (see [`Mutation::cached_symbol`]): a vector, or `nil` until the first
+    /// lookup. A root, so the collector forwards it; but only a cache, so an
+    /// image does not keep it — `collect_for_image` drops it first, and a
+    /// loaded world fills it again as it goes.
+    symbol_cache: u64,
     /// The bytecode VM's program counter, stack pointer and frame pointer.
     ///
     /// Numbers rather than `Value`s, so the collector leaves them alone — the
@@ -894,6 +911,29 @@ impl<'h> Mutation<'h> {
         let mut chars = text.chars();
         (0..self.string_length(v)).all(|i| chars.next() == Some(self.string_char(v, i)))
             && chars.next().is_none()
+    }
+
+    /// The system symbol called `name`, found once and then remembered in
+    /// slot `slot` of the symbol cache — for the names the machine itself
+    /// needs on a hot path, where [`Self::intern`]'s walk of the whole symbol
+    /// table on every call is far too slow: the unsupplied marker on each call
+    /// with `&optional` or `&key` (#16 found it costing 50 µs a call), and
+    /// the arithmetic fallbacks. The slots are fixed in [`symbol_cache`].
+    pub fn cached_symbol(&mut self, slot: usize, name: &str) -> Value<'h> {
+        // `nil` is a heap object too (a symbol in the static area), so the
+        // empty cache is recognised as nil, not as "not an object".
+        if Value::from_bits(self.storage.symbol_cache).is_nil() {
+            let cache = self.alloc_vector(symbol_cache::SLOTS);
+            self.storage.symbol_cache = cache.bits();
+        }
+        let cache = Value::from_bits(self.storage.symbol_cache);
+        let known = self.slot(cache, slot);
+        if !known.is_nil() {
+            return known;
+        }
+        let symbol = self.intern(name);
+        self.set_slot(cache, slot, symbol);
+        symbol
     }
 
     /// Find or create the symbol with this name.
@@ -1235,6 +1275,7 @@ impl Heap {
                 function: Value::NIL.bits(),
                 operands: Value::NIL.bits(),
                 request: Value::NIL.bits(),
+                symbol_cache: Value::NIL.bits(),
                 pc: 0,
                 sp: 0,
                 fp: 0,
@@ -1486,6 +1527,9 @@ impl Heap {
     /// padding as an object because the two halves disagreed about where the
     /// heap started.
     pub(crate) fn collect_for_image(&mut self) {
+        // The symbol cache is not part of the world, and what it happens to
+        // hold must not make two images of the same world differ.
+        self.storage.symbol_cache = Value::NIL.bits();
         self.collect_with_padding(0);
     }
 
@@ -1521,6 +1565,7 @@ impl Heap {
         self.storage.function = forward(from, &mut to, static_end, self.storage.function);
         self.storage.operands = forward(from, &mut to, static_end, self.storage.operands);
         self.storage.request = forward(from, &mut to, static_end, self.storage.request);
+        self.storage.symbol_cache = forward(from, &mut to, static_end, self.storage.symbol_cache);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has
@@ -1862,6 +1907,7 @@ impl Heap {
                 function: s.function,
                 operands: s.operands,
                 request: s.request,
+                symbol_cache: Value::NIL.bits(),
                 pc: s.pc as usize,
                 sp: s.sp as usize,
                 fp: s.fp as usize,

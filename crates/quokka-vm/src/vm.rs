@@ -564,10 +564,40 @@ impl<'a, 'h> Vm<'a, 'h> {
                         Transition::Continue
                     }
                 }
-                Err(e) => self.fail(e),
+                Err(e) => match self.arithmetic_fallback(index, args, &e) {
+                    Some(generic) => self.call_value(generic, args, tail),
+                    None => self.fail(e),
+                },
             };
         }
         self.enter(callee, args, tail)
+    }
+
+    /// The Lisp function to call when an arithmetic primitive's fixnum fast
+    /// path has failed — on overflow, or because an argument is a bignum —
+    /// or `None` to report the error as it is (#16, decision 1).
+    ///
+    /// The symbol is found by name once and then kept in the heap's symbol
+    /// cache. Before the library defines the function, the error stands.
+    fn arithmetic_fallback(
+        &mut self,
+        index: u32,
+        args: &[Value<'h>],
+        error: &EvalError,
+    ) -> Option<Value<'h>> {
+        let (slot, name) = primitives::fallback(index)?;
+        let wanted = matches!(error, EvalError::IntegerOverflow)
+            || args.iter().any(|a| crate::bignum::is(self.mc, *a));
+        if !wanted {
+            return None;
+        }
+        let symbol = self.mc.cached_symbol(slot, name);
+        let function = self.mc.slot(symbol, crate::heap::symbol::FUNCTION);
+        if function == Value::UNBOUND {
+            None
+        } else {
+            Some(function)
+        }
     }
 
     /// The primitives the machine has to do itself.

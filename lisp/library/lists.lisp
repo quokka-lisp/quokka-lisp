@@ -19,12 +19,14 @@
 ;;; Equality
 
 ;;; `eql` is `eq`, plus numbers and characters compared by value — which
-;;; matters only once a number can be *boxed*, two equal numbers being two
-;;; heap objects. None is yet: every integer is a fixnum and every character
-;;; an immediate, so `eq` is exactly right for everything Quokka can make.
-;;; Bignums (step L) and floats (M) redefine this one function, and every
-;;; `:test` that defaults to it becomes right with them (decision 2).
-(defun eql (a b) (eq a b))
+;;; matters once a number can be *boxed*, two equal numbers being two heap
+;;; objects. A fixnum and a character are immediate, so `eq` is right for
+;;; them; a bignum (step L, #16) is boxed, and two are compared by value.
+;;; Every `:test` that defaults to `eql` became right for bignums with this
+;;; one change (decision 2); floats (M) will add their own case.
+(defun eql (a b)
+  (or (eq a b)
+      (and (%bignump a) (%bignump b) (eq (%integer-compare a b) 0))))
 
 ;;; Structure: conses by their parts, strings by their characters, anything
 ;;; else by `eql`. Down the `cdr` by iteration, so a long list costs no depth.

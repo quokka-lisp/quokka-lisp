@@ -589,6 +589,33 @@
 (defun %read-sharp-quote (stream sub-char argument)
   (list 'function (%read-required stream)))
 
+;;; `#x1F`, `#b101`, `#o17`, `#36rZ` — a rational in a radix (CLHS 2.4.8.7
+;;; to 2.4.8.10), here an integer, of any size. Added with bignums (#16):
+;;; the printer has written `#x` prefixes since step G, and now they read
+;;; back.
+(defun %read-sharp-radix (stream sub-char argument)
+  (let ((radix (cond ((char-equal sub-char #\X) 16)
+                     ((char-equal sub-char #\B) 2)
+                     ((char-equal sub-char #\O) 8)
+                     ((and argument (<= 2 argument 36)) argument)
+                     (t (error "#R wants a radix from 2 to 36" argument))))
+        (chars nil))
+    (do ((next (peek-char nil stream nil nil) (peek-char nil stream nil nil)))
+        ((or (null next) (%terminatorp next)))
+      (push (read-char stream) chars))
+    (%integer-in-radix (coerce (reverse chars) 'string) radix)))
+
+(defun %integer-in-radix (text radix)
+  (let* ((negative (and (> (length text) 0) (eq (char text 0) #\-)))
+         (start (if (and (> (length text) 0) (member (char text 0) '(#\- #\+))) 1 0))
+         (value 0))
+    (if (>= start (length text)) (error "no digits after the radix" text))
+    (do ((i start (+ i 1))) ((>= i (length text)))
+      (let ((weight (digit-char-p (char text i) radix)))
+        (if (null weight) (error "not a digit in this radix" text radix))
+        (setq value (+ (* value radix) weight))))
+    (if negative (- value) value)))
+
 ;;; `#(...)` — a vector of the elements.
 (defun %read-sharp-paren (stream sub-char argument)
   (apply #'vector (%read-list-items stream nil)))
@@ -628,5 +655,9 @@
 (set-dispatch-macro-character #\# #\( #'%read-sharp-paren %standard-readtable)
 (set-dispatch-macro-character #\# #\: #'%read-sharp-colon %standard-readtable)
 (set-dispatch-macro-character #\# #\| #'%read-block-comment %standard-readtable)
+(set-dispatch-macro-character #\# #\x #'%read-sharp-radix %standard-readtable)
+(set-dispatch-macro-character #\# #\b #'%read-sharp-radix %standard-readtable)
+(set-dispatch-macro-character #\# #\o #'%read-sharp-radix %standard-readtable)
+(set-dispatch-macro-character #\# #\r #'%read-sharp-radix %standard-readtable)
 
 (defvar *readtable* (copy-readtable %standard-readtable))

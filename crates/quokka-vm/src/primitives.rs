@@ -128,6 +128,18 @@ pub enum Prim {
     Rem = 75,
     Printed = 76,
     Makunbound = 77,
+    MakeBignum = 78,
+    BignumLength = 79,
+    BignumNegativeP = 80,
+    BignumLimb = 81,
+    SetBignumLimb = 82,
+    BignumNormalize = 83,
+    Bignump = 84,
+    FixnumToBignum = 85,
+    IntegerCompare = 86,
+    FixnumLogand = 87,
+    FixnumLogior = 88,
+    FixnumLogxor = 89,
 }
 
 impl Prim {
@@ -443,7 +455,50 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // bound and then made to have no value (CLHS). The unbound marker is a
     // Rust value Lisp must never hold, so only Rust can put it in a symbol.
     (Prim::Makunbound, "MAKUNBOUND", Arity::Exactly(1)),
+    // Step L (#16): bignums. The representation and what is bounded by it —
+    // making one, its limbs, normalising, comparing (`crate::bignum`); the
+    // arithmetic is Lisp. And the bitwise operations on two fixnums, which
+    // Lisp cannot do without them, and which the bignum code uses on limbs.
+    (Prim::MakeBignum, "%MAKE-BIGNUM", Arity::Exactly(2)),
+    (Prim::BignumLength, "%BIGNUM-LENGTH", Arity::Exactly(1)),
+    (
+        Prim::BignumNegativeP,
+        "%BIGNUM-NEGATIVE-P",
+        Arity::Exactly(1),
+    ),
+    (Prim::BignumLimb, "%BIGNUM-LIMB", Arity::Exactly(2)),
+    (Prim::SetBignumLimb, "%SET-BIGNUM-LIMB", Arity::Exactly(3)),
+    (
+        Prim::BignumNormalize,
+        "%BIGNUM-NORMALIZE",
+        Arity::Exactly(1),
+    ),
+    (Prim::Bignump, "%BIGNUMP", Arity::Exactly(1)),
+    (Prim::FixnumToBignum, "%FIXNUM-TO-BIGNUM", Arity::Exactly(1)),
+    (Prim::IntegerCompare, "%INTEGER-COMPARE", Arity::Exactly(2)),
+    (Prim::FixnumLogand, "%FIXNUM-LOGAND", Arity::Exactly(2)),
+    (Prim::FixnumLogior, "%FIXNUM-LOGIOR", Arity::Exactly(2)),
+    (Prim::FixnumLogxor, "%FIXNUM-LOGXOR", Arity::Exactly(2)),
 ];
+
+/// The Lisp function an arithmetic primitive hands over to when its fixnum
+/// fast path cannot answer — on overflow, or when an argument is a bignum
+/// (#16, decision 1) — and its slot in the symbol cache. `Vm::call_value`
+/// makes the call; the fast path never pays for it.
+pub fn fallback(index: u32) -> Option<(usize, &'static str)> {
+    let (n, name) = match Prim::from_u32(index)? {
+        Prim::Add => (0, "%GENERIC-+"),
+        Prim::Sub => (1, "%GENERIC--"),
+        Prim::Mul => (2, "%GENERIC-*"),
+        Prim::NumEq => (3, "%GENERIC-="),
+        Prim::Lt => (4, "%GENERIC-<"),
+        Prim::Gt => (5, "%GENERIC->"),
+        Prim::Quotient => (6, "%GENERIC-QUOTIENT"),
+        Prim::Rem => (7, "%GENERIC-REM"),
+        _ => return None,
+    };
+    Some((crate::heap::symbol_cache::FALLBACKS + n, name))
+}
 
 /// The primitives the machine intercepts rather than calling.
 ///
@@ -865,7 +920,9 @@ pub fn call_slice<'h>(
         Prim::Stringp => Ok(boolean(
             args[0].is_object() && mc.header(args[0]).object_type.is_string(),
         )),
-        Prim::Integerp => Ok(truth(args[0].as_fixnum().is_some())),
+        Prim::Integerp => Ok(truth(
+            args[0].as_fixnum().is_some() || crate::bignum::is(mc, args[0]),
+        )),
         Prim::SpecialOperatorP => Ok(truth(
             mc.is_symbol(args[0])
                 && mc
@@ -898,6 +955,75 @@ pub fn call_slice<'h>(
             })
         }
         Prim::Printed => Ok(mc.alloc_string(&crate::printer::print(mc, args[0]))),
+        Prim::MakeBignum => {
+            let limbs = fixnum(name, args[1])?;
+            if limbs < 0 || limbs as usize >= crate::heap::MAX_OBJECT_SLOTS {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a limb count the heap can hold",
+                });
+            }
+            Ok(crate::bignum::make(mc, !args[0].is_nil(), limbs as usize))
+        }
+        Prim::BignumLength
+        | Prim::BignumNegativeP
+        | Prim::BignumLimb
+        | Prim::SetBignumLimb
+        | Prim::BignumNormalize => {
+            use crate::bignum;
+            let b = args[0];
+            if !bignum::is(mc, b) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a bignum",
+                });
+            }
+            let index = |v: Value<'h>| -> Result<usize, EvalError> {
+                match v.as_fixnum() {
+                    Some(i) if i >= 0 && (i as usize) < bignum::length(mc, b) => Ok(i as usize),
+                    _ => Err(EvalError::WrongType {
+                        name,
+                        wanted: "a limb index inside the bignum",
+                    }),
+                }
+            };
+            match prim {
+                Prim::BignumLength => make(Some(bignum::length(mc, b) as i64)),
+                Prim::BignumNegativeP => Ok(truth(bignum::negative(mc, b))),
+                Prim::BignumLimb => make(Some(bignum::limb(mc, b, index(args[1])?) as i64)),
+                Prim::SetBignumLimb => {
+                    let at = index(args[1])?;
+                    match args[2].as_fixnum() {
+                        Some(l) if (0..=bignum::LIMB_MASK as i64).contains(&l) => {
+                            bignum::set_limb(mc, b, at, l as u64);
+                            Ok(args[2])
+                        }
+                        _ => Err(EvalError::WrongType {
+                            name,
+                            wanted: "a limb, from 0 below 2^30",
+                        }),
+                    }
+                }
+                _ => Ok(bignum::normalize(mc, b)),
+            }
+        }
+        Prim::Bignump => Ok(truth(crate::bignum::is(mc, args[0]))),
+        Prim::FixnumToBignum => Ok(crate::bignum::from_i64(mc, fixnum(name, args[0])?)),
+        Prim::IntegerCompare => match crate::bignum::compare(mc, args[0], args[1]) {
+            Some(order) => make(Some(order as i64)),
+            None => Err(EvalError::WrongType {
+                name,
+                wanted: "two integers",
+            }),
+        },
+        Prim::FixnumLogand | Prim::FixnumLogior | Prim::FixnumLogxor => {
+            let (a, b) = (fixnum(name, args[0])?, fixnum(name, args[1])?);
+            make(Some(match prim {
+                Prim::FixnumLogand => a & b,
+                Prim::FixnumLogior => a | b,
+                _ => a ^ b,
+            }))
+        }
         Prim::ReadSource | Prim::WriteConsole => Err(EvalError::BadSyntax {
             operator: name,
             detail: "asks the host for something, which only compiled code can do: \

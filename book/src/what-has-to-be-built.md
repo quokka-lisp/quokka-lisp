@@ -296,6 +296,7 @@ Each chapter answers one question.
 | 44 | [The last three, and what a macro can see](part-6-self-hosting/44-the-last-three.md) | How does a program bind a variable whose name it computes, and how can a macro know what the code around it means? |
 | 45 | [Lists, loops and sequences](part-6-self-hosting/45-sequences.md) | How do you write fifty similar functions without repeating yourself or paying for an abstraction at run time? |
 | 46 | [A little language for output](part-6-self-hosting/46-format.md) | How does a template with loops and conditionals in it fill itself in, and why parse it before running it? |
+| 47 | [Numbers without a ceiling](part-6-self-hosting/47-bignums.md) | How does an integer grow past the machine word, and which half of that belongs in Rust? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -309,8 +310,9 @@ Still to come, and deliberately so:
   keywords, vectors, strings, hash tables, `setf`, a minimal **condition
   system**, `defstruct` and multiple values; `progv`, `load-time-value` and
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
-  sequence and string functions (chapter 45); and basic `format` (chapter
-  46). Still to come in tier 1: bignums and floats; beyond it, `loop`, CLOS and the rest, in
+  sequence and string functions (chapter 45); basic `format` (chapter
+  46); and integers of any size (chapter 47). Still to come in tier 1:
+  floats; beyond it, `loop`, CLOS and the rest, in
   later phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
