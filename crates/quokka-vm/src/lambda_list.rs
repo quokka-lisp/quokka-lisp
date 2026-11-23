@@ -75,9 +75,7 @@
 //! are not implemented. They apply only to `defmacro`, and they need this
 //! rewrite to recurse into nested lists.
 //!
-//! `&environment` and `&whole` are also absent, and `:allow-other-keys t`
-//! passed *as an argument* is not honoured; only the `&allow-other-keys`
-//! declaration is.
+//! `&environment` and `&whole` are also absent.
 
 use crate::error::EvalError;
 use crate::heap::Mutation;
@@ -801,22 +799,26 @@ fn bind_keys<'h>(
         let keyword = mc.car(arg);
         let rest = mc.cdr(arg);
         if !rest.is_cons() {
-            return Err(EvalError::BadSyntax {
-                operator: "a function call",
-                detail: "odd number of keyword arguments",
-            });
+            return Err(EvalError::BadCall("odd number of keyword arguments"));
         }
         given.push((keyword, mc.car(rest)));
         arg = mc.cdr(rest);
     }
 
-    if !allow_other_keys {
+    // `:allow-other-keys` with a true value among the arguments switches the
+    // check off for this call, as `&allow-other-keys` does for every call
+    // (CLHS 3.4.1.4.1); the first occurrence counts, like any keyword's. It
+    // is itself always allowed.
+    let is_allow =
+        |mc: &Mutation<'h>, k: Value<'h>| mc.is_keyword(k) && mc.symbol_is(k, "ALLOW-OTHER-KEYS");
+    let allowed_here = given
+        .iter()
+        .find(|(k, _)| is_allow(mc, *k))
+        .is_some_and(|(_, v)| !v.is_nil());
+    if !allow_other_keys && !allowed_here {
         for (keyword, _) in &given {
-            if !keys.iter().any(|(k, _)| k == keyword) {
-                return Err(EvalError::BadSyntax {
-                    operator: "a function call",
-                    detail: "unknown keyword argument",
-                });
+            if !is_allow(mc, *keyword) && !keys.iter().any(|(k, _)| k == keyword) {
+                return Err(EvalError::BadCall("unknown keyword argument"));
             }
         }
     }

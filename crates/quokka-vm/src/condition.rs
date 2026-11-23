@@ -103,6 +103,7 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
             format!("{name} wants {wanted} arguments and got {got}"),
         ),
         EvalError::WrongType { name, wanted } => ("TYPE-ERROR", format!("{name} wants {wanted}")),
+        EvalError::BadCall(detail) => ("PROGRAM-ERROR", format!("bad call: {detail}")),
         EvalError::IndexOutOfBounds { index, length } => (
             "TYPE-ERROR",
             format!("index {index} is outside a sequence of length {length}"),

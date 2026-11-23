@@ -36,6 +36,12 @@ pub enum EvalError {
         /// How many it got.
         got: usize,
     },
+    /// A call whose arguments do not fit the function's lambda list: an odd
+    /// number of keyword arguments, or a keyword the function does not take.
+    /// A fault in the *call*, so the program may catch it — CLHS calls it a
+    /// `program-error` — unlike `BadSyntax`, which in compiled code means the
+    /// bytecode itself is wrong (#62, part 1).
+    BadCall(&'static str),
     /// A primitive given the wrong kind of thing.
     WrongType {
         /// Which primitive.
@@ -84,6 +90,7 @@ impl core::fmt::Display for EvalError {
             EvalError::Malformed(what) => write!(f, "this compiled function is malformed: {what}"),
             EvalError::NoSuchExit(n) => write!(f, "there is no exit named {n} here"),
             EvalError::BadSyntax { operator, detail } => write!(f, "bad {operator}: {detail}"),
+            EvalError::BadCall(detail) => write!(f, "bad call: {detail}"),
             EvalError::WrongArgumentCount { name, wanted, got } => {
                 write!(f, "{name} wants {wanted} argument(s), got {got}")
             }
