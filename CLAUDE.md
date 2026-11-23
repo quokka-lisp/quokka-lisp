@@ -212,10 +212,10 @@ reached when `%symbol-macro` runs out of scopes — like `%compiler-macros`,
 empty when the compiler compiles itself. Found: `set-exclusive-or` swapped
 the test's arguments; `symbol-macrolet` ignored body declarations.
 ansi-test after U: **7,600 of 13,558 pass**; needs tier 1 492; plain failures 372.
-**Next:** V, integer bit fields (`byte`, `ldb`, `dpb`, `boole`);
-W, the reader (`readtable-case`, `read-preserving-whitespace`); X, hash tables
-(`equalp` tables, a function as `:test`, `sxhash`) and the standard streams;
-then the plain failures. Phase 2's scope is
+**Next:** V, integer bit fields (#69: `byte`, `ldb`, `dpb`, `boole`);
+W, the reader (#70: `readtable-case`, `read-preserving-whitespace`); X, hash
+tables (#71: `equalp` tables, a function as `:test`, `sxhash`) and the
+standard streams; then the plain failures. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -364,6 +364,11 @@ and picked up again.
   actually costs — write the conclusion into the issue as a comment. A decision
   argued and then lost to scrollback has to be argued again.
 - **Reference the issue in the commit**, and close it from there where it fits.
+- **The phase's tracking issue keeps the whole order.** Its Order table
+  (#39 for phase 2) gets a row when a step's issue is opened and is marked
+  done when it closes; a step that exists only in comments, notes or this
+  file is lost to anyone reading the tracker. Steps O–U were missing from
+  #39's table until 24 Nov 2026.
 - **Labels:** `phase-0`…`phase-6` for stage, `decision` for an open design
   question, and `vm` / `lisp` / `book` / `infra` for area. Milestones mirror the
   phases in `docs/design.md`, each with its gate.
