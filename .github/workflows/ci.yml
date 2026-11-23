@@ -72,10 +72,17 @@ jobs:
       # It is still the portability half of the differential tests: the same
       # Lisp files and the same baselines, on a 32-bit target with a
       # different pointer story. The correctness half is the sbcl-oracle job.
+      #
+      # Cargo runs each test in its crate's directory, which `--dir=.` is; the
+      # tests that read tests/lisp reach it by an absolute path built from
+      # CARGO_MANIFEST_DIR, which WASI resolves only inside a preopened
+      # directory — so the repository is preopened too, under its own path.
+      # Without it, `read_dir` of tests/lisp failed and the job had been red
+      # since 22 Nov.
       - name: VM, bootstrap and differential tests under wasmtime
-        env:
-          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir=.
-        run: cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
+        run: |
+          CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$GITHUB_WORKSPACE" \
+            cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
 
   # SBCL is the differential-test oracle, never a build dependency. This job
   # is the only place it is installed, and nothing else needs it.

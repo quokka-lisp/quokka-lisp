@@ -318,7 +318,7 @@ sbcl --script scripts/oracle.lisp tests/lisp/reader.lisp
 | | |
 | --- | --- |
 | GC torture: collect at every mutation boundary, verify the heap | `cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture` |
-| the tests under WebAssembly | `CARGO_TARGET_WASM32_WASIP1_RUNNER='wasmtime --dir=.' cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
+| the tests under WebAssembly | `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
 | the browser build | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
 | the Rust line budget (15,000, tests not counted) | `./scripts/check-budget.sh` |
 

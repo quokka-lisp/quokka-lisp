@@ -44,7 +44,7 @@ disagreement surfaces as a failing build rather than as nothing at all.
 
 ```
 cargo test -p quokka-bootstrap --test differential          # Quokka, native
-CARGO_TARGET_WASM32_WASIP1_RUNNER='wasmtime --dir=.' \
+CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" \
   cargo test -p quokka-bootstrap --test differential --target wasm32-wasip1
 ./scripts/oracle.sh                                  # SBCL, needs sbcl installed
 target/debug/quokka bootstrap --run tests/lisp/arithmetic.lisp # regenerate a baseline

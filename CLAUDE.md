@@ -437,7 +437,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Differential tests | `cargo test -p quokka-bootstrap --test differential` (Quokka) · `./scripts/oracle.sh` (SBCL) |
 | Regenerate a baseline | `cargo run -p quokka -- bootstrap --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |
 | Build for the browser | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
-| Test under WASI | `CARGO_TARGET_WASM32_WASIP1_RUNNER='wasmtime --dir=.' cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
+| Test under WASI | `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
 | Dev console bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |
 | Serve the dev console | `python3 -m http.server -d crates/quokka-wasm/www 8080` |
 | Format and lint | `cargo fmt --all` · `cargo clippy --workspace --all-targets -- -D warnings` |

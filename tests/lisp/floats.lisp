@@ -9,6 +9,9 @@
 ;;;; float from rationals alone — (sqrt 2), (float 1) — because SBCL makes a
 ;;;; single-float of that. The transcendental functions differ in the last
 ;;;; bit between maths libraries, so they are compared rounded (decision 7).
+;;;; Nor does it print a subnormal, or use ~E without a digit count on a
+;;;; value with a long expansion: SBCL 2.6.0, which CI installs, prints those
+;;;; with more digits than the shortest, where 2.6.10 and Quokka do not.
 ;;;; And no result may be complex: (sqrt -1) is a number in SBCL and an
 ;;;; error in Quokka.
 
@@ -17,10 +20,11 @@
 ;; Reading, and printing the shortest digits that read back.
 (list 1.5 -2.25 0.1 .5 -.5 +.5 1.e5 1e5 1.5d3 1.5e-3 -1.e-2 1E3)
 (list 1. -12. 1.0)
-(list 1d7 9999999.0 1d-3 9.99d-4 123456.789 1d23 5d-324 1d100 100.0 0.0 -0.0)
+(list 1d7 9999999.0 1d-3 9.99d-4 123456.789 1d23 1d100 100.0 0.0 -0.0)
 (list (+ 0.1 0.2) (* 1.1 1.1) (- 0.3 0.1) (/ 1.0 3) (/ 2.0 3))
 (list most-positive-double-float most-negative-double-float
-      least-positive-double-float least-positive-normalized-double-float)
+      least-positive-normalized-double-float (> least-positive-double-float 0)
+      (= (/ least-positive-double-float 2) 0))
 (list double-float-epsilon double-float-negative-epsilon
       (= (+ 1d0 double-float-epsilon) 1d0) (= (+ 1d0 (/ double-float-epsilon 2)) 1d0))
 (let ((xs (list 0.1 (/ 1.0 3) 1d23 5d-324 2.2250738585072014d-308 (sqrt 2d0) pi
@@ -127,7 +131,7 @@
       (format nil "~4,2F" 0.5) (format nil "~2,2F" 123.456) (format nil "~2,2,,'*F" 123.456)
       (format nil "~8,2,,,'0F" 3.14159) (format nil "~,2,1F" 3.14159)
       (format nil "~,2,-1F" 3.14159) (format nil "~6F" 3.14159) (format nil "~6F" 123456.7))
-(list (format nil "~E" 3.14159) (format nil "~E" 1d-10) (format nil "~E" 0.0)
+(list (format nil "~E" 1.5) (format nil "~E" 1d-10) (format nil "~E" 0.0)
       (format nil "~E" -1d100) (format nil "~,3E" 3.14159) (format nil "~,3E" 9.9996)
       (format nil "~,2,3E" 3.14159) (format nil "~12,3E" 3.14159)
       (format nil "~,3,,0E" 3.14159) (format nil "~,3,,2E" 3.14159) (format nil "~@E" 3.5)

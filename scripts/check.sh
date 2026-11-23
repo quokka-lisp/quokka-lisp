@@ -51,7 +51,10 @@ cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
 
 say "wasm32-wasip1 (tests)"
 if command -v wasmtime >/dev/null 2>&1; then
-  CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=." \
+  # The repository is preopened under its own path as well as `.`: cargo runs
+  # a test in its crate's directory, and a test reading tests/lisp reaches it
+  # by an absolute path that WASI resolves only inside a preopen.
+  CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" \
     cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
 else
   echo "wasmtime not installed — building only. Install: brew install wasmtime"
