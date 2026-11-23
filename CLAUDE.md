@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 862 :REPLACED 729)` (asserted in `differential.rs`; a new library file
+`(:FORMS 881 :REPLACED 743)` (asserted in `differential.rs`; a new library file
 changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -154,9 +154,18 @@ function in both evaluators (`closure::designated`); the Lisp reader has `#+`
 :ieee-floating-point)`; `declare` is a prelude macro expanding to nil, and the
 compiler reads `special` declarations in `let`/`let*`/`lambda`/`locally`
 (a compile-time `:special` scope that `%lookup` stops at); `proclaim`/`declaim`.
-ansi-test: 5,219 of 12,325 pass, 18 escape. **Next: the next gaps in
-`docs/ansi-test.md`** (`symbol-plist`, `with-standard-io-syntax`, `compile`,
-`macro-function`, the package functions), then the plain failures. Phase 2's scope is
+ansi-test: 5,219 of 12,325 pass, 18 escape. **Step P is done** (#63, chapter
+51): `symbol-plist`/`%set-symbol-plist`, `fboundp`, `fmakunbound`, `functionp`
+are primitives; `get`, `remprop`, `get-properties`, `fdefinition`,
+`macro-function` (a CL-style function of form and environment, wrapping
+Quokka's spread-argument macro objects) are in `lisp/library/symbols.lisp`;
+`defconstant`/`constantp` in `specials.lisp`; the compiler keeps a table of
+constants and refuses binding or `setq` of one (`t`, `nil`, keywords) with a
+`program-error` — in ordinary lambda lists only, since a macro's `()` is a
+destructuring pattern. ansi-test: 5,382 pass; needs tier 1 down to 1,752.
+**Next:** `with-standard-io-syntax`, `compile`, the package functions
+(`delete-package`, `unuse-package`, `package-used-by-list`, `do-symbols` …),
+then the plain failures. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -172,7 +181,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 243 lines left, for phases 2 to 6** — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators).
+- **The Rust budget: 189 lines left, for phases 2 to 6** — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -225,8 +234,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**416 tests**; **31 differential files agree with SBCL** — 17 interpreted and
-compiled, plus fourteen tier-1 files, compiled only, and all 31 also pass in a rebuilt world. The Rust core is **14,757** lines of the 15,000 budget.
+**417 tests**; **32 differential files agree with SBCL** — 17 interpreted and
+compiled, plus fifteen tier-1 files, compiled only, and all 32 also pass in a rebuilt world. The Rust core is **14,811** lines of the 15,000 budget.
 
 ## How phase 1 ended
 

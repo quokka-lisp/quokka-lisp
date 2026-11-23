@@ -58,6 +58,26 @@
 (defun %special-variable-p (symbol)
   (gethash symbol %special-variables))
 
+;;; Constants (#63, part 4): `t`, `nil`, keywords, and the names
+;;; `defconstant` proclaims, kept in a table as the specials are. A constant
+;;; may not be bound or assigned: `let`, `let*`, a lambda parameter, `setq`
+;;; and `symbol-macrolet` of one are refused at compile time with a
+;;; `program-error`, as SBCL refuses them.
+(setq %constant-variables (make-hash-table))
+
+(defun %proclaim-constant (symbol)
+  (setf (gethash symbol %constant-variables) t)
+  symbol)
+
+(defun %constant-name-p (name)
+  (or (eq name t) (null name) (keywordp name) (gethash name %constant-variables)))
+
+(defun %refuse-constants (names)
+  (cond ((endp names) nil)
+        ((and (symbolp (car names)) (%constant-name-p (car names)))
+         (error 'program-error))
+        (t (%refuse-constants (cdr names)))))
+
 ;;; Declarations (#62, part 5). `(declare ...)` at the start of a body is
 ;;; advice the compiler may ignore (CLHS 3.3.1) — `ignore`, `type`,
 ;;; `optimize` and the rest — except `special`, which changes what a name
@@ -317,6 +337,7 @@
 (defun %compile-let (form env tail)
   (let ((names (%binding-names (second form)))
         (declared (%declared-specials (cddr form))))
+    (%refuse-constants names)
     (%compile-arguments (%binding-inits (second form)) env)
     (if (%specials-among names declared)
         ;; Every init is evaluated before anything is bound, special or not —
@@ -351,6 +372,7 @@
   (if (endp bindings)
       (%compile-body body (%special-scope declared env) tail)
       (let ((name (%binding-name (car bindings))))
+        (%refuse-constants (list name))
         (%compile (%binding-init (car bindings)) env nil)
         (if (%special-here-p name declared)
             ;; One special at a time, as `let*` binds everything: the init has
@@ -381,6 +403,7 @@
 ;;; `b` — and nothing noticed, because the only tests of `setq` with more than
 ;;; one pair were in a differential file that had never been run compiled.
 (defun %compile-setq-pairs (pairs env)
+  (%refuse-constants (list (car pairs)))
   (let ((macro (%symbol-macro (car pairs) env)))
     ;; `setq` of a symbol macro is `setf` of what it stands for (CLHS
     ;; `setq`), so `(setq x 5)` with `x` meaning `(car cell)` writes the car.
@@ -414,6 +437,10 @@
 ;;; slot for slot rather than by a second reading of the same syntax.
 (defun %compile-lambda (form env)
   (let ((rewritten (%rewrite-lambda-list (second form) (cddr form))))
+    ;; An ordinary lambda list only: in a macro's, `()` is an empty
+    ;; destructuring pattern, which the rewrite turns into a parameter named
+    ;; nil — `(macrolet ((m (()) ...)) ...)` is legal (ansi-test macrolet.39).
+    (%refuse-constants (third rewritten))
     (%compile-rewritten-lambda (first rewritten)
                                (second rewritten)
                                (third rewritten)
@@ -754,6 +781,7 @@
       (let ((name (car (car definitions))))
         (if (%special-variable-p name)
             (error "symbol-macrolet cannot name a special variable" name))
+        (%refuse-constants (list name))
         (cons (cons name (second (car definitions)))
               (%symbol-macro-definitions (cdr definitions))))))
 

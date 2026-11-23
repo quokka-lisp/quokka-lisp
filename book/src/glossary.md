@@ -159,6 +159,8 @@ from the reference that points at it. "Cons" is short for "construct".
 
 **Conformance test suite.** A large collection of tests that checks an implementation against a standard rather than against its own intentions. Common Lisp's is *ansi-test*, some seventeen thousand tests written by Paul Dietz from 2002 on, organised by the chapters of the standard. Quokka runs fourteen of its groups. ([49](part-6-self-hosting/49-ansi-test.md))
 
+**Constant variable.** A variable whose value never changes: `t`, `nil`, every keyword, and any name `defconstant` defines, such as `pi`. Binding or assigning one is refused; Quokka's compiler refuses it with a `program-error`. ([51](part-6-self-hosting/51-symbol-cells.md))
+
 **Continuation.** What remains to be done after the current computation finishes. In Quokka they are [frames](#frame) on the evaluator's stack — ordinary heap objects rather than an abstraction, which is what will let a debugger show you one. ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
 **Control string.** The template `format` fills in: text with directives in
@@ -455,7 +457,7 @@ The standard also calls it a *generalized reference*. ([43](part-6-self-hosting/
 **Property list (plist).** A list of alternating keys and values,
 `(:colour red :size 3)`, read with `getf`. Adding a key puts it on the front,
 which makes a new list — why `(setf (getf …))` must write the place that holds
-the list as well. ([43](part-6-self-hosting/43-places.md))
+the list as well. ([43](part-6-self-hosting/43-places.md)) ([51](part-6-self-hosting/51-symbol-cells.md))
 
 **Limb.** One fixed-size piece of a bignum, like one digit in a very large
 base. Quokka's limbs are 30 bits, least significant first, so that a limb

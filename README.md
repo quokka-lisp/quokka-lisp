@@ -150,17 +150,17 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-416 tests, green on native, under wasmtime, and with the GC torture mode on.
-Thirty-one Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, fourteen more of
-tier 1 compiled only — and all thirty-one again in a world that has rebuilt
-itself. The Rust core is 14,757 lines of the 15,000-line budget.
+417 tests, green on native, under wasmtime, and with the GC torture mode on.
+Thirty-two Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, fifteen more of
+tier 1 compiled only — and all thirty-two again in a world that has rebuilt
+itself. The Rust core is 14,811 lines of the 15,000-line budget.
 
 ### What does not exist yet
 
 **The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
 whose parts all exist now and are measured against ansi-test, the Common Lisp
-conformance suite: 5,219 of 12,325 tests in its tier-1 groups pass
+conformance suite: 5,382 of 12,324 tests in its tier-1 groups pass
 ([`docs/ansi-test.md`](docs/ansi-test.md) has the table and the gaps; #60).
 The phase ends when every test that does not pass is explained by a feature
 deferred to a later tier

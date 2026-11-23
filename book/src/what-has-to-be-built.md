@@ -300,6 +300,7 @@ Each chapter answers one question.
 | 48 | [Numbers with a point](part-6-self-hosting/48-floats.md) | Where does a 64-bit float live in a 64-bit tagged word, and how does it become text and back exactly? |
 | 49 | [Measuring against the standard](part-6-self-hosting/49-ansi-test.md) | How much of Common Lisp does tier 1 cover, and how do you count a test that cannot run yet? |
 | 50 | [What the first measurement asked for](part-6-self-hosting/50-first-gaps.md) | Which small gaps block the most tests, and how does a dynamic variable declared in one place stay dynamic only there? |
+| 51 | [The rest of a symbol](part-6-self-hosting/51-symbol-cells.md) | What else does a symbol hold besides a value and a function, and how does a compiler stop a constant from being rebound? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

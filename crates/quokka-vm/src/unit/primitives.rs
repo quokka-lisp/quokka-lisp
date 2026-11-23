@@ -147,7 +147,12 @@ fn the_table_order_is_pinned() {
             "%COSH",
             "%TANH",
             "%ATAN2",
-            "%POW"
+            "%POW",
+            "SYMBOL-PLIST",
+            "%SET-SYMBOL-PLIST",
+            "FBOUNDP",
+            "FMAKUNBOUND",
+            "FUNCTIONP"
         ]
     );
 }

@@ -82,3 +82,33 @@
       (cons (list 'proclaim (list 'quote (car specifiers)))
             (%quoted-proclaims (cdr specifiers)))
       nil))
+;;; `(defconstant name value [documentation])` (#63, part 4) — a variable
+;;; whose value never changes. Proclaimed constant as it is expanded, so the
+;;; compiler refuses a binding or `setq` of it in the same form and after;
+;;; marked on the symbol's property list, which `constantp` reads; and given
+;;; VALUE unless it already has one `eql` to it, so loading the same file
+;;; twice is harmless, as in SBCL. A different value is an error.
+(defmacro defconstant (name value &optional documentation)
+  (%proclaim-constant name)
+  `(progn (%proclaim-constant ',name)
+          (%define-constant ',name ,value)
+          ',name))
+
+(defun %define-constant (name value)
+  (cond ((not (boundp name)))
+        ((eql (symbol-value name) value))
+        (t (error "defconstant: the constant already has a different value" name)))
+  (set name value)
+  (%put name '%constant t)
+  name)
+
+;;; `(constantp form [environment])` — is FORM's value always the same? True
+;;; of anything but a symbol or a list, of `(quote x)`, of keywords, `t` and
+;;; `nil`, and of a `defconstant`ed name. Nothing more clever: CLHS allows an
+;;; implementation to recognise more, and requires only these.
+(defun constantp (form &optional environment)
+  environment
+  (cond ((symbolp form)
+         (or (null form) (eq form t) (keywordp form) (if (get form '%constant) t nil)))
+        ((consp form) (and (eq (car form) 'quote) (consp (cdr form)) (null (cddr form))))
+        (t t)))

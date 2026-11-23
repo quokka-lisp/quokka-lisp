@@ -166,6 +166,11 @@ pub enum Prim {
     Tanh = 111,
     Atan2 = 112,
     Pow = 113,
+    SymbolPlist = 114,
+    SetSymbolPlist = 115,
+    Fboundp = 116,
+    Fmakunbound = 117,
+    Functionp = 118,
 }
 
 impl Prim {
@@ -536,6 +541,17 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::Tanh, "%TANH", Arity::Exactly(1)),
     (Prim::Atan2, "%ATAN2", Arity::Exactly(2)),
     (Prim::Pow, "%POW", Arity::Exactly(2)),
+    // Step P (#63): a symbol's cells. Its property list, in a slot every
+    // symbol has always had and nothing could reach; `get` and `remprop` are
+    // Lisp over these two. Whether its function cell is full, emptying it —
+    // which means putting back the unbound marker, a value Lisp never holds,
+    // as `makunbound` does for the value cell — and what counts as a
+    // function, which only Rust can tell from the object's type.
+    (Prim::SymbolPlist, "SYMBOL-PLIST", Arity::Exactly(1)),
+    (Prim::SetSymbolPlist, "%SET-SYMBOL-PLIST", Arity::Exactly(2)),
+    (Prim::Fboundp, "FBOUNDP", Arity::Exactly(1)),
+    (Prim::Fmakunbound, "FMAKUNBOUND", Arity::Exactly(1)),
+    (Prim::Functionp, "FUNCTIONP", Arity::Exactly(1)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1335,6 +1351,40 @@ pub fn call_slice<'h>(
             // undefined, and refusing is the safe reading of undefined.
             Ok(mc.slot(args[0], symbol::NAME))
         }
+        Prim::SymbolPlist | Prim::SetSymbolPlist | Prim::Fboundp | Prim::Fmakunbound => {
+            if !mc.is_symbol(args[0]) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a symbol",
+                });
+            }
+            match prim {
+                Prim::SymbolPlist => Ok(mc.slot(args[0], symbol::PLIST)),
+                Prim::SetSymbolPlist => {
+                    mc.set_slot(args[0], symbol::PLIST, args[1]);
+                    Ok(args[1])
+                }
+                // A function, a macro or a special operator (CLHS `fboundp`).
+                Prim::Fboundp => Ok(truth(
+                    mc.slot(args[0], symbol::FUNCTION) != Value::UNBOUND
+                        || mc.slot(args[0], symbol::SPECIAL).as_fixnum().is_some(),
+                )),
+                _ => {
+                    mc.set_slot(args[0], symbol::FUNCTION, Value::UNBOUND);
+                    Ok(args[0])
+                }
+            }
+        }
+        // A closure, a compiled function or a primitive; not a macro, and not
+        // a symbol, though a symbol can designate a function (#62).
+        Prim::Functionp => Ok(truth(
+            args[0].as_primitive().is_some()
+                || (args[0].is_object()
+                    && matches!(
+                        mc.header(args[0]).object_type,
+                        ObjectType::Closure | ObjectType::Function
+                    )),
+        )),
         Prim::SymbolFunction => {
             if !mc.is_symbol(args[0]) {
                 return Err(EvalError::WrongType {
