@@ -1594,6 +1594,11 @@ impl<'a, 'h> Machine<'a, 'h> {
         let mut function = function;
         let mut arguments = arguments;
         loop {
+            // A symbol means its global function (#62, part 3).
+            function = match quokka_vm::closure::designated(self.mc, function) {
+                Ok(f) => f,
+                Err(e) => return self.fail(e),
+            };
             if function.as_primitive() == Some(primitives::index(primitives::Prim::Funcall)) {
                 if !arguments.is_cons() {
                     return self.fail(EvalError::WrongArgumentCount {

@@ -550,6 +550,10 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// primitive cannot do, so the machine intercepts them and arrives back
     /// here with a different callee.
     fn call_value(&mut self, callee: Value<'h>, args: &[Value<'h>], tail: bool) -> Transition {
+        let callee = match closure::designated(self.mc, callee) {
+            Ok(function) => function,
+            Err(e) => return self.fail(e),
+        };
         if let Some(index) = callee.as_primitive() {
             if let Some(transition) = self.intercept(index, args, tail) {
                 return transition;

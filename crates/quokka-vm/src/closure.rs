@@ -4,6 +4,7 @@
 //! know that `x` is 10 after the `let` has finished. Without it a lambda could
 //! only see globals.
 
+use crate::error::EvalError;
 use crate::heap::{Mutation, ObjectType};
 use crate::value::Value;
 
@@ -55,4 +56,20 @@ pub fn is_macro<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
 /// Is this either?
 pub fn is_callable<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
     is(mc, v) || is_macro(mc, v)
+}
+
+/// What a *function designator* designates (CLHS 1.4.1.5): a symbol, wherever
+/// a function is called, means its global function — `(funcall 'car x)`,
+/// `:test 'eql`. Anything else is itself. A symbol with no function, or
+/// whose function cell holds a macro, signals `undefined-function`. Both
+/// evaluators call this before applying anything (#62, part 3).
+pub fn designated<'h>(mc: &Mutation<'h>, f: Value<'h>) -> Result<Value<'h>, EvalError> {
+    if !mc.is_symbol(f) {
+        return Ok(f);
+    }
+    let function = mc.slot(f, crate::heap::symbol::FUNCTION);
+    if function == Value::UNBOUND || is_macro(mc, function) {
+        return Err(EvalError::UndefinedFunction(mc.symbol_name(f).to_string()));
+    }
+    Ok(function)
 }
