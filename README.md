@@ -159,7 +159,11 @@ itself. The Rust core is 14,719 lines of the 15,000-line budget.
 ### What does not exist yet
 
 **The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
-whose parts all exist now; what is left is measuring them against ansi-test
+whose parts all exist now and are measured against ansi-test, the Common Lisp
+conformance suite: 4,058 of 12,488 tests in its tier-1 groups pass
+([`docs/ansi-test.md`](docs/ansi-test.md) has the table and the gaps; #60).
+The phase ends when every test that does not pass is explained by a feature
+deferred to a later tier
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
 The first world is still built by the interpreter — the cold build — and is
 then rebuilt by itself.

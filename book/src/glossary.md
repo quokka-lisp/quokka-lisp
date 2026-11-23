@@ -151,6 +151,8 @@ from the reference that points at it. "Cons" is short for "construct".
 ([1](part-1-substrate/01-one-word-for-everything.md),
 [5](part-1-substrate/05-objects-in-the-heap.md))
 
+**Conformance test suite.** A large collection of tests that checks an implementation against a standard rather than against its own intentions. Common Lisp's is *ansi-test*, some seventeen thousand tests written by Paul Dietz from 2002 on, organised by the chapters of the standard. Quokka runs fourteen of its groups. ([49](part-6-self-hosting/49-ansi-test.md))
+
 **Continuation.** What remains to be done after the current computation finishes. In Quokka they are [frames](#frame) on the evaluator's stack — ordinary heap objects rather than an abstraction, which is what will let a debugger show you one. ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
 **Control string.** The template `format` fills in: text with directives in
@@ -309,6 +311,8 @@ Two unrelated meanings, one word. ([25](part-3-compiling/25-a-machine-made-of-in
 that the compiler can emit a jump before knowing how far it goes. The
 assembler resolves them; the compiler uses `gensym` for them, so that a nested
 `if` does not collide with itself. ([28](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md))
+
+**Not applicable (a test result).** A test that cannot say anything yet because it uses a feature that does not exist, as opposed to one that ran and got the wrong answer. Quokka's ansi-test runner reports these as *needs X*, so that a failure always means a wrong answer. pytest calls the same idea *skip*, JUnit an *assumption*. ([49](part-6-self-hosting/49-ansi-test.md))
 
 **Opcode.** Short for *operation code*: the number at the start of an
 instruction saying which operation it is. `CONST`, `LREF` and `JMP` are names
@@ -517,6 +521,8 @@ character codes, a bignum's digits — and which the collector must copy rather
 than follow. Quokka draws the line at type number 64: below it slots are
 traced, at or above they are raw. A type on the wrong side corrupts the heap
 silently, so a test guards it. ([19](part-2-reading-and-running/19-things-with-an-index.md))
+
+**Ratchet (in testing).** A baseline that may only improve: the list of tests that pass is committed, and a change that makes one of them fail is refused, while a change that makes more pass updates the list. Quokka's ansi-test run is one. ([49](part-6-self-hosting/49-ansi-test.md))
 
 **Reachable.** Able to be found by following references from a [root](#root).
 This is the definition of "still wanted" that garbage collection uses.

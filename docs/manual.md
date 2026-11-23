@@ -333,6 +333,32 @@ that expands differently from the prelude's. Chapter 43 shows how the
 library's `setf` avoids it: a place the prelude knows goes to the prelude's
 own `%setf-known-place`.
 
+### ansi-test: conformance, measured
+
+ansi-test is the Common Lisp conformance suite (#60). It is not part of
+`check.sh`: it takes about five minutes and fetches the suite over the
+network the first time, so it has a script and a CI job of its own.
+
+```bash
+scripts/ansi-test.sh
+```
+
+The script clones the suite into `target/ansi-test/` at the commit it pins,
+runs the fourteen groups tier 1 is measured by, and fails if a test listed in
+`tests/ansi/baseline.txt` no longer passes: that list only grows. When a
+change makes more tests pass, record them:
+
+```bash
+ANSI_TEST_UPDATE=1 scripts/ansi-test.sh
+```
+
+That rewrites the baseline and the summary in `docs/ansi-test.md`; commit
+both with the change. Every result, with its detail, is in
+`target/ansi-test-results.txt`. A test reported as *needs X* uses something
+Quokka lacks; whether X is deferred or a gap in tier 1 is decided by
+`tests/ansi/deferred.lisp`. `tests/ansi/README.md` explains the files and how
+to run a few test files only.
+
 ---
 
 ## 5. Adding things

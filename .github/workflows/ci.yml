@@ -90,3 +90,18 @@ jobs:
         run: ./scripts/check-differential.sh
       - name: SBCL must agree with the baselines
         run: ./scripts/oracle.sh
+
+  # ansi-test, the Common Lisp conformance suite (#60), fetched at the commit
+  # scripts/ansi-test.sh pins. Its own job because it takes minutes and needs
+  # the network (decision 5). It enforces the ratchet: a test listed in
+  # tests/ansi/baseline.txt that no longer passes fails the build.
+  ansi-test:
+    name: ansi-test (tier 1, ratchet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the tier-1 groups
+        run: ./scripts/ansi-test.sh
+        env:
+          ANSI_TEST_REQUIRED: "1"

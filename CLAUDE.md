@@ -132,14 +132,29 @@ Rust parses and finds shortest digits, Lisp lays them out; `format`'s `~F ~E
 float literal may appear in the library: the Rust reader reads it at build
 time and knows none (`%parse-double` on a string instead). A float test file
 binds `*read-default-float-format*` to `double-float` first (SBCL's default
-is single-float). **Next: step N, the ansi-test harness.** Phase 2's scope is
+is single-float). **Step N is done** (#60, chapter 49): ansi-test measures
+tier 1. `scripts/ansi-test.sh` fetches the suite at a pinned commit into
+`target/ansi-test/` and runs fourteen groups through our own tier-1 runner
+(`tests/ansi/runner.lisp`; the driver is the ignored test
+`crates/quokka-bootstrap/tests/ansi.rs`, ~5 minutes); not part of `check.sh`,
+it has its own CI job. **The ratchet**: `tests/ansi/baseline.txt` lists every
+passing test and a run fails if one stops passing — after a change that makes
+more pass, run `ANSI_TEST_UPDATE=1 scripts/ansi-test.sh` and commit the
+baseline and `docs/ansi-test.md` with it. A test that fails is explained as
+*needs X* when it uses an operator Quokka lacks; `tests/ansi/deferred.lisp`
+decides whether X is deferred or a tier-1 gap. **Phase 2's gate** is now:
+every non-passing test in those groups explained by a deferred feature. First
+measurement: 4,058 of 12,488 pass. **Next: close the gaps `docs/ansi-test.md`
+lists**, biggest first (reader `#+`/`#-`, `declare`, keyword errors that escape
+`handler-case`, `defstruct` names in the current package, `funcall` of a
+symbol). Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
 variables (#40, done) → packages (#43, done) →
 the reader in Lisp (#45, done) → the printer in Lisp (#46, done) → `eval`/`load` (#47, done) → the image rebuilds
 itself (#48, done) → the fixpoint (#50, done) → `setf` expanders (#52, done) → the last three special operators (#53, done) → sequences (#54, done) → basic `format` (#57, done) →
-bignums (#16, done) → floats (#17, done) → the ansi-test harness (N). Streams (#42, closed): minimal string streams and the console in tier 1;
+bignums (#16, done) → floats (#17, done) → the ansi-test harness (#60, done) → closing the gaps it lists. Streams (#42, closed): minimal string streams and the console in tier 1;
 generic streams stay tier 2.
 
 Three things to hold on to while working in phase 2:
