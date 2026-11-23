@@ -42,3 +42,43 @@
   `(progn (%proclaim-special ',name)
           (setq ,name ,value)
           ',name))
+;;; `(proclaim '(special *x*))` and `(declaim (special *x*))` — the same as
+;;; `defvar` without a value (#62, part 5). Every other kind of
+;;; proclamation is advice, and ignored. `declaim` proclaims as it is
+;;; expanded too, so that a binding compiled later in the same form is
+;;; already dynamic, as `defvar` does.
+(defun proclaim (specifier)
+  ;; A declaration specifier is a symbol and a proper list of arguments;
+  ;; anything else is an error even when the kind would be ignored — which
+  ;; ansi-test checks, and the first measurement of this missed (#62).
+  (if (not (and (consp specifier) (symbolp (car specifier))
+                (%proper-list-p (cdr specifier))))
+      (error "not a declaration specifier" specifier))
+  (if (eq (car specifier) 'special)
+      (%proclaim-all (cdr specifier)))
+  nil)
+
+(defun %proper-list-p (object)
+  (cond ((null object) t)
+        ((consp object) (%proper-list-p (cdr object)))
+        (t nil)))
+
+(defun %proclaim-all (names)
+  (if (consp names)
+      (progn (%proclaim-special (car names))
+             (%proclaim-all (cdr names)))))
+
+(defmacro declaim (&rest specifiers)
+  (%proclaim-each specifiers)
+  `(progn ,@(%quoted-proclaims specifiers) nil))
+
+(defun %proclaim-each (specifiers)
+  (if (consp specifiers)
+      (progn (proclaim (car specifiers))
+             (%proclaim-each (cdr specifiers)))))
+
+(defun %quoted-proclaims (specifiers)
+  (if (consp specifiers)
+      (cons (list 'proclaim (list 'quote (car specifiers)))
+            (%quoted-proclaims (cdr specifiers)))
+      nil))

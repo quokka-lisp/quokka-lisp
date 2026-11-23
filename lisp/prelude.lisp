@@ -25,6 +25,18 @@
 ;;;;    lookalikes. `tests/lisp/prelude.lisp` checks them against SBCL.
 
 ;;; ------------------------------------------------------------------
+;;; Declarations
+;;; ------------------------------------------------------------------
+
+;;; `(declare ...)` (#62, part 5). In Common Lisp it is not a form at all but
+;;; syntax at the start of a body, and nearly every declaration is advice an
+;;; implementation may ignore (CLHS 3.3.1). A macro that expands to nil lets
+;;; both evaluators meet one anywhere without stopping; the compiler reads the
+;;; one kind that changes meaning, `special`, where it binds variables.
+(defmacro declare (&rest specifiers)
+  nil)
+
+;;; ------------------------------------------------------------------
 ;;; Conditionals
 ;;; ------------------------------------------------------------------
 
