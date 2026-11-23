@@ -70,6 +70,7 @@
 - [Numbers without a ceiling](part-6-self-hosting/47-bignums.md)
 - [Numbers with a point](part-6-self-hosting/48-floats.md)
 - [Measuring against the standard](part-6-self-hosting/49-ansi-test.md)
+- [What the first measurement asked for](part-6-self-hosting/50-first-gaps.md)
 
 ---
 

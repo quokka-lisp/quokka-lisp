@@ -135,6 +135,7 @@ tier1_cases! {
     format => "format",
     bignums => "bignums",
     floats => "floats",
+    first_gaps => "first-gaps",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly

@@ -112,10 +112,16 @@ Pronounced "could-er". Read it as "rest".
 
 **Cold build.** Making a world from nothing, from outside it: Quokka's `boot::build_image`, in Rust, with the interpreter. Contrast the *warm rebuild*, in which a running world remakes itself from its own source. The term is SBCL's, whose build makes a *cold core*. ([41](part-6-self-hosting/41-the-image-rebuilds-itself.md))
 
+**Declaration.** Information about a program written at the start of a body, `(declare ...)`: that a variable is unused, holds a fixnum, or should be fast. An implementation may ignore every kind except `special`, which makes a variable dynamic for one binding or one region of code. ([50](part-6-self-hosting/50-first-gaps.md))
+
+**Feature expression.** What `#+` and `#-` test: a keyword, or `and`, `or` and `not` of them, true when the keywords are in `*features*`. It lets one file carry code for several Lisps: `#+sbcl (...)` is read only on SBCL. ([50](part-6-self-hosting/50-first-gaps.md))
+
 **Designator.** An object that stands for another of a given kind, so a
 function can accept either. A *string designator* is a string, a symbol (its
 name) or a character (a string of one); `string` turns any into a string.
 ([45](part-6-self-hosting/45-sequences.md))
+
+**Function designator.** An object that stands for a function wherever one is wanted: the function itself, or a symbol, meaning its global function. Why `(funcall 'car x)` and `:test 'eql` work. ([50](part-6-self-hosting/50-first-gaps.md))
 
 **Generalised boolean.** Any value used as a truth value: nil is false and
 everything else true. `(string< "ab" "abc")` answers 2, the position where the
