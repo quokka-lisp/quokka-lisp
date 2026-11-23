@@ -90,11 +90,29 @@ declarative sentences. Paragraphs that flow from one to the next with ordinary
 connectives ("so", "but", "which means", "this is why"). Examples before
 abstractions.
 
-**Headings are questions or start with a verb.** "What is a place?", "How
-is an expander made?", "Introducing places", "Finding a bug in tier 0" — not
-a bare noun phrase like "What a place is" or "A bug in tier 0". The fixed
-sections follow the same rule: "What did it cost?", "What is still missing?".
-Chapter titles may stay short nouns ("Places").
+**Headings name the topic, as a question, a verb phrase or a plain noun
+phrase.** "What is a place?", "Introducing places", "The missing operators"
+are all fine. What is not fine is a heading that is a question followed by a
+first sentence that merely answers it in a clipped fragment:
+
+> ## What was missing?
+>
+> Fifteen operators, led by `delete-package` (202 tests) …
+
+That reads like a quiz, not like a person explaining. Either give the
+section a plain heading and open with a full sentence that says what
+happened:
+
+> ## The missing operators
+>
+> While running the tests we found that fifteen operators were still
+> missing from the library, especially `delete-package` (202 tests) …
+
+or keep the question and open the section with context that leads to the
+answer, never with the answer as a sentence fragment. The fixed sections
+may stay "What did it cost?" and "What is still missing?", with the same
+rule for their first sentence. Chapter titles may stay short nouns
+("Places").
 
 **Remind the reader what a term means when it comes back.** A reader may
 open the book at any chapter, or have forgotten. When a key idea from an
@@ -139,7 +157,11 @@ chapter; the problem is the pattern.
     tried…; it failed because…; so we…".
 11. **Inflated vocabulary.** "Leverage", "robust", "seamlessly", "delve",
     "load-bearing", "crucially", "elegant", "powerful". Use the plain word.
-12. **Rhetorical questions as section openers** ("So what does a macro see?").
+12. **Question heading, fragment answer.** A heading asks "What was
+    missing?" and the first line answers "Fifteen operators, led by …".
+    Open with a full sentence that tells what happened ("While running the
+    tests we found that …"), or use a plain heading.
+13. **Rhetorical questions as section openers** ("So what does a macro see?").
     Allowed when it is the question the reader would actually ask; not as a
     device in every section.
 
