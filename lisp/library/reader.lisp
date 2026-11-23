@@ -34,6 +34,16 @@
 ;;; package and leaked out of it (#47).
 (defvar *package*)
 
+;;; `#+`, `#-` and `#.` (#62, part 4). `*features*` says what this Lisp is:
+;;; not `:ansi-cl`, since Quokka is a subset that does not yet conform, and
+;;; nothing about the machine, since an image is the same on every target.
+;;; `*read-suppress*`, when true, makes the reader read text for its shape
+;;; only — no symbols interned, no numbers made, no errors for syntax it does
+;;; not know — which is how `#-sbcl` skips a form written for another Lisp.
+(defvar *features* '(:quokka :common-lisp :ieee-floating-point))
+(defvar *read-suppress* nil)
+(defvar *read-eval* t)
+
 ;;; ------------------------------------------------------------------------
 ;;; Characters
 ;;;
@@ -282,7 +292,7 @@
 
 (defun %read-token (stream char)
   (multiple-value-bind (text escaped colons) (%collect-token stream char nil 0 nil nil)
-    (%interpret-token text escaped colons)))
+    (if *read-suppress* nil (%interpret-token text escaped colons))))
 
 ;;; The token's text, whether any of it was escaped, and where its unescaped
 ;;; colons are. CHARS is the token so far, backwards; COLONS the positions of
@@ -579,9 +589,14 @@
     (if weight
         (%read-dispatch-argument stream char (+ (* (if argument argument 0) 10) weight))
         (let ((function (gethash (char-upcase sub-char) (%dispatch-table char *readtable*))))
-          (if function
-              (funcall function stream sub-char argument)
-              (error "no dispatch function for that character after #"))))))
+          (cond ((and *read-suppress* (not (member sub-char '(#\( #\| #\+ #\- #\\))))
+                 ;; Suppressed, every other `#x` reads as nothing but the
+                 ;; object after it (`#*101`, `#C(1 2)`, `#P"..."`), except
+                 ;; `#1#`, which has none (CLHS 2.4.8).
+                 (if (not (eql sub-char #\#)) (%read-required stream))
+                 nil)
+                (function (funcall function stream sub-char argument))
+                (t (error "no dispatch function for that character after #")))))))
 
 ;;; `#\x` — a character. `#\a` is one character; `#\Space` is a name, which
 ;;; is what more letters after the first mean.
@@ -590,8 +605,37 @@
     (if (and (alphanumericp first)
              (let ((next (peek-char nil stream nil nil)))
                (and next (not (%terminatorp next)))))
-        (%character-named (%read-name stream (list (char-upcase first)) 1))
+        (let ((name (%read-name stream (list (char-upcase first)) 1)))
+          (if *read-suppress* nil (%character-named name)))
         first)))
+
+;;; `#+feature form` reads FORM if the feature expression is true, and as
+;;; nothing otherwise; `#-` the other way round (CLHS 2.4.8.17). A feature
+;;; is read as a keyword, and combined with `and`, `or` and `not`. A form
+;;; skipped is still read, with `*read-suppress*`, so that its end is found
+;;; whatever it contains.
+(defun %read-sharp-feature (stream sub-char argument)
+  (let ((test (let ((*package* (find-package "KEYWORD"))) (%read-required stream))))
+    (if (and (not *read-suppress*)
+             (eq (if (%feature-true-p test) t nil) (eql sub-char #\+)))
+        (%read-required stream)
+        (progn (let ((*read-suppress* t)) (%read-required stream))
+               (values)))))
+
+(defun %feature-true-p (test)
+  (cond ((symbolp test) (member test *features*))
+        ((and (consp test) (eq (car test) :and)) (every #'%feature-true-p (cdr test)))
+        ((and (consp test) (eq (car test) :or)) (some #'%feature-true-p (cdr test)))
+        ((and (consp test) (eq (car test) :not)) (not (%feature-true-p (cadr test))))
+        (t (error "not a feature expression" test))))
+
+;;; `#.form` — FORM evaluated as the reader reads it (CLHS 2.4.8.6), unless
+;;; `*read-eval*` forbids it, which is how a program reads untrusted text.
+(defun %read-sharp-dot (stream sub-char argument)
+  (let ((form (%read-required stream)))
+    (cond (*read-suppress* nil)
+          (*read-eval* (eval form))
+          (t (error "#. is not allowed while *read-eval* is false")))))
 
 (defun %read-name (stream chars count)
   (let ((char (read-char stream nil nil)))
@@ -689,5 +733,8 @@
 (set-dispatch-macro-character #\# #\b #'%read-sharp-radix %standard-readtable)
 (set-dispatch-macro-character #\# #\o #'%read-sharp-radix %standard-readtable)
 (set-dispatch-macro-character #\# #\r #'%read-sharp-radix %standard-readtable)
+(set-dispatch-macro-character #\# #\+ #'%read-sharp-feature %standard-readtable)
+(set-dispatch-macro-character #\# #\- #'%read-sharp-feature %standard-readtable)
+(set-dispatch-macro-character #\# #\. #'%read-sharp-dot %standard-readtable)
 
 (defvar *readtable* (copy-readtable %standard-readtable))
