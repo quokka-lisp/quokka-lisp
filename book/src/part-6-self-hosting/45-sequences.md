@@ -10,8 +10,8 @@
 > abstraction at run time. What it unlocks is `format` (step K), and code
 > that reads like ordinary Common Lisp.
 
-*Status: J1 (equality, control and iteration, lists) done; J2 (sequence
-functions) and J3 (strings) to come. Issue #54.*
+*Status: J1 (equality, control and iteration, lists) and J2 (sequence
+functions) done; J3 (strings) to come. Issue #54.*
 
 ## Taking stock
 
@@ -174,17 +174,94 @@ looping forever. It uses **Floyd's cycle-finding algorithm**, also called
 step of the other, and if they ever meet, the list is circular. The
 version here is the one the CLHS gives as an example.
 
+## Sequences: one function, four loops
+
+Chapter 17's functions (`find`, `position`, `count`, `remove`,
+`substitute`, `search`, `sort` and the rest) each take any sequence and
+mostly the same keywords. There were three ways to write them (decision 4):
+each function twice, once for lists and once for vectors; once each over a
+run-time protocol ("give me the next element"); or once each over a
+**macro** that writes the two versions at compile time.
+
+The question that decided it was Carsten's: *what would it take to make
+Quokka inline calls, so the run-time protocol is cheap?* Quite a lot, it
+turned out: a declaration table, the saved source of each inline function,
+**let-conversion** of `((lambda (x) body) a)` into a `let`, and above all
+**capture safety**, since a body pasted into a call site must not have its
+free names captured there. That last part needs a `macroexpand-all` code
+walker. For a protocol that passes small functions around, it also needs
+repeated simplification passes. That is an optimising compiler, and a
+project for when a profile asks for one. A macro, on the other hand, *is*
+compile-time inlining, and its hygiene problem was already solved with
+gensyms (chapter 15). SBCL's own sequence functions are written this way,
+with macros it calls `seq-dispatch`.
+
+So there is one macro, `%do-sequence`, and every function is written once
+over it:
+
+```lisp
+(defun %find (matches sequence from-end start end)
+  (%do-sequence (element sequence :start start :end end :from-end from-end)
+    (if (funcall matches element) (return element))))
+```
+
+The macro expands into **four loops**: forwards and backwards, over a list
+by its tails or over a vector by its indices. A list has no way to walk
+backwards, so for `:from-end` it first gathers the range, paired with
+indices, in reverse. The specialising happens when the macro expands, so
+there is no call per element. The price is code size: the body appears four
+times in every function that uses the macro, and the image grew from 474 KB
+to 565 KB. That is the trade decision 4 made, and it is what an inliner
+would also have cost.
+
+The other repetition is in the three flavours of each function. `find`,
+`find-if` and `find-if-not` differ only in what counts as a match, so each
+builds a one-argument predicate and calls a single worker, `%find`.
+
+**Removing is mark, then build.** `(remove 1 '(1 2 1 3 1) :count 2
+:from-end t)` must remove the *last* two ones. Doing that in one pass
+forwards is awkward. Instead, `%marks` walks in the requested direction,
+flags matching indices in a vector until `:count` runs out, and a second
+pass builds the result from the unflagged elements in order. `substitute`
+uses the same marks and replaces instead of skipping.
+
+**Sorting is merge sort**: split in half, sort each half, merge (John von
+Neumann, 1945). It takes O(n log n) time in every case, and it is
+**stable**: elements that compare equal keep their original order. That is
+the property `stable-sort` promises and `sort` is allowed but not required
+to have. So both are the same function, and the tests only sort distinct
+keys with `sort`, because there SBCL is free to differ.
+
+### A near miss
+
+The first draft of `sequences.lisp` had a helper called `%position`. The
+compiler already has a `%position`. `%lookup` uses it to find a variable in
+a scope. All of Quokka's `%` names live in one package, `QUOKKA`, so the
+library's definition would have silently **replaced the compiler's**, and
+the compiler would have broken the moment it next ran. A search for clashes
+before the first build caught it. The library now has `%position-of`.
+Nothing structural prevents this yet. A check that a library `defun` never
+replaces a system function, apart from the deliberate redefinitions of
+decision 3, would.
+
 ## What it cost
 
-- **No Rust**, beyond the new file's entry in `boot::LIBRARY`.
+- **No Rust**, beyond the new files' entries in `boot::LIBRARY`.
 - **The compiler:** `%destructuring-lambda`, and the local-function check.
-- **Lisp:** `lisp/library/lists.lisp`, and nine number functions (`<=`,
+- **Lisp:** `lisp/library/lists.lisp` and `lisp/library/sequences.lisp`
+  (which also redefines `reverse`, since the prelude's turned a string into a
+  general vector, and `elt`, to check its bounds), and nine number functions (`<=`,
   `>=`, `/=`, `1+`, `1-`, `evenp`, `oddp`, `max`, `min`) in `numbers.lisp`,
   because the loops needed `>=` and nothing had it.
 
 ## What is not here yet
 
-- **J2 and J3**, below once they land.
+- **J3**, strings, below once it lands.
+- **A guard against a library name replacing a system one**, as in the near
+  miss above.
+- **Faster algorithms.** `search` tries every position, and
+  `remove-duplicates` compares every pair. Both are quadratic, which is
+  plenty until a profile says otherwise.
 - **Declarations** at the head of a loop body. `(declare ...)` is not
   understood by the compiler yet, and splicing one into a `tagbody` would be
   wrong anyway.
@@ -195,6 +272,8 @@ version here is the one the CLHS gives as an example.
 **References.** The Common Lisp HyperSpec, chapters 5 (*Data and Control
 Flow*: `case`, `prog1`, `destructuring-bind`), 6 (*Iteration*: `do`,
 `dolist`, `dotimes`) and 14 (*Conses*), and the dictionary entries for
-`eql`, `equal` and `equalp`. Robert W. Floyd's cycle-finding algorithm, as
+`eql`, `equal` and `equalp`; chapter 17 (*Sequences*), especially 17.1.1 on
+bounding indices. Knuth, *The Art of Computer Programming*, volume 3, section
+5.2.4, on merge sort. Robert W. Floyd's cycle-finding algorithm, as
 presented in Knuth, *The Art of Computer Programming*, volume 2, exercise
 3.1-6.

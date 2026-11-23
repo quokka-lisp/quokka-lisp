@@ -216,7 +216,7 @@ quokka rebuild c2.qi c3.qi
 
 What to expect today:
 - C1 is 359,688 bytes; C2 and C3 are 360,224 each.
-- Every rebuild reports `(:FORMS 564 :REPLACED 474)`.
+- Every rebuild reports `(:FORMS 634 :REPLACED 543)`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
   are numbered by a counter that keeps rising, the image checksum covers those
   numbers, and the header counts saves.
@@ -300,7 +300,7 @@ several **legs**, and every leg must match the baseline:
 | compiled, rebuilt world | `a_rebuilt_world_passes_every_differential_file` | the same | the same |
 | SBCL | `./scripts/oracle.sh` | SBCL | SBCL |
 
-**Tier 0** files (17) run in every leg. **Tier 1** files (8) use the library,
+**Tier 0** files (17) run in every leg. **Tier 1** files (9) use the library,
 which the interpreter never learns, so they skip the interpreted leg.
 `tests/lisp/README.md` lists what a test file must not contain. In short: no
 bignums, no printed functions, nothing the standard leaves unspecified, and no

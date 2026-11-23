@@ -289,6 +289,7 @@
       (setq list (cons initial-element list)))))
 
 (defun nthcdr (n list)
+  (if (or (not (integerp n)) (< n 0)) (error "NTHCDR wants a non-negative integer" n))
   (do ((i 0 (+ i 1))
        (tail list (cdr tail)))
       ((= i n) tail)))
