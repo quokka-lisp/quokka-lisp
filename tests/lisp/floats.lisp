@@ -9,9 +9,10 @@
 ;;;; float from rationals alone — (sqrt 2), (float 1) — because SBCL makes a
 ;;;; single-float of that. The transcendental functions differ in the last
 ;;;; bit between maths libraries, so they are compared rounded (decision 7).
-;;;; Nor does it print a subnormal, or use ~E without a digit count on a
-;;;; value with a long expansion: SBCL 2.6.0, which CI installs, prints those
-;;;; with more digits than the shortest, where 2.6.10 and Quokka do not.
+;;;; Nor does it print a subnormal, or use ~E without a digit count except
+;;;; on powers of ten and zero: SBCL 2.6.0, which CI installs, prints those
+;;;; with more digits than the shortest — (format nil "~E" 1.5) is
+;;;; "1.4999999999999997e+0" there — where 2.6.10 and Quokka do not.
 ;;;; And no result may be complex: (sqrt -1) is a number in SBCL and an
 ;;;; error in Quokka.
 
@@ -131,7 +132,7 @@
       (format nil "~4,2F" 0.5) (format nil "~2,2F" 123.456) (format nil "~2,2,,'*F" 123.456)
       (format nil "~8,2,,,'0F" 3.14159) (format nil "~,2,1F" 3.14159)
       (format nil "~,2,-1F" 3.14159) (format nil "~6F" 3.14159) (format nil "~6F" 123456.7))
-(list (format nil "~E" 1.5) (format nil "~E" 1d-10) (format nil "~E" 0.0)
+(list (format nil "~E" 1d-10) (format nil "~E" 0.0)
       (format nil "~E" -1d100) (format nil "~,3E" 3.14159) (format nil "~,3E" 9.9996)
       (format nil "~,2,3E" 3.14159) (format nil "~12,3E" 3.14159)
       (format nil "~,3,,0E" 3.14159) (format nil "~,3,,2E" 3.14159) (format nil "~@E" 3.5)
