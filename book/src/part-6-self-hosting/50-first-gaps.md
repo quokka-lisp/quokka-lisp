@@ -193,7 +193,7 @@ proper list, as CLHS requires.
 
 ## What did it cost?
 
-About 40 lines of Rust: the new error kind and `:allow-other-keys` in
+This step took about 40 lines of Rust: the new error kind and `:allow-other-keys` in
 `lambda_list.rs`, `closure::designated` and its two callers. The core is now
 14,757 lines of the 15,000 guide. The rest is Lisp: about 30 lines in the
 compiler, 60 in the reader, a macro in the prelude, `%symbol-concat`, and

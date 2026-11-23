@@ -88,7 +88,7 @@ fold it; CLHS allows that and does not require it, and Quokka does not fold.
 
 ## What did it cost?
 
-54 lines of Rust, against an estimate of 30: five primitives, their table
+This step took 54 lines of Rust, against our estimate of 30: five primitives, their table
 rows and their match arms. The core is now 14,811 lines of the 15,000 guide.
 The rest is Lisp: a new library file, `lisp/library/symbols.lisp`, with the
 property lists, `fdefinition` and `macro-function`; `defconstant` and

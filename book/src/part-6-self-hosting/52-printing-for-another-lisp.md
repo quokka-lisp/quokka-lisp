@@ -222,8 +222,8 @@ the cons as an object of its own, instead of carrying on with its elements.
 
 ## What did it cost?
 
-81 lines of Rust, against an estimate of 60, about half of them the
-comments that say why: the stamp, the address hash and the rehash in
+This step took 81 lines of Rust, against our estimate of 60, and about half
+of them are the comments that say why: the stamp, the address hash and the rehash in
 `hash.rs`, six lines in the collector, and the image format's version
 number, now 4, since a hash table has a slot more than an older reader
 expects. The core is now 14,892 lines of the 15,000 guide. The rest is Lisp in `printer.lisp` and `reader.lisp`.

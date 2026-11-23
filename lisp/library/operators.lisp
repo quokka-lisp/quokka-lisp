@@ -91,3 +91,17 @@
              (multiple-value-bind (once expanded) (macroexpand-1 f environment)
                (if expanded (walk once t) (values f changed)))))
     (walk form nil)))
+
+;;; `(define-symbol-macro symbol expansion)` (#68): SYMBOL, wherever no
+;;; lexical binding hides it, stands for EXPANSION, as a `symbol-macrolet`
+;;; around everything would make it. The compiler keeps the table
+;;; (`%global-symbol-macros`). A special variable or a constant cannot also
+;;; be a symbol macro (CLHS).
+(defmacro define-symbol-macro (symbol expansion)
+  `(progn (%define-symbol-macro ',symbol ',expansion) ',symbol))
+
+(defun %define-symbol-macro (symbol expansion)
+  (if (or (not (symbolp symbol)) (%special-variable-p symbol) (constantp symbol))
+      (error 'program-error "define-symbol-macro wants a symbol that is not a variable" symbol))
+  (setf (gethash symbol %global-symbol-macros) (cons symbol expansion))
+  symbol)

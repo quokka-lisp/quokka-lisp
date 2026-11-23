@@ -71,6 +71,15 @@
 (defsetf char %set-aref)
 (defsetf schar %set-aref)
 
+;;; `char-int` is the code: Quokka's characters have no attributes beyond it
+;;; (#68). The standard characters are the 95 printing ASCII ones and
+;;; newline.
+(defun char-int (char) (char-code char))
+
+(defun standard-char-p (char)
+  (let ((code (char-code char)))
+    (or (eql char #\Newline) (and (<= 32 code) (<= code 126)))))
+
 ;;; ------------------------------------------------------------------------
 ;;; Comparing strings
 ;;;

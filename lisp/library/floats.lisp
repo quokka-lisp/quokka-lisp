@@ -199,6 +199,13 @@
 (defun cosh (number) (%cosh (%real-argument number)))
 (defun tanh (number) (%tanh (%real-argument number)))
 
+;;; The inverses (#68). Outside their real domains — `acosh` below 1,
+;;; `atanh` beyond ±1 — CL answers a complex number, which Quokka defers;
+;;; here, as for `sqrt` of a negative, it is an error.
+(defun asinh (number) (%asinh (%real-argument number)))
+(defun acosh (number) (%acosh (%real-argument number)))
+(defun atanh (number) (%atanh (%real-argument number)))
+
 ;;; `expt` with a float power: Rust's `pow`. An integer power goes by
 ;;; repeated squaring in `integers.lisp`, as SBCL's does, which is why
 ;;; (expt 2d0 70) is exact.

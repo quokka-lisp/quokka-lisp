@@ -76,6 +76,7 @@
 - [Compiling on request](part-6-self-hosting/53-compiling-on-request.md)
 - [When two packages disagree](part-6-self-hosting/54-packages-that-disagree.md)
 - [Arrays, all of them](part-6-self-hosting/55-arrays.md)
+- [The small functions](part-6-self-hosting/56-small-functions.md)
 
 ---
 

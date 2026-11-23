@@ -52,6 +52,13 @@
 
 (defun compiled-function-p (object) (functionp object))
 
+;;; The lambda expression a function was made from, whether it closes over
+;;; anything, and its name. CLHS lets an implementation always answer that
+;;; the expression is unknown; definitions keep no source until #55 (#68).
+(defun function-lambda-expression (function)
+  (if (not (functionp function)) (error 'type-error "a function" function))
+  (values nil t nil))
+
 ;;; Compiler macros (decision 1): the compiler applies them, from its table
 ;;; `%compiler-macros` (compile.lisp); these are CL's ways of filling it.
 ;;; `(define-compiler-macro name lambda-list body...)` takes a macro lambda

@@ -179,7 +179,7 @@ returned the right answer and failed the test.
 
 ## What did it cost?
 
-345 lines of Rust, against an estimate of 150 to 250: the module
+This step took 345 lines of Rust, against our estimate of 150 to 250: the module
 `array.rs` with its documentation, two object types, five primitives and the
 changes to `aref`, `length` and the predicates, and `equal` hash tables
 hashing a string with a fill pointer by its active characters. The core is
@@ -202,8 +202,9 @@ streams, which a later step adds, and one runs out of steps.
 
 ## What is still missing?
 
-Specialised arrays other than characters and bits: an array of
-`(unsigned-byte 8)` is upgraded to an array of anything, which CLHS allows.
+Quokka still has no specialised arrays other than those of characters and
+bits: an array of `(unsigned-byte 8)` is upgraded to an array of anything,
+which CLHS allows.
 `array-element-type` answers `character` for every string, where SBCL tells
 `base-char` from `character`. A structure made by `defstruct` is still a
 vector underneath, so `vectorp` and `simple-vector-p` are true of it; that

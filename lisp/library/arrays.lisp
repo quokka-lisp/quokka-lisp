@@ -354,3 +354,7 @@
 ;;; A string that Rust's string primitives take: a simple one.
 (defun %simple-string (string)
   (if (simple-string-p string) string (copy-seq string)))
+
+;;; A structure is a vector underneath until there are structure types, so
+;;; a copy of one is a copy of the vector, its name in slot 0 included (#68).
+(defun copy-structure (structure) (copy-seq structure))

@@ -158,7 +158,7 @@ SBCL answers `(:REWRITTEN :K)`, and so does Quokka, and both answer
 
 ## What did it cost?
 
-No Rust. About 35 lines in the compiler for the table and its use, and
+This step needed no Rust at all. It took about 35 lines in the compiler for the table and its use, and
 about 80 in `eval.lisp` for `compile`, `compiled-function-p`,
 `special-operator-p` and the three compiler-macro operators. A rebuild now
 reports `(:FORMS 950 :REPLACED 797)`, counting steps Q, R and S together.

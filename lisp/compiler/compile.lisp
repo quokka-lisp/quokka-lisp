@@ -769,9 +769,21 @@
 ;;; in the one chain, innermost first. `%lookup` steps over the scope without
 ;;; counting it, since nothing exists for it at run time.
 (defun %compile-symbol-macrolet (form env tail)
-  (%compile-body (cddr form)
-                 (cons (cons ':symbol-macro (%symbol-macro-definitions (second form))) env)
-                 tail))
+  (let ((definitions (%symbol-macro-definitions (second form)))
+        (declared (%declared-specials (cddr form))))
+    ;; A body may declare names special, as `locally`'s may; declaring one of
+    ;; its own symbol macros special is a `program-error` (CLHS). Found when
+    ;; ansi-test could first load this file (#68).
+    (if (%symbol-macro-declared-special-p definitions declared)
+        (error 'program-error))
+    (%compile-body (cddr form)
+                   (%special-scope declared (cons (cons ':symbol-macro definitions) env))
+                   tail)))
+
+(defun %symbol-macro-declared-special-p (definitions declared)
+  (cond ((endp definitions) nil)
+        ((member (car (car definitions)) declared) t)
+        (t (%symbol-macro-declared-special-p (cdr definitions) declared))))
 
 ;;; `((name expansion) ...)` as an alist. A special variable cannot be one
 ;;; (CLHS `symbol-macrolet`): its references go to the symbol at run time.
@@ -786,14 +798,26 @@
               (%symbol-macro-definitions (cdr definitions))))))
 
 ;;; What NAME stands for in ENV, as `(name . expansion)`, or nil: nil also
-;;; when a variable binding nearer than the definition shadows it.
+;;; when a variable binding nearer than the definition shadows it. Past the
+;;; outermost scope, a global symbol macro (#68), which any lexical binding
+;;; of the name therefore hides.
 (defun %symbol-macro (name env)
-  (cond ((null env) nil)
+  (cond ((null env) (%global-symbol-macro name))
         ((eq (car (car env)) ':symbol-macro)
          (or (%assq name (cdr (car env))) (%symbol-macro name (cdr env))))
         ((and (eq (car (car env)) ':variable) (%position name (cdr (car env)) 0)) nil)
         ((and (eq (car (car env)) ':special) (member name (cdr (car env)))) nil)
         (t (%symbol-macro name (cdr env)))))
+
+;;; Global symbol macros, `define-symbol-macro`'s (#68, decision 3): name to
+;;; `(name . expansion)`. The table is the compiler's, as `%compiler-macros`
+;;; is, so that it can be read while the compiler runs interpreted; it is
+;;; empty whenever the compiler compiles itself, which keeps the fixpoint. A
+;;; library symbol macro naming a variable the compiler reads would break it.
+(setq %global-symbol-macros (make-hash-table))
+
+(defun %global-symbol-macro (name)
+  (if (symbolp name) (values (gethash name %global-symbol-macros)) nil))
 
 (defun %assq (key alist)
   (cond ((endp alist) nil)
@@ -869,7 +893,7 @@
         form)))
 
 (defun %environment-symbol-macro (environment name)
-  (if environment (%symbol-macro name (second environment)) nil))
+  (if environment (%symbol-macro name (second environment)) (%global-symbol-macro name)))
 
 (defun %environment-macro (environment name)
   (if environment (%find-macro name (third environment)) nil))

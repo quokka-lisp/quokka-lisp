@@ -176,6 +176,9 @@ pub enum Prim {
     SetArrayHeaderSlot = 121,
     MakeBitVector = 122,
     ArrayKind = 123,
+    Asinh = 124,
+    Acosh = 125,
+    Atanh = 126,
 }
 
 impl Prim {
@@ -579,6 +582,11 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     ),
     (Prim::MakeBitVector, "%MAKE-BIT-VECTOR", Arity::Exactly(1)),
     (Prim::ArrayKind, "%ARRAY-KIND", Arity::Exactly(1)),
+    // The inverse hyperbolic functions, from `libm` as the others are, so
+    // their digits are SBCL's (#68, decision 2).
+    (Prim::Asinh, "%ASINH", Arity::Exactly(1)),
+    (Prim::Acosh, "%ACOSH", Arity::Exactly(1)),
+    (Prim::Atanh, "%ATANH", Arity::Exactly(1)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1112,6 +1120,9 @@ pub fn call_slice<'h>(
         Prim::Sinh => float::unary(mc, name, args[0], libm::sinh),
         Prim::Cosh => float::unary(mc, name, args[0], libm::cosh),
         Prim::Tanh => float::unary(mc, name, args[0], libm::tanh),
+        Prim::Asinh => float::unary(mc, name, args[0], libm::asinh),
+        Prim::Acosh => float::unary(mc, name, args[0], libm::acosh),
+        Prim::Atanh => float::unary(mc, name, args[0], libm::atanh),
         Prim::Atan2 | Prim::Pow => {
             let (y, x) = (
                 float::value(mc, name, args[0])?,

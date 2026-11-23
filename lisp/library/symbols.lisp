@@ -102,3 +102,15 @@
 
 (defsetf macro-function (symbol &optional environment) (function)
   `(progn ,environment (%set-macro-function ,symbol ,function)))
+
+;;; `(copy-symbol symbol [copy-props])` — a new uninterned symbol of the
+;;; same name; with COPY-PROPS, its value, function and a copy of its
+;;; property list too (#68).
+(defun copy-symbol (symbol &optional copy-props)
+  (let ((copy (make-symbol (symbol-name symbol))))
+    (if copy-props
+        (progn
+          (if (boundp symbol) (set copy (symbol-value symbol)))
+          (if (fboundp symbol) (%set-symbol-function copy (symbol-function symbol)))
+          (%set-symbol-plist copy (copy-list (symbol-plist symbol)))))
+    copy))

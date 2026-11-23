@@ -12,10 +12,11 @@
 
 *Status: done, issue #66. Step S of phase 2.*
 
-## What was missing?
+## The missing operators
 
-Fifteen operators, led by `delete-package` (202 tests), `package-used-by-list`
-(171) and `unuse-package` (170). Those three arrive together for a reason
+While running the tests we found that fifteen operators were still missing
+from the library, especially `delete-package` (202 tests),
+`package-used-by-list` (171) and `unuse-package` (170). Those three arrive together for a reason
 that has nothing to do with what the tests check. Almost every package test
 starts by cleaning up after the last one, with a helper from ansi-test's
 auxiliary files:
@@ -104,7 +105,7 @@ else writes either.
 
 ## What happens to a deleted package?
 
-We followed SBCL. `delete-package` refuses a package another still uses, with
+Here the standard leaves room, and we followed SBCL. `delete-package` refuses a package another still uses, with
 a `package-error`. Otherwise the package stops using its own, leaves the list
 that `find-package` searches, and its name and nicknames are cleared, so
 `package-name` of the object answers nil and deleting it again answers nil.
@@ -179,7 +180,8 @@ where the compiler reads them and where they cover the result form too.
 
 ## What did it cost?
 
-No Rust. About 400 lines of Lisp in `packages.lisp`, which also gained
+This step needed no Rust at all, only about 400 lines of Lisp in
+`packages.lisp`, which also gained
 `gentemp`, character names as string designators, and `defpackage`'s
 `:import-from`, `:documentation` and `:size`. `tests/lisp/package-system.lisp`
 checks the conflicts, shadowing, importing, uninterning, deleting, renaming
@@ -196,9 +198,10 @@ do not have yet.
 
 ## What is still missing?
 
-The restarts a conflict should offer, which need tier 2's conditions. Package
-locks. Nicknames local to a package, an extension SBCL and others share but
-the standard does not have. A `package-error` does not yet say which package
+Several things are still missing. A conflict should offer restarts, which
+need tier 2's conditions. There are no package locks, and no nicknames local
+to a package, an extension SBCL and others share but the standard does not
+have. A `package-error` does not yet say which package
 it is about in a way a program can ask, because `package-error-package`
 needs conditions with slots, also tier 2.
 

@@ -114,12 +114,22 @@
     `(let ((,key ,keyform))
        (cond ,@(%case-clauses key clauses nil)))))
 
-;;; `ecase`: as `case`, and an error if nothing matches.
+;;; `ecase`: as `case`, and a `type-error` if nothing matches (CLHS; SBCL's
+;;; `case-failure` is one).
 (defmacro ecase (keyform &body clauses)
   (let ((key (gensym "KEY")))
     `(let ((,key ,keyform))
        (cond ,@(%case-clauses key clauses nil)
-             (t (error "ECASE: no clause matches" ,key))))))
+             (t (error 'type-error "ECASE: no clause matches" ,key))))))
+
+;;; `ccase`: CLHS makes its error correctable, with a `store-value` restart
+;;; that stores a new key in the place and tries again. Until tier 2 has
+;;; restarts it is `ecase` (#68, decision 1).
+(defmacro ccase (keyplace &body clauses)
+  (let ((key (gensym "KEY")))
+    `(let ((,key ,keyplace))
+       (cond ,@(%case-clauses key clauses nil)
+             (t (error 'type-error "CCASE: no clause matches" ,key))))))
 
 (defun %case-clauses (key clauses acc)
   (if (null clauses)
@@ -597,10 +607,71 @@
   (set-difference list-1 list-2 :key key :test test :test-not test-not))
 
 (defun set-exclusive-or (list-1 list-2 &key key test test-not)
-  (append (set-difference list-1 list-2 :key key :test test :test-not test-not)
-          (set-difference list-2 list-1 :key key :test test :test-not test-not)))
+  (let ((same (%test test test-not)))
+    ;; The test always gets an element of LIST-1 first and one of LIST-2
+    ;; second (CLHS 17.2.1), so the second half swaps them back (#68).
+    (append (set-difference list-1 list-2 :key key :test same)
+            (set-difference list-2 list-1 :key key :test (lambda (b a) (funcall same a b))))))
 
 (defun subsetp (list-1 list-2 &key key test test-not)
   (let ((same (%test test test-not)))
     (dolist (element list-1 t)
       (if (not (%member-by element list-2 key same)) (return nil)))))
+
+;;; ------------------------------------------------------------------------
+;;; Step U (#68): the rest of the list functions on ansi-test's list
+
+;;; The destructive versions may be the plain ones: CLHS lets them modify
+;;; their arguments and does not require it.
+(defun nset-exclusive-or (list-1 list-2 &key key test test-not)
+  (set-exclusive-or list-1 list-2 :key key :test test :test-not test-not))
+(defun nsubst-if (new predicate tree &key key) (subst-if new predicate tree :key key))
+(defun nsubst-if-not (new predicate tree &key key) (subst-if-not new predicate tree :key key))
+
+;;; Every `c[ad]r` of three and four letters, with a `setf` place. A name is
+;;; read left to right as the calls are written: `cadar` is the car of the
+;;; cdr of the car. `%define-cxr` writes both from the name; the ones the
+;;; prelude and `setf.lisp` already have are not touched.
+(defun %cxr-op (name i) (if (eql (aref name i) #\A) 'car 'cdr))
+
+;;; The form taking letters I to END of NAME around ARG.
+(defun %cxr-reader (name i end arg)
+  (if (>= i end) arg (list (%cxr-op name i) (%cxr-reader name (+ i 1) end arg))))
+
+;;; Code that, run by the `setf` expander, builds that form around ARG.
+(defun %cxr-builder (name i end arg)
+  (if (>= i end)
+      arg
+      (list 'list (list 'quote (%cxr-op name i)) (%cxr-builder name (+ i 1) end arg))))
+
+(defmacro %define-cxr (symbol)
+  (let* ((name (symbol-name symbol))
+         (end (- (length name) 1)))
+    `(progn
+       (defun ,symbol (x) ,(%cxr-reader name 1 end 'x))
+       (defsetf ,symbol (x) (new)
+         (list 'progn
+               (list ',(if (eql (aref name 1) #\A) 'rplaca 'rplacd) ,(%cxr-builder name 2 end 'x) new)
+               new)))))
+
+(%define-cxr caaar) (%define-cxr caadr) (%define-cxr cadar) (%define-cxr cdaar)
+(%define-cxr cdadr) (%define-cxr cddar) (%define-cxr cdddr)
+(%define-cxr caaaar) (%define-cxr caaadr) (%define-cxr caadar) (%define-cxr caaddr)
+(%define-cxr cadaar) (%define-cxr cadadr) (%define-cxr caddar) (%define-cxr cadddr)
+(%define-cxr cdaaar) (%define-cxr cdaadr) (%define-cxr cdadar) (%define-cxr cdaddr)
+(%define-cxr cddaar) (%define-cxr cddadr) (%define-cxr cdddar) (%define-cxr cddddr)
+
+;;; `(prog (var...) body...)` — `let` and a `tagbody` inside `block nil`, the
+;;; old way of writing a loop with `go`; `prog*` binds in order.
+(defmacro prog (bindings &body body)
+  `(block nil (let ,bindings ,@(%body-declarations body) (tagbody ,@(%body-forms body)))))
+
+(defmacro prog* (bindings &body body)
+  `(block nil (let* ,bindings ,@(%body-declarations body) (tagbody ,@(%body-forms body)))))
+
+;;; `(multiple-value-setq (a b) form)` — assign the values; the first is
+;;; the result. `setf` of `values` (#52) does the assigning.
+(defmacro multiple-value-setq (variables form)
+  (if variables
+      `(values (setf (values ,@variables) ,form))
+      `(values ,form)))

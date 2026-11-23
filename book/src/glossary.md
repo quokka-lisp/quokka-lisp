@@ -613,7 +613,7 @@ subform is evaluated exactly once, left to right. ([43](part-6-self-hosting/43-p
 **Symbol macro.** A symbol that stands for a form within a region of code,
 made by `symbol-macrolet`: reading it reads the form, `setq` of it is `setf`
 of the form, and a variable binding of the same name inside the region
-shadows it. ([44](part-6-self-hosting/44-the-last-three.md))
+shadows it. `define-symbol-macro` makes a global one, which any lexical binding of the name hides. ([44](part-6-self-hosting/44-the-last-three.md), [56](part-6-self-hosting/56-small-functions.md))
 
 **Semispace.** One of the two halves a [copying collector](#copying-collector)
 works between. At any moment one holds everything and the other is empty.
@@ -763,3 +763,7 @@ simple copying collector here does not.
 **Displaced array.** An array with no elements of its own, which shares another array's, starting at an offset: writing through either is seen through both. ([55](part-6-self-hosting/55-arrays.md))
 
 **Bit vector.** A vector whose elements are 0 or 1, written `#*1011`. Quokka packs 64 to a word. ([55](part-6-self-hosting/55-arrays.md))
+
+**Restart.** A way of carrying on from an error that the code signalling it offers, chosen by a handler or by the person at the keyboard: `ccase`'s `store-value` stores a new value and tries again. Part of Common Lisp's full condition system, which is tier 2 in Quokka; until then `ccase` signals its error like `ecase`. ([56](part-6-self-hosting/56-small-functions.md))
+
+**Unit in the last place (ulp).** The gap between a floating-point number and the next one, and so the smallest error a result can have. Most C libraries promise their logarithms and hyperbolic functions to within one ulp, not exactly, which is why two of them can disagree in the last digit. ([56](part-6-self-hosting/56-small-functions.md))

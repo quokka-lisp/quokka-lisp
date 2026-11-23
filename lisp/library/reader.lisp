@@ -472,6 +472,32 @@
             (write-char #\0 out))))
     (%parse-double (get-output-stream-string out))))
 
+;;; `(parse-integer string &key start end radix junk-allowed)` (#68): an
+;;; integer, with whitespace around it allowed and a sign before it, and the
+;;; index where reading stopped. Anything else in the range is an error of
+;;; type `parse-error`, unless JUNK-ALLOWED, when reading stops at it and the
+;;; integer is nil if there were no digits.
+(defun parse-integer (string &key (start 0) end (radix 10) junk-allowed)
+  (multiple-value-bind (start end) (%bounds string start end)
+    (let ((i start) (sign 1) (value 0) (digits nil))
+      (do () ((not (and (< i end) (%whitespacep (char string i)))))
+        (setq i (+ i 1)))
+      (if (and (< i end) (member (char string i) '(#\+ #\-)))
+          (progn (if (eql (char string i) #\-) (setq sign -1))
+                 (setq i (+ i 1))))
+      (do () ((not (and (< i end) (digit-char-p (char string i) radix))))
+        (setq value (+ (* value radix) (digit-char-p (char string i) radix))
+              digits t
+              i (+ i 1)))
+      (if junk-allowed
+          (values (if digits (* sign value) nil) i)
+          (progn
+            (do () ((not (and (< i end) (%whitespacep (char string i)))))
+              (setq i (+ i 1)))
+            (if (or (not digits) (< i end))
+                (error 'parse-error "not an integer" (subseq string start end)))
+            (values (* sign value) end))))))
+
 ;;; ------------------------------------------------------------------------
 ;;; The standard macro characters (CLHS 2.4)
 

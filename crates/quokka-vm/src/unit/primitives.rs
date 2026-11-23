@@ -157,7 +157,10 @@ fn the_table_order_is_pinned() {
             "%ARRAY-HEADER-SLOT",
             "%SET-ARRAY-HEADER-SLOT",
             "%MAKE-BIT-VECTOR",
-            "%ARRAY-KIND"
+            "%ARRAY-KIND",
+            "%ASINH",
+            "%ACOSH",
+            "%ATANH"
         ]
     );
 }

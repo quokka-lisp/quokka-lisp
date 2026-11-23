@@ -275,6 +275,45 @@
                 stream)
   object)
 
+;;; `(print-unreadable-object (object stream &key type identity) body...)`
+;;; (#68): `#<`, the object's type if TYPE, what BODY writes, and `>`. Quokka
+;;; has no type system yet (phase 3), so the type is a plain name for the
+;;; kind of object; and its objects have no stable address to show, so
+;;; IDENTITY adds nothing, which CLHS leaves to the implementation.
+(defmacro print-unreadable-object (spec &body body)
+  (destructuring-bind (object stream &key type identity) spec
+    (%print-unreadable-expansion object stream type identity body)))
+
+;;; Quokka's macro lambda lists take no `&key` inside a nested pattern, so
+;;; the macro destructures its first argument itself.
+(defun %print-unreadable-expansion (object stream type identity body)
+  (let ((out (gensym "OUT")))
+    `(let ((,out (%output-stream ,stream)))
+       (if *print-readably* (error 'print-not-readable "printing readably" ,object))
+       (write-string "#<" ,out)
+       (if ,type (progn (write-string (symbol-name (%type-name ,object)) ,out)
+                        ,@(if body `((write-char #\Space ,out)) nil)))
+       ,identity
+       ,@body
+       (write-char #\> ,out)
+       nil)))
+
+(defun %type-name (object)
+  (cond ((null object) 'null)
+        ((consp object) 'cons)
+        ((symbolp object) 'symbol)
+        ((integerp object) (if (%bignump object) 'bignum 'fixnum))
+        ((floatp object) 'double-float)
+        ((characterp object) 'character)
+        ((stringp object) 'string)
+        ((bit-vector-p object) 'bit-vector)
+        ((vectorp object) 'vector)
+        ((arrayp object) 'array)
+        ((hash-table-p object) 'hash-table)
+        ((functionp object) 'function)
+        ((%package-p object) 'package)
+        (t 't)))
+
 ;;; `(string x)`, the designator as a string, is in `strings.lisp` (#54).
 
 ;;; ------------------------------------------------------------------------

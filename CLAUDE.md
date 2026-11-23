@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1022 :REPLACED 860)` (asserted in `differential.rs`; any new library
+`(:FORMS 1073 :REPLACED 887)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -199,10 +199,20 @@ keyword parsing (it was 12× slower and tipped ansi-test's runner load over
 its budget; setup loads now get a file's budget). ansi-test measures the
 `arrays` group too: **7,280 of 13,558 pass** (the old fourteen groups 5,701 →
 6,651; plain failures 725 → 378). A bad `:start`/`:end` is a `type-error`
-now (`%bounds`), as SBCL's is.
-**Next:** step U, the small functions (`parse-integer`, `prog`, `ccase`,
-`multiple-value-setq`, the four-letter `c...r`s, `nset-exclusive-or`,
-`nsubst-if`, predicates); V, integer bit fields (`byte`, `ldb`, `dpb`, `boole`);
+now (`%bounds`), as SBCL's is. **Step U is done** (#68, chapter 56): the small
+functions — `parse-integer`, `prog`/`prog*`, `multiple-value-setq`, every
+`c[ad]{3,4}r` with a `setf` place (`%define-cxr` writes each from its name),
+`nset-exclusive-or`, `nsubst-if`, `char-int`, `standard-char-p`,
+`copy-symbol`, `copy-structure`, `print-unreadable-object`,
+`function-lambda-expression` (always "unknown"). `ccase` is `ecase` until
+restarts; both signal `type-error`. `asinh`/`acosh`/`atanh` are `libm`
+primitives (`atanh` differs from macOS SBCL by an ulp; tested within one).
+**`define-symbol-macro`** keeps a compiler table, `%global-symbol-macros`,
+reached when `%symbol-macro` runs out of scopes — like `%compiler-macros`,
+empty when the compiler compiles itself. Found: `set-exclusive-or` swapped
+the test's arguments; `symbol-macrolet` ignored body declarations.
+ansi-test after U: **7,600 of 13,558 pass**; needs tier 1 492; plain failures 372.
+**Next:** V, integer bit fields (`byte`, `ldb`, `dpb`, `boole`);
 W, the reader (`readtable-case`, `read-preserving-whitespace`); X, hash tables
 (`equalp` tables, a function as `:test`, `sxhash`) and the standard streams;
 then the plain failures. Phase 2's scope is
@@ -221,7 +231,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 263 lines left of 15,500, for phases 2 to 6** (raised from 15,000 by step T) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500).
+- **The Rust budget: 252 lines left of 15,500, for phases 2 to 6** (raised from 15,000 by step T) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500; U 11 — `asinh`/`acosh`/`atanh`).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -274,8 +284,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**422 tests**; **36 differential files agree with SBCL** — 17 interpreted and
-compiled, plus nineteen tier-1 files, compiled only, and all 36 also pass in a rebuilt world. The Rust core is **15,237** lines of the 15,500 budget (raised from 15,000 by #67).
+**423 tests**; **37 differential files agree with SBCL** — 17 interpreted and
+compiled, plus twenty tier-1 files, compiled only, and all 37 also pass in a rebuilt world. The Rust core is **15,248** lines of the 15,500 budget (raised from 15,000 by #67).
 
 ## How phase 1 ended
 

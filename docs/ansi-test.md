@@ -9,22 +9,22 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1289 | 28 | 0 | 1 | 171 | 149 | 1638 |
+| cons | 1452 | 23 | 0 | 1 | 6 | 156 | 1638 |
 | sequences | 2480 | 70 | 0 | 2 | 0 | 606 | 3158 |
 | strings | 370 | 23 | 0 | 0 | 4 | 104 | 501 |
 | arrays | 629 | 0 | 0 | 1 | 20 | 584 | 1234 |
-| characters | 123 | 0 | 0 | 0 | 42 | 94 | 259 |
-| symbols | 97 | 23 | 0 | 1 | 9 | 1015 | 1145 |
-| packages | 252 | 17 | 0 | 2 | 4 | 65 | 340 |
-| numbers | 371 | 23 | 0 | 4 | 264 | 776 | 1438 |
+| characters | 130 | 0 | 0 | 0 | 32 | 97 | 259 |
+| symbols | 104 | 23 | 0 | 1 | 2 | 1015 | 1145 |
+| packages | 254 | 17 | 0 | 2 | 1 | 66 | 340 |
+| numbers | 432 | 23 | 0 | 4 | 180 | 799 | 1438 |
 | reader | 75 | 8 | 0 | 1 | 52 | 29 | 165 |
-| printer | 208 | 19 | 0 | 4 | 89 | 502 | 822 |
-| data-and-control-flow | 997 | 79 | 13 | 0 | 106 | 225 | 1420 |
-| eval-and-compile | 232 | 29 | 5 | 0 | 29 | 23 | 318 |
+| printer | 208 | 19 | 0 | 4 | 77 | 514 | 822 |
+| data-and-control-flow | 1070 | 79 | 13 | 0 | 20 | 238 | 1420 |
+| eval-and-compile | 237 | 28 | 5 | 0 | 25 | 23 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 42 | 9 | 0 | 0 | 63 | 53 | 167 |
-| structures | 20 | 50 | 0 | 0 | 12 | 33 | 115 |
-| **all** | **7280** | **378** | **18** | **16** | **865** | **5001** | **13558** |
+| structures | 22 | 50 | 0 | 0 | 10 | 33 | 115 |
+| **all** | **7600** | **372** | **18** | **16** | **492** | **5060** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -33,59 +33,28 @@ A test can need several things.
 | `load-error[*HASH-TABLES*]` | 111 |
 | `load-error[*STREAMS*]` | 111 |
 | `READTABLE-CASE[tier-1]` | 75 |
-| `PARSE-INTEGER[tier-1]` | 56 |
-| `NSET-EXCLUSIVE-OR[tier-1]` | 52 |
 | `BYTE[tier-1]` | 48 |
-| `CCASE[tier-1]` | 38 |
 | `READ-PRESERVING-WHITESPACE[tier-1]` | 27 |
-| `MULTIPLE-VALUE-SETQ[tier-1]` | 26 |
 | `SXHASH[tier-1]` | 24 |
-| `NSUBST-IF[tier-1]` | 23 |
-| `NSUBST-IF-NOT[tier-1]` | 22 |
-| `PROG[tier-1]` | 20 |
 | `NAME-CHAR[tier-1]` | 18 |
 | `LOGORC1[tier-1]` | 17 |
 | `LOGORC2[tier-1]` | 17 |
-| `PROG*[tier-1]` | 17 |
 | `WITH-HASH-TABLE-ITERATOR[tier-1]` | 17 |
 | `LOGANDC1[tier-1]` | 16 |
 | `LOGANDC2[tier-1]` | 16 |
 | `LOGEQV[tier-1]` | 16 |
 | `LOGNAND[tier-1]` | 16 |
 | `LOGNOR[tier-1]` | 16 |
-| `CHAR-INT[tier-1]` | 14 |
-| `ATANH[tier-1]` | 12 |
 | `BOOLE[tier-1]` | 12 |
 | `LDB[tier-1]` | 12 |
 | `MASK-FIELD[tier-1]` | 11 |
 | `SET-SYNTAX-FROM-CHAR[tier-1]` | 11 |
-| `ACOSH[tier-1]` | 10 |
-| `ASINH[tier-1]` | 10 |
 | `DEPOSIT-FIELD[tier-1]` | 9 |
 | `DPB[tier-1]` | 9 |
-| `DEFINE-SYMBOL-MACRO[tier-1]` | 8 |
 | `LOGTEST[tier-1]` | 8 |
-| `STANDARD-CHAR-P[tier-1]` | 8 |
-| `COPY-SYMBOL[tier-1]` | 7 |
-| `FUNCTION-LAMBDA-EXPRESSION[tier-1]` | 7 |
 | `HASH-TABLE-TEST[tier-1]` | 7 |
-| `PRINT-UNREADABLE-OBJECT[tier-1]` | 7 |
 | `BYTE-POSITION[tier-1]` | 6 |
 | `BYTE-SIZE[tier-1]` | 6 |
-| `CAAAAR[tier-1]` | 6 |
-| `CAAADR[tier-1]` | 6 |
-| `CAADAR[tier-1]` | 6 |
-| `CAADDR[tier-1]` | 6 |
-| `CADAAR[tier-1]` | 6 |
-| `CADADR[tier-1]` | 6 |
-| `CADDAR[tier-1]` | 6 |
-| `CDAAAR[tier-1]` | 6 |
-| `CDAADR[tier-1]` | 6 |
-| `CDADAR[tier-1]` | 6 |
-| `CDADDR[tier-1]` | 6 |
-| `CDDAAR[tier-1]` | 6 |
-| `CDDADR[tier-1]` | 6 |
-| `CDDDAR[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-SIZE[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-THRESHOLD[tier-1]` | 6 |
 | `reader[#=]` | 6 |
@@ -95,7 +64,6 @@ A test can need several things.
 | `load-error[STRUCT-INCLUDE-02B]` | 3 |
 | `reader[#*]` | 3 |
 | `reader[#A]` | 3 |
-| `COPY-STRUCTURE[tier-1]` | 2 |
 | `load-error[STRUCT-INCLUDE-01B-D]` | 2 |
 | `load-error[STRUCT-INCLUDE-04B]` | 2 |
 | `LDB-TEST[tier-1]` | 1 |
