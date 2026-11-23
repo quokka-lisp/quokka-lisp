@@ -112,6 +112,15 @@ Pronounced "could-er". Read it as "rest".
 
 **Cold build.** Making a world from nothing, from outside it: Quokka's `boot::build_image`, in Rust, with the interpreter. Contrast the *warm rebuild*, in which a running world remakes itself from its own source. The term is SBCL's, whose build makes a *cold core*. ([41](part-6-self-hosting/41-the-image-rebuilds-itself.md))
 
+**Designator.** An object that stands for another of a given kind, so a
+function can accept either. A *string designator* is a string, a symbol (its
+name) or a character (a string of one); `string` turns any into a string.
+([45](part-6-self-hosting/45-sequences.md))
+
+**Generalised boolean.** Any value used as a truth value: nil is false and
+everything else true. `(string< "ab" "abc")` answers 2, the position where the
+strings differ — true, and informative. ([45](part-6-self-hosting/45-sequences.md))
+
 **Diverse double-compiling.** Compiling a compiler's source with two *different* compilers and comparing the results, as a defence against a compiler that hides something in itself (Wheeler, 2005). Quokka's C1 (compiled by the interpreted compiler) against C2 (by the compiled one) is a small instance. ([42](part-6-self-hosting/42-the-fixpoint.md))
 
 **Cheney's algorithm.** The [copying collector](#copying-collector) Quokka uses.

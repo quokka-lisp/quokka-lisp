@@ -307,9 +307,10 @@ Still to come, and deliberately so:
   operators exist — twenty-two in tier 0, along with macros, lambda lists,
   keywords, vectors, strings, hash tables, `setf`, a minimal **condition
   system**, `defstruct` and multiple values; `progv`, `load-time-value` and
-  `symbol-macrolet` in tier 1, compiled only (chapter 44). Still to come in
-  tier 1: sequences, `format`, bignums and floats; beyond it, `loop`, CLOS
-  and the rest, in later phases.
+  `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
+  sequence and string functions (chapter 45). Still to come in tier 1:
+  `format`, bignums and floats; beyond it, `loop`, CLOS and the rest, in
+  later phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree — and a
   **compiler**, written in Lisp, that translates source into those instructions.

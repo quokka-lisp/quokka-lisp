@@ -127,6 +127,7 @@ cannot reach.
 | **Macros** | `defmacro` with full lambda lists, backquote, `gensym`, `macroexpand`, and `macrolet` for lexical ones |
 | **Lists, loops, equality** | `dolist`, `dotimes`, `do`, `case`, `destructuring-bind`, `return`; `mapcar` and its five relatives, `assoc`, `subst`, `union`, `nconc`, `last`; `eql`, `equal`, `equalp` — CLHS chapters 5, 6 and 14, in Lisp |
 | **Sequences** | `find`, `position`, `count`, `remove`, `substitute`, `remove-duplicates`, `search`, `mismatch`, `map`, `reduce`, `every`/`some`, `fill`, `replace`, `subseq`, `concatenate`, a stable merge `sort` — CLHS chapter 17, on lists, vectors and strings alike, each written once over one iteration macro |
+| **Strings and characters** | `char=` and `char-equal` families with any number of arguments, the twelve string comparisons with ranges, `string-upcase`/`-downcase`/`-capitalize`, `string-trim`, `char`/`schar` — CLHS chapters 13 and 16 |
 | **Lambda lists** | `&optional` and `&key` with default forms and supplied-p, `&rest`, `&aux`, `&body`, and destructuring in macros |
 | **Keywords** | `:foo` evaluates to itself and is a different symbol from `foo` — two-sevenths of a package system, on purpose |
 | **Vectors and strings** | `#(1 2 3)`, `aref`, `length` and `elt` over lists, vectors and strings alike; a string written in source is **read-only**, so a literal cannot be edited by accident ([#26](https://github.com/quokka-lisp/quokka-lisp/issues/26)) |
@@ -146,16 +147,16 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-410 tests, green on native, under wasmtime, and with the GC torture mode on.
-Twenty-six Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, nine more of
-tier 1 compiled only — and all twenty-six again in a world that has rebuilt
-itself. The Rust core is 13,817 lines of the 15,000-line budget.
+411 tests, green on native, under wasmtime, and with the GC torture mode on.
+Twenty-seven Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, ten more of
+tier 1 compiled only — and all twenty-seven again in a world that has rebuilt
+itself. The Rust core is 13,821 lines of the 15,000-line budget.
 
 ### What does not exist yet
 
 **The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
-which still lacks sequences, `format`, bignums and floats
+which still lacks `format`, bignums and floats
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
 The first world is still built by the interpreter — the cold build — and is
 then rebuilt by itself.

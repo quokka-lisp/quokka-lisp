@@ -212,13 +212,7 @@
                 stream)
   object)
 
-;;; `(string x)` — a string designator as a string: a string, a symbol's
-;;; name, or a character on its own.
-(defun string (designator)
-  (cond ((stringp designator) designator)
-        ((symbolp designator) (symbol-name designator))
-        ((characterp designator) (make-string 1 :initial-element designator))
-        (t (error "not a string designator"))))
+;;; `(string x)`, the designator as a string, is in `strings.lisp` (#54).
 
 ;;; ------------------------------------------------------------------------
 ;;; Objects
