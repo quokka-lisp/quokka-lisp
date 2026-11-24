@@ -217,7 +217,7 @@ quokka rebuild c2.qi c3.qi
 What to expect today:
 - C1 is 853,080 bytes; C2 and C3 are 853,616 each. A rebuild takes about
   twelve seconds.
-- Every rebuild reports `(:FORMS 1131 :REPLACED 924)`.
+- Every rebuild reports `(:FORMS 1148 :REPLACED 934)`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
   are numbered by a counter that keeps rising, the image checksum covers those
   numbers, and the header counts saves.
@@ -323,7 +323,7 @@ several **legs**, and every leg must match the baseline:
 | compiled, rebuilt world | `a_rebuilt_world_passes_every_differential_file` | the same | the same |
 | SBCL | `./scripts/oracle.sh` | SBCL | SBCL |
 
-**Tier 0** files (17) run in every leg. **Tier 1** files (22) use the library,
+**Tier 0** files (17) run in every leg. **Tier 1** files (23) use the library,
 which the interpreter never learns, so they skip the interpreted leg.
 `tests/lisp/README.md` lists what a test file must not contain. In short: no
 bignums in a tier-0 file, no printed functions, nothing the standard leaves unspecified, and no
@@ -434,7 +434,7 @@ Rule 1 says Lisp first, so check whether it can be Lisp. If it can't:
    and its implementation.
 2. Add its name to the pinned list in `src/unit/primitives.rs`.
 
-It costs Rust budget (248 lines are left of 15,500, a guide rather than a ceiling), and the issue for the step should
+It costs Rust budget (32 lines are left of 15,500, a guide rather than a ceiling), and the issue for the step should
 say how much.
 
 ### A book chapter

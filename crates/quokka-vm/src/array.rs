@@ -295,6 +295,13 @@ pub fn is_string<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
     is_vector(mc, v) && storage(mc, v).is_some_and(|s| s.kind == Kind::String)
 }
 
+/// Element I of vector V, as `aref` reads it, or nil if there is none.
+pub fn vector_element<'h>(mc: &Mutation<'h>, v: Value<'h>, i: usize) -> Value<'h> {
+    storage(mc, v)
+        .and_then(|s| element(&s, i).ok().map(|at| read(mc, &s, at)))
+        .unwrap_or(Value::NIL)
+}
+
 /// A string's or bit vector's active elements as text — the characters, or
 /// `0`s and `1`s — and whether they are bits: what `equal` compares, so what
 /// an `equal` hash table hashes. `None` for anything else.

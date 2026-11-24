@@ -213,11 +213,12 @@ value; `equal` compares conses and strings by content; `equalp` also ignores
 case and compares vectors element by element.
 ([45](part-6-self-hosting/45-sequences.md))
 
-**Fallback (arithmetic).** What the machine does when a fixnum primitive
-cannot answer — on overflow, or given a bignum: instead of an error, it calls
-the matching Lisp function (`%generic-+` and so on) with the same arguments.
-The fast path stays in Rust and the slow path is Lisp.
-([47](part-6-self-hosting/47-bignums.md))
+**Fallback.** What the machine does when a primitive cannot answer: instead
+of an error, it calls the matching Lisp function with the same arguments. A
+fixnum primitive does this on overflow or given a bignum (`%generic-+` and so
+on), and a hash table primitive given a key that `equal` or `equalp` must
+compare (`%generic-gethash` and its siblings). The fast path stays in Rust and
+the slow path is Lisp. ([47](part-6-self-hosting/47-bignums.md), [59](part-6-self-hosting/59-hash-tables-finished.md))
 
 **Float (floating-point number).** A number held as a whole number of binary digits, the [significand](#significand), times a power of two, with a sign. Quokka's only float format is the IEEE 754 *double*: 64 bits, with 53 significant binary digits (about 16 decimal ones). Most decimals, 0.1 among them, have no exact binary form, which is why `(+ 0.1 0.2)` is `0.30000000000000004`. ([48](part-6-self-hosting/48-floats.md))
 
@@ -777,3 +778,6 @@ simple copying collector here does not.
 **Constituent trait.** A property a character keeps whatever its [syntax type](#syntax-type): whether it is a letter, a digit, a package marker, or *invalid*. An invalid character (whitespace, backspace, rubout) may not appear unescaped in a token, and reading one there signals `reader-error`. ([58](part-6-self-hosting/58-the-readers-last-gaps.md))
 
 **Fast path.** A short route through code for the common case, taken after a cheap test, with the general mechanism kept for the rest. The reader skips its syntax table while no character's type has been changed; `make-array` skips keyword parsing when given only a size. ([55](part-6-self-hosting/55-arrays.md), [58](part-6-self-hosting/58-the-readers-last-gaps.md))
+
+**Content hash.** A hash computed from what a key contains rather than where it lives, so that two equal keys that are different objects meet in one bucket. Quokka's looks a bounded way into conses and vectors, and gives an object with nothing but its identity a number for its type, so the collector moving it never changes the hash. It is also `sxhash`. ([59](part-6-self-hosting/59-hash-tables-finished.md))
+

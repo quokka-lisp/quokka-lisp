@@ -79,6 +79,7 @@
 - [The small functions](part-6-self-hosting/56-small-functions.md)
 - [Bit fields](part-6-self-hosting/57-bit-fields.md)
 - [The reader's last gaps](part-6-self-hosting/58-the-readers-last-gaps.md)
+- [Hash tables, finished](part-6-self-hosting/59-hash-tables-finished.md)
 
 ---
 

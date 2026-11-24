@@ -179,6 +179,11 @@ pub enum Prim {
     Asinh = 124,
     Acosh = 125,
     Atanh = 126,
+    HashBucket = 127,
+    HashInsert = 128,
+    HashDeleteEntry = 129,
+    Sxhash = 130,
+    HashTableTest = 131,
 }
 
 impl Prim {
@@ -587,6 +592,17 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::Asinh, "%ASINH", Arity::Exactly(1)),
     (Prim::Acosh, "%ACOSH", Arity::Exactly(1)),
     (Prim::Atanh, "%ATANH", Arity::Exactly(1)),
+    // What the library needs to compare keys itself (#71): a bucket, and
+    // adding or removing an entry once it has searched one.
+    (Prim::HashBucket, "%HASH-BUCKET", Arity::Exactly(2)),
+    (Prim::HashInsert, "%HASH-INSERT", Arity::Exactly(3)),
+    (
+        Prim::HashDeleteEntry,
+        "%HASH-DELETE-ENTRY",
+        Arity::Exactly(2),
+    ),
+    (Prim::Sxhash, "SXHASH", Arity::Exactly(1)),
+    (Prim::HashTableTest, "HASH-TABLE-TEST", Arity::Exactly(1)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -604,6 +620,10 @@ pub fn fallback(index: u32) -> Option<(usize, &'static str)> {
         Prim::Quotient => (6, "%GENERIC-QUOTIENT"),
         Prim::Rem => (7, "%GENERIC-REM"),
         Prim::Divide => (8, "%GENERIC-/"),
+        // A key the library compares (#71): `hash::needs_lisp`.
+        Prim::Gethash => (9, "%GENERIC-GETHASH"),
+        Prim::SetGethash => (10, "%GENERIC-SET-GETHASH"),
+        Prim::Remhash => (11, "%GENERIC-REMHASH"),
         _ => return None,
     };
     Some((crate::heap::symbol_cache::FALLBACKS + n, name))
@@ -905,6 +925,13 @@ pub fn call_slice<'h>(
             Value::NIL
         }),
         Prim::HashTableEntries => crate::hash::entries(mc, args[0]),
+        Prim::HashBucket => crate::hash::bucket(mc, args[1], args[0]),
+        Prim::HashInsert => crate::hash::insert(mc, args[1], args[0], args[2]),
+        Prim::HashDeleteEntry => {
+            crate::hash::delete_entry(mc, args[1], args[0]).map(|_| Value::NIL)
+        }
+        Prim::Sxhash => Ok(crate::hash::sxhash(mc, args[0])),
+        Prim::HashTableTest => crate::hash::test(mc, args[0]),
         Prim::MakeVector => {
             let Some(n) = args[0].as_fixnum() else {
                 return Err(EvalError::WrongType {
@@ -1378,7 +1405,7 @@ pub fn call_slice<'h>(
 /// other one to one. Unicode upcases `ß` to "SS", two characters, so in Lisp
 /// `ß` has no case; `ſ` upcases to `S`, which downcases to `s`, so neither has
 /// `ſ` as a partner.
-fn case_partner(ch: char, up: bool) -> char {
+pub(crate) fn case_partner(ch: char, up: bool) -> char {
     fn one(mut it: impl Iterator<Item = char>) -> Option<char> {
         let c = it.next()?;
         it.next().is_none().then_some(c)

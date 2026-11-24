@@ -9,37 +9,29 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1452 | 23 | 0 | 1 | 6 | 156 | 1638 |
+| cons | 1452 | 23 | 0 | 1 | 0 | 162 | 1638 |
 | sequences | 2480 | 70 | 0 | 2 | 0 | 606 | 3158 |
-| strings | 370 | 23 | 0 | 0 | 4 | 104 | 501 |
-| arrays | 629 | 0 | 0 | 1 | 13 | 591 | 1234 |
-| characters | 133 | 0 | 0 | 0 | 22 | 104 | 259 |
-| symbols | 104 | 23 | 0 | 1 | 2 | 1015 | 1145 |
-| packages | 254 | 17 | 0 | 2 | 1 | 66 | 340 |
-| numbers | 532 | 21 | 0 | 4 | 16 | 865 | 1438 |
-| reader | 111 | 4 | 0 | 1 | 1 | 48 | 165 |
-| printer | 223 | 19 | 0 | 4 | 15 | 561 | 822 |
-| data-and-control-flow | 1073 | 79 | 13 | 0 | 17 | 238 | 1420 |
-| eval-and-compile | 237 | 28 | 5 | 0 | 25 | 23 | 318 |
+| strings | 370 | 23 | 0 | 0 | 0 | 108 | 501 |
+| arrays | 629 | 0 | 0 | 1 | 0 | 604 | 1234 |
+| characters | 133 | 0 | 0 | 0 | 0 | 126 | 259 |
+| symbols | 104 | 23 | 0 | 1 | 0 | 1017 | 1145 |
+| packages | 254 | 17 | 0 | 2 | 0 | 67 | 340 |
+| numbers | 532 | 21 | 0 | 4 | 0 | 881 | 1438 |
+| reader | 111 | 4 | 0 | 1 | 0 | 49 | 165 |
+| printer | 223 | 19 | 0 | 4 | 0 | 576 | 822 |
+| data-and-control-flow | 1084 | 68 | 13 | 0 | 5 | 250 | 1420 |
+| eval-and-compile | 237 | 28 | 5 | 0 | 6 | 42 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
-| hash-tables | 42 | 9 | 0 | 0 | 63 | 53 | 167 |
-| structures | 22 | 50 | 0 | 0 | 10 | 33 | 115 |
-| **all** | **7757** | **366** | **18** | **16** | **195** | **5206** | **13558** |
+| hash-tables | 81 | 1 | 0 | 0 | 3 | 82 | 167 |
+| structures | 22 | 50 | 0 | 0 | 8 | 35 | 115 |
+| **all** | **7807** | **347** | **18** | **16** | **22** | **5348** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
 | needs | tests |
 | --- | ---: |
-| `load-error[*HASH-TABLES*]` | 111 |
-| `load-error[*STREAMS*]` | 111 |
-| `SXHASH[tier-1]` | 24 |
-| `WITH-HASH-TABLE-ITERATOR[tier-1]` | 17 |
-| `HASH-TABLE-TEST[tier-1]` | 7 |
-| `HASH-TABLE-REHASH-SIZE[tier-1]` | 6 |
-| `HASH-TABLE-REHASH-THRESHOLD[tier-1]` | 6 |
 | `reader[#=]` | 6 |
 | `reader[#.]` | 4 |
-| `HASH-TABLE-SIZE[tier-1]` | 3 |
 | `load-error[STRUCT-INCLUDE-02B]` | 3 |
 | `reader[#*]` | 3 |
 | `reader[#A]` | 3 |

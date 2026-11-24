@@ -160,7 +160,12 @@ fn the_table_order_is_pinned() {
             "%ARRAY-KIND",
             "%ASINH",
             "%ACOSH",
-            "%ATANH"
+            "%ATANH",
+            "%HASH-BUCKET",
+            "%HASH-INSERT",
+            "%HASH-DELETE-ENTRY",
+            "SXHASH",
+            "HASH-TABLE-TEST"
         ]
     );
 }

@@ -48,11 +48,23 @@
 
 (defvar *standard-output* (make-%console-stream :fresh t))
 
-;;; An output stream designator: nil and t both mean standard output. (CLHS
-;;; makes t mean `*terminal-io*`, which Quokka does not have apart from the
-;;; console.)
+;;; The other standard streams (#71). CLHS has a stream for the terminal,
+;;; one each for errors, tracing and the debugger, and one for questions to
+;;; the user, which a program may bind to send output elsewhere. Tier 1 has
+;;; one place to write to, so each is the console stream; `*terminal-io*`,
+;;; `*debug-io*` and `*query-io*` are two-way streams in CLHS, and reading
+;;; from them waits for tier 2's generic streams (#42).
+(defvar *terminal-io* *standard-output*)
+(defvar *error-output* *standard-output*)
+(defvar *trace-output* *standard-output*)
+(defvar *debug-io* *standard-output*)
+(defvar *query-io* *standard-output*)
+
+;;; An output stream designator: nil means standard output, and t the
+;;; terminal, `*terminal-io*`.
 (defun %output-stream (designator)
-  (cond ((or (null designator) (eq designator t)) *standard-output*)
+  (cond ((null designator) *standard-output*)
+        ((eq designator t) *terminal-io*)
         ((or (%string-output-stream-p designator) (%console-stream-p designator)) designator)
         (t (error "not an output stream"))))
 

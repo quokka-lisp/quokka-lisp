@@ -363,9 +363,11 @@
 ;; characters, symbols, and strings in an `equal` table — and every other key
 ;; by its address. The collector moves objects, so a table holding an
 ;; address-hashed key is marked stale whenever it does, and rehashed on its
-;; next use (#64). An `equal` table refuses a cons, which `equal` compares by
-;; contents. `crates/quokka-vm/src/hash.rs` and issues #22 and #64 have the
-;; reasoning.
+;; next use (#64). A cons in an `equal` table, and an `equalp` table, need
+;; `equal` and `equalp` to compare keys, so the primitives hand them to the
+;; library (`lisp/library/hash-tables.lisp`, #71); here, before the library
+;; exists, they are refused. `crates/quokka-vm/src/hash.rs` and issues #22,
+;; #64 and #71 have the reasoning.
 
 (defun make-hash-table (&key (test 'eql))
   ;; CLHS also takes :size, :rehash-size and :rehash-threshold, all of which
@@ -463,7 +465,13 @@
          ;; dimensions (#67). One subscript expands exactly as it always did.
          ((eq head 'aref) (cons '%set-aref (append args (list value))))
          ((eq head 'svref) (list '%set-aref (car args) (car (cdr args)) value))
-         ((eq head 'gethash) (list '%set-gethash (car args) (car (cdr args)) value))
+         ;; A default, `(setf (gethash k table default) v)`, is evaluated
+         ;; for its effects in its place, after the table and before the
+         ;; value (CLHS 5.1.1.1; found by ansi-test, #71). Without one the
+         ;; expansion is what it always was.
+         ((eq head 'gethash)
+          (list '%set-gethash (car args) (car (cdr args))
+                (if (cdr (cdr args)) (list 'progn (car (cdr (cdr args))) value) value)))
          ((eq head 'symbol-function) (list '%set-symbol-function (car args) value))
          ;; `rplaca` returns the cons and `setf` must return the value, so the
          ;; value is bound once and handed back. A gensym, because the place
