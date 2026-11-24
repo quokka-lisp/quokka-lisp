@@ -272,7 +272,7 @@ need unwrapping, and an encoding stable enough to write to a file.
 Twenty-three tests pass, on native and inside WebAssembly.
 
 Nothing has been allocated. There is no heap yet, and `word_index` returns an
-index into an array that does not exist. That is deliberate, because this
-module is pure representation, which makes it the one part of the VM where
-complete confidence is cheap, and it is worth banking that before anything
-starts moving. In the next chapter things start moving.
+index into an array that does not exist. That is deliberate. This module is
+pure representation, which makes it the one part of the VM where complete
+confidence is cheap, so we bank it here. In the next chapter things start
+moving.

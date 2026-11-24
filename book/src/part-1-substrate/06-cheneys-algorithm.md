@@ -192,20 +192,18 @@ was rewritten to match. The queue was never longer than to-space itself.
 It is easy to write a collector that terminates and returns a heap. Three tests
 check that it returned the *right* heap.
 
-The first is about sharing. Two references to one cell must still be two
-references to one cell, so the test asserts the two references are `eq`
-afterwards, and also that the heap is exactly two cons cells, which is how you
-detect that the cell was copied twice. Without the second assertion the test
-passes on a collector that silently duplicates everything.
-
-The second is about cycles. A cons whose cdr is itself must come back with its
-cdr still itself, because "it terminated" is not the same as "it was right" and
-a collector could break the cycle and still finish.
-
-The third is about raw slots. A string whose words are bit patterns that *look*
-like a cons reference, an out-of-bounds object reference, and a forwarding
-pointer. If anything traces them the collection explodes or corrupts, so they
-must come back byte for byte.
+1. Sharing. Two references to one cell must still be two references to one
+   cell, so the test asserts the two references are `eq` afterwards, and also
+   that the heap is exactly two cons cells, which is how you detect that the
+   cell was copied twice. Without the second assertion the test passes on a
+   collector that silently duplicates everything.
+2. Cycles. A cons whose cdr is itself must come back with its cdr still
+   itself, because "it terminated" is not the same as "it was right", and a
+   collector could break the cycle and still finish.
+3. Raw slots. A string whose words are bit patterns that *look* like a cons
+   reference, an out-of-bounds object reference, and a forwarding pointer. If
+   anything traces them the collection explodes or corrupts, so they must come
+   back byte for byte.
 
 ## What torture mode became
 
@@ -232,12 +230,15 @@ each one an opportunity to forget. Those bugs produce silently wrong answers,
 because a stale offset indexes a perfectly valid vector and returns a perfectly
 valid word.
 
-The retargeted mode does three things. It collects at every mutation boundary,
-the finest granularity that exists now, standing in for every allocation. It
-pads the front of to-space by a varying amount, so that no object can land on
-the index it had; without this, a small heap can copy an object back to where it
-was, a stale reference accidentally still works, and the nastiest test passes
-for the wrong reason. And it verifies.
+The retargeted mode does three things:
+
+1. It collects at every mutation boundary, the finest granularity that
+   exists now, standing in for every allocation.
+2. It pads the front of to-space by a varying amount, so that no object can
+   land on the index it had. Without this, a small heap can copy an object back
+   to where it was, a stale reference accidentally still works, and the
+   nastiest test passes for the wrong reason.
+3. It verifies, which is the next section.
 
 ## Verification
 

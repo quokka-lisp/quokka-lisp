@@ -147,6 +147,18 @@ chapter; the problem is the pattern.
    bullets; three items per list; tables for things that are really prose.
    Write the comparison as paragraphs, with a table only where the reader
    genuinely compares along columns.
+
+   This rule cuts both ways, and over-applying it is its own fault. A real
+   enumeration belongs in a numbered list, and turning one into prose makes
+   the reader do the counting: "The first is… The second is… The third is…"
+   is a list that has been flattened for appearances. The test is whether the
+   items are genuinely parallel and the reader has to hold them apart. If so,
+   introduce them with a full sentence that says how many and what of ("The
+   decision to represent everything as a list has three consequences:") and
+   number them. What stays prose is a set of *arguments* — three options with
+   trade-offs, each needing a paragraph to make its case — because those are
+   reasoning, not items. And a list item still opens with a plain sentence,
+   never a bold label (habit 3).
 5. **Colon reveals and dramatic setups.** "Here is where it got bigger:", "The
    catch:", "One word: …". Say the thing.
 6. **Em-dash as the main rhythm.** One or two a page is plenty. Use commas,
@@ -231,14 +243,18 @@ chapter; the problem is the pattern.
     "has"; one study measured the word "is" dropping by a tenth in academic
     writing the year chatbots arrived. Use the copula. "The reader is the
     front end" is shorter, says the same thing, and loses nothing.
-19. **Participle tails.** A sentence that has said its piece and then grows an
-    "-ing" clause explaining the significance of what was just said: "…,
-    highlighting the flexibility of the design", "…, underscoring its
-    importance", "…, reflecting the project's priorities", "…, ensuring
-    correctness". The tail almost never carries a fact. It adds a judgement
-    the reader did not ask for and cannot check, and it is one of the
-    strongest tells there is. Delete it; if the point is real, make it a
-    sentence of its own with something concrete in it.
+19. **Significance tails.** A sentence that has said its piece and then grows
+    a clause telling the reader how much it matters. The commonest form is a
+    participle: "…, highlighting the flexibility of the design", "…,
+    underscoring its importance", "…, reflecting the project's priorities",
+    "…, ensuring correctness". The same fault comes without one: "has three
+    consequences, and they compound", "…, and that is worth having", "…, and
+    it is a general habit worth forming", "…, which generalises". The tail
+    almost never carries a fact. It adds a judgement the reader did not ask
+    for and cannot check, and the participle form is one of the strongest
+    tells there is. Delete it; if the point is real, make it a sentence of its
+    own with something concrete in it. "Three consequences" needs no help: the
+    reader can see whether they compound.
 20. **Significance padding.** Sentences that tie the subject to a broader
     trend, a wider history or an ongoing debate in order to make it matter:
     "plays a role in", "forms part of the wider history of", "has shaped
