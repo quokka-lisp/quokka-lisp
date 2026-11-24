@@ -1,9 +1,9 @@
 # Where the ideas came from
 
 Nearly nothing in Quokka is new. The interesting work was choosing, and the
-choosing is only checkable if the alternatives are named — so this page is the
-book cut a different way: **by decision**, with the source that informed it,
-and, where it matters more, what was deliberately *not* taken from it.
+choosing is only checkable if the alternatives are named. So this page is the
+book cut a different way, by decision, with the source that informed it and,
+where it matters more, what was deliberately *not* taken from it.
 
 [Further reading](further-reading.md) is the other page: what to read, and
 why. This one is what was borrowed.
@@ -11,14 +11,14 @@ why. This one is what was borrowed.
 Two reasons it exists.
 
 A decision with a source attached can be argued with, because the source can
-be read and the reasoning checked. A decision with no source is indistinguish-
-able from a guess that happened to work, and this book's whole claim is that
-the reasoning is the content.
+be read and the reasoning checked. A decision with no source is
+indistinguishable from a guess that happened to work, and this book's whole
+claim is that the reasoning is the content.
 
-And the second reason is smaller and more practical: **jargon that is named is
-searchable.** "The trick where the closure has to work for every lifetime" is
-a sentence you cannot look up. *Rank-2 branding, as in Haskell's `ST` monad*
-is three words that lead somewhere.
+The second reason is smaller and more practical. A name can be searched for
+and a description cannot: "the trick where the closure has to work for every
+lifetime" is a sentence you cannot look up, while *rank-2 branding, as in
+Haskell's `ST` monad* is three words that lead somewhere.
 
 ---
 
@@ -51,7 +51,7 @@ is three words that lead somewhere.
 | decision | where it came from | what was left |
 | --- | --- | --- |
 | Compiling as *moving work to a time that happens once* | SICP §4.1.7, which separates `analyze` from execution without introducing bytecode at all ([24](part-3-compiling/24-why-compile-at-all.md)) | — |
-| A **stack** machine | Goldberg & Robson's Blue Book, part four; Queinnec, *Lisp in Small Pieces*, chapter 7 ([25](part-3-compiling/25-a-machine-made-of-instructions.md)) | A register machine — and this is the clearest case of going *against* a source. Ierusalimschy, de Figueiredo & Celes, "The Implementation of Lua 5.0" (2005), is Lua moving from a stack machine to a register machine and getting substantially faster. We read it and stayed, because the cost is a register allocator and rule 7's budget is 15,000 lines |
+| A **stack** machine | Goldberg & Robson's Blue Book, part four; Queinnec, *Lisp in Small Pieces*, chapter 7 ([25](part-3-compiling/25-a-machine-made-of-instructions.md)) | A register machine — and this is the clearest case of going *against* a source. Ierusalimschy, de Figueiredo & Celes, "The Implementation of Lua 5.0" (2005), is Lua moving from a stack machine to a register machine and getting substantially faster. We read it and stayed, because the cost is a register allocator and rule 7's budget was then fifteen thousand lines |
 | Packed bytes, **operand widths fixed per opcode** | The JVM and CPython both pack ([24](part-3-compiling/24-why-compile-at-all.md), `docs/bytecode.md`) | CPython's variable-width operands and `EXTENDED_ARG`. Variable widths make an instruction's size depend on its operands, which makes jump distances depend on sizes, which makes an assembler iterate to a fixpoint — *branch relaxation*. Fixing the widths avoids it entirely. Lua's fixed 32-bit instruction word was the other option and lost on size |
 | `max-stack` in a compiled function | The JVM class file's `max_stack`, checked once at call time instead of bounds-checking every push | — |
 | Ceilings are compiler errors — 64 KB of code per function | The JVM's identical per-method limit, for the identical reason | — |
@@ -64,6 +64,19 @@ is three words that lead somewhere.
 | Literals are read-only | CLHS 3.7.1 leaves modifying one undefined; SBCL puts constants in a read-only space and signals ([#26](https://github.com/quokka-lisp/quokka-lisp/issues/26)) | Treating "undefined" as permission to share without protecting, which is legal and makes the resulting bug undebuggable |
 | Inlining `+` but not a user's function | CLHS 11.1.2.1.2, which makes redefining a `COMMON-LISP` symbol undefined — the package-lock rule, read as a licence ([25](part-3-compiling/25-a-machine-made-of-instructions.md)) | — |
 | Sharing identical literals in an image | **Interning**, or *hash consing* in general: Ershov (1958); Goto, "Monocopy and associative algorithms in extended Lisp" (1974) | Not built. A general run-time intern table needs weak references and collides with rule 9 |
+
+## Self-hosting
+
+| decision | where it came from | what was left |
+| --- | --- | --- |
+| Special variables by **shallow binding**, the value in the symbol | Baker, "Shallow Binding in Lisp 1.5" (*CACM* 21:7, 1978); Genera's processes worked this way ([35](part-6-self-hosting/35-variables-that-follow-the-call.md)) | Deep binding, where a read searches the thread's list. Chosen with phase 3 in mind: ours pays at a thread switch instead of at every read |
+| Packages as Lisp objects in the library, adopted from the Rust symbol table after the build | Rule 1 read strictly, and SBCL, whose package system is also Lisp ([36](part-6-self-hosting/36-whose-symbol-is-it.md)) | A package-aware reader and `intern` in Rust, which would have put a structure ordinary programs create and change below the primitive table |
+| Eight Latin-1 characters to a word, for constants only | ISO 8859-1 being exactly Unicode's first 256; SBCL's `base-string` split ([37](part-6-self-hosting/37-eight-characters-to-a-word.md)) | UTF-8, whose variable width turns indexing into a scan and a write into a resize. Also SBCL's split applied to writable strings, which we avoided by packing only what can never be written |
+| A **readtable** the program can change, rather than a `match` on the next character | CLHS 2.1.4 and 2.2 ([38](part-6-self-hosting/38-reading-in-lisp.md)) | A fixed `cond` with readtables later, which would have meant rewriting the dispatch and every macro character |
+| Which names the printer puts bars around, measured in SBCL rather than read from the standard | CLHS 22.1.3.3 permits more than it requires, and rule 6 makes SBCL the oracle ([39](part-6-self-hosting/39-printing-in-lisp.md)) | Guessing from the reader's rules, which disagrees with SBCL on `A#` and on potential numbers |
+| A rebuild in two passes, so that a compiler is never replaced while it runs | GCC's three-stage bootstrap and `make compare` ([41](part-6-self-hosting/41-the-image-rebuilds-itself.md)) | A plain sequence of `load`s, where the second half of `compile.lisp` is compiled by a compiler that is half new |
+| Comparing C1 with C2 as well as C2 with C3 | Wheeler, "Countering Trusting Trust through Diverse Double-Compiling" (2005) ([42](part-6-self-hosting/42-the-fixpoint.md)) | Comparing only C2 with C3, which shows a fixed point but says nothing about whether the interpreter and the VM agree |
+| Measuring tier 1 against the ANSI test suite, with a ratchet | The suite itself, which is MIT-licensed as this project is ([49](part-6-self-hosting/49-ansi-test.md)) | Counting our own tests, which measures what we thought to write down |
 
 ## The shape of the project
 
@@ -79,13 +92,13 @@ is three words that lead somewhere.
 
 ## Where we went against a source, on purpose
 
-The five worth knowing, because a book that only cites agreement is a reading
-list rather than an argument.
+These five are worth knowing. A book that only cites the sources it agreed
+with is a reading list, and the disagreements are where the reasoning shows.
 
 1. **Lua moved from a stack machine to a register machine and got faster. We
-   stayed with a stack.** Their gain costs a register allocator; our budget is
-   15,000 lines and the comparison is against a tree-walker a hundred times
-   slower than either.
+   stayed with a stack.** Their gain costs a register allocator; our budget was
+   then fifteen thousand lines, and the comparison is against a tree-walker a
+   hundred times slower than either.
 2. **CPython and the JVM use variable-width operands. We fixed them per
    opcode.** Smaller code, at the price of an assembler that iterates to a
    fixpoint. We wanted the one-pass assembler more than the bytes.
@@ -96,18 +109,18 @@ list rather than an argument.
    at every mutation boundary.** Not a weakening: the rooting discipline makes
    the bug the classical version hunts unrepresentable, so what is left to
    hunt is the collector's own mistakes.
-5. **The JVM verifies bytecode before running it.** So do we, now — this
-   entry was "we do not, yet, and it is a gap rather than a decision" until
-   two bugs of exactly the shape a verifier catches made the case. Left in the
-   list because what it does *not* check is the part worth remembering: it
-   proves a function cannot corrupt the machine, and says nothing about
-   whether it is correct.
+5. **The JVM verifies bytecode before running it.** So do we, now. This entry
+   read "we do not, yet, and it is a gap rather than a decision" until two bugs
+   of exactly the shape a verifier catches made the case. It is left in the
+   list because what the verifier does *not* check is the part worth
+   remembering: it proves a function cannot corrupt the machine, and says
+   nothing about whether it is correct.
 
 ## A note on the early chapters
 
 Chapters 15 onwards each end with a **References** paragraph. Chapters 1 to 14
-do not: they cite inline where it matters — SICP in chapter 2, Cheney in
-chapters 3 and 6, Ivory in chapter 1 — and the convention of a closing
+do not. They cite inline where it matters, with SICP in chapter 2, Cheney in
+chapters 3 and 6 and Ivory in chapter 1, and the convention of a closing
 paragraph started later.
 
 This page is partly a repair of that, and the sources above for Part I are the

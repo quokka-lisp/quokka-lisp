@@ -29,7 +29,7 @@ printed. And when the program is finished with it, that memory has to come back,
 or the system eventually runs out.
 
 A **language runtime** is the machinery that makes all of that happen. It is not
-the language — the language is the rules about what `(* 6 7)` means. The runtime
+the language; the language is the rules about what `(* 6 7)` means. The runtime
 is the thing that actually does it.
 
 ## The five parts
@@ -51,26 +51,26 @@ Almost every runtime is built from the same five pieces.
               └─────────────┘
 ```
 
-**1. The reader.** Turns text into structure. You type `(* 6 7)`; the reader
-produces something the machine can work with — a list containing the symbol
+**1. The reader.** Turns text into structure. You type `(* 6 7)`, and the reader
+produces something the machine can work with: a list containing the symbol
 `*` and the numbers 6 and 7. In most languages this part is called a *parser*
 and it is a large, fiddly thing. In Lisp it is unusually small, for a reason we
 will come to.
 
 **2. Values.** How a piece of data is represented in memory. The number 42, the
-character `q`, a list, a function — all of them have to be *some arrangement of
-bits*, and something has to be able to tell which is which. This sounds like
+character `q`, a list and a function all have to be *some arrangement of bits*,
+and something has to be able to tell which is which. This sounds like
 plumbing. It turns out to constrain everything else.
 
 **3. The heap.** A big region of memory where values that are too big to fit in
-one machine word actually live. A list, a piece of text, an object — these
-occupy space in the heap, and something has to hand that space out.
+one machine word actually live. A list, a piece of text or an object
+occupies space in the heap, and something has to hand that space out.
 
 **4. The collector.** Memory is finite. A program running for an hour will
 create millions of values it then stops needing. Something has to notice that
 and reclaim the space. This is **garbage collection**: the system works out,
 automatically and while the program runs, which values nobody can reach any more,
-and takes their memory back. You never write "I am finished with this" — it is
+and takes their memory back. You never write "I am finished with this"; it is
 deduced.
 
 **5. The evaluator.** The part that actually runs your program. It takes the
@@ -81,7 +81,7 @@ Plus one more, which is not really a part but is how you meet the system:
 
 **The REPL.** Read, Eval, Print, Loop. A prompt that reads what you type,
 evaluates it, prints the result, and comes back for more. Lisp invented this in
-1964 and it is now everywhere — a Python prompt, a browser console, a database
+1964 and it is now everywhere: a Python prompt, a browser console, a database
 shell. It is four of the five parts wired in a circle, which makes it the
 cheapest possible way to have something to show.
 
@@ -167,7 +167,7 @@ it wrong is how projects like this go badly.
 > **Contracts come before implementations.**
 
 Some decisions are contained: you can change them later by rewriting one file.
-Others are *pervasive* — they appear in the signature of every function you will
+Others are *pervasive*: they appear in the signature of every function you will
 ever write, and changing them later means rewriting everything.
 
 The garbage collector is the first kind. It is a few hundred lines in one file,
@@ -180,16 +180,17 @@ places.
 
 So the pervasive decision has to be made first, even though it sounds like a
 detail and the collector sounds like the main event. That is why chapter 4 of
-this book is about a contract, and chapter 6 — three chapters later — is the
+this book is about a contract, and chapter 6, three chapters later, is the
 collector itself.
 
-The general lesson, which applies well beyond language runtimes: **entanglement,
-not sophistication, determines what you have to decide early.**
+The general lesson applies well beyond language runtimes. What you have to
+decide early is settled by how entangled a decision is with everything else,
+not by how sophisticated it is.
 
 ### And one more ordering, which is the whole strategy
 
 There is a third kind of order at work, and it is strange enough to have its
-own chapter. The compiler is written **in Lisp** — the language it compiles —
+own chapter. The compiler is written **in Lisp**, the language it compiles,
 so something must be able to run Lisp before the compiler exists. That
 something is a deliberately slow tree-walking interpreter, written in Rust,
 which is what most of this book builds. It runs the compiler exactly once, and
@@ -207,20 +208,20 @@ Quokka runs in a web browser.
 
 A browser tab runs your code on a single thread, and it cannot interrupt you.
 Once the page calls into your code, the browser gets control back when you
-return, and not before. So a program that loops forever does not just loop — it
+return, and not before. So a program that loops forever does not just loop; it
 freezes the tab. No repainting, no clicks, no typing, until the browser offers
 to kill the page.
 
 Which means the evaluator must be able to **stop in the middle of a computation
 and resume later**. And that turns out to be an enormous constraint, because the
-natural way to write an evaluator — a function that calls itself for
-sub-expressions — cannot stop. Its state lives on the host language's call
+natural way to write an evaluator, a function that calls itself for
+sub-expressions, cannot stop. Its state lives on the host language's call
 stack, and returning destroys it.
 
 So the evaluator has to be built inside out: as a machine with explicit state
 that takes one small step at a time. That is chapter 2, and it is the single
 most consequential decision in the system. It also, unexpectedly, pays for
-three other things — which is a recurring shape worth watching for.
+three other things, which is a recurring shape worth watching for.
 
 ## The map
 
@@ -228,23 +229,26 @@ Part I builds the substrate: everything underneath the evaluator. Part II turns
 text into behaviour, and ends by asking whether any of it is correct. Together
 they are **phase 0 and tier 0**, which are finished: `(fact 20)` runs, the
 collector survives being run at every opportunity, and seventeen files of
-Common Lisp agree with a real one. Part III starts **phase 1**, where the
+Common Lisp agreed with a real one. Part III starts **phase 1**, where the
 language stops being defined in Rust; its first chapters were written before
 the work and say so at the top, and are left as written so that the later ones
 can correct them. Part IV is the compiler, which is a Lisp program rather than
-a piece of the runtime — a different kind of thing, and the place where most
+a piece of the runtime, a different kind of thing, and the place where most
 of the decisions are still provisional. Part V is the image, where the system
 learns to save itself to a file and start from one, and where two decisions
 made in Part I for unrelated reasons turn out to be what makes it possible.
 
-Phase 1's gate is met — an image saves, reloads and resumes a computation it
-stopped in the middle of — and since chapter 32 the world inside that image is
+Phase 1's gate is met, in that an image saves, reloads and resumes a
+computation it stopped in the middle of, and since chapter 32 the world inside that image is
 compiled, with nothing interpreted left in it. Chapter 33 checks that the
 compiled world agrees with the interpreted one on every test file, and with
 that **phase 1 is finished**: the language is defined by a Lisp file compiled
 by itself, and the interpreter is only what builds the first image. Part VI is
 **phase 2**, self-hosting, and it opens as Part III did: with a plan written
-before the work, kept so that what happens can correct it.
+before the work, kept so that what happens can correct it. Its gate falls in
+the middle rather than at the end, at chapter 42, where the compiler is shown
+to compile itself into exactly the same code; the chapters after it build the
+rest of tier 1 and measure it against the standard's own test suite.
 
 Each chapter answers one question.
 
@@ -329,26 +333,26 @@ Still to come, and deliberately so:
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
   sequence and string functions (chapter 45); basic `format` (chapter
   46); integers of any size (chapter 47); and double floats (chapter 48).
-  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 60
-  close the gaps it listed first: declarations, symbols' cells, printing
-  readably and with shared structure, `compile`, the rest of the package
-  system, every kind of array, which moved from tier 2 into tier 1, bit
-  fields, the reader's readtable case, character names and syntax types,
-  `equalp` hash tables and `sxhash`, and reading `#1=` labels. Still to come
-  are `defstruct`'s options and the plain failures after them; then ratios
-  (#59, tier undecided); beyond it, `loop`, CLOS and the rest, in later
-  phases.
+  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 64
+  close the gaps it listed: declarations, symbols' cells, printing readably
+  and with shared structure, `compile`, the rest of the package system, every
+  kind of array, which moved from tier 2 into tier 1, bit fields, the reader's
+  readtable case, character names and syntax types, `equalp` hash tables and
+  `sxhash`, reading `#1=` labels, `defstruct` with all its options, the
+  condition types the standard names, and what a macro's expander is given.
+  Still to come are ratios (#59, tier undecided), and beyond them `loop`,
+  CLOS and the rest, in later phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
-  compact instruction set faster than anything can walk a tree — and a
+  compact instruction set faster than anything can walk a tree, and a
   **compiler**, written in Lisp, that translates source into those instructions.
   Both Rust pieces are deliberately dumb; all the judgement is in the Lisp one.
   This is phase 1; chapters 24 to 26 are the plan, the machine and the
   addressing, and chapter 12 is what makes it safe to attempt.
-- **Self-hosting** — the moment the compiler compiles itself and the result is
-  identical to what the interpreter produced. After that the Rust stops growing
-  and every further feature is Lisp. See
+- **Self-hosting**, the moment the compiler compiles itself and the result is
+  identical to what the interpreter produced. After that the Rust nearly stops
+  growing, and every further feature of the language is Lisp. See
   [The thing that builds itself](the-bootstrap.md).
-- **The environment** — editor, debugger, windows, all of them Lisp objects
+- **The environment**: editor, debugger and windows, all of them Lisp objects
   inside the same running image.
 
 That last one is what Quokka is actually for. Everything in Part I is the floor
@@ -361,7 +365,7 @@ turn on a decision made two chapters earlier.
 
 Each one opens with a short note saying where it fits. Code is real code from
 the repository, sometimes shortened, never invented. Where something is not yet
-built or not yet decided, the chapter says so rather than pretending — this book
+built or not yet decided, the chapter says so rather than pretending. This book
 is being written alongside the system, and some of it is genuinely unfinished.
 
 And if a term goes past you, the [glossary](glossary.md) has every one of them in
