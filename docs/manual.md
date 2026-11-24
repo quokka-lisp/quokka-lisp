@@ -346,7 +346,7 @@ sbcl --script scripts/oracle.lisp tests/lisp/reader.lisp
 | GC torture: collect at every mutation boundary, verify the heap | `cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture` |
 | the tests under WebAssembly | `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
 | the browser build | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
-| the Rust line budget (15,500, tests not counted) | `./scripts/check-budget.sh` |
+| the Rust line budget (15,713, tests not counted) | `./scripts/check-budget.sh` |
 
 The slowest tests are the rebuild and fixpoint tests, about 40 seconds
 together. They rebuild the system twice, and share the two rebuilt worlds.
@@ -438,14 +438,16 @@ Rule 1 says Lisp first, so check whether it can be Lisp. If it can't:
    and its implementation.
 2. Add its name to the pinned list in `src/unit/primitives.rs`.
 
-It costs Rust budget (32 lines are left of 15,500, a guide rather than a ceiling), and the issue for the step should
-say how much.
+It costs Rust budget (none is left of 15,713, which is a guide rather than a
+ceiling: raise `LIMIT` in `scripts/check-budget.sh` in the same commit, with
+the reason), and the issue for the step should say how much.
 
 ### A book chapter
 
 1. Add it to `book/src/SUMMARY.md`.
 2. Add a row to the table in `book/src/what-has-to-be-built.md`.
-3. Add new terms to `book/src/glossary.md`.
+3. Add new terms to `book/src/glossary.md`, which is in alphabetical order,
+   each with an `<a id="..."></a>` line so that other entries can link to it.
 
 `scripts/check-book.sh` checks that every chapter listed exists. CLAUDE.md,
 *The book*, has the rules for writing one.
@@ -470,7 +472,7 @@ say how much.
 | symptom | cause | what to do |
 | --- | --- | --- |
 | *can't find crate for `core`* | a non-rustup `cargo` on your `PATH` (§1) | put `~/.cargo/bin` first |
-| *image format 2, but this build reads 3* | the image format changed since the file was saved | make a new one with `quokka build` |
+| *image format 5, but this build reads 6* | the image format changed since the file was saved | make a new one with `quokka build` |
 | `quokka rebuild` fails with *not found: lisp/prelude.lisp* | run from somewhere other than the repository's root | `cd` to the root |
 | *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | the budget is `EVAL_BUDGET` in `crates/quokka/src/main.rs` |
 | `quokka: no world to run` | `quokka` was started without a world | `quokka build world.qi` once, then `quokka world.qi` |

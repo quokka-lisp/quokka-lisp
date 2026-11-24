@@ -7,13 +7,14 @@
 > A modern Lisp-machine-style environment: a small Rust VM running a Common
 > Lisp subset, browser-first via WASM, with a live, presentation-based UI.
 
-Quokka is one live Lisp world — VM, language, editor, UI and tools in a single
-image — small enough for one person to understand completely. It takes its soul
+Quokka is one live Lisp world, with the VM, the language, the editor, the UI
+and the tools in a single image, small enough for one person to understand
+completely. It takes its soul
 from the Lisp machines, its malleability from Smalltalk and its discipline of
 smallness from [Oberon](https://people.inf.ethz.ch/wirth/ProjectOberon/index.html),
-whose revised edition — operating system, compiler, editor and the Verilog for
-the CPU it runs on — is free and is the standing proof that a whole system can
-be small enough to read.
+whose revised edition is free, covers the operating system, the compiler, the
+editor and the Verilog for the CPU it runs on, and is the standing proof that
+a whole system can be small enough to read.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 
@@ -27,7 +28,7 @@ world to rebuild itself from its own source:
 ```
 $ cargo run --release -p quokka -- build c1.qi
 $ cargo run --release -p quokka -- rebuild c1.qi c2.qi
-c2.qi: rebuilt, Value("(:FORMS 373 :REPLACED 316)"); 360224 bytes
+c2.qi: rebuilt, Value("(:FORMS 1229 :REPLACED 983)"); 360224 bytes
 $ cargo run --release -p quokka -- c2.qi
 quokka> (defpackage :geo (:use :cl) (:export :area))
 #<PACKAGE "GEO">
@@ -78,7 +79,7 @@ boot> (macrolet ((twice (x) (list '+ x x))) (twice 21))
 ```
 
 The phase 0 gate was *"`(fact 20)` runs; the GC survives an allocation stress
-test."* Both passed. **Tier 0** — the harder target — is finished too: *enough
+test."* Both passed. **Tier 0**, the harder target, is finished too: *enough
 Lisp that the compiler, which is written in Lisp, can be interpreted*. And
 phase 1's gate is met:
 
@@ -95,7 +96,7 @@ quokka> (reverse '(1 2 3))
 ```
 
 That second start did not read `prelude.lisp`. It read a file of numbers into
-a vector and began — which is what the design means by *booting means loading
+a vector and began, which is what the design means by *booting means loading
 an image, not running a build*. And the world in that file is **compiled**: the
 prelude, every macro and the compiler are bytecode, every form typed is
 compiled by the image's own compiler, and the interpreter never runs.
@@ -154,7 +155,7 @@ cannot reach.
 431 tests, green on native, under wasmtime, and with the GC torture mode on.
 Forty-five Common Lisp files produce byte-identical output on Quokka and SBCL:
 seventeen on Quokka interpreted, compiled and under WebAssembly, twenty-eight more
-of tier 1 compiled only — and all forty-five again in a world that has rebuilt
+of tier 1 compiled only, and all forty-five again in a world that has rebuilt
 itself. The Rust core is 15,713 lines of the 15,713-line budget, raised from
 15,000 when arrays moved into tier 1 (#67), from 15,500 when structures
 became objects of their own (#73), and from 15,537 when a macro's expander
@@ -164,13 +165,13 @@ began to take the whole form, as in Common Lisp (#76).
 
 **The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
 whose parts all exist now and are measured against ansi-test, the Common Lisp
-conformance suite: 5,382 of 12,324 tests in its tier-1 groups pass
+conformance suite: 8,018 of 13,558 tests in the groups it runs pass
 ([`docs/ansi-test.md`](docs/ansi-test.md) has the table and the gaps; #60).
 The phase ends when every test that does not pass is explained by a feature
 deferred to a later tier
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
-The first world is still built by the interpreter — the cold build — and is
-then rebuilt by itself.
+The first world is still built by the interpreter, which is the cold build,
+and is then rebuilt by itself.
 
 No
 ratios ([#59](https://github.com/quokka-lisp/quokka-lisp/issues/59)), so `/` on
@@ -178,30 +179,32 @@ two integers works only when they divide, and no single-floats or complex
 numbers.
 No `loop`, no CLOS. No restarts
 or `define-condition`: `handler-case` is the exception-shaped half of the
-condition system, and the rest is phase 3. No renderer and no editor — phases
-4 through 6 in [`docs/design.md`](docs/design.md).
+condition system, and the rest is phase 3. No renderer and no editor, which
+are phases 4 through 6 in [`docs/design.md`](docs/design.md).
 
 ## The book
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Forty-seven chapters in six parts — the substrate, reading and
-running, the machine, the compiler, the image, and self-hosting — assuming no prior
-knowledge of language implementation, including what a garbage collector is,
+afterwards. Sixty-four chapters in six parts, covering the substrate, reading
+and running, the machine, the compiler, the image and self-hosting, assuming
+no prior knowledge of language implementation, including what a garbage collector is,
 what `car` and `cdr` are, what an opcode is, and why a program would want to
 rewrite itself.
 
-It records what decisions cost, not only which were chosen — including several
+It records what decisions cost, not only which were chosen, including several
 occasions where a rule was written down and then broken by the person who wrote
 it, which is the part a book written afterwards would quietly omit. Part III
 begins before the thing it describes exists, and says so: its first chapter is
 a plan, kept so that what actually happens can correct it. Part IV is the
 compiler, and ends on a list of the decisions in it that are expected to
 change. Part V is the image, and spends most of its length on why two rules
-written for unrelated reasons — references as indices, execution state in the
-heap — turned the hardest thing in a runtime into a `memcpy`. Part VI is
-self-hosting as it happens: special variables, packages, packing strings, the
-reader and printer moved into Lisp, `eval`, and a world rebuilding itself.
+written for unrelated reasons, references as indices and execution state in
+the heap, turned the hardest thing in a runtime into a `memcpy`. Part VI is
+self-hosting as it happens, and then everything after it: special variables,
+packages, packing strings, the reader and printer moved into Lisp, `eval`, a
+world rebuilding itself and the fixpoint that proves it, and then the rest of
+tier 1 measured against the standard's own test suite.
 
 ```
 mdbook serve book --open     # needs `cargo install mdbook`; optional
@@ -221,8 +224,8 @@ cargo run --release -p quokka -- build world.qi   # make a world
 cargo run --release -p quokka -- world.qi         # work in it; :save FILE keeps it
 ```
 
-`wasmtime`, `wasm-pack` and `sbcl` are optional — `check.sh` skips those legs
-and says which.
+`wasmtime`, `wasm-pack` and `sbcl` are optional, and `check.sh` skips those
+legs and says which.
 
 **[`docs/manual.md`](docs/manual.md) is the developer manual**: the three ways
 the `quokka` program (`quokka WORLD.qi` runs a world, and `:save` keeps your work), making a world with the
@@ -264,7 +267,7 @@ book, not when the code lands.
 
 Quokka is a Common Lisp subset, and rule 6 says that where it implements a CL
 feature the behaviour must match. That means the standard is not background
-reading — it is the specification the differential tests check against, and
+reading: it is the specification the differential tests check against, and
 when SBCL and Quokka disagree the first question is always what the standard
 actually says.
 
@@ -275,7 +278,7 @@ actually says.
   (X3J13/94-101R) rendered from its original TeX sources, with errata,
   addenda and the X3J13 cleanup issues. It is also published **as
   s-expressions**, in a `(node-type plist children*)` format
-  ([source](https://codeberg.org/dlowe/metaspectre)) — which makes the
+  ([source](https://codeberg.org/dlowe/metaspectre)), which makes the
   specification something a Lisp program can read, not only a person.
   Alternatives: [Community Spec](https://cl-community-spec.github.io/pages/index.html)
   and [Novaspec](https://novaspec.org/).
@@ -288,7 +291,7 @@ actually says.
 - **[The Common Lisp Cookbook](https://lispcookbook.github.io/cl-cookbook/)** —
   task-shaped rather than specification-shaped, with worked code. The one
   reference here written from the user's chair, and so the one that answers
-  *what does idiomatic Common Lisp look like* — which is the question that
+  *what does idiomatic Common Lisp look like*, which is the question that
   decides what the prelude should support. BSD-style licence.
 - **[The Common Lisp HyperSpec](http://www.lispworks.com/documentation/HyperSpec/Front/index.htm)**
   — the hyperlinked edition most books and tools point to, and what *CLHS* in
