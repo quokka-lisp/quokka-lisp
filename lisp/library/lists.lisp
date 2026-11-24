@@ -26,10 +26,14 @@
 ;;; one change (decision 2); floats (M) will add their own case.
 ;;; A double (step M) is the same as another with the same bits — so 0.0
 ;;; and -0.0 are not `eql`, though they are `=`.
+;;; A ratio (#59) is canonical, so two are `eql` when their parts are.
 (defun eql (a b)
   (or (eq a b)
       (and (%bignump a) (%bignump b) (eq (%integer-compare a b) 0))
-      (%double-eql a b)))
+      (%double-eql a b)
+      (and (%ratiop a) (%ratiop b)
+           (eql (%ratio-numerator a) (%ratio-numerator b))
+           (eql (%ratio-denominator a) (%ratio-denominator b)))))
 
 ;;; Structure: conses by their parts, strings by their characters, anything
 ;;; else by `eql`. Down the `cdr` by iteration, so a long list costs no depth.

@@ -358,7 +358,6 @@ fn ansi_test() {
 const DEFERRED_SYNTAX: &[(&str, &str)] = &[
     ("reader[#C]", "deferred:complex-numbers"),
     ("reader[#P]", "tier-2:pathnames-and-files"),
-    ("reader[ratio]", "issue-59:ratios"),
 ];
 
 /// Is this reason explained by a deferred feature?

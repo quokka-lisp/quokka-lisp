@@ -155,6 +155,7 @@ tier1_cases! {
     list_gaps => "list-gaps",
     compiler_gaps => "compiler-gaps",
     remaining_gaps => "remaining-gaps",
+    ratios => "ratios",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -220,14 +221,14 @@ fn read_the_system_both_ways(printer: Printer, disagree: &str) {
     }
 }
 
-/// What the Lisp reader refuses that SBCL reads, so no baseline can hold it:
-/// ratios, until #59. Reading `1/2` as a symbol would succeed quietly and
-/// mean something else once ratios exist. Floats are read since step M
-/// (#17), in every syntax CLHS 2.3.1 gives them. The tokens around them that
-/// are *not* numbers must still be symbols.
+/// Numbers the Lisp reader reads, and tokens around them that are not
+/// numbers and must stay symbols. Ratios are read since #59 (they were
+/// refused until then, since reading `1/2` as a symbol would have meant
+/// something else once they existed); floats since step M (#17), in every
+/// syntax CLHS 2.3.1 gives them.
 #[test]
-fn the_lisp_reader_refuses_ratios_and_reads_floats() {
-    let refused = ["1/2", "-3/4", "+10/3"];
+fn the_lisp_reader_reads_ratios_and_floats() {
+    let ratios = ["1/2", "-3/4", "+10/3"];
     let floats = [
         "1.5", ".5", "-1.5e3", "1e5", "2d0", "1.e2", "+.5", "1.5s0", "1L-3",
     ];
@@ -235,7 +236,7 @@ fn the_lisp_reader_refuses_ratios_and_reads_floats() {
         "1+", "1-", "e5", "1/", "/2", "1.2.3", "+.", "a1.5", "1.5e", "1e+",
     ];
     let mut program = String::new();
-    for text in refused.iter().chain(&floats) {
+    for text in ratios.iter().chain(&floats) {
         program.push_str(&format!("(symbolp (read-from-string \"{text}\"))\n"));
     }
     for text in &symbols {
@@ -243,10 +244,10 @@ fn the_lisp_reader_refuses_ratios_and_reads_floats() {
     }
     let out = run_compiled(&program);
     let lines: Vec<&str> = out.lines().collect();
-    for (text, line) in refused.iter().zip(&lines) {
-        assert_eq!(*line, "!! error", "{text} should be refused");
+    for (text, line) in ratios.iter().zip(&lines) {
+        assert_eq!(*line, "=> NIL", "{text} should read as a ratio");
     }
-    let rest = &lines[refused.len()..];
+    let rest = &lines[ratios.len()..];
     for (text, line) in floats.iter().zip(rest) {
         assert_eq!(*line, "=> NIL", "{text} should read as a float");
     }
@@ -386,7 +387,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1270 :REPLACED 1016)".into())],
+        [Outcome::Value("(:FORMS 1282 :REPLACED 1028)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

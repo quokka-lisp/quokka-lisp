@@ -323,6 +323,9 @@ pub enum ObjectType {
     /// What a `block`, `catch` or `tagbody` unwinds to: no slots, equal only
     /// to itself. An `Instance` until structures needed that type (#73).
     Marker = 12,
+    /// An exact ratio of two integers, in lowest terms (#59): the numerator
+    /// and the denominator, both traced. See `crate::ratio`.
+    Ratio = 13,
     /// A macro: the same shape as a closure, and deliberately a different
     /// type.
     ///
@@ -446,6 +449,7 @@ impl ObjectType {
             10 => Function,
             11 => ArrayHeader,
             12 => Marker,
+            13 => Ratio,
             64 => String,
             65 => Code,
             66 => Bignum,

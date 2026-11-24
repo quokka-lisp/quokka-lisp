@@ -1100,6 +1100,7 @@ cons CONSP-SINGLE-ELEMENT-LIST
 cons CONSP.ERROR.1
 cons CONSP.ERROR.2
 cons CONSP.ORDER.1
+cons COPY-ALIST.1
 cons COPY-ALIST.ERROR.1
 cons COPY-ALIST.ERROR.2
 cons COPY-ALIST.ERROR.3
@@ -2069,6 +2070,8 @@ cons SUBSETP.15
 cons SUBSETP.2
 cons SUBSETP.3
 cons SUBSETP.4
+cons SUBSETP.5
+cons SUBSETP.6
 cons SUBSETP.7
 cons SUBSETP.8
 cons SUBSETP.9
@@ -3857,10 +3860,12 @@ numbers *.1
 numbers *.26
 numbers *.28
 numbers /.1
+numbers /.13
 numbers /.2
 numbers /.ERROR.1
 numbers /.ERROR.2
 numbers /.ERROR.3
+numbers /.ERROR.4
 numbers /.ERROR.5
 numbers /.ERROR.6
 numbers /.ERROR.7
@@ -3882,6 +3887,7 @@ numbers 1-.ERROR.3
 numbers <.1
 numbers <.2
 numbers <.3
+numbers <.ENV.1
 numbers <.ERROR.1
 numbers <.ORDER.1
 numbers <.ORDER.2
@@ -3889,6 +3895,7 @@ numbers <.ORDER.3
 numbers <=.1
 numbers <=.2
 numbers <=.3
+numbers <=.ENV.1
 numbers <=.ERROR.1
 numbers <=.ORDER.1
 numbers <=.ORDER.2
@@ -3902,6 +3909,7 @@ numbers =.ORDER.3
 numbers >.1
 numbers >.2
 numbers >.3
+numbers >.ENV.1
 numbers >.ERROR.1
 numbers >.ORDER.1
 numbers >.ORDER.2
@@ -3909,6 +3917,7 @@ numbers >.ORDER.3
 numbers >=.1
 numbers >=.2
 numbers >=.3
+numbers >=.ENV.1
 numbers >=.ERROR.1
 numbers >=.ORDER.1
 numbers >=.ORDER.2
@@ -3993,6 +4002,8 @@ numbers DECF.9
 numbers DECF.ORDER.2
 numbers DECF.ORDER.3
 numbers DECF.ORDER.4
+numbers DENOMINATOR.ERROR.1
+numbers DENOMINATOR.ERROR.2
 numbers DEPOSIT-FIELD.ERROR.1
 numbers DEPOSIT-FIELD.ERROR.2
 numbers DEPOSIT-FIELD.ERROR.3
@@ -4209,6 +4220,7 @@ numbers MAX.23
 numbers MAX.24
 numbers MAX.25
 numbers MAX.26
+numbers MAX.28
 numbers MAX.29
 numbers MAX.30
 numbers MAX.31
@@ -4239,6 +4251,7 @@ numbers MIN.23
 numbers MIN.24
 numbers MIN.25
 numbers MIN.26
+numbers MIN.28
 numbers MIN.29
 numbers MIN.30
 numbers MIN.31
@@ -4266,6 +4279,8 @@ numbers MINUSP.ERROR.3
 numbers NUMBERP.ERROR.1
 numbers NUMBERP.ERROR.2
 numbers NUMBERP.ERROR.3
+numbers NUMERATOR.ERROR.1
+numbers NUMERATOR.ERROR.2
 numbers ODDP.5
 numbers ODDP.6
 numbers ODDP.7
@@ -4330,6 +4345,7 @@ numbers PLUS.24
 numbers PLUS.25
 numbers PLUS.26
 numbers PLUS.27
+numbers PLUS.28
 numbers PLUS.ORDER.1
 numbers PLUS.ORDER.2
 numbers PLUSP.1
@@ -4341,15 +4357,24 @@ numbers PLUSP.7
 numbers PLUSP.ERROR.1
 numbers PLUSP.ERROR.2
 numbers PLUSP.ERROR.3
+numbers RATIONAL.ERROR.1
+numbers RATIONAL.ERROR.2
+numbers RATIONAL.ERROR.3
+numbers RATIONALIZE.ERROR.1
+numbers RATIONALIZE.ERROR.2
+numbers RATIONALIZE.ERROR.3
 numbers RATIONALP.ERROR.1
 numbers RATIONALP.ERROR.2
 numbers RATIONALP.ERROR.3
 numbers REALP.1
 numbers REALP.2
+numbers REALP.4
 numbers REALP.5
 numbers REALP.ERROR.1
 numbers REALP.ERROR.2
 numbers REALP.ERROR.3
+numbers ROUND.20
+numbers ROUND.21
 numbers ROUND.ERROR.1
 numbers ROUND.ERROR.2
 numbers SIGNUM.1
@@ -4373,6 +4398,7 @@ numbers SQRT.1
 numbers SQRT.2
 numbers SQRT.ERROR.1
 numbers SQRT.ERROR.2
+numbers SUBTRACT.6
 numbers TAN.10
 numbers TAN.6
 numbers TAN.7
@@ -4987,6 +5013,7 @@ reader READTABLE-CASE.6
 reader READTABLE-CASE.ERROR.1
 reader READTABLE-CASE.ERROR.2
 reader READTABLE.CASE.INVERT-CHAR
+reader READTABLEP.1
 reader READTABLEP.3
 reader READTABLEP.4
 reader READTABLEP.ERROR.1

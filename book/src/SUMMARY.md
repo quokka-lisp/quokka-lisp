@@ -90,6 +90,7 @@
 - [Lists that do not end in nil](part-6-self-hosting/67-list-gaps.md)
 - [What the compiler skipped](part-6-self-hosting/68-compiler-gaps.md)
 - [The last gaps](part-6-self-hosting/69-the-last-gaps.md)
+- [Ratios](part-6-self-hosting/70-ratios.md)
 
 ---
 

@@ -35,6 +35,7 @@ pub mod image;
 pub mod lambda_list;
 pub mod primitives;
 pub mod printer;
+pub mod ratio;
 pub mod slice;
 pub mod special;
 pub mod value;

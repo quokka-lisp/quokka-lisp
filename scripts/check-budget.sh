@@ -51,7 +51,13 @@ cd "$(dirname "$0")/.."
 # (`vm.rs`); a lambda list's rewrite puts a `special` declaration of a
 # required parameter in front of its `let*`, and a macro's `&optional`/`&key`
 # take nested patterns (`lambda_list.rs`). 71 lines.
-LIMIT=15838
+#
+# Raised to 15,964 by step AI (#59, 25 Nov 2026): ratios, decided tier 1.
+# `ObjectType::Ratio` and `crate::ratio` (making one, and which double an
+# `equalp` table must hash it as), four primitives, the fallback taking a
+# ratio, hashing and comparing ratio keys by value, the Rust printer. 126
+# lines; the algorithms are Lisp (`lisp/library/ratios.lisp`).
+LIMIT=15964
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

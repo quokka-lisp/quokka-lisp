@@ -195,6 +195,12 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, test: Test) -> Result<u64, Eva
     if crate::float::is(mc, key) {
         return Ok(mix(mix(OFFSET, 6), mc.raw_slot(key, 0)));
     }
+    // A ratio by its parts, which are canonical (#59).
+    if crate::ratio::is(mc, key) {
+        let n = hash_of(mc, mc.slot(key, crate::ratio::NUMERATOR), test)?;
+        let d = hash_of(mc, mc.slot(key, crate::ratio::DENOMINATOR), test)?;
+        return Ok(mix(mix(mix(OFFSET, 14), n), d));
+    }
     // `equal` compares strings and bit vectors element by element, a fill
     // pointer's worth of them (#67), so that is what is hashed.
     if let Some((bits, text)) = equal.then(|| crate::array::equal_text(mc, key)).flatten() {
@@ -256,6 +262,12 @@ pub fn content<'h>(mc: &Mutation<'h>, v: Value<'h>, equalp: bool, depth: u32) ->
         if crate::bignum::is(mc, v) {
             return mix(OFFSET, 10);
         }
+        // A ratio `=` to a double hashes as that double does (#59).
+        if crate::ratio::is(mc, v) {
+            if let Some(x) = crate::ratio::exact_double(mc, v) {
+                return mix(mix(OFFSET, 9), x.to_bits());
+            }
+        }
         // A string, a bit vector or a vector: element by element, as
         // `equalp` compares them, so `"ab"` meets `#(#\A #\B)`. A structure
         // hashes by its type alone, below, and the library compares it.
@@ -302,6 +314,7 @@ fn by_address<'h>(mc: &Mutation<'h>, key: Value<'h>, test: Test) -> bool {
         || mc.is_symbol(key)
         || crate::bignum::is(mc, key)
         || crate::float::is(mc, key)
+        || crate::ratio::is(mc, key)
         || (equal && crate::array::equal_text(mc, key).is_some()))
 }
 
@@ -326,6 +339,11 @@ fn same_key<'h>(mc: &Mutation<'h>, a: Value<'h>, b: Value<'h>, equal: bool) -> b
     }
     if crate::float::is(mc, a) && crate::float::is(mc, b) {
         return mc.raw_slot(a, 0) == mc.raw_slot(b, 0);
+    }
+    if crate::ratio::is(mc, a) && crate::ratio::is(mc, b) {
+        return [crate::ratio::NUMERATOR, crate::ratio::DENOMINATOR]
+            .iter()
+            .all(|&i| same_key(mc, mc.slot(a, i), mc.slot(b, i), equal));
     }
     if equal {
         if let (Some(x), Some(y)) = (

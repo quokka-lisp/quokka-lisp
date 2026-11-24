@@ -65,8 +65,6 @@
 (%deferred "deferred:complex-numbers"
   :complex :complexp :realpart :imagpart :cis :phase :conjugate)
 
-(%deferred "issue-59:ratios" :numerator :denominator :rational :rationalize)
-
 (%deferred "deferred:compile-file" :compile-file :compile-file-pathname :with-compilation-unit)
 
 (%deferred "tier-2:environment"

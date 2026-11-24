@@ -712,6 +712,10 @@ Quokka has no equivalent and will eventually need one. ([Further reading](furthe
 **Ratchet (in testing).** A baseline that may only improve: the list of tests that pass is committed, and a change that makes one of them fail is refused, while a change that makes more pass updates the list. Quokka's ansi-test run is one. ([49](part-6-self-hosting/49-ansi-test.md))
 
 <a id="raw-slots"></a>
+**Ratio.** An exact quotient of two integers, such as `1/3`, kept as a numerator and a denominator in lowest terms with a positive denominator, so that one number has one representation. With the integers they are the *rationals*. ([70](part-6-self-hosting/70-ratios.md))
+
+**Rational canonicalisation.** The rule that a rational is always in its one standard form: a ratio in lowest terms with a denominator above 1, and an integer whenever the denominator would be 1, so `(/ 4 2)` is the integer 2. (CLHS 12.1.3.2; [70](part-6-self-hosting/70-ratios.md))
+
 **Raw slots.** An object whose words are *not* references — a string's
 character codes, a bignum's digits — and which the collector must copy rather
 than follow. Quokka draws the line at type number 64: below it slots are

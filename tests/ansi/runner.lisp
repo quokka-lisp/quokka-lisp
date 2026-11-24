@@ -251,19 +251,9 @@
     (dolist (probe '(("#c(" . "#C") ("#C(" . "#C") ("#p\"" . "#P") ("#P\"" . "#P")))
       (if (and (search (car probe) text) (not (member (cdr probe) found :test #'string=)))
           (push (cdr probe) found)))
-    (if (%has-ratio text) (push "ratio" found))
     (if found
         (format nil "~{reader[~A]~^ ~}" (sort found #'string<))
         "reader[other]")))
-
-;;; Digits, a slash, digits: the syntax of a ratio, which Quokka reads as
-;;; an error until #59.
-(defun %has-ratio (text)
-  (let ((found nil))
-    (dotimes (i (- (length text) 2) found)
-      (if (and (digit-char-p (char text i)) (char= (char text (+ i 1)) #\/)
-               (digit-char-p (char text (+ i 2))))
-          (setq found t)))))
 
 ;;; An unreadable DEFUN, DEFMACRO, DEFVAR or DEFPARAMETER still defines a
 ;;; name, which tests call; mark it broken with the reader's reason.
@@ -370,6 +360,7 @@
 (defun %step ()
   (setq *current* "-")
   (setq *current-test* nil)
+  (setq *current-load* nil)
   (let ((*package* *file-package*)
         (*produced* nil))
     (multiple-value-bind (form reason name) (if *pending-ready* :eof (%read-next))
@@ -411,8 +402,18 @@
 ;;; the operators it uses (#81): a test that loops through `loop`, which is
 ;;; deferred, may not finish rather than fail. The driver asks after a
 ;;; timeout; the empty string means nothing explains it.
+;;; A definition that ran out of steps while loading is explained the same
+;;; way, and marked broken with what it needs, so the tests that use it are
+;;; explained by it too (a helper written with `loop` may not finish
+;;; compiling in its budget, #59).
+(defvar *current-load* nil)
+
 (defun %timeout-needs ()
-  (let ((needs (if *current-test* (%needs *current-test*) nil)))
+  (let ((needs (cond (*current-test* (%needs *current-test*))
+                     (*current-load* (%needs (cdr *current-load*)))
+                     (t nil))))
+    (if (and needs *current-load* (not *current-test*))
+        (%break (car *current-load*) needs))
     (if needs (format nil "~{~A~^ ~}" needs) "")))
 
 (defun %run-test (form)
@@ -456,7 +457,6 @@
                   (princ-to-string (cadr values))
                   nil)))
     (cond ((null text) nil)
-          ((search "ratios do not exist yet" text) (list "ratio[issue-59:ratios]"))
           ((search "a directive basic format does not have" text)
            (list "format-directive[tier-2:format]"))
           ((let ((end (search " is undefined" text)))
@@ -523,6 +523,7 @@
   (let ((names (%defined-names form)))
     ;; Named, so that a load that runs out of steps says what it was loading.
     (setq *current* (format nil "load~A" (or names "-")))
+    (setq *current-load* (cons names form))
     (cond ((and names (%common-lisp-p (car names)))
            (format nil "LOAD ~A not redefined: it is COMMON-LISP's" (car names)))
           ((and names (gethash (car names) *provided*))

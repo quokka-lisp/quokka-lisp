@@ -300,6 +300,7 @@
         ((consp object) 'cons)
         ((symbolp object) 'symbol)
         ((integerp object) (if (%bignump object) 'bignum 'fixnum))
+        ((%ratiop object) 'ratio)
         ((floatp object) 'double-float)
         ((characterp object) 'character)
         ((stringp object) 'string)
@@ -426,6 +427,7 @@
 
 (defun %print-plain (object out level)
   (cond ((integerp object) (%print-integer object out))
+        ((%ratiop object) (%print-ratio object out))
         ((floatp object) (%print-float object out))
         ((characterp object) (%print-character object out))
         ((symbolp object) (%print-symbol object out))
@@ -638,6 +640,16 @@
   (if (< integer 0) (write-char #\- out))
   (%print-digits (%integer-digits integer *print-base* nil) out)
   (if (and *print-radix* (eq *print-base* 10)) (write-char #\. out)))
+
+;;; `1/3`, in `*print-base*`. Under `*print-radix*` a ratio has its radix
+;;; prefix in every base, decimal included: `#10r1/3` (CLHS 22.1.3.2), since
+;;; a trailing point cannot mark a ratio as it marks a decimal integer.
+(defun %print-ratio (ratio out)
+  (if *print-radix* (write-string (%radix-prefix *print-base*) out))
+  (if (minusp ratio) (write-char #\- out))
+  (%print-digits (%integer-digits (%ratio-numerator ratio) *print-base* nil) out)
+  (write-char #\/ out)
+  (%print-digits (%integer-digits (%ratio-denominator ratio) *print-base* nil) out))
 
 (defun %radix-prefix (base)
   (cond ((eq base 2) "#b")

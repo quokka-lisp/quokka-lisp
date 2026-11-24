@@ -618,10 +618,9 @@
 (defun %interpret-token (text escaped colons)
   (let ((integer (if (or escaped colons) nil (%token-integer text))))
     (cond (integer integer)
-          ((and (not escaped) (not colons) (%ratio-or-float-p text))
-           (if (%ratio-token-p text)
-               (error "Quokka reads no ratios until they exist (#59)")
-               (%read-float text)))
+          ((and (not escaped) (not colons) (%token-ratio text)))
+          ((and (not escaped) (not colons) (%ratio-or-float-p text) (not (%ratio-token-p text)))
+           (%read-float text))
           ((and (not escaped) (%all-dots-p text 0 (length text)))
            (error "a token of only dots"))
           ((null colons) (values (intern text *package*)))
@@ -693,10 +692,27 @@
 (defun %all-dots-p (text at end)
   (if (< at end) (and (eq (aref text at) #\.) (%all-dots-p text (+ at 1) end)) t))
 
+;;; A ratio (#59): a sign, digits, a slash and digits, in `*read-base*` as
+;;; an integer's are (CLHS 2.3.2.1), made canonical by `/`, so `2/4` reads
+;;; as 1/2 and `4/2` as 2. Nil if TEXT is not one. A denominator of 0 is an
+;;; error, a `division-by-zero` as in SBCL.
+(defun %token-ratio (text)
+  (let* ((end (length text))
+         (start (%skip-sign text 0 end))
+         (slash (%position-of-char #\/ text start end)))
+    (if (and slash (> slash start) (< (+ slash 1) end)
+             (eq (%skip-digits text start slash *read-base*) slash)
+             (eq (%skip-digits text (+ slash 1) end *read-base*) end))
+        (let ((numerator (%digits-value text start slash 0 *read-base*))
+              (denominator (%digits-value text (+ slash 1) end 0 *read-base*)))
+          (/ (if (eq (aref text 0) #\-) (- numerator) numerator) denominator))
+        nil)))
+
 ;;; Does TEXT have the syntax of a ratio (`1/2`) or a float (`1.5`, `.5`,
-;;; `1e5`, `1.5d0`)? CLHS 2.3.1. Floats are read (step M, #17); ratios do not
-;;; exist yet (#59), and reading `1/2` as a symbol would succeed quietly and
-;;; mean something else once they do, so the reader refuses it instead.
+;;; `1e5`, `1.5d0`)? CLHS 2.3.1. A ratio is read by `%token-ratio` above,
+;;; in `*read-base*`; one whose digits are decimal but not in the current
+;;; base is a symbol, as SBCL reads it. The printer asks this question too,
+;;; to know when a symbol's name must be escaped.
 (defun %ratio-or-float-p (text)
   (let* ((end (length text))
          (start (%skip-sign text 0 end))

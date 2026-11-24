@@ -150,9 +150,9 @@ fn combine(op: Op, a: Real, b: Real) -> Result<Real, EvalError> {
             Op::Sub => x.checked_sub(y),
             Op::Mul => x.checked_mul(y),
             Op::Div | Op::Rem if y == 0 => return Err(division_by_zero()),
-            Op::Div if x.checked_rem(y).is_some_and(|r| r != 0) => {
-                return Err(fault("ARITHMETIC-ERROR", "ratios do not exist yet (#59)"))
-            }
+            // Not exact: a ratio, which the Lisp fallback makes (#59), as it
+            // makes a bignum on overflow.
+            Op::Div if x.checked_rem(y).is_some_and(|r| r != 0) => None,
             Op::Div => x.checked_div(y),
             Op::Rem => x.checked_rem(y),
         };

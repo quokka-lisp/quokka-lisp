@@ -19,7 +19,8 @@
 ;;;;    Lisp code ever holds one.
 ;;;; 5. Rust converts between floats and text; laying the digits out is Lisp
 ;;;;    (the printer, and `format`'s ~F ~E ~G ~$).
-;;;; 6. The scope below; ratios, `rational` and `rationalize` wait for #59.
+;;;; 6. The scope below; ratios, `rational` and `rationalize` arrived with
+;;;;    #59, in `ratios.lisp`.
 ;;;; 7. The transcendental functions come from the `libm` crate on every
 ;;;;    target, so an image computes the same bits natively and in a browser.
 ;;;;
@@ -38,7 +39,8 @@
   (cond ((floatp number) number)
         ((%bignump number) (%integer-to-double number))
         ((integerp number) (%float number))
-        (t (error "FLOAT wants a real number" number))))
+        ((%ratiop number) (%ratio-to-double number))
+        (t (error 'type-error "FLOAT wants a real number" number))))
 
 ;;; A bignum as the nearest double, ties to even — as Rust's `as` rounds a
 ;;; fixnum. Keep the top 53 bits; the bits shifted out decide whether to
@@ -77,9 +79,12 @@
 ;;; CLHS 12.1.4.1 requires: a float compared with a rational is compared as
 ;;; the rational it is. Converting the bignum to a double instead would make
 ;;; (= (1+ (expt 2 70)) (float (expt 2 70))) true.
+;;; A ratio is compared exactly too, with a float as the rational the float
+;;; is (#59).
 (defun %compare-real (a b)
   (cond ((and (integerp a) (integerp b)) (%integer-compare a b))
         ((and (floatp a) (floatp b)) (cond ((< a b) -1) ((> a b) 1) (t 0)))
+        ((or (%ratiop a) (%ratiop b)) (%compare-rationals (rational a) (rational b)))
         ((floatp a) (- (%compare-integer-float b a)))
         (t (%compare-integer-float a b))))
 

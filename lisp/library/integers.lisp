@@ -217,8 +217,10 @@
             (t (%make-integer bn (%mag-sub bm am)))))))
 
 (defun %negate (n)
-  (multiple-value-bind (negative m) (%magnitude n)
-    (%make-integer (and (not negative) (> (length m) 0)) m)))
+  (if (%ratiop n)
+      (%make-ratio (- (%ratio-numerator n)) (%ratio-denominator n))
+      (multiple-value-bind (negative m) (%magnitude n)
+        (%make-integer (and (not negative) (> (length m) 0)) m))))
 
 (defun %mul2 (a b)
   (multiple-value-bind (an am) (%magnitude a)
@@ -236,31 +238,35 @@
                 (%make-integer an r))))))
 
 ;;; Two at a time from the left, as SBCL combines them. A double among
-;;; bignums makes both doubles first (`%contagion`, in `floats.lisp`, step
-;;; M); the Rust primitives do every other mix of fixnums and doubles.
+;;; bignums or ratios makes both doubles first (`%contagion`, in
+;;; `floats.lisp`, step M); a ratio among integers makes the operation
+;;; rational (`%ratio-arithmetic`, in `ratios.lisp`, #59); the Rust
+;;; primitives do every mix of fixnums and doubles themselves.
 (defun %generic-+ (&rest numbers)
   (if (null numbers)
       0
       (let ((sum (car numbers)))
         (dolist (n (cdr numbers) sum)
-          (setq sum (or (%contagion #'+ sum n) (%add2 sum n)))))))
+          (setq sum (or (%contagion #'+ sum n) (%ratio-arithmetic '+ sum n) (%add2 sum n)))))))
 
 (defun %generic-- (number &rest more)
   (if (null more)
       (%negate number)
       (let ((difference number))
         (dolist (n more difference)
-          (setq difference (or (%contagion #'- difference n) (%add2 difference (%negate n))))))))
+          (setq difference (or (%contagion #'- difference n)
+                               (%ratio-arithmetic '- difference n)
+                               (%add2 difference (%negate n))))))))
 
 (defun %generic-* (&rest numbers)
   (if (null numbers)
       1
       (let ((product (car numbers)))
         (dolist (n (cdr numbers) product)
-          (setq product (or (%contagion #'* product n) (%mul2 product n)))))))
+          (setq product (or (%contagion #'* product n) (%ratio-arithmetic '* product n)
+                            (%mul2 product n)))))))
 
-;;; `/` arrives with floats (step M). Between integers it is exact or it is
-;;; a ratio, and ratios do not exist yet (#59).
+;;; `/` of two integers is exact, an integer or a ratio (#59).
 (defun %generic-/ (number &rest more)
   (if (null more)
       (%divide-real 1 number)
@@ -269,10 +275,8 @@
 
 (defun %divide-real (a b)
   (or (%contagion #'/ a b)
-      (multiple-value-bind (quotient remainder) (%divide2 a b)
-        (if (zerop remainder)
-            quotient
-            (error "/ would make a ratio, and ratios do not exist yet (#59)" a b)))))
+      (%ratio-arithmetic '/ a b)
+      (%ratio a b)))
 
 (defun %compare-chain (test numbers)
   (do ((rest numbers (cdr rest)))
@@ -287,18 +291,21 @@
   (%compare-chain (lambda (order) (= order 1)) (cons number more)))
 
 (defun %generic-quotient (a b)
-  (if (or (floatp a) (floatp b)) (nth-value 0 (truncate a b)) (nth-value 0 (%divide2 a b))))
+  (cond ((or (floatp a) (floatp b)) (nth-value 0 (truncate a b)))
+        ((or (%ratiop a) (%ratiop b)) (nth-value 0 (%truncate-rational a b)))
+        (t (nth-value 0 (%divide2 a b)))))
 (defun %generic-rem (a b)
-  (or (%contagion #'rem a b) (nth-value 1 (%divide2 a b))))
+  (or (%contagion #'rem a b)
+      (if (or (%ratiop a) (%ratiop b)) (nth-value 1 (%truncate-rational a b)) nil)
+      (nth-value 1 (%divide2 a b))))
 
 ;;; ------------------------------------------------------------------------
 ;;; More of CLHS chapter 12
 
-;;; Integers and floats; ratios are #59, and complex numbers are not
-;;; planned.
-(defun numberp (object) (or (integerp object) (floatp object)))
-(defun realp (object) (numberp object))
-(defun rationalp (object) (integerp object))
+;;; Integers, ratios (#59) and floats; complex numbers are deferred.
+(defun rationalp (object) (or (integerp object) (%ratiop object)))
+(defun realp (object) (or (rationalp object) (floatp object)))
+(defun numberp (object) (realp object))
 
 ;;; A float's sign is a float, and a zero is itself: (signum -0.0) is -0.0.
 (defun signum (number)
@@ -340,13 +347,11 @@
                       (truncate (abs (* l n)) (%gcd2 l (abs n)))))))))
 
 ;;; Square and multiply: the bits of POWER, from the bottom, each squaring
-;;; the base. A negative power of an integer would make a ratio (#59); of a
-;;; float, it is the reciprocal. A float power is Rust's `pow` (step M).
+;;; the base. A negative power is the reciprocal of the positive one, a
+;;; ratio for an integer base (#59). A float power is Rust's `pow` (step M).
 (defun expt (base power)
   (cond ((floatp power) (%expt-float base power))
-        ((and (minusp power) (floatp base)) (/ (expt base (- power))))
-        ((minusp power)
-         (error "EXPT: a negative power makes a ratio, which Quokka has not got (#59)" power))
+        ((minusp power) (/ (expt base (- power))))
         (t (%expt-integer base power))))
 
 (defun %expt-integer (base power)

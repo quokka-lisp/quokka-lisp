@@ -323,6 +323,7 @@ Each chapter answers one question.
 | 67 | [Lists that do not end in nil](part-6-self-hosting/67-list-gaps.md) | Which list functions must accept dotted and circular lists, and when are two hash tables `equalp`? |
 | 68 | [What the compiler skipped](part-6-self-hosting/68-compiler-gaps.md) | Where do declarations go once a body has been rewritten, and why must `throw` look before it leaps? |
 | 69 | [The last gaps](part-6-self-hosting/69-the-last-gaps.md) | How should a measurement count a test the oracle fails too, or one that cannot finish without a deferred feature? |
+| 70 | [Ratios](part-6-self-hosting/70-ratios.md) | Why is `(/ 1 3)` neither 0 nor 0.333, and how does one number keep one representation? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -337,7 +338,8 @@ Still to come, and deliberately so:
   system**, `defstruct` and multiple values; `progv`, `load-time-value` and
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
   sequence and string functions (chapter 45); basic `format` (chapter
-  46); integers of any size (chapter 47); and double floats (chapter 48).
+  46); integers of any size (chapter 47); double floats (chapter 48); and
+  ratios (chapter 70).
   Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 69
   close the gaps it listed: declarations, symbols' cells, printing readably
   and with shared structure, `compile`, the rest of the package system, every
@@ -348,8 +350,8 @@ Still to come, and deliberately so:
   arrays of element type `nil`, setf functions, dotted and circular
   lists, what the compiler skipped, and the standard condition types'
   lattice.
-  Still to come are ratios (#59, tier undecided), and beyond them `loop`,
-  CLOS and the rest, in later phases.
+  Chapter 70 adds ratios, the last numbers of tier 1. Still to come are
+  `loop`, CLOS and the rest, in later phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a
   **compiler**, written in Lisp, that translates source into those instructions.

@@ -135,6 +135,10 @@ pub const LIBRARY: &[(&str, &str)] = &[
         include_str!("../../../lisp/library/floats.lisp"),
     ),
     (
+        "ratios.lisp",
+        include_str!("../../../lisp/library/ratios.lisp"),
+    ),
+    (
         "char-names.lisp",
         include_str!("../../../lisp/library/char-names.lisp"),
     ),

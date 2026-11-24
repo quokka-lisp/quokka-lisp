@@ -170,7 +170,11 @@ fn the_table_order_is_pinned() {
             "%STRUCTURE-LAYOUT",
             "%STRUCTURE-REF",
             "%SET-STRUCTURE-REF",
-            "%MAKE-NIL-VECTOR"
+            "%MAKE-NIL-VECTOR",
+            "%MAKE-RATIO",
+            "%RATIOP",
+            "%RATIO-NUMERATOR",
+            "%RATIO-DENOMINATOR"
         ]
     );
 }

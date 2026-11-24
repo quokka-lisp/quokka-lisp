@@ -155,6 +155,11 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
         ObjectType::Instance => out.push_str("#<structure>"),
         // Rust's shortest round-trip digits; the Lisp printer lays them out
         // as SBCL does, and is the one a world uses.
+        ObjectType::Ratio => {
+            write_value(out, mc, mc.slot(v, crate::ratio::NUMERATOR));
+            out.push('/');
+            write_value(out, mc, mc.slot(v, crate::ratio::DENOMINATOR));
+        }
         ObjectType::DoubleFloat => {
             let _ = write!(out, "{:?}", crate::float::get(mc, v));
         }

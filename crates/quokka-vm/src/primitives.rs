@@ -189,6 +189,10 @@ pub enum Prim {
     StructureRef = 134,
     SetStructureRef = 135,
     MakeNilVector = 136,
+    MakeRatio = 137,
+    Ratiop = 138,
+    RatioNumerator = 139,
+    RatioDenominator = 140,
 }
 
 impl Prim {
@@ -624,6 +628,14 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         Arity::Exactly(3),
     ),
     (Prim::MakeNilVector, "%MAKE-NIL-VECTOR", Arity::Exactly(1)),
+    (Prim::MakeRatio, "%MAKE-RATIO", Arity::Exactly(2)),
+    (Prim::Ratiop, "%RATIOP", Arity::Exactly(1)),
+    (Prim::RatioNumerator, "%RATIO-NUMERATOR", Arity::Exactly(1)),
+    (
+        Prim::RatioDenominator,
+        "%RATIO-DENOMINATOR",
+        Arity::Exactly(1),
+    ),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1038,6 +1050,22 @@ pub fn call_slice<'h>(
         }
         Prim::MakeBitVector => crate::array::make_bits(mc, args[0]),
         Prim::MakeNilVector => crate::array::make_nil_vector(mc, args[0]),
+        Prim::MakeRatio => Ok(crate::ratio::make(mc, args[0], args[1])),
+        Prim::Ratiop => Ok(boolean(crate::ratio::is(mc, args[0]))),
+        Prim::RatioNumerator | Prim::RatioDenominator => {
+            if !crate::ratio::is(mc, args[0]) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a ratio",
+                });
+            }
+            let slot = if prim == Prim::RatioNumerator {
+                crate::ratio::NUMERATOR
+            } else {
+                crate::ratio::DENOMINATOR
+            };
+            Ok(mc.slot(args[0], slot))
+        }
         Prim::ArrayKind => Ok(Value::fixnum(crate::array::kind_code(mc, args[0])).expect("small")),
         Prim::Integerp => Ok(truth(
             args[0].as_fixnum().is_some() || crate::bignum::is(mc, args[0]),

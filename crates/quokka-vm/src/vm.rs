@@ -587,7 +587,9 @@ impl<'a, 'h> Vm<'a, 'h> {
     fn fallback(&mut self, index: u32, args: &[Value<'h>], error: &EvalError) -> Option<Value<'h>> {
         let (slot, name) = primitives::fallback(index)?;
         let wanted = matches!(error, EvalError::IntegerOverflow)
-            || args.iter().any(|a| crate::bignum::is(self.mc, *a))
+            || args
+                .iter()
+                .any(|a| crate::bignum::is(self.mc, *a) || crate::ratio::is(self.mc, *a))
             || (args.len() > 1 && crate::hash::needs_lisp(self.mc, args[1], args[0]));
         if !wanted {
             return None;
