@@ -1,18 +1,20 @@
 # A machine made of instructions
 
-> **Where this fits.** Chapter 24 argued *why* to compile. It did not say what
+> *Where this fits.* Chapter 24 argued *why* to compile. It did not say what
 > the result is. This chapter is the answer in full: what a virtual machine
 > actually is, what an instruction is made of, why the instructions push and
-> pop a stack, and how a loop of about twenty lines runs them.
+> pop a stack, and how a loop of about twenty lines runs them. By the end you
+> will be able to read a compiled Lisp function instruction by instruction.
 >
 > Nothing here assumes you have seen a machine instruction before. It assumes
-> only Part II — the reader, the evaluator, environments and frames.
+> only Part II: the reader, the evaluator, environments and frames.
 >
-> **Status: built.** `docs/bytecode.md` is the specification this chapter
+> *Status: built.* `docs/bytecode.md` is the specification this chapter
 > explains, and `crates/quokka-vm/src/vm.rs` runs it. The specification was
-> wrong about the opcode count three times while it was being implemented —
-> thirty-four, then thirty-six, thirty-seven, thirty-eight, and now thirty-nine — which is why a test pins the number that
-> this chapter quotes, and so does the depth the verifier computes for `fact`.
+> wrong about the opcode count three times while it was being implemented,
+> going thirty-four, thirty-six, thirty-seven, thirty-eight and now
+> thirty-nine, which is why a test pins the number that this chapter quotes,
+> and so does the depth the verifier computes for `fact`.
 
 ## Start from what already works
 
@@ -33,9 +35,9 @@ the reader has already turned it into a tree of cons cells (chapter 8):
 ```
 
 and the evaluator walks that tree. At every node it asks a series of
-questions — *is this a list? is the head a special operator? is it a macro? no?
-then evaluate each argument and call it* — and those questions are asked again
-every single time the expression runs.
+questions, such as *is this a list? is the head a special operator? is it a
+macro? no? then evaluate each argument and call it*, and those questions are
+asked again every single time the expression runs.
 
 Chapter 24's observation was that the answers never change. `*` is not going
 to stop being a function call between one execution and the next. So the
@@ -49,23 +51,21 @@ idea, and everything below is detail.
 An instruction is a very small, very specific command. Not "evaluate this
 expression" but "push the number 2", or "add the top two things together".
 
-It has two parts:
-
-- the **opcode** — short for *operation code* — which says *what to do*. It is
-  just a number, with a name we give it for the sake of reading: `47` might
-  mean "push a constant", and we write it `CONST`.
-- the **operands** — zero or more — which say *what to do it to*. `CONST 3`
-  means "push constant number 3".
+It has two parts. The **opcode**, short for *operation code*, says *what to
+do*; it is just a number, with a name we give it for the sake of reading, so
+that `47` might mean "push a constant" and we write it `CONST`. The
+**operands**, zero or more, say *what to do it to*, so `CONST 3` means "push
+constant number 3".
 
 That is all. An instruction set is a list of the operations you are allowed to
 name, and a program is a sequence of them.
 
-> **A word of warning about the word "immediate".** This book already uses it
-> for a *tagged value* that needs no heap object — `nil`, `t`, a character
-> (chapter 1). In machine-code writing it also means *an operand that is the
-> value itself rather than a reference to it*. Two unrelated meanings, one
-> word. This chapter says "a literal operand" for the second to keep them
-> apart, and the [glossary](../glossary.md) lists both.
+One word needs a warning. This book already uses **immediate** for a *tagged
+value* that needs no heap object, such as `nil`, `t` or a character (chapter
+1). In machine-code writing it also means *an operand that is the value itself
+rather than a reference to it*. Two unrelated meanings, one word. This chapter
+says "a literal operand" for the second to keep them apart, and the
+[glossary](../glossary.md) lists both.
 
 ## Why the instructions push and pop
 
@@ -73,7 +73,7 @@ Here is the part that is genuinely clever, and which looks strange until you
 have watched it work once.
 
 Our instructions do not say where to put their results. There is a shared pile
-of values — the **operand stack** — and every instruction takes its inputs off
+of values, the **operand stack**, and every instruction takes its inputs off
 the top and puts its output back on the top.
 
 A *stack* here means exactly what it means in ordinary speech: a pile where
@@ -98,17 +98,15 @@ they run:
 `PRIM p, n` calls primitive number `p` with the top `n` values.
 
 Two things to notice, because they are the whole reason for the design.
-
-**Nothing had to say where the result of `(* 2 3)` goes.** It went on the
-stack, and the next instruction that wanted a value found it there. No
-temporary variable, no register to allocate, no bookkeeping.
-
-**The shape of the instructions matches the shape of the expression.** An
-expression nests, and a stack nests. `(* 2 3)` finished and left exactly one
-value behind, which is precisely what `(+ ... 4)` needed. That correspondence
-is not a coincidence — it is why compiling to a stack machine is so much
-simpler than compiling to anything else, and chapter 24's comparison with
-register machines is the longer version of this paragraph.
+Nothing had to say where the result of `(* 2 3)` goes: it went on the stack,
+and the next instruction that wanted a value found it there, with no temporary
+variable, no register to allocate and no bookkeeping. And the shape of the
+instructions matches the shape of the expression, because an expression nests
+and a stack nests. `(* 2 3)` finished and left exactly one value behind, which
+is precisely what `(+ ... 4)` needed. That correspondence is why compiling to
+a stack machine is so much simpler than compiling to anything else, and
+chapter 24's comparison with register machines is the longer version of this
+paragraph.
 
 ### Try the nesting one level deeper
 
@@ -134,7 +132,7 @@ natural fit for expressions.
 ## Where the stack lives
 
 In Quokka it is **one growable vector in the heap**, with a number in a
-register saying how deep it currently is — the **stack pointer**.
+register saying how deep it currently is, the **stack pointer**.
 
 That it is in the heap is not an implementation detail, it is rule 4 again.
 Chapter 2 established that no execution state may live on Rust's own call
@@ -148,12 +146,12 @@ One detail earns a sentence, because it is a bug that would not have
 announced itself. The collector traces *every* slot of a traced object. The
 stack vector has slots above the stack pointer holding whatever was last
 popped from them, so those dead values would be kept alive forever. The fix
-is to clear a slot when it is popped — one store, and "trace every slot" stays
-true rather than the collector learning about a moving boundary.
+is to clear a slot when it is popped, one store, so that "trace every slot"
+stays true rather than the collector learning about a moving boundary.
 
 ## How the machine runs
 
-A **program counter** — the `Pc` register — holds the position of the next
+A **program counter**, the `Pc` register, holds the position of the next
 instruction, as an offset in bytes from the start of the code. Running the
 program is a loop:
 
@@ -178,9 +176,9 @@ bounded number of steps and returns to its caller, so the loop has a budget
 and returns when it runs out.
 
 That works only because `Pc` is a register in the heap rather than a variable
-in the Rust loop. Stopping is then just *returning* — and starting again is
-reading `Pc` back. The same property makes an image resumable: everything
-needed to carry on is in the heap, so it can be written to a file.
+in the Rust loop. Stopping is then just *returning*, and starting again is
+reading `Pc` back. The same property makes an image resumable, since
+everything needed to carry on is in the heap, so it can be written to a file.
 
 This is the fourth or fifth time in this book that chapter 2's constraint has
 paid for something unrelated. At this point it is less a run of luck than a
@@ -188,22 +186,20 @@ property: **state you are forced to make explicit is state you can transport.**
 
 ## Why the instructions are bytes
 
-The instructions are stored as a run of bytes in a `Code` object — which is a
+The instructions are stored as a run of bytes in a `Code` object, which is a
 heap object whose contents the collector does *not* trace, because instruction
 bytes are not references and following them would be a disaster (chapter 19
 built that distinction for strings).
 
 Each instruction is one opcode byte followed by however many operand bytes
-that opcode takes. Fixed per opcode: `CONST` always takes two, `CALL` always
-takes one. That matters for a reason worth knowing, because it is a trap the
-design walked around rather than through:
-
-> If operand sizes could vary — if small numbers took one byte and large ones
-> took four — then the distance a jump has to travel would depend on the sizes
-> of the instructions in between, and *those* sizes would depend on the jump
-> distances. An assembler then has to go round and round until the two agree.
-> It has a name, **branch relaxation**, and fixing the widths per opcode means
-> it never arises.
+that opcode takes, fixed per opcode, so `CONST` always takes two and `CALL`
+always takes one. That matters for a reason worth knowing, because it is a
+trap the design walked around rather than through. If operand sizes could
+vary, so that small numbers took one byte and large ones took four, then the
+distance a jump has to travel would depend on the sizes of the instructions in
+between, and *those* sizes would depend on the jump distances. An assembler
+then has to go round and round until the two agree. It has a name, **branch
+relaxation**, and fixing the widths per opcode means it never arises.
 
 Chapter 24 has the argument for bytes over one fat word per instruction, and
 the honest arithmetic: about 2.6 bytes an instruction, roughly three times
@@ -237,13 +233,13 @@ the interpreter was deciding at run time, decided instead by the compiler and
 written down.
 
 `LREF 0 0` is the one that has not been explained, and it is the subject of
-the next chapter. For now: it means *the variable in the innermost scope,
-first slot* — the compiler worked out where `n` lives and put coordinates in
-the instruction, instead of leaving the name `n` to be searched for.
+the next chapter. For now it means *the variable in the innermost scope, first
+slot*: the compiler worked out where `n` lives and put coordinates in the
+instruction, instead of leaving the name `n` to be searched for.
 
 ### Jumps are how `if` survives
 
-There is no `if` instruction. An `if` becomes a **jump**: an instruction that
+There is no `if` instruction. An `if` becomes a **jump**, an instruction that
 changes `Pc` instead of computing anything.
 
 `JMP-NIL else` pops a value and, if it is `nil`, sets `Pc` to the position
@@ -252,10 +248,10 @@ normally.
 
 That is the whole of control flow. `when`, `unless`, `cond`, `and`, `or`,
 `dolist`, `do` are macros that expand into `if` and `tagbody` (chapter 15), and
-both of those become jumps. The structure visible in the source — nesting,
-indentation, blocks — does not exist down here at all. There is one straight
-run of instructions and a `Pc` that sometimes moves somewhere other than
-forward.
+both of those become jumps. The structure visible in the source, the nesting
+and indentation and blocks, does not exist down here at all. There is one
+straight run of instructions and a `Pc` that sometimes moves somewhere other
+than forward.
 
 ## What the compiler does and does not know
 
@@ -265,8 +261,8 @@ decision.
 `=`, `-` and `*` compiled to `PRIM`, which calls a primitive **directly**. The
 compiler did not look them up; it baked in which one to call.
 
-`fact` compiled to `GFREF` — *go and read the function cell of the symbol
-`FACT` right now*. Every recursive call reads it again.
+`fact` compiled to `GFREF`, meaning *go and read the function cell of the
+symbol `FACT` right now*. Every recursive call reads it again.
 
 Why the difference? Because somebody might redefine `fact`:
 
@@ -275,8 +271,8 @@ Why the difference? Because somebody might redefine `fact`:
 ```
 
 and the next call must get the new one. That is ordinary Lisp and it must keep
-working. But redefining `*` is **not** ordinary — CLHS 11.1.2.1.2 says the
-consequences of redefining a symbol in the `COMMON-LISP` package are
+working. But redefining `*` is **not** ordinary, since CLHS 11.1.2.1.2 says
+the consequences of redefining a symbol in the `COMMON-LISP` package are
 undefined, which is the standard giving an implementation permission to assume
 it will not happen.
 
@@ -287,8 +283,8 @@ three instructions instead of a function-cell read and a call.
 ## The two tables
 
 A question that comes up on first reading the source, and the answer is not
-obvious from either file: **where, exactly, does a compiled program meet the
-Rust?**
+obvious from either file: where, exactly, does a compiled program meet the
+Rust?
 
 There are two numbered tables in the system, and they are unrelated.
 
@@ -346,18 +342,18 @@ around, and why this works with no `PRIM` instruction anywhere in it:
 
 `CALL` finds that the callee is not a compiled closure but a primitive value,
 pulls the index back out with `as_primitive()`, and ends up in the same
-`call_slice`. Same destination, two routes: **by name at compile time**, or
-**as a value at run time**.
+`call_slice`. Same destination, two routes: by name at compile time, or as a
+value at run time.
 
 The compiler uses the first whenever it can, which is whenever the name is a
-`COMMON-LISP` symbol — the package-lock argument above. The second is what
+`COMMON-LISP` symbol, by the package-lock argument above. The second is what
 `(apply #'+ xs)` has to use, because there the function is a value nobody knew
 at compile time.
 
 ### The third layer, which is most of the language
 
 Neither table holds `length`, `member`, `reverse` or `defstruct`. Those are in
-`lisp/prelude.lisp` — **55 definitions**, written in Lisp, compiled to
+`lisp/prelude.lisp`, **55 definitions** written in Lisp and compiled to
 instructions like anything else. So `(length v)` on a vector goes:
 
 ```
@@ -370,8 +366,9 @@ instructions like anything else. So `(length v)` on a vector goes:
       header.slots       Rust
 ```
 
-and `(length xs)` on a *list* does not reach Rust at all — the prelude walks
-the conses itself, in Lisp, and only the vector case needs the primitive:
+and `(length xs)` on a *list* does not reach Rust at all, because the prelude
+walks the conses itself, in Lisp, and only the vector case needs the
+primitive:
 
 ```lisp
 (defun length (sequence)
@@ -392,8 +389,8 @@ the shape of this diagram: the primitive table is "the only door from Lisp
 into the host", and it has fifty entries because everything else was built
 above it instead.
 
-And **special operators are in neither table**. `if` is two jumps, `let` is a
-`BIND`, `block` is a record on the stack — the VM implements them as
+And special operators are in neither table. `if` is two jumps, `let` is a
+`BIND`, `block` is a record on the stack, so the VM implements them as
 instructions and `primitives.rs` has never heard of them. Which is why
 "twenty-two special operators" and "fifty primitives" are not comparable
 numbers: they count different kinds of thing, and the first is a claim about
@@ -411,17 +408,25 @@ match p.name {
     ...
 ```
 
-**On the name.** A string comparison, after an index lookup that had already
+On the name. A string comparison, after an index lookup that had already
 identified the entry uniquely. The table carries a name and an arity and no
 function pointer, so the index gets you the metadata and then the dispatch
 starts again from scratch.
 
-It has not mattered — the whole thing was reached from a tree-walking
+It has not mattered, because the whole thing was reached from a tree-walking
 interpreter where this was lost in the noise. With a bytecode VM in front of
 it, it is the most obviously wasteful thing on the path, and the fix is to put
 a function pointer in the table beside the name. Written down here rather than
 done, because the honest reason to do it is a measurement nobody has taken
 yet.
+
+*Later: it was done, and better than this proposed. The table's first column
+became a `Prim` enum, and `call_slice` matches on that rather than on a name
+or through a pointer, which costs nothing at run time and buys something a
+function pointer would not: the match has no catch-all, so a row added to the
+table without an arm beside it is a compile error rather than a surprise.
+The same instinct as the type-number line in chapter 19, applied to a
+different list somebody would otherwise forget to add to.*
 
 ## Three operators that compile to nothing
 
@@ -468,26 +473,25 @@ is shared and what is not turns out to be sharp and worth naming.
 | the layout of an environment | |
 | **matching arguments to a lambda list** | |
 
-The pattern: they share **mechanism** and keep their own **state**.
+The pattern is that they share **mechanism** and keep their own **state**.
 
 Which is also exactly what chapter 24's decision was about, although it did not
 say so in these words. "One evaluator at a time" forbids an interpreted frame
 underneath a compiled one, an unwind crossing from one machine's frames into
 the other's, a scope held in two representations at once. All of those are
 *state*. None of them is a Rust function that takes a heap and some values and
-returns an answer.
-
-If sharing mechanism were the problem, the two would need separate heaps.
+returns an answer. If sharing mechanism were the problem, the two would need
+separate heaps.
 
 ### The one that looks like a contradiction
 
 The last row of that table is the one that raises an eyebrow, so it is worth
 following.
 
-Chapter 18 showed that a lambda list is rewritten when a closure is made:
-default forms become a `let*` around the body, so nothing has to be *evaluated*
-while arguments are being bound. What survives the rewrite still looks like
-this, though:
+Chapter 18 showed that a lambda list is rewritten when a closure is made, so
+that default forms become a `let*` around the body and nothing has to be
+*evaluated* while arguments are being bound. What survives the rewrite still
+looks like this, though:
 
 ```lisp
 (kind &optional (colour) &key (:sides sides))
@@ -502,7 +506,7 @@ keyword actually turns up is not something a compiler can know:
 ```
 
 Two calls, the same compiled function, different work to do on arrival. So the
-callee has to decide at call time which name gets which value — and that
+callee has to decide at call time which name gets which value, and that
 decision is **identical** for a function the interpreter is applying and one
 the VM is calling. Same lambda lists, same rules.
 
@@ -537,8 +541,8 @@ The shared binder takes its arguments as a **list**, because that is what the
 interpreter has: it collected them one at a time into a chain of cons cells. A
 compiled call does not have a list. It has the arguments in a row on the
 operand stack. Using the shared binder would mean consing them up only for the
-binder to walk back down — **an allocation per argument, in every call**, which
-is one of the costs compiling was supposed to remove.
+binder to walk back down, which is an allocation per argument in every call,
+and one of the costs compiling was supposed to remove.
 
 The answer is not a second binder. It is to take the common case directly and
 fall through:
@@ -553,8 +557,8 @@ if let Some(names) = self.all_required(params) {
 
 The same move had already been made one layer down: `primitives::call` took a
 list, so it was split into a thin wrapper over `call_slice`, which takes a row.
-Both times the question was the same — *the shared code speaks the
-interpreter's language; does the VM translate, or duplicate?* — and both times
+Both times the question was the same, *the shared code speaks the
+interpreter's language; does the VM translate, or duplicate?*, and both times
 the answer was to narrow the shared part rather than clone it.
 
 ### Could we ship only one of them?
@@ -562,15 +566,15 @@ the answer was to narrow the shared part rather than clone it.
 A fair question once the sharing is clear, and it has a real answer, although
 not the one you would expect.
 
-After phase 1 the browser does not need the interpreter. It loads an image — a
-heap with everything already compiled in it — and runs the VM. The interpreter
+After phase 1 the browser does not need the interpreter. It loads an image, a
+heap with everything already compiled in it, and runs the VM. The interpreter
 exists to *build* an image from source with nothing but `cargo`, which is a
 thing you do on a development machine, not in a tab.
 
 So: build the browser without it, and ship less code.
 
 The honest arithmetic, measured rather than guessed. `eval.rs` is **2,340
-lines** of the **8,939** non-test lines in the VM crate — a little over a
+lines** of the **8,939** non-test lines in the VM crate, a little over a
 quarter of the source. The whole compiled WebAssembly module is **190,976
 bytes**, which is 186 KB, and compresses to a fraction of that over the wire.
 Even deleting the interpreter entirely would save perhaps a few tens of
@@ -581,20 +585,18 @@ megabytes.
 figures in prose. The wasm one is `cargo build -p quokka-wasm --target
 wasm32-unknown-unknown --release` and the size of what lands in `target`; the
 line counts are each file up to its `#[cfg(test)]`. Re-measure rather than
-trust them — an earlier draft of this paragraph said *a third of seven
+trust them. An earlier draft of this paragraph said *a third of seven
 thousand*, which was a guess that read like a measurement.)
 
 So the size argument, which is the obvious one, is the weak one.
 
 The strong argument is different, and it is this book's recurring theme
-wearing yet another costume. "One evaluator at a time" is currently **a rule in
-prose**. A build that physically does not contain the interpreter cannot break
-it — any dependency on interpretation that crept in would show up as a *build
+wearing yet another costume. "One evaluator at a time" is currently a rule in
+prose. A build that physically does not contain the interpreter cannot break
+it: any dependency on interpretation that crept in would show up as a *build
 error*, at the moment it was introduced, rather than as a silent fallback that
-works perfectly until the day it matters.
-
-*A rule that can be followed needs discipline; a rule that cannot be broken
-needs none.*
+works perfectly until the day it matters. A rule that can be followed needs
+discipline, and a rule that cannot be broken needs none.
 
 There is a precondition, and it is the kind that is cheap now and expensive
 later. Today `vm.rs` begins:
@@ -605,7 +607,7 @@ use crate::eval::{closure, env, EvalError};
 
 Those three are not the interpreter. `closure` is what a function object looks
 like, `env` is what a scope looks like, `EvalError` is what going wrong looks
-like — shared mechanism, every one of them, living in `eval.rs` because that is
+like: shared mechanism, every one of them, living in `eval.rs` because that is
 where they were first needed. While they live there, "build without the
 interpreter" is a refactor. Once they live somewhere of their own, it is a line
 in a manifest.
@@ -614,7 +616,7 @@ Which is the same shape as the image-format question in chapter 24: the payoff
 is later, the structure that allows it is now.
 
 *Later (#29, in phase 2): done, as a separate crate rather than a manifest
-line.* Carsten chose a crate boundary over a feature flag, because the unease
+line.* We chose a crate boundary over a feature flag, because the unease
 was about legibility. A feature that is on by default still leaves the
 interpreter in the VM's source tree; a crate puts it somewhere else, where
 `quokka-vm` cannot even name it. The four shared layouts moved first, into
@@ -628,13 +630,25 @@ their cases (saving a computation in mid-air, host requests, lambda lists)
 became integration tests of the bootstrap crate. The browser still runs the
 interpreter in its dev console, until it can load a world.
 
+*Later, on the numbers in this chapter: all four have moved. The instruction
+set is at forty opcodes, and the primitive table at a hundred and twenty-one,
+since bignums, floats, arrays and hash tables each brought a handful. All
+twenty-five special operators exist now (chapter 44), so the comparison that
+reads "twenty-two special operators and fifty primitives" is between
+twenty-five and a hundred and twenty-one, and the point it makes about the
+two being different kinds of claim is unchanged. The prelude's definitions
+have crept from 55 to 57. The line counts in the shipping section are from
+before the crate split, and `eval.rs` is not in the VM crate at all any
+more.*
+
 ---
 
-**References.** `docs/bytecode.md` in this repository is the specification —
+**References.** `docs/bytecode.md` in this repository is the specification,
 all thirty-nine opcodes with their operand widths, which this chapter
 explains rather than repeats. Queinnec, *Lisp in Small Pieces*, chapter 7,
 builds a bytecode machine for Scheme in the same order used here. Goldberg
-and Robson, *Smalltalk-80: The Language and Its Implementation* (1983) — the
-"Blue Book" — part four, is the classic description of a stack-based bytecode
-VM and is still the most readable. For the fetch–decode–execute loop as hardware does it,
-Patterson & Hennessy, *Computer Organization and Design*, chapter 4.
+and Robson, *Smalltalk-80: The Language and Its Implementation* (1983), the
+"Blue Book", part four, is the classic description of a stack-based bytecode
+VM and is still the most readable. For the fetch–decode–execute loop as
+hardware does it, Patterson & Hennessy, *Computer Organization and Design*,
+chapter 4.
