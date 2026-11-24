@@ -143,6 +143,15 @@ chapter; the problem is the pattern.
 3. **Bold lead-ins on every paragraph or bullet.** Bold is for the first use of
    a term (the book's convention for glossary terms) and, rarely, for the one
    sentence a reader must not miss. Never as a paragraph label.
+
+   The one exception is a chapter that is an explicit **reference schema**:
+   the same small set of questions answered for each of twenty-five operators,
+   say, where a reader dips in to find one answer rather than reading through.
+   There the labels are structure, not decoration — without them each entry is
+   four unlabelled paragraphs and you have to read all four to find the one
+   you came for. Keep them (Carsten, chapter 13), and strip the bold from the
+   ordinary prose around them. The test is whether a reader jumps *to* a
+   label; if they only ever read past it, it is decoration.
 4. **Slide-deck structure.** Every section as option A / B / C with matching
    bullets; three items per list; tables for things that are really prose.
    Write the comparison as paragraphs, with a table only where the reader
@@ -398,8 +407,34 @@ In the book's voice, asking the reader's question instead of selling it:
 4. **Check** that the code blocks are unchanged
    (`git diff --word-diff FILE` and look only at prose) and run the counts
    above.
-5. **Leave the decision to Carsten.** A rewrite is a proposal: show the diff or
+5. **Check the claims against the repository, not against the chapter.** An
+   early chapter describes a system that has moved since. Grep for every
+   function, type, test name, file and figure it names, and read the source
+   rather than reasoning about it. What turns up falls into three kinds, and
+   they want different notes:
+   - **Drift.** The chapter was right and the system changed. A `*Later:*`
+     note saying what it is now, pointing at the chapter where it changed.
+   - **A prediction that missed.** "This starts meaning something in phase 1",
+     and it did not. The note has to say the prediction was wrong *and* what
+     happened instead, or it reads as an excuse.
+   - **Book-internal inconsistency.** A later chapter says a thing is missing
+     that an earlier one builds, because they were written out of order. Say
+     so: it tells the reader the book is maintained rather than assembled.
+
+   A **code block** that no longer matches the repository is a fourth case and
+   not a note: the book's rule is that code in it is real code. Update the
+   block to the current source, byte for byte, and fix any sentence that
+   counts its lines (Carsten, chapter 15's `gensym`). Say in the commit that a
+   block changed and why, since step 4 otherwise asserts none did.
+6. **Leave the decision to Carsten.** A rewrite is a proposal: show the diff or
    the new text, and fold his corrections back into this skill (add the habit
    he spotted, or a better before/after), so the next chapter starts closer.
+
+Two tooling notes for step 5. Reading a file through `cat` in some terminals
+**collapses `//` comment lines inside fenced blocks**, so a block of pure
+comments renders as empty and looks like a defect; check bytes with `sed`/`od`
+or the file-reading tool before "fixing" one. And retyping a code block by
+hand loses lines silently — draft the prose with `{{BLOCKn}}` markers and
+splice the originals back in, so the mistake is unwritable.
 
 New chapters are written in this voice from the start.
