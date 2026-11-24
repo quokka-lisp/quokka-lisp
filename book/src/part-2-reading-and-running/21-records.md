@@ -1,11 +1,12 @@
 # Records, and a macro that writes ten functions
 
-> **Where this fits.** This is the last chapter of tier 0, and it is the one
+> *Where this fits.* This is the last chapter of tier 0, and it is the one
 > that spends everything. `defstruct` needs `&key` lambda lists from chapter
-> 18, vectors from chapter 19, `gensym` from chapter 15, a hash table from
-> chapter 19, `setf` from chapter 19 and `error` from chapter 20 — and it
-> needs `setf` to grow a feature it did not have. A macro that needs six
-> previous chapters is a good test of whether they were built right.
+> 18, vectors, hash tables and `setf` from chapter 19, `gensym` from chapter
+> 15 and `error` from chapter 20, and it needs `setf` to grow a feature it did
+> not have. By the end you will have seen a macro generate a whole family of
+> functions from one line, and tier 0 will be complete enough to interpret a
+> compiler.
 
 ## One line, ten definitions
 
@@ -24,13 +25,13 @@ From that, a program gets:
 ```
 
 Ten definitions, each of them a `defun` the user could have typed. That is
-what makes `defstruct` the standard demonstration of why macros matter: it is
+what makes `defstruct` the standard demonstration of why macros matter. It is
 not sugar over an expression, it is a *program that writes a program*, and the
 program it writes is as long as the number of slots.
 
 It is also the single most useful thing in tier 0 for what comes next. A
-compiler represents nearly everything it works with as a record — a variable
-binding, a lexical environment, a basic block, an instruction — and without
+compiler represents nearly everything it works with as a record: a variable
+binding, a lexical environment, a basic block, an instruction. Without
 `defstruct` each of those is an untyped list that the whole compiler agrees
 to interpret the same way.
 
@@ -48,25 +49,30 @@ can lay the slots out however it likes. All of that needs a class system,
 which is phase 3.
 
 The gap has two visible consequences, and both are written down rather than
-discovered:
+discovered. The first is that a structure prints as a vector, so
+`tests/lisp/structures.lisp` never prints one: it asks accessors and
+predicates, which both implementations agree about. This is the fourth time a
+feature has turned out to be partly untestable against the oracle, and the
+first where the cause is a missing *type system* rather than a missing name.
 
-**A structure prints as a vector.** So `tests/lisp/structures.lisp` never
-prints one — it asks accessors and predicates, which both implementations
-agree about. This is the fourth time a feature has turned out to be partly
-untestable against the oracle, and the first where the cause is a missing
-*type system* rather than a missing name.
+The second is that the predicate is generous. `point-p` checks for a vector
+whose first element is the symbol `POINT`, so a vector someone else built that
+way would pass, where SBCL would say no. The test file does not ask, and the
+prelude says why.
 
-**The predicate is generous.** `point-p` checks for a vector whose first
-element is the symbol `POINT`, so a vector someone else built that way would
-pass. SBCL would say no. The test file does not ask, and the prelude says why.
+*Later: a structure is a heap object of its own now, with a layout the
+printer and `typep` can read, so it prints as `#S(POINT :X 1 :Y 2)` and the
+predicate is exact.
+[Structures of their own](../part-6-self-hosting/61-structures.md) is that
+work, and it was waiting on a good deal less than a class system in the end.*
 
 ## The accessor problem, which `setf` could not solve
 
 Chapter 19 built a `setf` that knows a fixed list of places: variables,
 `aref`, `gethash`, `symbol-function`, `car`, `cdr`. `defstruct` immediately
 breaks that, because `(setf (point-x p) 3)` names a place the prelude has
-never heard of and cannot have heard of — the whole point is that the user
-invents it.
+never heard of and cannot have heard of, since the whole point is that the
+user invents it.
 
 So `setf` needs to be *taught*. The mechanism here is a table from a reader's
 name to a writer's name:
@@ -104,14 +110,20 @@ That looks like over-engineering until you want `incf`:
 (incf (aref v (next-index)))
 ```
 
-`incf` must **read** the place and then **write** it, and `(next-index)` must
-be evaluated exactly once. A reader-to-writer table cannot express that — it
+`incf` must read the place and then write it, and `(next-index)` must be
+evaluated exactly once. A reader-to-writer table cannot express that, since it
 would expand into something that called `next-index` twice, which is a bug
 that only appears when a subform has an effect. So Quokka has no `incf`,
 `decf`, `push` or `pop`, and will not until the real expander exists.
 
-The table is not a worse version of `define-setf-expander`. It is the part of
-it that `defstruct` needs, which is a different claim and an honest one.
+The table is the part of `define-setf-expander` that `defstruct` needs, rather
+than a worse version of the whole thing.
+
+*Later: the real expander is [Places](../part-6-self-hosting/43-places.md),
+the first tier-1 feature, and `incf`, `decf`, `push`, `pop`, `rotatef` and the
+rest came with it. The table here survived: a place the prelude knows still
+goes through it, so that the compiler expands the same way before and after
+the library loads, which is what the fixpoint needs.*
 
 ## Making a name out of two names
 
@@ -121,19 +133,24 @@ it that `defstruct` needs, which is a different claim and an honest one.
 ```
 
 `POINT` and `-X` become `POINT-X`. Symbols are interned by name (chapter 8),
-so *making* a symbol out of two others is making a string and interning it —
+so *making* a symbol out of two others is making a string and interning it,
 which is why `%intern` and `%string-append` had to be added. Common Lisp
 spells them `intern` and `concatenate`, and both take arguments Quokka cannot
 express yet: `intern` takes a package, `concatenate` takes a sequence type. So
 they are `%` names until the real ones can exist, which is the same bargain as
 everywhere else.
 
-Note what this means: `defstruct` is a macro that **creates symbols that were
-never read from any source file**. Nothing in `point.lisp` contains the text
+Note what this means. `defstruct` is a macro that creates symbols that were
+never read from any source file. Nothing in `point.lisp` contains the text
 `POINT-X`, and after the macro runs it is an ordinary interned symbol with a
 function cell. A reader, an obarray and a macro system are between them enough
 to invent new names at compile time, and that is most of what a code generator
 does.
+
+*Later: once packages existed, where those invented names go stopped being
+obvious. The library redefines `%symbol-concat` to intern into `*package*`,
+so a `defstruct` written in one package does not quietly put its accessors in
+another.*
 
 ## Three apologies withdrawn
 
@@ -150,28 +167,37 @@ chapter 20:
 Each had been written as a placeholder with a note saying it would become a
 real `error` once there was something to signal into. That is a pattern worth
 naming: when a thing cannot be done properly yet, do the crude version, say in
-the code that it is crude and what would fix it, and then — this is the part
-that usually does not happen — *go back and fix it when the blocker clears*.
-The notes are what made going back possible.
+the code that it is crude and what would fix it, and then go back and fix it
+when the blocker clears. The last part is the one that usually does not
+happen, and the notes are what made it possible here.
 
 ## Tier 0 is finished
 
-Almost. `macrolet`, `multiple-value-call` and `multiple-value-prog1` remain,
-and the last two need a second value register, which is a small change to the
-machine rather than a new idea.
+All but three operators. `macrolet`, `multiple-value-call` and
+`multiple-value-prog1` remain, and the last two need a second value register,
+which is a small change to the machine rather than a new idea.
 
-What exists is enough to interpret a compiler: twenty-two of the
-twenty-five special operators that matter, macros with full lambda lists,
-vectors, strings, hash tables, structures, `setf` and a condition system — and
-a prelude where most of it is written in Lisp rather than Rust.
+What exists is enough to interpret a compiler: twenty-two of the twenty-five
+special operators that matter, macros with full lambda lists, vectors,
+strings, hash tables, structures, `setf` and a condition system, in a prelude
+where most of it is written in Lisp rather than Rust.
 
 Which means the next thing is phase 1, and the gate is the sentence this book
 opened with: the interpreter runs the compiler, the compiler produces an
 image, and the image contains a compiler that no longer needs the interpreter.
 
+*Later: the three arrived inside Part II. Multiple values, and with them the
+two operators that need them, are [the next chapter but
+one](23-more-than-one-answer.md); `macrolet` came with `flet` and `labels`,
+which it differs from in two bits. The last three of all twenty-five,
+`progv`, `load-time-value` and `symbol-macrolet`, were excluded from tier 0
+on purpose and arrived in phase 2 as
+[The last three](../part-6-self-hosting/44-the-last-three.md).*
+
 ---
 
-**References.** CLHS 3.4.6 for `defstruct` in full — the option list alone is
-longer than this chapter. *Common Lisp the Language, 2nd edition*, §7.2, for
-`setf` expanders and exactly why five values are needed. Paul Graham, *On
-Lisp*, chapter 12, on places and why they are harder than they look.
+**References.** CLHS 3.4.6 for `defstruct` in full, where the option list
+alone is longer than this chapter. *Common Lisp the Language, 2nd edition*,
+§7.2, for `setf` expanders and exactly why five values are needed. Paul
+Graham, *On Lisp*, chapter 12, on places and why they are harder than they
+look.
