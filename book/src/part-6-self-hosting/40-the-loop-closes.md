@@ -18,46 +18,45 @@ A Lisp `eval` can work in two ways. An **interpreting** `eval` walks the form,
 as Quokka's Rust interpreter does. A **compiling** `eval` compiles the form and
 runs the result. SBCL does the second by default (its `*evaluator-mode*` is
 `:compile`), and #25 decided long ago that a built Quokka world never
-interprets. So the decision was already made:
+interprets, so the decision was already made:
 
 ```lisp
 (defun eval (form)
   (funcall (compile-form form)))
 ```
 
-One line of Lisp, and it did not work the first time. `compile-form` returns
-a raw compiled `Function`: code, constants, nothing else. The VM only knew how
-to call a **closure**, a function paired with the variables it captured
-(chapter 10), so `funcall` refused it. The fix was six lines in `vm.rs`: a
+One line of Lisp, and it did not work the first time. `compile-form` returns a
+raw compiled `Function`: code, constants, nothing else. The VM only knew how to
+call a **closure**, a function paired with the variables it captured (chapter
+10), so `funcall` refused it. The fix was six lines in `vm.rs`, where a
 `Function` on its own is called as a closure that captured nothing. That also
 makes `compile-form`'s result a real function, which is what CL's `compile`
 returns.
 
-`eval` sees the **dynamic** environment, meaning special variables, but not
-the **lexical** one:
+`eval` sees the **dynamic** environment, meaning special variables, but not the
+**lexical** one:
 
 ```lisp
 (let ((*dynamic* 'inner)) (eval '*dynamic*))   ; INNER
 (let ((lexical 1)) (eval 'lexical))           ; error: LEXICAL is unbound
 ```
 
-That is the standard's rule, and the reason is visible in the code. The form
-is compiled on its own, in an empty scope, so the compiler has no way to know
-that `lexical` was a local somewhere else. A special variable's value lives in
-the symbol (chapter 35), and the compiled code finds it there.
+That is the standard's rule, and the reason is visible in the code. The form is
+compiled on its own, in an empty scope, so the compiler has no way to know that
+`lexical` was a local somewhere else. A special variable's value lives in the
+symbol (chapter 35), and the compiled code finds it there.
 
 ### Compiling inside a compilation
 
-`compile-form` keeps its work in progress in five global variables:
-`%code`, `%constants`, `%constant-count`, `%open` and `%local-macros`. It
-started each compilation by resetting them. That made it not **re-entrant**,
-meaning not safe to call again before the previous call had finished.
+`compile-form` keeps its work in progress in five global variables: `%code`,
+`%constants`, `%constant-count`, `%open` and `%local-macros`. It started each
+compilation by resetting them, which made it not **re-entrant**, meaning not
+safe to call again before the previous call had finished.
 
-Nothing seemed to call it that way, until you notice when macros run. A
-macro's expander runs *during* the compilation of the form that uses it. An
-expander that calls `eval` therefore starts a second compilation while the
-first is half done. We asked whether this limit would cause trouble
-later, so it was tested:
+Nothing seemed to call it that way, until you notice when macros run. A macro's
+expander runs *during* the compilation of the form that uses it, so an expander
+that calls `eval` starts a second compilation while the first is half done. We
+asked whether this limit would cause trouble later, so it was tested:
 
 ```lisp
 (defmacro at-expansion () (list 'quote (eval '(list 1 (+ 1 1)))))
@@ -71,27 +70,27 @@ like a right one.
 
 The compiler already knew the cure. A `lambda` inside a form is compiled on its
 own, and `%assemble-lambda` saves the outer accumulators first and restores
-them afterwards. `compile-form` now does the same, inside an `unwind-protect`:
-a nested compilation that fails halfway, such as `(eval '(if))` caught by
-`ignore-errors`, still gives the outer one its work back. It cost ten lines of
-Lisp and no Rust, and the tests now cover three levels of nesting and a
+them afterwards. `compile-form` now does the same, inside an `unwind-protect`,
+so that a nested compilation that fails halfway, such as `(eval '(if))` caught
+by `ignore-errors`, still gives the outer one its work back. It cost ten lines
+of Lisp and no Rust, and the tests now cover three levels of nesting and a
 nested failure.
 
 Re-entrant is not the same as safe for concurrency, though. Once phase 3 has
 processes, the scheduler can switch from one compilation to another in the
-middle of both. Saving and restoring around a call doesn't help with that,
-because the two compilations are interleaved, not nested. That case is
+middle of both, and saving and restoring around a call does not help with that,
+because the two compilations are interleaved rather than nested. That case is
 recorded in #34, the issue collecting what the code must not rule out before
-phase 3. The options there are a lock that lets one process compile at a
-time, or compiler state passed explicitly instead of kept in globals.
-Special variables would be the idiomatic third option, but they are out for
-now: the Rust interpreter that runs the compiler during the bootstrap has no
+phase 3. The options there are a lock that lets one process compile at a time,
+or compiler state passed explicitly instead of kept in globals. Special
+variables would be the idiomatic third option, but they are out for now,
+because the Rust interpreter that runs the compiler during the bootstrap has no
 dynamic binding.
 
 ## load
 
 `load` reads a file form by form and `eval`s each one. A file name goes to the
-host as a `%read-source` request (chapter 31). A stream is read directly,
+host as a `%read-source` request (chapter 31), and a stream is read directly,
 which is how the tests load without a file system.
 
 The interesting part is two variables it rebinds:
@@ -108,14 +107,14 @@ The interesting part is two variables it rebinds:
 ```
 
 A file usually begins with `(in-package :something)`. Because `load` binds
-`*package*`, that change lasts until the end of the file and no further. The
-caller's package is unchanged when `load` returns.
+`*package*`, that change lasts until the end of the file and no further, and
+the caller's package is unchanged when `load` returns.
 
 That `let` contained the step's one real bug. The first test of `load` found
-the package change *leaking*: after loading a file containing `in-package`,
-the caller was in the wrong package. The cause was the order of the library's
+the package change *leaking*: after loading a file containing `in-package`, the
+caller was in the wrong package. The cause was the order of the library's
 files. `*package*` is given its value in `packages.lisp`, the last file,
-because there are no packages before that. So when `eval.lisp` was compiled,
+because there are no packages before that, so when `eval.lisp` was compiled,
 `*package*` was not yet a special variable. A `let` of an ordinary variable
 compiles to an ordinary local, so `load` made a local copy that nothing read,
 while `in-package` changed the real one.
@@ -136,12 +135,10 @@ A `defvar` with no value proclaims the variable special and gives it nothing.
 ## The loop, in Lisp
 
 A **REPL** is four steps in a loop: read, evaluate, print, and go round again.
-Until now the loop was Rust (`vm::compile_and_run_forms`). It read with the
-Rust reader, called the image's compiler, ran the result, and printed with the
-Rust printer. We had two options for where it should live:
-
-- **In Lisp**, with each host only calling it.
-- **In Rust**, with each step a call into Lisp.
+Until now the loop was Rust (`vm::compile_and_run_forms`), reading with the
+Rust reader, calling the image's compiler, running the result and printing with
+the Rust printer. It could live in Lisp, with each host only calling it, or
+stay in Rust, with each step a call into Lisp.
 
 We chose Lisp. The loop is `%host-step`, in `eval.lisp`:
 
@@ -157,36 +154,36 @@ We chose Lisp. The loop is `%host-step`, in `eval.lisp`:
 
 A host hands it some text once, then calls it until it says `:eof`. Each call
 reads one form, `eval`s it, and prints the value, or catches the error so the
-next form still runs, as a REPL must. The Rust side, `vm::eval_source`, is
-only a loop that calls this and relays what comes back. The REPL with an image
-uses it, and so does the compiled leg of the differential tests.
+next form still runs, as a REPL must. The Rust side, `vm::eval_source`, is only
+a loop that calls this and relays what comes back. The REPL with an image uses
+it, and so does the compiled leg of the differential tests.
 
-Why it matters that the loop is Lisp: everything a person might want to
-change is now changeable from inside the running image. That covers how a form
-is read, how it is evaluated, how it is printed, and what happens on an error.
-That is rule 1, and for a Lisp-machine-style system it is the point: a
-debugger, when it comes, will be a change to this loop, made in Lisp.
+What this buys is that everything a person might want to change is now
+changeable from inside the running image: how a form is read, how it is
+evaluated, how it is printed, and what happens on an error. That is rule 1, and
+for a Lisp-machine-style system it is the point, because a debugger, when it
+comes, will be a change to this loop, made in Lisp.
 
 ## The gap closes
 
-The second decision was which hosts switch now: all that run an image, or
-only `eval` and `load`. We chose all of them, and the result is the
-measurement chapter 39 was waiting for.
+The second decision was which hosts switch now: all that run an image, or only
+`eval` and `load`. We chose all of them, and the result is the measurement
+chapter 39 was waiting for.
 
 The compiled leg of the differential tests now reads every test file with the
 Lisp reader, in `CL-USER`, and prints every result with the Lisp printer. A
-test's `a` is now `CL-USER::A`, a symbol of its own, and no longer the
-`QUOKKA` symbol the prelude happened to use. The sixty-six forms that printed
-`QUOKKA::A` print `A`. **All twenty-two differential files agree with SBCL**,
-and the gap chapter 36 opened, where the Rust reader ignored `*package*`, is
-closed for everything a built image reads.
+test's `a` is now `CL-USER::A`, a symbol of its own, and no longer the `QUOKKA`
+symbol the prelude happened to use. The sixty-six forms that printed `QUOKKA::A`
+print `A`. **All twenty-two differential files agree with SBCL**, and the gap
+chapter 36 opened, where the Rust reader ignored `*package*`, is closed for
+everything a built image reads.
 
 The interpreted leg still reads with the Rust reader and prints with the Rust
-printer, against the same baselines. Both printers now answer to SBCL for
-every test.
+printer, against the same baselines. Both printers now answer to SBCL for every
+test.
 
-The new differential file, `eval.lisp`, tests `in-package` the way a real
-file uses it. At top level, it changes how the *next form* is read:
+The new differential file, `eval.lisp`, tests `in-package` the way a real file
+uses it. At top level, it changes how the *next form* is read:
 
 ```lisp
 (package-name (in-package :eval-test))
@@ -198,28 +195,30 @@ before anything could tell it which package to be in.
 
 ## What it cost
 
-**Rust: 75 lines.**
-- 6 to make a compiled function callable.
-- About 55 for `vm::eval_source` and its `Outcome` type: the one loop every
-  host shares.
-- The rest switches the REPL over.
-
-That is more than the issue estimated, because the shared loop went in the VM
-crate rather than being copied into each host. 1,365 lines are left.
+**Rust: 75 lines.** Six of them make a compiled function callable, about
+fifty-five are `vm::eval_source` and its `Outcome` type, which is the one loop
+every host shares, and the rest switches the REPL over. That is more than the
+issue estimated, because the shared loop went in the VM crate rather than being
+copied into each host. 1,365 lines are left.
 
 **Lisp:** `eval.lisp`, about 80 lines. **The image:** 348 KB.
 
 ## What is not here
 
-- **The library read in Lisp.** The build still reads `lisp/library/` with
-  the Rust reader, which is why `packages.lisp` must stay last. Step E.
-- **Two processes compiling at once.** Compiling is re-entrant, but its state
-  is still global; phase 3 decides how to share it (#34).
-- **`load`'s keyword arguments**, `:verbose`, `:print` and
-  `:if-does-not-exist`; and pathnames, so a file is just a name the host
-  understands.
-- **`compile` and `compile-file`** as CL names them. `compile-form` is the
+- The library read in Lisp. The build still reads `lisp/library/` with the Rust
+  reader, which is why `packages.lisp` must stay last. Step E.
+- Two processes compiling at once. Compiling is re-entrant, but its state is
+  still global, and phase 3 decides how to share it (#34).
+- `load`'s keyword arguments, `:verbose`, `:print` and `:if-does-not-exist`,
+  and pathnames, so a file is just a name the host understands.
+- `compile` and `compile-file` as CL names them. `compile-form` is the
   machinery under both.
+
+*Later: `compile` arrived in chapter 53, as a thin layer over `compile-form`,
+and `compile-file` has not, because nothing yet writes compiled code to a file.
+`load`'s keywords and two processes compiling at once are both still open. The
+twenty-two differential files are forty-five now, and every one of them agrees
+with SBCL in a rebuilt world as well as a built one.*
 
 ---
 
