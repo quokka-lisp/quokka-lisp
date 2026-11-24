@@ -245,13 +245,17 @@ What to expect today:
 Run this before every commit. With Rust already built it takes about two and a
 half minutes (152 seconds on the machine this was written on), so it is worth
 running in a second terminal. It runs, in order:
-1. formatting and clippy;
-2. the native build and every test;
-3. the book's structure, and the Rust line budget;
-4. the differential test coverage, and the SBCL oracle;
-5. rustdoc;
-6. GC torture;
-7. the WebAssembly builds and tests.
+1. the book's structure;
+2. formatting and clippy;
+3. the native build and every test;
+4. the Rust line budget;
+5. the differential test coverage, and the SBCL oracle;
+6. rustdoc;
+7. GC torture;
+8. the WebAssembly builds and tests.
+
+The book comes first because it takes a moment, and a missing chapter should
+not have to wait for two and a half minutes of compiling to be reported.
 
 **Use its exit code, not its output.** Piping it into `grep` or `tail` hides a
 failure, because the pipe succeeds whatever happened. The safe form is:
@@ -259,6 +263,24 @@ failure, because the pipe succeeds whatever happened. The safe form is:
 ```bash
 if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/check.log; fi
 ```
+
+### One half at a time
+
+The prose changes far more often than the VM underneath it, so the two halves
+can be run apart:
+
+```bash
+./scripts/check.sh book
+```
+
+```bash
+./scripts/check.sh code
+```
+
+`book` runs the book checks alone. It uses no cargo, so it works in a checkout
+with no Rust toolchain installed, and it finishes at once. `code` runs
+everything else. With no argument you get both, which is what to run before a
+commit; CI runs the book as a job of its own in either case.
 
 ### Rust tests only
 
