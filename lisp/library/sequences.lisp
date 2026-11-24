@@ -123,14 +123,50 @@
 (defun %as-vector (sequence)
   (if (listp sequence) (%from-list :vector sequence) sequence))
 
-(defun make-sequence (type size &key initial-element)
-  (%from-list (%kind-of-type type) (make-list size :initial-element initial-element)))
+;;; The length a type specifier fixes, or nil: `(vector * 3)`, `(string 3)`,
+;;; `(simple-array t (3))`. `null` fixes 0. The type system is phase 3, so
+;;; this reads the common spellings only.
+(defun %length-of-type (type)
+  (let ((size (cond ((eq type 'null) 0)
+                    ((not (consp type)) nil)
+                    ((member (car type) '(vector))
+                     (if (consp (cdr type)) (car (cdr (cdr type))) nil))
+                    ((member (car type) '(array simple-array))
+                     (let ((dimensions (if (consp (cdr type)) (car (cdr (cdr type))) nil)))
+                       (if (and (consp dimensions) (null (cdr dimensions))) (car dimensions) nil)))
+                    (t (car (cdr type))))))
+    (if (integerp size) size nil)))
+
+;;; A sequence of TYPE holding ITEMS, or a `type-error` when TYPE cannot
+;;; have that many elements: `(vector * 3)` of another length, `null` of
+;;; any, `cons` of none (CLHS `make-sequence`, `concatenate`, `map`,
+;;; `merge`, `coerce`).
+(defun %of-type (type items)
+  (let ((kind (%kind-of-type type))
+        (size (%length-of-type type))
+        (n (length items)))
+    (if (or (and size (/= size n)) (and (eq type 'cons) (= n 0))
+            (and (consp type) (eq (car type) 'cons) (= n 0)))
+        (error 'type-error "a sequence of that type cannot have this many elements"
+               (list type n)))
+    (%from-list kind items)))
+
+;;; Without an initial element, a string is made as `make-string` makes one
+;;; and a bit vector of zeros: nil is neither a character nor a bit.
+(defun make-sequence (type size &key (initial-element nil initial-p))
+  (let ((kind (%kind-of-type type)))
+    (%of-type type
+              (make-list size :initial-element
+                         (cond (initial-p initial-element)
+                               ((eq kind :string) (aref (make-string 1) 0))
+                               ((eq kind :bit-vector) 0)
+                               (t nil))))))
 
 (defun concatenate (result-type &rest sequences)
   (let ((items nil))
     (dolist (sequence sequences)
       (%do-sequence (element sequence) (push element items)))
-    (%from-list (%kind-of-type result-type) (nreverse items))))
+    (%of-type result-type (nreverse items))))
 
 ;;; `coerce`, for sequences and floats only: the type system is phase 3.
 ;;; `t` asks for the object as it is.
@@ -142,7 +178,7 @@
         ((and (eq (%kind-of-type type) :string) (stringp object)) object)
         ((and (eq (%kind-of-type type) :bit-vector) (bit-vector-p object)) object)
         ((and (eq (%kind-of-type type) :vector) (vectorp object)) object)
-        (t (%from-list (%kind-of-type type) (%range-list object 0 nil)))))
+        (t (%of-type type (%range-list object 0 nil)))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Reading
@@ -212,22 +248,21 @@
 (defun position-if-not (predicate sequence &key from-end (start 0) end key)
   (%position-of (%fails predicate key) sequence from-end start end))
 
-;;; count
-(defun %count (matches sequence start end)
+;;; count. `:from-end` cannot change the number, but it does change the
+;;; order the key and test see the elements in, which a program can observe
+;;; (#74).
+(defun %count (matches sequence from-end start end)
   (let ((n 0))
-    (%do-sequence (element sequence :start start :end end)
+    (%do-sequence (element sequence :start start :end end :from-end from-end)
       (if (funcall matches element) (setq n (+ n 1))))
     n))
 
 (defun count (item sequence &key from-end test test-not (start 0) end key)
-  from-end
-  (%count (%matches item key test test-not) sequence start end))
+  (%count (%matches item key test test-not) sequence from-end start end))
 (defun count-if (predicate sequence &key from-end (start 0) end key)
-  from-end
-  (%count (%satisfies predicate key) sequence start end))
+  (%count (%satisfies predicate key) sequence from-end start end))
 (defun count-if-not (predicate sequence &key from-end (start 0) end key)
-  from-end
-  (%count (%fails predicate key) sequence start end))
+  (%count (%fails predicate key) sequence from-end start end))
 
 ;;; ------------------------------------------------------------------------
 ;;; Removing and substituting
@@ -288,13 +323,25 @@
 (defun substitute-if-not (new predicate sequence &key from-end (start 0) end count key)
   (%substitute new (%fails predicate key) sequence from-end start end count))
 
+;;; The `n` versions write into SEQUENCE itself. CLHS only permits that of
+;;; `delete`, but requires it of `nsubstitute`: a program may rely on the
+;;; argument, or the array a displaced one shares, being changed (#74).
+(defun %nsubstitute (new matches sequence from-end start end count)
+  (let ((flags (%marks matches sequence from-end start end count)))
+    (if (listp sequence)
+        (do ((tail sequence (cdr tail)) (i 0 (+ i 1)))
+            ((endp tail))
+          (if (aref flags i) (rplaca tail new)))
+        (dotimes (i (length sequence))
+          (if (aref flags i) (setf (aref sequence i) new))))
+    sequence))
+
 (defun nsubstitute (new old sequence &key from-end test test-not (start 0) end count key)
-  (substitute new old sequence :from-end from-end :test test :test-not test-not
-              :start start :end end :count count :key key))
+  (%nsubstitute new (%matches old key test test-not) sequence from-end start end count))
 (defun nsubstitute-if (new predicate sequence &key from-end (start 0) end count key)
-  (substitute-if new predicate sequence :from-end from-end :start start :end end :count count :key key))
+  (%nsubstitute new (%satisfies predicate key) sequence from-end start end count))
 (defun nsubstitute-if-not (new predicate sequence &key from-end (start 0) end count key)
-  (substitute-if-not new predicate sequence :from-end from-end :start start :end end :count count :key key))
+  (%nsubstitute new (%fails predicate key) sequence from-end start end count))
 
 ;;; Of each set of duplicates in the range, the *last* is kept — or the
 ;;; first, with `:from-end` (CLHS).
@@ -348,13 +395,23 @@
       (%store-range sequence-1 s1
                     (%range-list source 0 (min (- e1 s1) (length source)))))))
 
+;;; A vector with a fill pointer is filled up to its dimension, and its fill
+;;; pointer then says how many elements were stored (CLHS `map-into`).
 (defun map-into (result function &rest sequences)
   (let* ((vectors (mapcar #'%as-vector sequences))
-         (n (apply #'min (length result) (mapcar #'length vectors)))
+         (room (if (and (vectorp result) (array-has-fill-pointer-p result))
+                   (array-dimension result 0)
+                   (length result)))
+         (n (apply #'min room (mapcar #'length vectors)))
          (items nil))
     (dotimes (i n)
       (push (apply function (mapcar (lambda (v) (aref v i)) vectors)) items))
-    (%store-range result 0 (nreverse items))))
+    (%store-range result 0 (nreverse items))
+    (if (and (vectorp result) (array-has-fill-pointer-p result))
+        ;; `%set-fill-pointer`, not `setf`: the place is defined in
+        ;; `arrays.lisp`, which loads after this file.
+        (%set-fill-pointer result n))
+    result))
 
 ;;; ------------------------------------------------------------------------
 ;;; Mapping, reducing, and quantifiers
@@ -371,7 +428,7 @@
 
 (defun map (result-type function sequence &rest more)
   (let ((items (%map-rows function (cons sequence more))))
-    (if (null result-type) nil (%from-list (%kind-of-type result-type) items))))
+    (if (null result-type) nil (%of-type result-type items))))
 
 ;;; Stop at the first row whose answer is DECISIVE (true for `some`), and
 ;;; return what that row said.
@@ -490,7 +547,7 @@
   (stable-sort sequence predicate :key key))
 
 (defun merge (result-type sequence-1 sequence-2 predicate &key key)
-  (%from-list (%kind-of-type result-type)
+  (%of-type result-type
               (%merge-lists (%range-list sequence-1 0 nil)
                             (%range-list sequence-2 0 nil)
                             predicate key)))

@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1220 :REPLACED 974)` (asserted in `differential.rs`; any new library
+`(:FORMS 1223 :REPLACED 977)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -276,7 +276,17 @@ stream), `#S` printing and reading, `equalp`, `copy-structure`. The
 printer writes a string's runs between escapes in one write. Image format
 5. Rust 69. ansi-test: **7,891**; needs tier 1 0; plain failures 271 (the
 12 left in `structures` are `defstruct-with-tests`, which uses `loop`).
-**Next:** the plain failures in `docs/ansi-test.md`, grouped by message. Phase 2's scope is
+**Step AA is done** (#74, chapter 62): the 271 plain failures were classified
+by root cause (the list and the proposed steps AB–AG are a comment on #39).
+AA fixed the five in `sequences.lisp` — `count :from-end`, destructive
+`nsubstitute*`, result types that fix a length (`%of-type`, a `type-error`),
+`map-into` with fill pointers, string `make-sequence` — and the runner now
+counts deferred causes as deferred (`defstruct-with-tests`, an error message
+naming a deferred feature, the underflow note). A library file cannot use a
+`setf` place defined in a later file: call the setter. Rust 0. ansi-test:
+**7,943**; plain failures 185.
+**Next:** step AB, typed conditions where CLHS names one and the missing
+argument checks (#39's list). Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -345,8 +355,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**428 tests**; **42 differential files agree with SBCL** — 17 interpreted and
-compiled, plus twenty-five tier-1 files, compiled only, and all 42 also pass in a rebuilt world. The Rust core is **15,537** lines of the 15,537 budget (raised from 15,000 by #67 and from 15,500 by #73).
+**429 tests**; **43 differential files agree with SBCL** — 17 interpreted and
+compiled, plus twenty-six tier-1 files, compiled only, and all 43 also pass in a rebuilt world. The Rust core is **15,537** lines of the 15,537 budget (raised from 15,000 by #67 and from 15,500 by #73).
 
 ## How phase 1 ended
 

@@ -311,6 +311,7 @@ Each chapter answers one question.
 | 59 | [Hash tables, finished](part-6-self-hosting/59-hash-tables-finished.md) | How can a table find a key by its contents when Rust hashes it and Lisp compares it? |
 | 60 | [Labels, limits and a counter](part-6-self-hosting/60-labels-and-limits.md) | How does a reader return an object that contains itself before the object is finished, and how do you measure a limit a program may rely on? |
 | 61 | [Structures of their own](part-6-self-hosting/61-structures.md) | What does a record type need that a vector cannot give it, and how does one type extend another? |
+| 62 | [What the sequence functions skipped](part-6-self-hosting/62-sequence-gaps.md) | How do you turn a list of failing tests into causes, and what does a standard ask for that a simpler implementation skips? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

@@ -16,9 +16,9 @@
 ;;;;
 ;;;;   PASS name                 the test's values were the expected ones
 ;;;;   FAIL name detail          they were not, or the test signalled
-;;;;   NEEDS name reason...      the test uses something Quokka lacks (decision 4)
+;;;;   NEEDS name reason...      the test uses something Quokka lacks (decision 4),
+;;;;                             or carries a disabled note, as `note[NAME]`
 ;;;;   UNREADABLE name reason    Quokka's reader cannot read the test
-;;;;   SKIP name reason          the test is switched off by a disabled note
 ;;;;   LOAD what reason          a definition, and what became of it
 ;;;;   DONE                      the file is finished
 
@@ -65,7 +65,10 @@
 (defvar *provided* (make-hash-table :test 'eq))
 
 ;;; ansi-test's notes: a name, and whether it is disabled.
-(defvar *disabled-notes* nil)
+;;; Notes a test may carry that mark behaviour an implementation is allowed
+;;; not to have, and Quokka does not have, as SBCL by default does not: a
+;;; test carrying one is reported as needing it, a deferred reason (#74).
+(defvar *disabled-notes* '(:no-floating-point-underflow-by-default))
 
 (defun %prepare ()
   (dolist (name *cl-operator-names*)
@@ -385,7 +388,7 @@
            (*test* name))
       (setq *current* (symbol-name name))
       (if disabled
-          (format nil "SKIP ~A disabled note ~A" name disabled)
+          (format nil "NEEDS ~A note[~A]" name (symbol-name disabled))
           (let ((values (handler-case (multiple-value-list (eval test))
                           (error (condition) (list :signalled (%condition-text condition))))))
             (if (and (not (and (consp values) (eq (car values) :signalled)))
@@ -395,10 +398,27 @@
                 ;; failed, to explain the failure (decision 4). Asking first
                 ;; would skip tests that pass, such as one using a helper that
                 ;; needs LOOP only in a branch the test does not take.
-                (let ((needs (%needs test)))
+                (let ((needs (or (%needs test) (%message-needs values))))
                   (if needs
                       (format nil "NEEDS ~A ~{~A~^ ~}" name needs)
                       (format nil "FAIL ~A ~A" name (%one-line (%describe values)))))))))))
+
+;;; A failure explained by its own message: an error a deferred feature
+;;; signals while the test runs, which reading the test's form cannot see.
+;;; A helper that reaches LOOP only when it runs, `/` making a ratio, a
+;;; `format` directive basic format does not have (#74).
+(defun %message-needs (values)
+  (let ((text (if (and (consp values) (eq (car values) :signalled))
+                  (princ-to-string (cadr values))
+                  nil)))
+    (cond ((null text) nil)
+          ((search "ratios do not exist yet" text) (list "ratio[issue-59:ratios]"))
+          ((search "a directive basic format does not have" text)
+           (list "format-directive[tier-2:format]"))
+          ((let ((end (search " is undefined" text)))
+             (and end
+                  (let ((symbol (find-symbol (subseq text 0 end) "COMMON-LISP")))
+                    (and symbol (gethash symbol *deferred*) (list (%reason-for symbol))))))))))
 
 ;;; A test made by a macro of the suite's (DEF-MACRO-TEST and the like)
 ;;; arrives inside another form, not at the top level. DEFTEST runs it there
@@ -427,7 +447,10 @@
                               defsetf define-modify-macro))
                (let ((name (second form)))
                  (if (and (consp name) (eq (car name) 'setf)) nil (list name))))
-              ((eq head 'defstruct) (%struct-names (second form) (cddr form)))
+              ;; The suite's DEFSTRUCT-WITH-TESTS takes `defstruct`'s syntax.
+              ((or (eq head 'defstruct)
+                   (and (symbolp head) (string= (symbol-name head) "DEFSTRUCT-WITH-TESTS")))
+               (%struct-names (second form) (cddr form)))
               ((member head '(progn eval-when locally let let*))
                (let ((names nil))
                  (dolist (sub (cdr form) names)

@@ -82,6 +82,7 @@
 - [Hash tables, finished](part-6-self-hosting/59-hash-tables-finished.md)
 - [Labels, limits and a counter](part-6-self-hosting/60-labels-and-limits.md)
 - [Structures of their own](part-6-self-hosting/61-structures.md)
+- [What the sequence functions skipped](part-6-self-hosting/62-sequence-gaps.md)
 
 ---
 
