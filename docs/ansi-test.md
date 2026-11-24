@@ -9,22 +9,22 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1460 | 13 | 0 | 1 | 0 | 164 | 1638 |
+| cons | 1468 | 6 | 0 | 0 | 0 | 164 | 1638 |
 | sequences | 2547 | 0 | 0 | 2 | 0 | 609 | 3158 |
 | strings | 363 | 0 | 0 | 0 | 0 | 138 | 501 |
 | arrays | 629 | 0 | 0 | 1 | 0 | 604 | 1234 |
 | characters | 133 | 0 | 0 | 0 | 0 | 126 | 259 |
-| symbols | 122 | 4 | 0 | 1 | 0 | 1018 | 1145 |
-| packages | 261 | 9 | 0 | 2 | 0 | 68 | 340 |
+| symbols | 126 | 0 | 0 | 1 | 0 | 1018 | 1145 |
+| packages | 270 | 0 | 0 | 2 | 0 | 68 | 340 |
 | numbers | 541 | 3 | 0 | 4 | 0 | 890 | 1438 |
 | reader | 111 | 4 | 0 | 0 | 0 | 50 | 165 |
 | printer | 225 | 3 | 0 | 4 | 0 | 590 | 822 |
-| data-and-control-flow | 1139 | 20 | 6 | 0 | 0 | 255 | 1420 |
+| data-and-control-flow | 1151 | 8 | 6 | 0 | 0 | 255 | 1420 |
 | eval-and-compile | 265 | 10 | 1 | 0 | 0 | 42 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 81 | 0 | 0 | 0 | 0 | 86 | 167 |
-| structures | 60 | 0 | 0 | 0 | 0 | 55 | 115 |
-| **all** | **8032** | **66** | **7** | **15** | **0** | **5438** | **13558** |
+| structures | 60 | 0 | 0 | 1 | 0 | 55 | 116 |
+| **all** | **8065** | **34** | **7** | **15** | **0** | **5438** | **13559** |
 
 ## Tier-1 gaps, by how many tests each blocks
 

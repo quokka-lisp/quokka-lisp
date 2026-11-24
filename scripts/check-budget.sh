@@ -40,7 +40,12 @@ cd "$(dirname "$0")/.."
 # Raised to 15,762 by step AD (#77, 25 Nov 2026): an array of element type
 # nil is an object of its own, as SBCL's is (`ObjectType::NilVector`, a
 # fourth `Kind` in `array.rs`, the `%make-nil-vector` primitive). 49 lines.
-LIMIT=15762
+#
+# Raised to 15,767 by step AF (#79, 25 Nov 2026): the primitives that make a
+# symbol from a string read one that is not simple (a fill pointer,
+# displaced) by its active characters. 8 lines, 3 of them under the old
+# limit.
+LIMIT=15767
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

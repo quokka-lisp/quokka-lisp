@@ -589,7 +589,36 @@
 (defmacro defpackage (name &rest options)
   `(%define-package ',name ',options))
 
+;;; CLHS `defpackage` refuses, with a `program-error`, an option given twice
+;;; that may be given once, and a symbol name that two options would each
+;;; put in the package their own way (#79): one name in more than one of
+;;; `:shadow`, `:shadowing-import-from`, `:import-from` and `:intern`, or in
+;;; both `:intern` and `:export`. Checked before anything is made.
+(defun %check-defpackage-options (options)
+  (dolist (once '(:size :documentation))
+    (if (> (count once options :key #'car) 1)
+        (error 'program-error "this defpackage option may be given once" once)))
+  (let ((placed nil)
+        (interned nil)
+        (exported nil))
+    (dolist (option options)
+      (let ((names (cond ((member (car option) '(:shadow :intern)) (cdr option))
+                         ((member (car option) '(:shadowing-import-from :import-from))
+                          (cddr option))
+                         (t nil))))
+        (dolist (name (mapcar #'%designator-name names))
+          (if (member name placed :test #'string=)
+              (error 'program-error "defpackage names a symbol in two options" name))
+          (push name placed)
+          (if (eq (car option) :intern) (push name interned))))
+      (if (eq (car option) :export)
+          (setq exported (append (mapcar #'%designator-name (cdr option)) exported))))
+    (dolist (name interned)
+      (if (member name exported :test #'string=)
+          (error 'program-error "defpackage both interns and exports a name" name)))))
+
 (defun %define-package (name options)
+  (%check-defpackage-options options)
   (let ((package (or (find-package name) (make-package name))))
     (dolist (option options)
       (if (not (member (car option) '(:nicknames :use :export :intern :shadow

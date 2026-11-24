@@ -317,17 +317,19 @@
 ;;; `(psetf p1 v1 p2 v2 ...)`: like `setf`, but every value is computed
 ;;; before any place is written. Nil. Each value is bound right after its
 ;;; own place's subforms, which keeps the order of evaluation the source's.
+;;; Each place's temporaries, then its value into its stores, nested so that
+;;; a place with several stores, `(values a b)`, takes several values
+;;; (#79); every value is computed before any place is written.
 (defmacro psetf (&rest pairs &environment environment)
-  (labels ((walk (rest bindings writers)
-             (if (null rest)
-                 `(let* ,(reverse bindings) ,@(reverse writers) nil)
-                 (multiple-value-bind (vars vals stores writer)
-                     (get-setf-expansion (car rest) environment)
-                   (walk (cdr (cdr rest))
-                         (cons (list (%one-store stores (car rest)) (car (cdr rest)))
-                               (append (reverse (%bindings vars vals)) bindings))
-                         (cons writer writers))))))
-    (walk pairs nil nil)))
+  (labels ((walk (rest writers)
+             (cond ((null rest) `(progn ,@(reverse writers) nil))
+                   ((null (cdr rest)) (error "PSETF wants place and value in pairs" (car rest)))
+                   (t (multiple-value-bind (vars vals stores writer)
+                          (get-setf-expansion (car rest) environment)
+                        `(let* ,(%bindings vars vals)
+                           (multiple-value-bind ,stores ,(car (cdr rest))
+                             ,(walk (cdr (cdr rest)) (cons writer writers)))))))))
+    (walk pairs nil)))
 
 ;;; Expand every place in PLACES: the bindings of all their temporaries, in
 ;;; order, then the store, writer and reader of each.
@@ -368,7 +370,10 @@
         (t (error 'type-error "the index is not inside the sequence" index))))
 
 ;;; `(setf (values a b) form)` stores each value of FORM in its own place:
-;;; one store per place, so this is the place with several stores.
+;;; one store per place, so this is the place with several stores. A place
+;;; that itself has several, a nested `(values b c)`, receives one value in
+;;; its first store, and the others are nil (CLHS 5.1.2.3, #79): they are
+;;; bound to nil among the temporaries.
 (define-setf-expander values (&rest places &environment environment)
   (labels ((walk (rest vars vals stores writers readers)
              (if (null rest)
@@ -377,8 +382,10 @@
                          (cons 'values (reverse readers)))
                  (multiple-value-bind (v1 v2 store-list writer reader)
                      (get-setf-expansion (car rest) environment)
-                   (walk (cdr rest) (append vars v1) (append vals v2)
-                         (cons (%one-store store-list (car rest)) stores)
+                   (walk (cdr rest)
+                         (append vars v1 (cdr store-list))
+                         (append vals v2 (mapcar (lambda (store) store nil) (cdr store-list)))
+                         (cons (car store-list) stores)
                          (cons writer writers) (cons reader readers))))))
     (walk places nil nil nil nil nil)))
 

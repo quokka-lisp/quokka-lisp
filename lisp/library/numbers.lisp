@@ -45,8 +45,17 @@
         ((funcall test number (car more)) (%pairwise test (car more) (cdr more)))
         (t nil)))
 
-(defun <= (number &rest more) (%pairwise (lambda (a b) (not (> a b))) number more))
-(defun >= (number &rest more) (%pairwise (lambda (a b) (not (< a b))) number more))
+;;; Two arguments, the usual case, go straight to the primitive: the compiler
+;;; and the library's loops call these constantly, and the general walk
+;;; costs a closure and a call per pair (#79).
+(defun <= (number &rest more)
+  (if (and more (null (cdr more)))
+      (not (> number (car more)))
+      (%pairwise (lambda (a b) (not (> a b))) number more)))
+(defun >= (number &rest more)
+  (if (and more (null (cdr more)))
+      (not (< number (car more)))
+      (%pairwise (lambda (a b) (not (< a b))) number more)))
 
 ;;; `/=` is every pair, not only adjacent ones: (/= 1 2 1) is false.
 (defun /= (number &rest more)

@@ -1270,13 +1270,18 @@ pub fn call_slice<'h>(
                 .map_or(Value::NIL, Value::character))
         }
         Prim::FindSystemSymbol | Prim::MakeSymbol | Prim::InternKeyword | Prim::ConstantString => {
-            if !(args[0].is_object() && mc.header(args[0]).object_type.is_string()) {
+            let text = if args[0].is_object() && mc.header(args[0]).object_type.is_string() {
+                mc.string_to_rust(args[0])
+            } else if let Some((false, text)) = crate::array::equal_text(mc, args[0]) {
+                // A string that is not simple — a fill pointer, or displaced:
+                // its active characters, as `equal` reads them (#79).
+                text
+            } else {
                 return Err(EvalError::WrongType {
                     name,
                     wanted: "a string",
                 });
-            }
-            let text = mc.string_to_rust(args[0]);
+            };
             Ok(match prim {
                 Prim::FindSystemSymbol => mc
                     .find_system_symbol(&text, args[1] != Value::NIL)

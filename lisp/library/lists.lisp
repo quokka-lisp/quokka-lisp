@@ -84,7 +84,22 @@
                 (walk 0))))
         ;; Two structures of one type, slot by slot (#73).
         ((%structure-layout a) (%structure-equalp a b))
+        ;; Two hash tables with the same test and count, in which every key
+        ;; of one has an `equalp` value in the other (CLHS `equalp`, #79).
+        ((hash-table-p a)
+         (and (hash-table-p b)
+              (= (hash-table-count a) (hash-table-count b))
+              (eq (hash-table-test a) (hash-table-test b))
+              (%hash-tables-equalp a b)))
         (t nil)))
+
+(defun %hash-tables-equalp (a b)
+  (block compare
+    (maphash (lambda (key value)
+               (multiple-value-bind (other found) (gethash key b)
+                 (if (not (and found (equalp value other))) (return-from compare nil))))
+             a)
+    t))
 
 ;;; ------------------------------------------------------------------------
 ;;; Functions about functions (CLHS 5)
@@ -384,14 +399,33 @@
           ((endp (cdr fast)) (return (+ n 1)))
           ((and (eq fast slow) (> n 0)) (return nil)))))
 
+;;; `last`, `butlast` and `nbutlast` count conses, not elements, so a dotted
+;;; list works: `(last '(a b . c))` is `(b . c)`, and the atom at the end is
+;;; the zeroth tail (#79). Until then they took the list's `length`, which
+;;; refuses a dotted list.
+
+;;; The last N conses: a lead pointer goes N conses ahead, then both walk
+;;; until it falls off the end. N may be a bignum; the lead stops at the end
+;;; long before that matters.
 (defun last (list &optional (n 1))
   (%check-count n)
-  (let ((count (length list)))
-    (nthcdr (if (> count n) (- count n) 0) list)))
+  (let ((lead list))
+    (do ((i 0 (+ i 1)))
+        ((or (not (< i n)) (atom lead)))
+      (setq lead (cdr lead)))
+    (do ((tail list (cdr tail))
+         (lead lead (cdr lead)))
+        ((atom lead) tail))))
+
+;;; How many conses LIST has before its end, proper or dotted.
+(defun %cons-count (list)
+  (do ((n 0 (+ n 1))
+       (tail list (cdr tail)))
+      ((atom tail) n)))
 
 (defun butlast (list &optional (n 1))
   (%check-count n)
-  (let ((keep (- (length list) n)))
+  (let ((keep (- (%cons-count list) n)))
     (do ((i 0 (+ i 1))
          (tail list (cdr tail))
          (out nil (cons (car tail) out)))
@@ -399,7 +433,7 @@
 
 (defun nbutlast (list &optional (n 1))
   (%check-count n)
-  (let ((keep (- (length list) n)))
+  (let ((keep (- (%cons-count list) n)))
     (if (<= keep 0)
         nil
         (progn (rplacd (nthcdr (- keep 1) list) nil) list))))
@@ -423,25 +457,33 @@
       (cons (copy-tree (car tree)) (copy-tree (cdr tree)))
       tree))
 
+;;; True or false, one value: a test may return several (#79).
 (defun tree-equal (a b &key test test-not)
   (let ((same (%test test test-not)))
     (labels ((walk (a b)
                (cond ((and (consp a) (consp b))
                       (and (walk (car a) (car b)) (walk (cdr a) (cdr b))))
                      ((or (consp a) (consp b)) nil)
-                     (t (funcall same a b)))))
+                     ((funcall same a b) t)
+                     (t nil))))
       (walk a b))))
 
 ;;; Destructive append: each non-empty list's last cons is pointed at the
 ;;; next. The lists themselves are the result; nothing is copied.
+;;; The last argument is only pointed at, never walked, so it may be
+;;; circular or an atom: `(nconc x x)` makes X circular (#79). An atom
+;;; before the last is skipped, as SBCL skips it.
 (defun nconc (&rest lists)
   (let ((result nil)
         (last-cons nil))
-    (dolist (list lists result)
-      (cond ((null list))
-            ((null result) (setq result list) (setq last-cons (last list)))
-            ((atom list) (rplacd last-cons list))
-            (t (rplacd last-cons list) (setq last-cons (last list)))))))
+    (do ((rest lists (cdr rest)))
+        ((null rest) result)
+      (let ((list (car rest)))
+        (cond ((null (cdr rest))
+               (if last-cons (rplacd last-cons list) (setq result list)))
+              ((consp list)
+               (if last-cons (rplacd last-cons list) (setq result list))
+               (setq last-cons (last list))))))))
 
 (defun revappend (list tail)
   (do ((rest list (cdr rest))
