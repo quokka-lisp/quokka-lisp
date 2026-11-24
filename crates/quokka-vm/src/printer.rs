@@ -152,6 +152,7 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
             let _ = write!(out, "#<{}>", crate::condition::describe(mc, v));
         }
         ObjectType::HashTable => out.push_str("#<hash-table>"),
+        ObjectType::Instance => out.push_str("#<structure>"),
         // Rust's shortest round-trip digits; the Lisp printer lays them out
         // as SBCL does, and is the one a world uses.
         ObjectType::DoubleFloat => {

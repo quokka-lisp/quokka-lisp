@@ -862,7 +862,7 @@ impl<'a, 'h> Machine<'a, 'h> {
     /// same form can collide with — two calls to a recursive function are two
     /// different blocks, even though the name is the same.
     fn fresh_marker(&mut self) -> Value<'h> {
-        self.mc.alloc(ObjectType::Instance, 0)
+        self.mc.alloc(ObjectType::Marker, 0)
     }
 
     fn eval_block(&mut self, form: Value<'h>) -> Transition {

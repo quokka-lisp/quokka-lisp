@@ -146,6 +146,7 @@ tier1_cases! {
     reader_syntax => "reader-syntax",
     hash_tables_completed => "hash-tables-completed",
     labels_and_limits => "labels-and-limits",
+    defstruct_options => "defstruct-options",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -376,7 +377,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1186 :REPLACED 940)".into())],
+        [Outcome::Value("(:FORMS 1220 :REPLACED 974)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

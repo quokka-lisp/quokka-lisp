@@ -256,8 +256,9 @@ pub fn content<'h>(mc: &Mutation<'h>, v: Value<'h>, equalp: bool, depth: u32) ->
         if crate::bignum::is(mc, v) {
             return mix(OFFSET, 10);
         }
-        // A string, a bit vector, a vector or a structure: element by
-        // element, as `equalp` compares them, so `"ab"` meets `#(#\A #\B)`.
+        // A string, a bit vector or a vector: element by element, as
+        // `equalp` compares them, so `"ab"` meets `#(#\A #\B)`. A structure
+        // hashes by its type alone, below, and the library compares it.
         if crate::array::is_vector(mc, v) {
             let n = crate::array::length(mc, v).unwrap_or(0);
             let mut h = mix(mix(OFFSET, 11), n as u64);

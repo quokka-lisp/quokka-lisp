@@ -1022,17 +1022,17 @@
         (setq level (if (> (length level) 0) (elt level 0) nil)))
       (make-array (nreverse dimensions) :initial-contents contents))))
 
-;;; `#S(name slot value ...)` — a structure, made by calling its standard
-;;; constructor, `make-NAME`, with each slot name as a keyword (CLHS
-;;; 2.4.8.13). Quokka's structures are vectors (tier 0), and print as one,
-;;; so the printer never writes `#S`; reading it is what a program written
-;;; for another Lisp needs.
+;;; `#S(name slot value ...)` — a structure, made by calling its first
+;;; keyword constructor, usually `make-NAME`, with each slot name as a
+;;; keyword (CLHS 2.4.8.13). It reads back what the printer writes (#73).
 (defun %read-sharp-s (stream sub-char argument)
   (let ((form (%read-required stream)))
     (cond (*read-suppress* nil)
           ((not (and (consp form) (symbolp (car form))))
            (error 'reader-error "#S wants (name slot value ...)" form))
-          (t (apply (%symbol-concat 'make- (car form))
+          ((null (and (%find-layout (car form)) (%layout-constructor (%find-layout (car form)))))
+           (error 'reader-error "#S names no structure with a keyword constructor" (car form)))
+          (t (apply (%layout-constructor (%find-layout (car form)))
                     (do ((rest (cdr form) (cddr rest))
                          (args nil (list* (cadr rest) (intern (string (car rest)) "KEYWORD") args)))
                         ((null rest) (nreverse args))))))))

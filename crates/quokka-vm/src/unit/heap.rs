@@ -167,6 +167,7 @@ fn raw_types_are_not_traced() {
         ObjectType::Vector,
         ObjectType::Closure,
         ObjectType::Instance,
+        ObjectType::Marker,
         ObjectType::HashTable,
         ObjectType::ArrayHeader,
     ] {

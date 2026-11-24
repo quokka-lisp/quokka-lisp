@@ -180,8 +180,10 @@ it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 **defstruct.** Defines a record type from one line: a constructor, a
 predicate, an accessor per slot that `setf` can write, and a copier. A macro
 that writes ten functions, and the clearest demonstration of what macros are
-for. Quokka's structures are vectors with the type name in the first slot,
-since real types need a class system. ([21](part-2-reading-and-running/21-records.md))
+for. In tier 0 a structure was a vector with the type name in the first
+slot; since step Z it is a heap object of its own whose first slot is its
+[layout](#layout), and `defstruct` has all its options, `:include` among
+them. ([21](part-2-reading-and-running/21-records.md), [61](part-6-self-hosting/61-structures.md))
 
 **Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file interpreted and compiled, natively and under WebAssembly, and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md), [33](part-5-the-image/33-two-evaluators-one-answer.md))
 
@@ -422,7 +424,7 @@ what a macro produces is otherwise invisible. `macroexpand-1` does one step;
 `macroexpand` repeats until the head is no longer a macro. Neither descends
 into subforms. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
-**Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. ([14](part-2-reading-and-running/14-leaving-early.md))
+**Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. Markers have a header type of their own, so that nothing else can be mistaken for one. ([14](part-2-reading-and-running/14-leaving-early.md), [61](part-6-self-hosting/61-structures.md))
 
 **Multiple values.** A form may return any number of results, and a caller
 that wants one writes nothing special — the extras evaporate. Different from
@@ -788,3 +790,6 @@ simple copying collector here does not.
 
 **Content hash.** A hash computed from what a key contains rather than where it lives, so that two equal keys that are different objects meet in one bucket. Quokka's looks a bounded way into conses and vectors, and gives an object with nothing but its identity a number for its type, so the collector moving it never changes the hash. It is also `sxhash`. ([59](part-6-self-hosting/59-hash-tables-finished.md))
 
+**Layout.** The object that describes a structure's type: its name, its slots, the type it includes, how it prints. Every structure holds its layout in its first slot, so asking an object its type is one read, and a type that includes another is found by following the layouts' chain. ([61](part-6-self-hosting/61-structures.md))
+
+**BOA constructor.** A [defstruct](#defstruct) constructor whose parameters are slot names taken "by order of arguments" rather than as keywords: `(:constructor make-point (x y))` makes `(make-point 1 2)`. A parameter that gives no default takes the slot's own initial value (CLHS 3.4.6). ([61](part-6-self-hosting/61-structures.md))

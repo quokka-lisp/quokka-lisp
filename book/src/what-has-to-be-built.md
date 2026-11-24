@@ -310,6 +310,7 @@ Each chapter answers one question.
 | 58 | [The reader's last gaps](part-6-self-hosting/58-the-readers-last-gaps.md) | How does a readtable fold the case of names, how does the printer follow it, and where does a character's syntax type live? |
 | 59 | [Hash tables, finished](part-6-self-hosting/59-hash-tables-finished.md) | How can a table find a key by its contents when Rust hashes it and Lisp compares it? |
 | 60 | [Labels, limits and a counter](part-6-self-hosting/60-labels-and-limits.md) | How does a reader return an object that contains itself before the object is finished, and how do you measure a limit a program may rely on? |
+| 61 | [Structures of their own](part-6-self-hosting/61-structures.md) | What does a record type need that a vector cannot give it, and how does one type extend another? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

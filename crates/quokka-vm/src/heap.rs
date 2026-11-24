@@ -300,7 +300,8 @@ pub enum ObjectType {
     Vector = 2,
     /// Code, plus the captured environment.
     Closure = 3,
-    /// An instance of a class. Slots are its fields.
+    /// A structure (#73): its layout, the Lisp object describing its type,
+    /// in slot 0, then its slots. Tier 2's class instances will be the same.
     Instance = 4,
     /// Buckets and metadata.
     HashTable = 5,
@@ -319,6 +320,9 @@ pub enum ObjectType {
     /// Reusing a type for two purposes is reusing a *name*, and the collector
     /// does not care but everything above it does.
     Condition = 9,
+    /// What a `block`, `catch` or `tagbody` unwinds to: no slots, equal only
+    /// to itself. An `Instance` until structures needed that type (#73).
+    Marker = 12,
     /// A macro: the same shape as a closure, and deliberately a different
     /// type.
     ///
@@ -437,6 +441,7 @@ impl ObjectType {
             9 => Condition,
             10 => Function,
             11 => ArrayHeader,
+            12 => Marker,
             64 => String,
             65 => Code,
             66 => Bignum,

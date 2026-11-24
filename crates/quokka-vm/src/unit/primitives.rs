@@ -165,7 +165,11 @@ fn the_table_order_is_pinned() {
             "%HASH-INSERT",
             "%HASH-DELETE-ENTRY",
             "SXHASH",
-            "HASH-TABLE-TEST"
+            "HASH-TABLE-TEST",
+            "%MAKE-STRUCTURE",
+            "%STRUCTURE-LAYOUT",
+            "%STRUCTURE-REF",
+            "%SET-STRUCTURE-REF"
         ]
     );
 }

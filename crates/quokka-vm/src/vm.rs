@@ -1336,10 +1336,9 @@ impl Steppable for Vm<'_, '_> {
             }
             // ---- leaving early ----
             Op::Block => {
-                // A fresh, unforgeable identity. `ObjectType::Instance` with
-                // no slots, which is what chapter 20 made conditions stop
-                // sharing — a marker must never be mistaken for one.
-                let marker = self.mc.alloc(ObjectType::Instance, 0);
+                // A fresh, unforgeable identity: a `Marker`, which nothing
+                // else is — not a condition (chapter 20), not a structure.
+                let marker = self.mc.alloc(ObjectType::Marker, 0);
                 let name = match self.constant(decoded.a) {
                     Ok(v) => v,
                     Err(e) => return self.fail(e),
@@ -1363,7 +1362,7 @@ impl Steppable for Vm<'_, '_> {
                 // tag's name, so a `go` to any of them finds this tagbody and
                 // its slot index says which tag. The interpreter's
                 // `eval_tagbody` does the same, and that settled the shape.
-                let marker = self.mc.alloc(ObjectType::Instance, 0);
+                let marker = self.mc.alloc(ObjectType::Marker, 0);
                 let names = match self.constant(decoded.a) {
                     Ok(v) => v,
                     Err(e) => return self.fail(e),

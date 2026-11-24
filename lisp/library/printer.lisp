@@ -309,6 +309,7 @@
         ((hash-table-p object) 'hash-table)
         ((functionp object) 'function)
         ((%package-p object) 'package)
+        ((%structure-layout object) (%layout-name (%structure-layout object)))
         (t 't)))
 
 ;;; `(string x)`, the designator as a string, is in `strings.lisp` (#54).
@@ -353,16 +354,16 @@
            (characterp object)
            (and (symbolp object) (symbol-package object)))))
 
-;;; Does the printer write OBJECT's elements? Lists and vectors only: the
-;;; structures the library makes are vectors underneath but print as `#<...>`.
-;;; Arrays of several dimensions too (#67), whose elements are walked in
+;;; Does the printer write OBJECT's elements as an array's? Vectors, and
+;;; arrays of several dimensions (#67), whose elements are walked in
 ;;; row-major order; a vector's are its active ones, up to its fill pointer.
 (defun %printed-as-vector-p (object)
   (and (arrayp object)
        (not (stringp object))
        (not (bit-vector-p object))
-       *print-array*
-       (not (%unreadable-structure-p object))))
+       *print-array*))
+
+;;; The library's own structures print as `#<...>`: nothing reads them back.
 
 (defun %unreadable-structure-p (object)
   (or (%package-p object) (%string-input-stream-p object) (%string-output-stream-p object)
@@ -387,7 +388,10 @@
                      (%note-shared (aref object i) table)))
                   ((%printed-as-vector-p object)
                    (dotimes (i (array-total-size object))
-                     (%note-shared (row-major-aref object i) table))))))))
+                     (%note-shared (row-major-aref object i) table)))
+                  ((and (%structure-layout object) (not (%unreadable-structure-p object)))
+                   (dotimes (i (%layout-length (%structure-layout object)))
+                     (%note-shared (%structure-ref object i) table))))))))
 
 ;;; Is OBJECT shared in this printout? Its mark: `:many` before its label is
 ;;; given, the label after.
@@ -427,9 +431,8 @@
         ((symbolp object) (%print-symbol object out))
         ((stringp object) (%print-string object out))
         ((consp object) (%print-list object out level))
-        ;; The library's own structures are vectors underneath (`defstruct`
-        ;; makes vectors until there are structure types), but they are not
-        ;; data anyone reads back, and SBCL writes them as `#<...>`.
+        ;; The library's own structures are not data anyone reads back, and
+        ;; SBCL writes them as `#<...>`.
         ((%package-p object)
          (%print-unreadable object
                             (if (package-name object)
@@ -441,6 +444,7 @@
         ((%string-output-stream-p object) (%print-unreadable object "#<STRING-OUTPUT-STREAM>" out))
         ((%console-stream-p object) (%print-unreadable object "#<CONSOLE-STREAM>" out))
         ((%readtable-p object) (%print-unreadable object "#<READTABLE>" out))
+        ((%structure-layout object) (%print-structure object out level))
         ;; Not an array — a function, a condition, a hash table: nothing
         ;; reads them back, so CLHS lets each implementation print them its
         ;; own way, and this is the Rust printer's, so both agree. Or
@@ -459,6 +463,35 @@
          (dotimes (i (length object)) (write-char (if (eql (aref object i) 1) #\1 #\0) out)))
         ((vectorp object) (%print-vector object out level))
         (t (%print-array object out level))))
+
+;;; A structure: by its type's `:print-function` (object, stream, depth) or
+;;; `:print-object` (object, stream), or as `#S(POINT :X 1 :Y 2)`, which
+;;; `#S` reads back. `#S` counts as a level of nesting and each slot as one
+;;; element for `*print-length*`, as in SBCL.
+(defun %print-structure (object out level)
+  (let* ((layout (%structure-layout object))
+         (printer (%structure-printer layout)))
+    (cond ((null printer) (%print-structure-slots object layout out level))
+          ((eq (car printer) :object) (funcall (cdr printer) object out))
+          (t (funcall (cdr printer) object out level)))))
+
+(defun %print-structure-slots (object layout out level)
+  (if (%too-deep-p level)
+      (write-char #\# out)
+      (let ((count 0))
+        (write-string "#S(" out)
+        (%print-object (%layout-name layout) out (+ level 1))
+        (dolist (slot (%layout-slots layout))
+          (write-char #\Space out)
+          (if (%too-long-p count)
+              (progn (write-string "..." out) (return)))
+          ;; A keyword, with its colon even under `princ`, as SBCL writes it.
+          (if (not *print-escape*) (write-char #\: out))
+          (%print-object (intern (symbol-name (first slot)) "KEYWORD") out (+ level 1))
+          (write-char #\Space out)
+          (%print-object (%structure-ref object (second slot)) out (+ level 1))
+          (setq count (+ count 1)))
+        (write-char #\) out))))
 
 ;;; `#2A((1 2) (3 4))`: the rank, then the elements as nested lists, one
 ;;; level of nesting per dimension, each counting against `*print-level*`
@@ -541,12 +574,18 @@
              (write-char #\" out))
       (write-string string out)))
 
+;;; Each run of characters up to the next one that wants a backslash goes
+;;; to the stream in one write. One write per character was most of what
+;;; printing a long string cost, and a structure's accessors made each
+;;; write dearer (#73).
 (defun %print-escaped (string out at end quote)
-  (if (< at end)
-      (let ((char (aref string at)))
-        (if (or (eq char quote) (eq char #\\)) (write-char #\\ out))
-        (write-char char out)
-        (%print-escaped string out (+ at 1) end quote))))
+  (let ((stop (do ((i at (+ i 1)))
+                  ((or (>= i end) (eq (aref string i) quote) (eq (aref string i) #\\)) i))))
+    (%stream-write out string at stop)
+    (if (< stop end)
+        (progn (write-char #\\ out)
+               (write-char (aref string stop) out)
+               (%print-escaped string out (+ stop 1) end quote)))))
 
 ;;; `#\a`, `#\Tab`, and `#\ ` for a space, as SBCL writes it.
 (defun %print-character (char out)

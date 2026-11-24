@@ -184,6 +184,10 @@ pub enum Prim {
     HashDeleteEntry = 129,
     Sxhash = 130,
     HashTableTest = 131,
+    MakeStructure = 132,
+    StructureLayout = 133,
+    StructureRef = 134,
+    SetStructureRef = 135,
 }
 
 impl Prim {
@@ -603,6 +607,21 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     ),
     (Prim::Sxhash, "SXHASH", Arity::Exactly(1)),
     (Prim::HashTableTest, "HASH-TABLE-TEST", Arity::Exactly(1)),
+    // A structure (#73): its layout, then its slots, numbered from 0 here.
+    // `%structure-layout` of anything else is nil, so it is the predicate
+    // too. What a layout says is the library's business (`structures.lisp`).
+    (Prim::MakeStructure, "%MAKE-STRUCTURE", Arity::Exactly(2)),
+    (
+        Prim::StructureLayout,
+        "%STRUCTURE-LAYOUT",
+        Arity::Exactly(1),
+    ),
+    (Prim::StructureRef, "%STRUCTURE-REF", Arity::Exactly(2)),
+    (
+        Prim::SetStructureRef,
+        "%SET-STRUCTURE-REF",
+        Arity::Exactly(3),
+    ),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -932,6 +951,41 @@ pub fn call_slice<'h>(
         }
         Prim::Sxhash => Ok(crate::hash::sxhash(mc, args[0])),
         Prim::HashTableTest => crate::hash::test(mc, args[0]),
+        // Rule 9: n slots is n words, as `%MAKE-VECTOR`.
+        Prim::MakeStructure => match args[1].as_fixnum() {
+            Some(n) if n >= 0 => {
+                let s = mc.alloc(ObjectType::Instance, n as usize + 1);
+                mc.set_slot(s, 0, args[0]);
+                Ok(s)
+            }
+            _ => Err(EvalError::WrongType {
+                name,
+                wanted: "a slot count",
+            }),
+        },
+        Prim::StructureLayout => Ok(if is_structure(mc, args[0]) {
+            mc.slot(args[0], 0)
+        } else {
+            Value::NIL
+        }),
+        Prim::StructureRef | Prim::SetStructureRef => {
+            if !is_structure(mc, args[0]) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a structure",
+                });
+            }
+            let length = mc.header(args[0]).slots - 1;
+            let index = args[1].as_fixnum().unwrap_or(-1);
+            if !(0..length as i64).contains(&index) {
+                return Err(EvalError::IndexOutOfBounds { index, length });
+            }
+            if prim == Prim::StructureRef {
+                return Ok(mc.slot(args[0], index as usize + 1));
+            }
+            mc.set_slot(args[0], index as usize + 1, args[2]);
+            Ok(args[2])
+        }
         Prim::MakeVector => {
             let Some(n) = args[0].as_fixnum() else {
                 return Err(EvalError::WrongType {
@@ -1420,6 +1474,10 @@ pub(crate) fn case_partner(ch: char, up: bool) -> char {
         Some(o) if !up && one(o.to_uppercase()) == Some(ch) => o,
         _ => ch,
     }
+}
+
+fn is_structure<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
+    v.is_object() && mc.header(v).object_type == ObjectType::Instance
 }
 
 fn truth<'h>(b: bool) -> Value<'h> {

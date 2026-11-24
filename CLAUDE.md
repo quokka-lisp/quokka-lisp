@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1186 :REPLACED 940)` (asserted in `differential.rs`; any new library
+`(:FORMS 1220 :REPLACED 974)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -258,9 +258,25 @@ differ in size. `defconstant` accepts an `equal` value (a rebuild recompiles
 quoted lists). The runner explains a failed `#.` by its form's operators.
 Rust 0. ansi-test: **7,851**; needs tier 1 8 (all `defstruct :include`);
 plain failures 311.
-**Next:** step Z, `defstruct` with all of CLHS 8 (#73, decision 1 open:
-a structure as a vector or as a heap object of its own), then the plain
-failures in `docs/ansi-test.md`. Phase 2's scope is
+**Step Z is done** (#73, chapter 61): `defstruct`, all of CLHS 8, in
+`lisp/library/structures.lisp` (after `arrays.lisp`). **A structure is an
+`ObjectType::Instance`** (decision 1): its **layout** in slot 0, then its
+slots, through `%make-structure`, `%structure-layout` (nil for a
+non-structure), `%structure-ref`, `%set-structure-ref`; `block`/`catch`/
+`tagbody` markers are `ObjectType::Marker` now. A layout is a simple vector
+(hand-written accessors `%layout-…`; **`structures.lisp` must not use
+`defstruct`**, or C1 and C2 would differ), under the name's `%layout`
+property, **updated in place on redefinition** (the rebuild redefines
+`%package` while packages exist). Accessors and predicates close over the
+layout (a `let` around the `defun`s) and test `eq` before walking
+`:include`s — the reader and printer call stream accessors per character,
+and the step budget notices. Every option, BOA constructors, `:type
+list/vector`, `:print-function`/`:print-object` (a function of object and
+stream), `#S` printing and reading, `equalp`, `copy-structure`. The
+printer writes a string's runs between escapes in one write. Image format
+5. Rust 69. ansi-test: **7,891**; needs tier 1 0; plain failures 271 (the
+12 left in `structures` are `defstruct-with-tests`, which uses `loop`).
+**Next:** the plain failures in `docs/ansi-test.md`, grouped by message. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -276,7 +292,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 32 lines left of 15,500, for phases 2 to 6** (raised from 15,000 by step T) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500; U 11 — `asinh`/`acosh`/`atanh`; W 6 — the `char-names.lisp` entry, float negation; X 214 — the content hash, `equalp` tables, fallbacks).
+- **The Rust budget: 0 lines left of 15,537, for phases 2 to 6** (raised from 15,000 by step T and from 15,500 by step Z) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500; U 11 — `asinh`/`acosh`/`atanh`; W 6 — the `char-names.lisp` entry, float negation; X 214 — the content hash, `equalp` tables, fallbacks; Z 69 — the structure primitives, `ObjectType::Marker`, the `structures.lisp` entry, with `LIMIT` raised to 15,537).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -329,8 +345,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**427 tests**; **41 differential files agree with SBCL** — 17 interpreted and
-compiled, plus twenty-four tier-1 files, compiled only, and all 41 also pass in a rebuilt world. The Rust core is **15,468** lines of the 15,500 budget (raised from 15,000 by #67).
+**428 tests**; **42 differential files agree with SBCL** — 17 interpreted and
+compiled, plus twenty-five tier-1 files, compiled only, and all 42 also pass in a rebuilt world. The Rust core is **15,537** lines of the 15,537 budget (raised from 15,000 by #67 and from 15,500 by #73).
 
 ## How phase 1 ended
 

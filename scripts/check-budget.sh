@@ -23,7 +23,13 @@ cd "$(dirname "$0")/.."
 # pulled from tier 2 into phase 2, and their representation is Rust's side of
 # rule 1 (`crates/quokka-vm/src/array.rs`, ~345 lines). The budget is a guide,
 # not a ceiling; this is the deliberate raise it allows.
-LIMIT=15500
+#
+# Raised to 15,537 by step Z (#73, Carsten, 24 Nov 2026): a structure became
+# a heap object of its own (`ObjectType::Instance`, four primitives in
+# `primitives.rs`), `block`/`catch` markers moved to `ObjectType::Marker`,
+# and `structures.lisp` joined `boot::LIBRARY`. 69 lines, of which 32 fitted
+# under the old limit.
+LIMIT=15537
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

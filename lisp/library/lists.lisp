@@ -53,8 +53,8 @@
         (t nil)))
 
 ;;; Looser still: characters ignoring case, numbers by `=`, and vectors and
-;;; strings element by element. A structure is a vector in Quokka, so
-;;; structures compare slot by slot, as CL's do. Hash tables are not compared
+;;; strings element by element, and structures slot by slot (`structures.lisp`,
+;;; which loads later). Hash tables are not compared
 ;;; by content yet.
 (defun equalp (a b)
   (cond ((eq a b) t)
@@ -82,6 +82,8 @@
                                ((equalp (row-major-aref a i) (row-major-aref b i)) (walk (+ i 1)))
                                (t nil))))
                 (walk 0))))
+        ;; Two structures of one type, slot by slot (#73).
+        ((%structure-layout a) (%structure-equalp a b))
         (t nil)))
 
 ;;; ------------------------------------------------------------------------

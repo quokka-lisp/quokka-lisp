@@ -39,6 +39,7 @@
     "lisp/library/sequences.lisp" "lisp/library/hash-tables.lisp"
     "lisp/library/strings.lisp"
     "lisp/library/arrays.lisp"
+    "lisp/library/structures.lisp"
     "lisp/library/integers.lisp" "lisp/library/floats.lisp"
     "lisp/library/char-names.lisp" "lisp/library/reader.lisp"
     "lisp/library/printer.lisp" "lisp/library/format.lisp" "lisp/library/eval.lisp"

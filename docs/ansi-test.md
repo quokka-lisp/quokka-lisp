@@ -18,22 +18,18 @@ A test can need several things.
 | packages | 254 | 17 | 0 | 2 | 0 | 67 | 340 |
 | numbers | 542 | 11 | 0 | 4 | 0 | 881 | 1438 |
 | reader | 111 | 4 | 0 | 0 | 0 | 50 | 165 |
-| printer | 223 | 19 | 0 | 4 | 0 | 576 | 822 |
+| printer | 225 | 17 | 0 | 4 | 0 | 576 | 822 |
 | data-and-control-flow | 1095 | 59 | 13 | 0 | 0 | 253 | 1420 |
 | eval-and-compile | 244 | 27 | 5 | 0 | 0 | 42 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 81 | 1 | 0 | 0 | 0 | 85 | 167 |
-| structures | 22 | 50 | 0 | 0 | 8 | 35 | 115 |
-| **all** | **7851** | **311** | **18** | **15** | **8** | **5355** | **13558** |
+| structures | 60 | 12 | 0 | 0 | 0 | 43 | 115 |
+| **all** | **7891** | **271** | **18** | **15** | **0** | **5363** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
 | needs | tests |
 | --- | ---: |
-| `load-error[STRUCT-INCLUDE-02B]` | 3 |
-| `load-error[STRUCT-INCLUDE-01B-D]` | 2 |
-| `load-error[STRUCT-INCLUDE-04B]` | 2 |
-| `load-error[STRUCT-INCLUDE-03B]` | 1 |
 
 ## Deferred features, by how many tests each blocks
 
