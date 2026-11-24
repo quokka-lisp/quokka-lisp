@@ -21,7 +21,7 @@ the first Lisp a symbol's value and function were themselves kept on its
 property list, and Common Lisp separated them into cells and left the list
 for everything else.
 
-Quokka's symbols had the slot from the start (chapter 5) and nothing could
+Quokka's symbols had the slot from the start (chapter 8) and nothing could
 read it. We gave Lisp two primitives, `symbol-plist` and `%set-symbol-plist`,
 and wrote `get`, `remprop` and `get-properties` in Lisp on top of the `getf`
 code chapter 43 already had. The alternative was a Lisp hash table from

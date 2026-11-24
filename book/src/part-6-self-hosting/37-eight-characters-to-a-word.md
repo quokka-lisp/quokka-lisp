@@ -154,7 +154,7 @@ not once per character, so it was the cheaper thing to keep paying.
 ## The layout
 
 A packed string is a new object type, `PackedString`, numbered 68. It sits
-above 64, the line below which the collector traces slots (chapter 5), so it
+above 64, the line below which the collector traces slots (chapter 19), so it
 is never mistaken for references. Its first slot holds the **character count**,
 and the bytes follow, least significant byte first:
 
