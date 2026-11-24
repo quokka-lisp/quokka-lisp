@@ -198,6 +198,8 @@ them. ([21](part-2-reading-and-running/21-records.md), [61](part-6-self-hosting/
 **Evaluator.** The part of a runtime that actually executes a program.
 ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
+**Expander.** The function behind a [macro](#macro): given the macro form and the environment it is expanded in, it returns the form to use instead. Common Lisp defines it as a function of exactly those two arguments, which `macro-function` returns; the macro's lambda list takes the form apart inside it. Quokka's expanders took only the argument forms until step AC, which is why `&whole` was missing. ([64](part-6-self-hosting/64-what-a-macro-is-given.md))
+
 **Explicit-control evaluator.** An evaluator built as a machine with visible
 state — registers and a stack it owns — rather than as a function that calls
 itself. The only kind that can stop halfway and resume. The name and the
@@ -395,9 +397,9 @@ made, so nothing has to be evaluated while arguments are being bound. ([18](part
 
 **Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
-**Macro.** A function from code to code. It is called with its argument
-*forms*, unevaluated, and the form it returns is evaluated in place of the
-call — so it runs at *expansion time*, before anything else happens, and can
+**Macro.** A function from code to code. Its [expander](#expander) is
+called with the macro form, unevaluated, and the form it returns is evaluated
+in place of the call — so it runs at *expansion time*, before anything else happens, and can
 decide whether its arguments are evaluated at all. Macros are how a Lisp
 program extends its own language without changing the [evaluator](#evaluator).
 ([15](part-2-reading-and-running/15-code-that-writes-code.md))
@@ -740,6 +742,8 @@ and does what a Lisp machine's hardware once did.
 browser at close to native speed. Quokka compiles to it, which is why the VM
 must be able to stop and hand control back.
 ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
+
+**Whole form (`&whole`).** In a macro lambda list, `&whole w` binds `w` to the entire macro form, head included: in `(defmacro show (&whole w arg) ...)`, the call `(show x)` binds `w` to `(show x)`. Inside a nested pattern, or in `destructuring-bind`, it binds the list that pattern matches. ([64](part-6-self-hosting/64-what-a-macro-is-given.md))
 
 **Write barrier.** Machinery that notices when an old object is made to point at
 a new one. A [generational](#generational-collector) collector needs it; the

@@ -149,6 +149,7 @@ tier1_cases! {
     defstruct_options => "defstruct-options",
     sequence_gaps => "sequence-gaps",
     condition_types => "condition-types",
+    macro_lambda_lists => "macro-lambda-lists",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly

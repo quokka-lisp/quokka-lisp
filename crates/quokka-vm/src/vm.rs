@@ -701,11 +701,26 @@ impl<'a, 'h> Vm<'a, 'h> {
             let values: Vec<Value<'h>> = if index == primitives::index(primitives::Prim::Values) {
                 args.to_vec()
             } else {
+                // Intercepted before the table's arity check, so it is made
+                // here; and a dotted list is not a list of values (#76).
+                if args.len() != 1 {
+                    return Some(self.fail(EvalError::WrongArgumentCount {
+                        name: "VALUES-LIST",
+                        wanted: 1,
+                        got: args.len(),
+                    }));
+                }
                 let mut out = Vec::new();
-                let mut cursor = args.first().copied().unwrap_or(Value::NIL);
+                let mut cursor = args[0];
                 while cursor.is_cons() {
                     out.push(self.mc.car(cursor));
                     cursor = self.mc.cdr(cursor);
+                }
+                if !cursor.is_nil() {
+                    return Some(self.fail(EvalError::WrongType {
+                        name: "VALUES-LIST",
+                        wanted: "a proper list",
+                    }));
                 }
                 out
             };

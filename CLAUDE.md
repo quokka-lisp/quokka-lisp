@@ -85,9 +85,9 @@ binds one name per level with the compiler form `%dynamic-bind` → the new
 (a macro that `eval`s while expanding), and `macroexpand-1`/`macroexpand`
 taking an environment. `symbol-macrolet` is in the compiler: a
 `(:symbol-macro . alist)` scope in `env` that `%lookup` steps over without
-counting. **Macros get `&environment`**: the compiler strips it
-(`%rewrite-macro`) and binds it to `(%current-environment)`, which is
-`(:environment scopes local-macros)` while `%expand` runs an expander. **The
+counting. **Macros get `&environment`**: since step AC (#76) an expander is
+a function of the form and the environment, as in CL, and `%expand` passes
+`(:environment scopes local-macros)` (nil for the null environment). **The
 compiler expands macros itself and never calls `macroexpand-1`** — keep it
 that way, so the library can redefine `macroexpand-1`. **Step J, sequences
 (#54, chapter 45), is in three sub-steps, a commit each.** **J1 is done**:
@@ -294,8 +294,23 @@ checked; a `nil` in a `destructuring-bind` pattern is the empty pattern.
 `differential.rs`): a rebuild takes ~201M steps and grows with the library;
 a `BudgetExhausted` rebuild that finishes in normal time with more budget is
 not a loop. Rust 0. ansi-test: **7,980**; plain failures 148.
-**Next:** step AC, the lambda-list fixes (Rust), then AD and AE, which need
-Carsten's decisions (#39's list). Phase 2's scope is
+**Step AC is done** (#76, chapter 64): **an expander is a function of the
+form and the environment**, as in CL (Carsten chose this over passing the form
+beside the arguments). `lambda_list::Kind` has `Macro` (expander
+`(form env)`, the lambda list taking `(cdr form)` apart) and `Destructuring`
+(`destructuring-bind`'s function of one list; the third argument of
+`%rewrite-macro-lambda-list`). **Every macro lambda list is generated
+`car`/`cdr` code** (`destructure`), with `&whole` (the form at the top of a
+macro, the matched list elsewhere), `&environment` (bound first), `&key`
+through the prelude's `%destructuring-keys`/`%destructuring-key`, `&aux`, and
+`nil` as the empty pattern; `%expand` takes the form and serves compiler
+macros too; `define-setf-expander` and long `defsetf` expanders are functions
+of the place and the environment. Ordinary lambda lists bind `&optional`,
+`&rest` and `&key` under fresh names so a default sees only what is to its
+left; `(&key)` takes keyword arguments; `values-list` checks its arity and
+tail. Image format 6. Rust 176, `LIMIT` 15,713. ansi-test: **8,018**; plain
+failures 121; escapes 7.
+**Next:** AD and AE, which need Carsten's decisions (#39's list). Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -311,7 +326,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 0 lines left of 15,537, for phases 2 to 6** (raised from 15,000 by step T and from 15,500 by step Z) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500; U 11 — `asinh`/`acosh`/`atanh`; W 6 — the `char-names.lisp` entry, float negation; X 214 — the content hash, `equalp` tables, fallbacks; Z 69 — the structure primitives, `ObjectType::Marker`, the `structures.lisp` entry, with `LIMIT` raised to 15,537).
+- **The Rust budget: 0 lines left of 15,713, for phases 2 to 6** (raised from 15,000 by step T, from 15,500 by step Z and from 15,537 by step AC) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500; U 11 — `asinh`/`acosh`/`atanh`; W 6 — the `char-names.lisp` entry, float negation; X 214 — the content hash, `equalp` tables, fallbacks; Z 69 — the structure primitives, `ObjectType::Marker`, the `structures.lisp` entry, with `LIMIT` raised to 15,537; AC 176 — expanders of the form and the environment, `&whole`/`&environment`/`&key`/`&aux` in generated destructuring, defaults under fresh names, `values-list`'s checks, with `LIMIT` raised to 15,713).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by
@@ -364,8 +379,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**430 tests**; **44 differential files agree with SBCL** — 17 interpreted and
-compiled, plus twenty-seven tier-1 files, compiled only, and all 44 also pass in a rebuilt world. The Rust core is **15,537** lines of the 15,537 budget (raised from 15,000 by #67 and from 15,500 by #73).
+**431 tests**; **45 differential files agree with SBCL** — 17 interpreted and
+compiled, plus twenty-eight tier-1 files, compiled only, and all 45 also pass in a rebuilt world. The Rust core is **15,713** lines of the 15,713 budget (raised from 15,000 by #67, from 15,500 by #73 and from 15,537 by #76).
 
 ## How phase 1 ended
 

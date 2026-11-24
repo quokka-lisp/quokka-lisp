@@ -1317,7 +1317,11 @@ impl<'a, 'h> Machine<'a, 'h> {
             // for, and all it is for.
             let f = frame::make_marked(self.mc, frame::EXPAND, env);
             self.push(f);
-            return self.apply_closure(function, argument_forms);
+            // An expander is a function of the form and the environment
+            // (#76), and the interpreter's environment is the null one.
+            let nil = self.mc.cons(Value::NIL, Value::NIL);
+            let arguments = self.mc.cons(form, nil);
+            return self.apply_closure(function, arguments);
         }
 
         if !argument_forms.is_cons() {

@@ -29,7 +29,14 @@ cd "$(dirname "$0")/.."
 # `primitives.rs`), `block`/`catch` markers moved to `ObjectType::Marker`,
 # and `structures.lisp` joined `boot::LIBRARY`. 69 lines, of which 32 fitted
 # under the old limit.
-LIMIT=15537
+#
+# Raised to 15,713 by step AC (#76, 24 Nov 2026): a macro's expander became
+# a function of the form and the environment, as in CL (Carsten's choice of
+# the faithful option), so a macro lambda list is taken apart in generated
+# code, which needed `&whole`, `&environment`, `&key` and `&aux` there
+# (`lambda_list.rs`); default forms bound under fresh names; `values-list`'s
+# checks (`vm.rs`); image format 6. 176 lines, against an estimate of 80-120.
+LIMIT=15713
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

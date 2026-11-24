@@ -156,35 +156,12 @@
       (cons (list 'eql key (list 'quote (car keys))) (%case-tests key (cdr keys)))))
 
 ;;; `(destructuring-bind lambda-list expression body...)`: take EXPRESSION's
-;;; value apart as a macro takes its arguments apart. The function is made by
-;;; the compiler from the same rewrite `defmacro` uses.
-;;;
-;;; A `nil` among the required elements is the empty pattern `()`, which
-;;; matches only nil, as in SBCL; the rewrite would bind it as a variable.
-;;; Each one becomes a fresh variable, checked to be nil before the body
-;;; runs (#75).
+;;; value apart as a macro takes its form apart. The function is made by the
+;;; compiler from the same rewrite `defmacro` uses, in its destructuring
+;;; kind: a function of the one list, which `&whole` names (#76). A `nil` in
+;;; the pattern is the empty pattern `()`, as in SBCL (#75).
 (defmacro destructuring-bind (lambda-list expression &body body)
-  (let ((checked (%empty-patterns lambda-list)))
-    `(apply (%destructuring-lambda ,(car checked) ,@(%body-declarations body)
-                                   ,@(cdr checked) ,@(%body-forms body))
-            ,expression)))
-
-;;; (pattern . checks): PATTERN with its required `nil`s replaced.
-(defun %empty-patterns (pattern)
-  (let ((checks nil))
-    (labels ((walk (p)
-               (cond ((atom p) p)
-                     ((member (car p) '(&optional &rest &body &key &aux &whole &environment
-                                        &allow-other-keys))
-                      p)
-                     ((null (car p))
-                      (let ((empty (gensym "EMPTY")))
-                        (push `(if ,empty (%destructuring-too-long)) checks)
-                        (cons empty (walk (cdr p)))))
-                     ((consp (car p)) (cons (walk (car p)) (walk (cdr p))))
-                     (t (cons (car p) (walk (cdr p)))))))
-      (let ((walked (walk pattern)))
-        (cons walked checks)))))
+  `(funcall (%destructuring-lambda ,lambda-list ,@body) ,expression))
 
 ;;; A form that does not match its pattern is a `program-error` (CLHS
 ;;; 3.5.1.6), as SBCL signals; the prelude's, written for tier 0, signal a

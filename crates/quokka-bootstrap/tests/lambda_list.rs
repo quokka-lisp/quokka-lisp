@@ -37,12 +37,13 @@ fn a_simple_lambda_list_is_left_alone() {
 }
 
 /// A default becomes a `let*` binding, and the parameter list left behind
-/// is one [`bind`] can match without evaluating anything.
+/// is one [`bind`] can match without evaluating anything. The parameter is
+/// bound there under a fresh name, so the default cannot see it (#76).
 #[test]
 fn a_default_becomes_a_let_star() {
     assert_eq!(
         rewritten("((a &optional (b 10)) b)"),
-        "((A &OPTIONAL B) (LET* ((B (IF (EQ B (QUOTE UNSUPPLIED MARKER)) 10 B))) B))"
+        "((A &OPTIONAL G1) (LET* ((B (IF (EQ G1 (QUOTE UNSUPPLIED MARKER)) 10 G1))) B))"
     );
 }
 
@@ -61,7 +62,7 @@ fn aux_leaves_the_lambda_list() {
 fn key_parameters_carry_their_keyword() {
     assert_eq!(
         rewritten("((&key b) b)"),
-        "((&KEY (:B B)) (LET* ((B (IF (EQ B (QUOTE UNSUPPLIED MARKER)) NIL B))) B))"
+        "((&KEY (:B G1)) (LET* ((B (IF (EQ G1 (QUOTE UNSUPPLIED MARKER)) NIL G1))) B))"
     );
 }
 
@@ -95,14 +96,15 @@ fn only_macros_destructure() {
     });
 }
 
-/// A nested pattern leaves a placeholder in the lambda list and becomes
-/// `car`/`cdr` walking in the body. The gensym names are not pinned —
-/// only the shape is, which is what matters.
+/// A macro's expander is a function of the form and the environment
+/// (#76), so its own lambda list is two placeholders and every pattern
+/// becomes `car`/`cdr` walking over `(cdr form)` in the body. The gensym
+/// names are not pinned, only the shape, which is what matters.
 #[test]
 fn a_pattern_becomes_car_and_cdr() {
     let out = rewritten_macro("(((var name) &body body) var)");
+    assert!(out.starts_with("((G"), "{out}");
     assert!(out.contains("LET*"), "{out}");
-    assert!(out.contains("(CAR "), "{out}");
     assert!(out.contains("(CDR "), "{out}");
     assert!(out.contains("(VAR (IF (CONSP "), "{out}");
     assert!(out.contains("(NAME (IF (CONSP "), "{out}");
@@ -110,25 +112,28 @@ fn a_pattern_becomes_car_and_cdr() {
     // binding nil, and anything left over signals too.
     assert!(out.contains("%DESTRUCTURING-TOO-SHORT"), "{out}");
     assert!(out.contains("%DESTRUCTURING-TOO-LONG"), "{out}");
-    // &body is still a plain parameter, not part of the pattern.
-    assert!(
-        out.contains("&REST BODY") || out.contains("&BODY BODY"),
-        "{out}"
-    );
+    // &body binds what is left, so it is no parameter of the expander.
+    assert!(!out.contains("&REST") && !out.contains("&BODY"), "{out}");
 }
 
-/// `(defmacro m (a . b) ...)` — the tail is `&rest` by another spelling,
-/// and the list must be rebuilt as a proper one or the binder, which
-/// walks conses, never reaches it.
+/// `&whole` is the form itself, the expander's first argument, and
+/// `&environment` its second; both are bound before anything else.
 #[test]
-fn a_dotted_macro_lambda_list_becomes_rest() {
-    assert_eq!(rewritten_macro("((a . b) a)"), "((A &REST B) A)");
+fn whole_and_environment_are_the_two_arguments() {
+    let out = rewritten_macro("((&whole w a &environment e) w)");
+    let first = out.find("(W G").expect("&whole is bound");
+    let second = out.find("(E G").expect("&environment is bound");
+    let pattern = out.find("(A (IF (CONSP").expect("a is bound");
+    assert!(first < second && second < pattern, "{out}");
 }
 
-/// Nothing to rewrite means nothing is rewritten, macro or not.
+/// `(defmacro m (a . b) ...)`: the dotted tail is `&rest` by another
+/// spelling, and binds whatever is left.
 #[test]
-fn a_macro_lambda_list_with_no_patterns_is_left_alone() {
-    assert_eq!(rewritten_macro("((a b) a)"), "((A B) A)");
+fn a_dotted_macro_lambda_list_binds_the_tail() {
+    let out = rewritten_macro("((a . b) a)");
+    assert!(out.contains("(B G"), "{out}");
+    assert!(!out.contains("%DESTRUCTURING-TOO-LONG"), "{out}");
 }
 
 #[test]

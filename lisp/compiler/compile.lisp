@@ -709,7 +709,7 @@
 ;;; what `macroexpand-1` looks for.
 (defun %compile-defmacro (form env)
   (let ((name (second form))
-        (rewritten (%rewrite-macro (third form) (cdr (cddr form)))))
+        (rewritten (%rewrite-macro-lambda-list (third form) (cdr (cddr form)))))
     (%compile-callee '%set-symbol-function env)
     (%compile-value name)
     (%compile-callee '%make-macro env)
@@ -748,7 +748,7 @@
                               macros))))
 
 (defun %local-expander (definition)
-  (let ((rewritten (%rewrite-macro (second definition) (cddr definition))))
+  (let ((rewritten (%rewrite-macro-lambda-list (second definition) (cddr definition))))
     (%make-macro (%assemble-lambda (first rewritten) (second rewritten) (third rewritten) nil))))
 
 ;;; The local macro named HEAD, innermost first, or nil.
@@ -826,7 +826,7 @@
 
 ;;; The environment a macro sees (#53)
 ;;;
-;;; A macro is a function of its argument forms, and some need more: to know
+;;; A macro is a function of its form, and some need more: to know
 ;;; what the code *around* the call means. `(incf x)` must ask whether `x`
 ;;; is a symbol macro here, and only the compiler knows that. Common Lisp
 ;;; hands an expander that asks — with `&environment` in its lambda list —
@@ -839,13 +839,16 @@
 ;;; expansion; nil for both is the null environment, and is written nil.
 (setq %expansion-scopes nil)
 
-;;; Call EXPANDER on ARGUMENTS with SCOPES and MACROS as its environment.
-(defun %expand (expander arguments scopes macros)
+;;; Call EXPANDER on FORM with SCOPES and MACROS as its environment. An
+;;; expander is a function of the form and the environment, a macro's and a
+;;; compiler macro's alike (#76). SCOPES and MACROS stay recorded while it
+;;; runs, as they were when an expander asked for them (#53).
+(defun %expand (expander form scopes macros)
   (let ((outer-scopes %expansion-scopes)
         (outer-macros %local-macros))
     (setq %expansion-scopes scopes)
     (setq %local-macros macros)
-    (let ((expansion (apply expander arguments)))
+    (let ((expansion (funcall expander form (%current-environment))))
       (setq %expansion-scopes outer-scopes)
       (setq %local-macros outer-macros)
       expansion)))
@@ -887,9 +890,7 @@
 (defun %apply-compiler-macro (form env)
   (let ((expander (%compiler-macro-for form env)))
     (if expander
-        (%expand expander
-                 (list form (if (or env %local-macros) (list ':environment env %local-macros) nil))
-                 env %local-macros)
+        (%expand expander form env %local-macros)
         form)))
 
 (defun %environment-symbol-macro (environment name)
@@ -897,29 +898,6 @@
 
 (defun %environment-macro (environment name)
   (if environment (%find-macro name (third environment)) nil))
-
-;;; A macro's lambda list and body, rewritten for the compiler. The Rust
-;;; rewrite has no `&environment` (`lambda_list.rs`), and does not need one:
-;;; it is taken out here, and its variable bound around the body to the
-;;; environment the expander is called in.
-(defun %rewrite-macro (lambda-list body)
-  (let ((variable (%environment-parameter lambda-list)))
-    (if variable
-        (%rewrite-macro-lambda-list
-         (%without-environment-parameter lambda-list)
-         (list (cons 'let (cons (list (list variable (list '%current-environment)))
-                                body))))
-        (%rewrite-macro-lambda-list lambda-list body))))
-
-(defun %environment-parameter (lambda-list)
-  (cond ((not (consp lambda-list)) nil)
-        ((eq (car lambda-list) '&environment) (second lambda-list))
-        (t (%environment-parameter (cdr lambda-list)))))
-
-(defun %without-environment-parameter (lambda-list)
-  (cond ((not (consp lambda-list)) lambda-list)
-        ((eq (car lambda-list) '&environment) (cddr lambda-list))
-        (t (cons (car lambda-list) (%without-environment-parameter (cdr lambda-list))))))
 
 ;;; Whether NAME is a local function in ENVIRONMENT, which then shadows a
 ;;; global macro of that name.
@@ -933,7 +911,7 @@
 ;;; is compiled directly, because rewriting it a second time as an ordinary
 ;;; `lambda` would lose the `&optional` defaults.
 (defun %compile-destructuring-lambda (form env)
-  (let ((rewritten (%rewrite-macro-lambda-list (second form) (cddr form))))
+  (let ((rewritten (%rewrite-macro-lambda-list (second form) (cddr form) t)))
     (%compile-rewritten-lambda (first rewritten) (second rewritten) (third rewritten) env)))
 
 ;;; `(%dynamic-bind symbol value body...)` (#53): bind the special variable
@@ -1301,7 +1279,7 @@
           ;; only when run — `handler-case` hid that way for a week.
           ;; A local macro shadows a global one, so it is asked first.
           ((and (symbolp head) (%local-macro head))
-           (%compile (%expand (%local-macro head) (cdr form) env %local-macros) env tail))
+           (%compile (%expand (%local-macro head) form env %local-macros) env tail))
           ((%special-operator-p head)
            (error (%string-append "the compiler cannot compile the special operator "
                                   (symbol-name head))))
@@ -1317,7 +1295,7 @@
           ;; Otherwise a call — unless a compiler macro rewrites it (#65).
           (t (let ((expander (if (symbolp head) (%macro-function head) nil)))
                (if expander
-                   (%compile (%expand expander (cdr form) env %local-macros) env tail)
+                   (%compile (%expand expander form env %local-macros) env tail)
                    (let ((rewritten (%apply-compiler-macro form env)))
                      (if (eq rewritten form)
                          (%compile-call form env tail)

@@ -78,27 +78,26 @@
 
 ;;; `(macro-function symbol [environment])` — SYMBOL's expander, as CL calls
 ;;; one: a function of the form and the environment. A local `macrolet`
-;;; macro in ENVIRONMENT hides a global one of the same name (#53). Quokka's
-;;; own macro objects are called with the form's arguments spread out, so
-;;; what is handed back is a function that does that.
+;;; macro in ENVIRONMENT hides a global one of the same name (#53). A macro
+;;; object is called the same way since #76, but it is not itself a function
+;;; (`functionp` says no), and it must run with ENV recorded where `setf`
+;;; expanders inside it look (`%expand`), so it is handed back wrapped.
 (defun macro-function (symbol &optional environment)
   (let ((expander (or (%environment-macro environment symbol) (%macro-function symbol))))
     (if expander
         (lambda (form env)
-          (%expand expander (cdr form)
+          (%expand expander form
                    (if env (second env) nil)
                    (if env (third env) nil)))
         nil)))
 
 ;;; `(setf (macro-function symbol) function)` — FUNCTION, a function of the
-;;; form and the environment as CL defines one, becomes SYMBOL's macro. It is
-;;; wrapped the other way: a macro object that gets the arguments, puts the
-;;; form back together and asks for the environment it is expanding in.
+;;; form and the environment as CL defines one, becomes SYMBOL's macro: a
+;;; macro object that calls it, since #76 with the same two arguments.
 (defun %set-macro-function (symbol function)
   (%set-symbol-function
    symbol
-   (%make-macro (lambda (&rest arguments)
-                  (funcall function (cons symbol arguments) (%current-environment)))))
+   (%make-macro (lambda (form environment) (funcall function form environment))))
   function)
 
 (defsetf macro-function (symbol &optional environment) (function)

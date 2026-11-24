@@ -85,9 +85,10 @@
          (values vars vals (list store)
                  (%setf-known-place (cons (car place) args) store)
                  (cons (car place) args)))))
-    ;; A general expander, from `define-setf-expander` or long `defsetf`.
+    ;; A general expander, from `define-setf-expander` or long `defsetf`: a
+    ;; function of the place and the environment, as a macro's is (#76).
     ((gethash (car place) %setf-expanders)
-     (apply (gethash (car place) %setf-expanders) (cdr place)))
+     (funcall (gethash (car place) %setf-expanders) place environment))
     ;; A macro form is a place if what it expands to is (CLHS 5.1.2.7).
     (t (multiple-value-bind (expansion expanded) (macroexpand-1 place environment)
          (if expanded
@@ -171,15 +172,16 @@
       (let ((lambda-list (car rest))
             (stores (car (cdr rest)))
             (body (cdr (cdr rest)))
-            (arguments (gensym "ARGUMENTS")))
+            (place (gensym "PLACE"))
+            (env (gensym "ENV")))
         (multiple-value-bind (plain environment) (%without-environment lambda-list)
           `(%define-setf-expander
             ',name
-            (lambda (&rest ,arguments)
+            (lambda (,place ,env)
               (%long-defsetf-expansion
-               ',name ,arguments ,(length stores)
+               ',name (cdr ,place) ,(length stores)
                (lambda (,@stores ,@plain)
-                 (let ((,environment (%current-environment)))
+                 (let ((,environment ,env))
                    ,environment
                    (block ,name ,@body))))))))))
 
@@ -197,8 +199,7 @@
 ;;; values itself. Its lambda list is a macro's, destructuring and
 ;;; `&environment` included, so the expander is made the way `defmacro` makes
 ;;; one, under a name nobody can write (a fresh uninterned symbol), and taken
-;;; back out as a function. It is called while a `setf` is being expanded,
-;;; so `&environment` is that `setf`'s.
+;;; back out as a function of the place and the environment (#76).
 (defmacro define-setf-expander (name lambda-list &body body)
   (let ((hidden (gensym "SETF-EXPANDER")))
     `(progn

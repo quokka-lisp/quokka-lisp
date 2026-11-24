@@ -262,7 +262,11 @@ would never reach a dotted tail.
 true value among the arguments switches the check off for that call, as the
 standard says. And `&environment` arrived with `symbol-macrolet` in phase 2:
 the compiler strips it from a macro's lambda list and binds it to
-`(%current-environment)`. `&whole` is still absent.*
+`(%current-environment)`. The last, `&whole`, came with step AC
+(chapter 64), when an expander became a function of the whole form and the
+environment, as in Common Lisp. Since then every macro lambda list is taken
+apart by the generated code this section describes, `&key` and `&aux` in
+nested patterns included, and the dotted list no longer needs rebuilding.*
 
 ## What this unlocks
 

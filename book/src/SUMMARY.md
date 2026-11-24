@@ -84,6 +84,7 @@
 - [Structures of their own](part-6-self-hosting/61-structures.md)
 - [What the sequence functions skipped](part-6-self-hosting/62-sequence-gaps.md)
 - [The right error](part-6-self-hosting/63-the-right-error.md)
+- [What a macro is given](part-6-self-hosting/64-what-a-macro-is-given.md)
 
 ---
 

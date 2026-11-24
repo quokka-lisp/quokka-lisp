@@ -313,6 +313,7 @@ Each chapter answers one question.
 | 61 | [Structures of their own](part-6-self-hosting/61-structures.md) | What does a record type need that a vector cannot give it, and how does one type extend another? |
 | 62 | [What the sequence functions skipped](part-6-self-hosting/62-sequence-gaps.md) | How do you turn a list of failing tests into causes, and what does a standard ask for that a simpler implementation skips? |
 | 63 | [The right error](part-6-self-hosting/63-the-right-error.md) | Why does the type of an error matter as much as the error, and how do you tell a loop from a budget that is too small? |
+| 64 | [What a macro is given](part-6-self-hosting/64-what-a-macro-is-given.md) | What should a macro's expander receive, and what does a default form see when a parameter shadows a variable? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

@@ -69,13 +69,15 @@
 //! (chapter 15), for the same reason: a value the user cannot forge, obtained
 //! by making it unwriteable rather than by hiding it.
 //!
-//! # What is not here
+//! # Macros
 //!
-//! Destructuring macro lambda lists — `(defmacro m ((a b) &body c) ...)` —
-//! are not implemented. They apply only to `defmacro`, and they need this
-//! rewrite to recurse into nested lists.
-//!
-//! `&environment` and `&whole` are also absent.
+//! A macro's expander is a function of two arguments, the macro form and the
+//! environment, as CLHS 3.1.2.1.2.2 defines it (#76). Its lambda list is
+//! therefore not bound by [`bind`] at all: the expander's own parameters are
+//! two placeholders, and everything the programmer wrote — patterns, `&key`,
+//! `&whole`, `&environment` — is taken apart by generated `car`/`cdr` code
+//! in the `let*` (the private `destructure`). `destructuring-bind` uses the same
+//! code over the one list it is given.
 
 use crate::error::EvalError;
 use crate::heap::Mutation;
@@ -96,8 +98,11 @@ pub const UNSUPPLIED: &str = "UNSUPPLIED MARKER";
 pub enum Kind {
     /// `lambda`, `defun`, `flet`, `labels`.
     Ordinary,
-    /// `defmacro`, which may destructure and may be dotted.
+    /// `defmacro`, `macrolet`: an expander, a function of the macro form and
+    /// the environment (#76), whose lambda list takes apart `(cdr form)`.
     Macro,
+    /// `destructuring-bind`: a function of the one list it takes apart.
+    Destructuring,
 }
 
 /// Which part of the lambda list we are reading.
@@ -142,18 +147,17 @@ pub fn rewrite<'h>(
     body: Value<'h>,
     kind: Kind,
 ) -> Result<(Value<'h>, Value<'h>), EvalError> {
+    if kind != Kind::Ordinary {
+        return rewrite_destructuring(mc, params, body, kind);
+    }
     let mut section = Section::Required;
     let mut required: Vec<Value<'h>> = Vec::new();
-    // Nested patterns, as (placeholder, pattern) pairs. The placeholder goes
-    // into the lambda list and the pattern is taken apart in the `let*`.
-    let mut patterns: Vec<(Value<'h>, Value<'h>)> = Vec::new();
     let mut optional: Vec<Entry<'h>> = Vec::new();
     let mut keys: Vec<Entry<'h>> = Vec::new();
     let mut aux: Vec<Entry<'h>> = Vec::new();
     let mut rest: Option<Value<'h>> = None;
     let mut allow_other_keys = false;
     let mut saw_key = false;
-    let mut dotted = false;
 
     let mut cursor = params;
     while cursor.is_cons() {
@@ -186,17 +190,10 @@ pub fn rewrite<'h>(
 
         match section {
             Section::Required => {
-                if mc.is_symbol(item) {
-                    required.push(item);
-                } else if kind == Kind::Macro && item.is_cons() {
-                    // A nested lambda list. The function gets a name it can
-                    // bind, and the pattern is taken apart in the `let*`.
-                    let placeholder = mc.gensym();
-                    required.push(placeholder);
-                    patterns.push((placeholder, item));
-                } else {
+                if !mc.is_symbol(item) {
                     return Err(bad("wants a symbol for a required parameter"));
                 }
+                required.push(item);
             }
             Section::Rest => {
                 if !mc.is_symbol(item) {
@@ -213,23 +210,12 @@ pub fn rewrite<'h>(
         }
     }
     if !cursor.is_nil() {
-        // `(defmacro m (a . b) ...)` — a dotted macro lambda list, where the
-        // tail is `&rest` by another spelling. CLHS 3.4.4 allows it; an
-        // ordinary lambda list may not be dotted.
-        if kind == Kind::Macro && mc.is_symbol(cursor) && rest.is_none() {
-            rest = Some(cursor);
-            // The list has to be rebuilt as a proper one even if nothing else
-            // needs rewriting, because the binder walks conses and would
-            // never reach a dotted tail.
-            dotted = true;
-        } else {
-            return Err(bad("a lambda list must be a proper list"));
-        }
+        return Err(bad("a lambda list must be a proper list"));
     }
 
     // The common case: nothing that needs evaluating, so nothing is rewritten
     // and the closure holds exactly what was written.
-    if optional.is_empty() && keys.is_empty() && aux.is_empty() && patterns.is_empty() && !dotted {
+    if optional.is_empty() && keys.is_empty() && aux.is_empty() {
         return Ok((params, body));
     }
 
@@ -237,28 +223,31 @@ pub fn rewrite<'h>(
     let quoted_marker = quote(mc, marker);
 
     // ---- the simple lambda list -----------------------------------------
+    //
+    // Every `&optional`, `&rest` and `&key` parameter is bound here under a
+    // fresh name, and under its own only in the `let*`, in order, so that a
+    // default form sees exactly the parameters to its left (CLHS 3.4.1, #76).
+    // Bound under their own names, `(&optional (x (1+ x)))` saw the
+    // parameter `x` holding the marker, and not the `x` outside.
+    let mut fresh = Vec::new();
+    for _ in optional.iter().chain(keys.iter()) {
+        fresh.push(mc.gensym());
+    }
+    let rest_fresh = rest.map(|_| mc.gensym());
     let mut simple: Vec<Value<'h>> = required.clone();
     if !optional.is_empty() {
         simple.push(mc.intern("&OPTIONAL"));
-        for e in &optional {
-            simple.push(e.name);
-        }
+        simple.extend_from_slice(&fresh[..optional.len()]);
     }
-    if let Some(r) = rest {
+    if let Some(r) = rest_fresh {
         simple.push(mc.intern("&REST"));
         simple.push(r);
     }
     if saw_key {
         simple.push(mc.intern("&KEY"));
-        for e in &keys {
-            let keyword = match e.keyword {
-                Some(k) => k,
-                None => {
-                    let name = mc.symbol_name(e.name);
-                    mc.intern_keyword(&name)
-                }
-            };
-            let pair = list2(mc, keyword, e.name);
+        for (e, g) in keys.iter().zip(&fresh[optional.len()..]) {
+            let keyword = keyword_of(mc, e);
+            let pair = list2(mc, keyword, *g);
             simple.push(pair);
         }
         if allow_other_keys {
@@ -275,31 +264,39 @@ pub fn rewrite<'h>(
     let if_ = mc.intern("IF");
     let mut bindings: Vec<Value<'h>> = Vec::new();
 
-    // Patterns first: a required parameter is bound before any default form
-    // runs, so a default may refer to a name a pattern introduced.
-    for (placeholder, pattern) in &patterns {
-        destructure(mc, *pattern, *placeholder, &mut bindings)?;
-    }
-    for e in optional.iter().chain(keys.iter()) {
+    for (i, (e, g)) in optional.iter().chain(keys.iter()).zip(&fresh).enumerate() {
+        // `&rest` sits between the optional and the keyword parameters.
+        if i == optional.len() {
+            if let (Some(r), Some(g)) = (rest, rest_fresh) {
+                let b = list2(mc, r, g);
+                bindings.push(b);
+            }
+        }
         let default = e.default.unwrap_or(Value::NIL);
-        let test = list3(mc, eq, e.name, quoted_marker);
+        let test = list3(mc, eq, *g, quoted_marker);
         match e.supplied {
-            // (given (if (eq v '<marker>) nil t))
-            // (v     (if given v DEFAULT))
+            // (given (if (eq g '<marker>) nil t))
+            // (v     (if given g DEFAULT))
             Some(given) => {
                 let is_given = list_of(mc, &[if_, test, Value::NIL, Value::T]);
                 let b = list2(mc, given, is_given);
                 bindings.push(b);
-                let pick = list_of(mc, &[if_, given, e.name, default]);
+                let pick = list_of(mc, &[if_, given, *g, default]);
                 let b = list2(mc, e.name, pick);
                 bindings.push(b);
             }
-            // (v (if (eq v '<marker>) DEFAULT v))
+            // (v (if (eq g '<marker>) DEFAULT g))
             None => {
-                let pick = list_of(mc, &[if_, test, default, e.name]);
+                let pick = list_of(mc, &[if_, test, default, *g]);
                 let b = list2(mc, e.name, pick);
                 bindings.push(b);
             }
+        }
+    }
+    if keys.is_empty() {
+        if let (Some(r), Some(g)) = (rest, rest_fresh) {
+            let b = list2(mc, r, g);
+            bindings.push(b);
         }
     }
     // &aux is not a parameter at all — it is a `let*` that someone wrote
@@ -310,20 +307,78 @@ pub fn rewrite<'h>(
         bindings.push(b);
     }
 
-    // A dotted lambda list and nothing else needs a new parameter list but no
-    // bindings at all, and `(let* () ...)` around every such macro would be
-    // noise in every expansion anyone ever printed.
-    if bindings.is_empty() {
-        return Ok((simple, body));
-    }
+    Ok((simple, let_star(mc, &bindings, body)))
+}
 
-    let bindings = list_of(mc, &bindings);
+/// `((let* BINDINGS . BODY))`, a body of one form.
+fn let_star<'h>(mc: &mut Mutation<'h>, bindings: &[Value<'h>], body: Value<'h>) -> Value<'h> {
+    let bindings = list_of(mc, bindings);
     let let_star = mc.intern("LET*");
     let form = mc.cons(bindings, body);
     let form = mc.cons(let_star, form);
-    let new_body = mc.cons(form, Value::NIL);
+    mc.cons(form, Value::NIL)
+}
 
-    Ok((simple, new_body))
+/// A macro's lambda list, or `destructuring-bind`'s, rewritten.
+///
+/// The function's own parameters are fixed, and everything the programmer
+/// wrote is taken apart in the `let*` by [`destructure`]. An expander is a
+/// function of the form and the environment, as CLHS 3.1.2.1.2.2 defines it
+/// (#76): `&whole` is the form, `&environment` the environment, and the rest
+/// of the lambda list matches the arguments, `(cdr form)`. Both are bound
+/// first, so every default form can see them. `destructuring-bind`'s
+/// function takes the list it destructures, and `&whole` is that list.
+fn rewrite_destructuring<'h>(
+    mc: &mut Mutation<'h>,
+    params: Value<'h>,
+    body: Value<'h>,
+    kind: Kind,
+) -> Result<(Value<'h>, Value<'h>), EvalError> {
+    let whole = mc.gensym();
+    let mut bindings = Vec::new();
+    if kind == Kind::Destructuring {
+        destructure(mc, params, whole, &mut bindings)?;
+        let simple = mc.cons(whole, Value::NIL);
+        return Ok((simple, let_star(mc, &bindings, body)));
+    }
+    let environment = mc.gensym();
+    // `&environment` may stand anywhere at the top level; take it out.
+    let mut items = Vec::new();
+    let mut variable = None;
+    let mut cursor = params;
+    while cursor.is_cons() {
+        let item = mc.car(cursor);
+        cursor = mc.cdr(cursor);
+        if mc.symbol_is(item, "&ENVIRONMENT") && cursor.is_cons() {
+            variable = Some(mc.car(cursor));
+            cursor = mc.cdr(cursor);
+        } else {
+            items.push(item);
+        }
+    }
+    let mut pattern = cursor;
+    for item in items.iter().rev() {
+        pattern = mc.cons(*item, pattern);
+    }
+    // `&whole` may stand only first, and here it is the form, not `(cdr form)`.
+    if pattern.is_cons() && mc.symbol_is(mc.car(pattern), "&WHOLE") {
+        let after = mc.cdr(pattern);
+        if !after.is_cons() {
+            return Err(bad("&whole wants a name after it"));
+        }
+        let target = mc.car(after);
+        bind_here(mc, target, whole, &mut bindings)?;
+        pattern = mc.cdr(after);
+    }
+    if let Some(v) = variable {
+        let b = list2(mc, v, environment);
+        bindings.push(b);
+    }
+    let cdr = mc.intern("CDR");
+    let arguments = list2(mc, cdr, whole);
+    destructure(mc, pattern, arguments, &mut bindings)?;
+    let simple = list2(mc, whole, environment);
+    Ok((simple, let_star(mc, &bindings, body)))
 }
 
 /// Take a nested pattern apart, appending `let*` bindings that bind every
@@ -356,6 +411,10 @@ pub fn rewrite<'h>(
 /// left. Both were deliberately missing until there was a condition system
 /// to signal into — emitting a check with nothing to signal would have meant
 /// inventing an error mechanism to throw away.
+///
+/// `&whole` binds the list the pattern matches, `&key` searches what is left
+/// as a property list ([`destructure_keys`]), and `&aux` binds after
+/// everything else (#76).
 fn destructure<'h>(
     mc: &mut Mutation<'h>,
     pattern: Value<'h>,
@@ -374,124 +433,212 @@ fn destructure<'h>(
     let b = list2(mc, cursor, source);
     bindings.push(b);
 
-    let mut optional = false;
     let mut item = pattern;
+    // `&whole`, first or not at all: the whole list this pattern matches.
+    if item.is_cons() && mc.symbol_is(mc.car(item), "&WHOLE") {
+        let after = mc.cdr(item);
+        if !after.is_cons() {
+            return Err(bad("&whole wants a name after it"));
+        }
+        let target = mc.car(after);
+        bind_here(mc, target, cursor, bindings)?;
+        item = mc.cdr(after);
+    }
+
+    let mut section = Section::Required;
+    // Whether `&rest`, `&key` or a dotted tail takes what is left, so that
+    // nothing is left over to complain about.
+    let mut tail_taken = false;
+    let mut keys: Vec<Entry<'h>> = Vec::new();
+    let mut aux: Vec<Entry<'h>> = Vec::new();
+    let mut allow_other_keys = false;
+    let mut saw_key = false;
     while item.is_cons() {
         let entry = mc.car(item);
         item = mc.cdr(item);
 
-        if mc.is_symbol(entry) {
+        if mc.is_symbol(entry) && mc.symbol_name(entry).starts_with('&') {
             if mc.symbol_is(entry, "&OPTIONAL") {
-                optional = true;
-                continue;
-            }
-            if mc.symbol_is(entry, "&REST") || mc.symbol_is(entry, "&BODY") {
+                section = Section::Optional;
+            } else if mc.symbol_is(entry, "&REST") || mc.symbol_is(entry, "&BODY") {
                 if !item.is_cons() {
                     return Err(bad("&rest wants a name after it"));
                 }
                 let name = mc.car(item);
                 item = mc.cdr(item);
                 bind_here(mc, name, cursor, bindings)?;
-                // `&rest` swallows whatever is left, so nothing is too long.
-                return finish(mc, item, cursor, bindings, false);
+                tail_taken = true;
+                section = Section::Rest;
+            } else if mc.symbol_is(entry, "&KEY") {
+                tail_taken = true;
+                saw_key = true;
+                section = Section::Key;
+            } else if mc.symbol_is(entry, "&ALLOW-OTHER-KEYS") {
+                allow_other_keys = true;
+            } else if mc.symbol_is(entry, "&AUX") {
+                section = Section::Aux;
+            } else {
+                return Err(bad("a lambda-list keyword this pattern cannot have here"));
             }
-            if mc.symbol_is(entry, "&KEY") || mc.symbol_is(entry, "&AUX") {
-                // Keyword and aux parameters inside a *nested* pattern would
-                // need keyword scanning in generated Lisp. Refused rather
-                // than half-done; the top level of a macro lambda list
-                // supports both.
-                return Err(bad(
-                    "&key and &aux are not supported inside a nested pattern",
-                ));
-            }
-        }
-
-        if optional {
-            let e = parse_entry(mc, entry, false)?;
-            let default = e.default.unwrap_or(Value::NIL);
-            let empty = list2(mc, null, cursor);
-            if let Some(given) = e.supplied {
-                let is_given = list_of(mc, &[if_, empty, Value::NIL, Value::T]);
-                let b = list2(mc, given, is_given);
-                bindings.push(b);
-            }
-            let take = list2(mc, car, cursor);
-            let pick = list_of(mc, &[if_, empty, default, take]);
-            let b = list2(mc, e.name, pick);
-            bindings.push(b);
-            let step = list2(mc, cdr, cursor);
-            let advance = list_of(mc, &[if_, empty, Value::NIL, step]);
-            let b = list2(mc, cursor, advance);
-            bindings.push(b);
             continue;
         }
 
-        // A required position: take the head, then move on. The `consp`
-        // test is the arity check — a pattern of two against a call of one
-        // signals rather than binding nil.
-        let have = list2(mc, consp, cursor);
-        let short = mc.cons(too_short, Value::NIL);
-        let take = list2(mc, car, cursor);
-        let take = list_of(mc, &[if_, have, take, short]);
-        bind_here(mc, entry, take, bindings)?;
-        let step = list2(mc, cdr, cursor);
-        let b = list2(mc, cursor, step);
-        bindings.push(b);
+        match section {
+            // A required position: take the head, then move on. The `consp`
+            // test is the arity check — a pattern of two against a call of
+            // one signals rather than binding nil.
+            Section::Required => {
+                let have = list2(mc, consp, cursor);
+                let short = mc.cons(too_short, Value::NIL);
+                let take = list2(mc, car, cursor);
+                let take = list_of(mc, &[if_, have, take, short]);
+                bind_here(mc, entry, take, bindings)?;
+                let step = list2(mc, cdr, cursor);
+                let b = list2(mc, cursor, step);
+                bindings.push(b);
+            }
+            Section::Optional => {
+                let e = parse_entry(mc, entry, false)?;
+                let default = e.default.unwrap_or(Value::NIL);
+                let empty = list2(mc, null, cursor);
+                if let Some(given) = e.supplied {
+                    let is_given = list_of(mc, &[if_, empty, Value::NIL, Value::T]);
+                    let b = list2(mc, given, is_given);
+                    bindings.push(b);
+                }
+                let take = list2(mc, car, cursor);
+                let pick = list_of(mc, &[if_, empty, default, take]);
+                bind_here(mc, e.name, pick, bindings)?;
+                let step = list2(mc, cdr, cursor);
+                let advance = list_of(mc, &[if_, empty, Value::NIL, step]);
+                let b = list2(mc, cursor, advance);
+                bindings.push(b);
+            }
+            Section::Rest => return Err(bad("&rest takes one name")),
+            Section::Key => keys.push(parse_entry(mc, entry, true)?),
+            Section::Aux => aux.push(parse_entry(mc, entry, false)?),
+        }
     }
 
-    // Anything still in the cursor is an argument the pattern did not ask
-    // for, unless an `&optional` or `&rest` already took the tail.
-    finish(mc, item, cursor, bindings, !optional)
+    // A dotted tail — `(a . rest)` — binds the rest of the list.
+    if !item.is_nil() {
+        if !mc.is_symbol(item) || tail_taken {
+            return Err(bad("a pattern tail must be a symbol"));
+        }
+        let b = list2(mc, item, cursor);
+        bindings.push(b);
+        tail_taken = true;
+    }
+    if saw_key {
+        destructure_keys(mc, &keys, cursor, allow_other_keys, bindings);
+    }
+    // Anything still in the cursor is an argument the pattern did not ask for.
+    if !tail_taken {
+        let too_long = mc.intern("%DESTRUCTURING-TOO-LONG");
+        let empty = list2(mc, null, cursor);
+        let complain = mc.cons(too_long, Value::NIL);
+        let check = list_of(mc, &[if_, empty, Value::NIL, complain]);
+        let ignored = mc.gensym();
+        let b = list2(mc, ignored, check);
+        bindings.push(b);
+    }
+    for e in &aux {
+        let default = e.default.unwrap_or(Value::NIL);
+        let b = list2(mc, e.name, default);
+        bindings.push(b);
+    }
+    Ok(())
+}
+
+/// `&key` in a pattern: the rest of the list is a property list, searched in
+/// generated code by two prelude functions, since there is no argument
+/// binder here to do it. `%destructuring-keys` checks the list once (an even
+/// length, no keyword the pattern does not know unless other keys are
+/// allowed); each parameter is then `(v (%destructuring-key c :k marker))`,
+/// the leftmost value or the marker, filled in from its default as an
+/// `&optional` one is.
+fn destructure_keys<'h>(
+    mc: &mut Mutation<'h>,
+    keys: &[Entry<'h>],
+    cursor: Value<'h>,
+    allow_other_keys: bool,
+    bindings: &mut Vec<Value<'h>>,
+) {
+    let quote_ = mc.intern("QUOTE");
+    let eq = mc.intern("EQ");
+    let if_ = mc.intern("IF");
+    let marker = mc.intern(UNSUPPLIED);
+    let marker = list2(mc, quote_, marker);
+    let mut keywords = Vec::new();
+    for e in keys {
+        let keyword = keyword_of(mc, e);
+        keywords.push(keyword);
+    }
+    let keywords = list_of(mc, &keywords);
+    let keywords = list2(mc, quote_, keywords);
+    let check = mc.intern("%DESTRUCTURING-KEYS");
+    let allow = if allow_other_keys {
+        Value::T
+    } else {
+        Value::NIL
+    };
+    let check = list_of(mc, &[check, cursor, keywords, allow]);
+    let ignored = mc.gensym();
+    let b = list2(mc, ignored, check);
+    bindings.push(b);
+    let find = mc.intern("%DESTRUCTURING-KEY");
+    for e in keys {
+        let keyword = keyword_of(mc, e);
+        let value = mc.gensym();
+        let lookup = list_of(mc, &[find, cursor, keyword, marker]);
+        let b = list2(mc, value, lookup);
+        bindings.push(b);
+        let missing = list3(mc, eq, value, marker);
+        if let Some(given) = e.supplied {
+            let is_given = list_of(mc, &[if_, missing, Value::NIL, Value::T]);
+            let b = list2(mc, given, is_given);
+            bindings.push(b);
+        }
+        let default = e.default.unwrap_or(Value::NIL);
+        let pick = list_of(mc, &[if_, missing, default, value]);
+        let b = list2(mc, e.name, pick);
+        bindings.push(b);
+    }
+}
+
+/// The keyword that selects a `&key` parameter: the one written, or its
+/// name's.
+fn keyword_of<'h>(mc: &mut Mutation<'h>, e: &Entry<'h>) -> Value<'h> {
+    match e.keyword {
+        Some(k) => k,
+        None => {
+            let name = mc.symbol_name(e.name);
+            mc.intern_keyword(&name)
+        }
+    }
 }
 
 /// Bind one pattern element — a name, or a nested pattern — to an expression.
+///
+/// `nil` is the empty pattern `()`, not a variable (#75): it matches only an
+/// empty list, so it is taken apart like any pattern, with nothing to bind.
 fn bind_here<'h>(
     mc: &mut Mutation<'h>,
     target: Value<'h>,
     source: Value<'h>,
     bindings: &mut Vec<Value<'h>>,
 ) -> Result<(), EvalError> {
+    if target.is_cons() || target.is_nil() {
+        return destructure(mc, target, source, bindings);
+    }
     if mc.is_symbol(target) {
         let b = list2(mc, target, source);
         bindings.push(b);
         return Ok(());
     }
-    if target.is_cons() {
-        return destructure(mc, target, source, bindings);
-    }
     Err(bad(
         "a pattern element must be a symbol or a nested pattern",
     ))
-}
-
-/// A dotted pattern tail — `(a . rest)` — binds the rest of the list.
-fn finish<'h>(
-    mc: &mut Mutation<'h>,
-    tail: Value<'h>,
-    cursor: Value<'h>,
-    bindings: &mut Vec<Value<'h>>,
-    check_exhausted: bool,
-) -> Result<(), EvalError> {
-    if tail.is_nil() {
-        if check_exhausted {
-            let null = mc.intern("NULL");
-            let if_ = mc.intern("IF");
-            let too_long = mc.intern("%DESTRUCTURING-TOO-LONG");
-            let empty = list2(mc, null, cursor);
-            let complain = mc.cons(too_long, Value::NIL);
-            let check = list_of(mc, &[if_, empty, Value::NIL, complain]);
-            let ignored = mc.gensym();
-            let b = list2(mc, ignored, check);
-            bindings.push(b);
-        }
-        return Ok(());
-    }
-    if mc.is_symbol(tail) {
-        let b = list2(mc, tail, cursor);
-        bindings.push(b);
-        return Ok(());
-    }
-    Err(bad("a pattern tail must be a symbol"))
 }
 
 /// `name`, `(name default)`, `(name default supplied-p)`, or for `&key` also
@@ -670,6 +817,8 @@ pub fn bind<'h>(
                            // an error once one has been bound. `&key` still scans the same tail,
                            // which is what CLHS says the two do together.
     let mut has_rest = false;
+    // `(&key)` names no keys and still takes keyword arguments (#76).
+    let mut saw_key = false;
     let mut keys: Vec<(Value<'h>, Value<'h>)> = Vec::new();
     let mut allow_other_keys = false;
     let marker = mc.cached_symbol(
@@ -702,6 +851,7 @@ pub fn bind<'h>(
             }
             if mc.symbol_is(name, "&KEY") {
                 section = 3;
+                saw_key = true;
                 continue;
             }
             if mc.symbol_is(name, "&ALLOW-OTHER-KEYS") {
@@ -751,7 +901,7 @@ pub fn bind<'h>(
         }
     }
 
-    if !keys.is_empty() || allow_other_keys {
+    if saw_key || allow_other_keys {
         bind_keys(
             mc,
             &keys,

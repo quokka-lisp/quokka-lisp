@@ -332,10 +332,11 @@
         (if (symbolp head)
             (let ((expander (%macro-function head)))
               (if expander
-                  ;; The macro's parameters are the argument *forms*, which
-                  ;; is exactly what `(cdr form)` is. Two values, as CLHS
-                  ;; says: the expansion, and whether anything happened.
-                  (values (apply expander (cdr form)) t)
+                  ;; An expander is a function of the form and the
+                  ;; environment (#76); here the environment is the null
+                  ;; one. Two values, as CLHS says: the expansion, and
+                  ;; whether anything happened.
+                  (values (funcall expander form nil) t)
                   (values form nil)))
             (values form nil)))
       (values form nil)))
@@ -559,6 +560,34 @@
 
 (defun %destructuring-too-long ()
   (error "a macro call has more arguments than its parameter list asked for"))
+
+;; `&key` in a pattern (#76). The rest of the list is a property list, and
+;; there is no argument binder to search it, so the generated code calls
+;; these. The first checks it once: an even length, and no keyword the
+;; pattern does not name, unless other keys are allowed by `&allow-other-keys`
+;; or by a true `:allow-other-keys` among the arguments (CLHS 3.4.1.4.1).
+(defun %destructuring-keys (plist keywords allow)
+  (%destructuring-check-keys
+   plist keywords
+   (if allow t (%destructuring-key plist :allow-other-keys nil))))
+
+(defun %destructuring-check-keys (plist keywords allow)
+  (cond ((null plist) nil)
+        ((not (consp (cdr plist))) (%destructuring-too-long))
+        ((or allow (eq (car plist) :allow-other-keys) (%destructuring-known (car plist) keywords))
+         (%destructuring-check-keys (cdr (cdr plist)) keywords allow))
+        (t (%destructuring-too-long))))
+
+(defun %destructuring-known (keyword keywords)
+  (cond ((null keywords) nil)
+        ((eq keyword (car keywords)) t)
+        (t (%destructuring-known keyword (cdr keywords)))))
+
+;; The value after KEYWORD, the leftmost if it appears twice, or DEFAULT.
+(defun %destructuring-key (plist keyword default)
+  (cond ((not (consp plist)) default)
+        ((eq (car plist) keyword) (car (cdr plist)))
+        (t (%destructuring-key (cdr (cdr plist)) keyword default))))
 
 ;;; ------------------------------------------------------------------
 ;;; defstruct

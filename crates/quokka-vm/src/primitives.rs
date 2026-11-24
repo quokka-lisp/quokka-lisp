@@ -448,7 +448,7 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     (
         Prim::RewriteMacroLambdaList,
         "%REWRITE-MACRO-LAMBDA-LIST",
-        Arity::Exactly(2),
+        Arity::AtLeast(2),
     ),
     // A closure, or a bare compiled function, as a **macro**: the same three
     // slots, a different type — exactly what the interpreter's `defmacro`
@@ -1308,8 +1308,13 @@ pub fn call_slice<'h>(
                 }
             }
         }
+        // A third argument, true, asks for `destructuring-bind`'s rewrite.
         Prim::RewriteMacroLambdaList => {
-            rewrite_for_compiler(mc, args, crate::lambda_list::Kind::Macro)
+            let kind = match args.get(2) {
+                Some(d) if !d.is_nil() => crate::lambda_list::Kind::Destructuring,
+                _ => crate::lambda_list::Kind::Macro,
+            };
+            rewrite_for_compiler(mc, args, kind)
         }
         Prim::MakeMacro => {
             use crate::closure;

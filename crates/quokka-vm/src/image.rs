@@ -80,8 +80,10 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 /// (#44), a new object type an older reader would refuse anyway. **Version 4**
 /// gives a hash table a fourth slot, saying whether a key was hashed by its
 /// address (#64). **Version 5**: a structure is an `Instance`, no longer a
-/// vector, and markers have a type of their own (#73).
-pub const FORMAT_VERSION: u64 = 5;
+/// vector, and markers have a type of their own (#73). **Version 6**: an
+/// expander takes the form and the environment (#76); an older world's
+/// compiler would call the new rewrite's expanders the old way.
+pub const FORMAT_VERSION: u64 = 6;
 
 /// Words before the heap's own: magic, version, length, checksum, scalars.
 pub const HEADER_WORDS: usize = 4 + Scalars::WORDS;
