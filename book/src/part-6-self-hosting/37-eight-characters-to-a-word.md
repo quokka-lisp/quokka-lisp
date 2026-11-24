@@ -29,8 +29,8 @@ word has 64. Every letter of every string was spending 43 bits on nothing.
 
 That was the right call at the time. It made `(aref s 5)` one memory read, and
 it made the code impossible to get wrong. The comment named the condition for
-changing it: *when something measures that it matters*. Chapter 36 was the
-measurement.
+changing it, which was *when something measures that it matters*, and chapter
+36 was the measurement.
 
 ## Measure before choosing
 
@@ -47,10 +47,10 @@ file and add up the words per type:
 | conses | 8,664 | 15% |
 | everything else | ~8,200 | 14% |
 
-Two numbers in that table are surprising. The first: there were 1,287 ordinary
-(writable) strings, and every one was a **key in a package table**. The second:
-1,287 is exactly 978 `COMMON-LISP` names plus 309 `QUOKKA` names. Every name was
-stored twice.
+Two numbers in that table are surprising. There were 1,287 ordinary (writable)
+strings, and every one was a **key in a package table**. And 1,287 is exactly
+978 `COMMON-LISP` names plus 309 `QUOKKA` names, so every name was stored
+twice.
 
 The reason was one line in the `symbol-name` primitive:
 
@@ -63,14 +63,14 @@ It handed out a fresh copy of the name on every call. The package code in
 chapter 36 does `(setf (gethash (symbol-name symbol) table) symbol)`, so each
 table held a copy.
 
-Copying looks like the cautious choice: a caller who scribbles on the copy
-cannot hurt the symbol. But Quokka already has a better guard. Since #26 a
+Copying looks like the cautious choice, since a caller who scribbles on the
+copy cannot hurt the symbol. But Quokka already has a better guard. Since #26 a
 symbol's name is a **constant string**, a separate heap type that `%set-aref`
-refuses to write (chapter 19). Handing out the name itself is therefore *safer*
-than a copy. A program that tries to change a symbol's name now gets an error,
-where before the write landed on a throwaway copy and silently did nothing.
-CLHS says modifying a symbol's name has undefined consequences, and refusing is
-the safe way to read "undefined".
+refuses to write (chapter 19), so handing out the name itself is *safer* than a
+copy. A program that tries to change a symbol's name now gets an error, where
+before the write landed on a throwaway copy and silently did nothing. CLHS says
+modifying a symbol's name has undefined consequences, and refusing is the safe
+way to read "undefined".
 
 So the first change was to return the name itself:
 
@@ -81,67 +81,65 @@ Ok(mc.slot(args[0], symbol::NAME))
 One unit test changed its expected answer, from "the write succeeds on the
 copy" to "the write is refused". The image went from **478,528 to 350,944
 bytes**, 27% smaller, with no new code. This is the reason to measure before
-designing. Without the table, packing would have shrunk 1,287 strings that
+designing: without the table, packing would have shrunk 1,287 strings that
 should not have existed at all.
 
 ## Three ways to pack, and one that was asked about
 
-After the first fix, strings were 17,509 of 43,821 words: 40% of the image.
-All 1,391 of them were constant strings, and every one was plain ASCII. Two
-standard ways of packing characters into words were on the table, a third
+After the first fix, strings were 17,509 of 43,821 words, which is 40% of the
+image. All 1,391 of them were constant strings, and every one was plain ASCII.
+Two standard ways of packing characters into words were on the table, a third
 combination came up, and we asked about a fourth.
 
-**Two 32-bit characters per word (UTF-32).** A **character encoding** is a rule
-for writing characters' numbers as bytes. UTF-32 writes every character as 32
-bits, so two fit in a word. There is one layout for every string, character
-`i` is in word `i / 2`, and any character can be written anywhere. It halves
-the strings and saves 14% of the image.
+The first is **two 32-bit characters per word**, which is UTF-32. A **character
+encoding** is a rule for writing characters' numbers as bytes, and UTF-32
+writes every character as 32 bits, so two fit in a word. There is one layout
+for every string, character `i` is in word `i / 2`, and any character can be
+written anywhere. It halves the strings and saves 14% of the image.
 
-**Eight Latin-1 characters per word.** **Latin-1** (ISO 8859-1) is the
-encoding that covers Western European text in one byte per character, and its
-256 codes are exactly Unicode's first 256. That last fact is what makes it
-cheap: a byte *is* the character's Unicode number, so reading one means
-shifting it out of the word, with no decoding step. Eight fit in a word. This
+The second is **eight Latin-1 characters per word**. **Latin-1** (ISO 8859-1)
+is the encoding that covers Western European text in one byte per character,
+and its 256 codes are exactly Unicode's first 256. That last fact is what makes
+it cheap: a byte *is* the character's Unicode number, so reading one means
+shifting it out of the word, with no decoding step. Eight fit in a word, which
 packs strings to about a third and saves 28% of the image.
 
 It has a catch. A string full of `λ` cannot be stored this way, so a second,
 *wide* layout must exist next to it. And a writable string causes a real
 problem: what happens when a program stores `λ` into position 3 of a packed
 `"hello"`? The string would need more words. An object cannot grow where it
-stands, because other objects hold its address and the words after it belong
-to someone else. SBCL has the same split. Its `base-string` holds one byte per
-character, and storing a non-base character into one is an error. That is
+stands, because other objects hold its address and the words after it belong to
+someone else. SBCL has the same split. Its `base-string` holds one byte per
+character, and storing a non-base character into one is an error, which is
 allowed in SBCL only because `base-string` is a type the programmer asked for.
 `make-string` gives a full-width string by default.
 
-**What if only constants are packed?** That is the variant chosen. A constant
+The third is the variant we chose: **pack only the constants**. A constant
 string's characters are all known when it is made and never change, so it can
 be packed when they all fit in Latin-1 and left wide when they do not. Writable
 strings stay one character per word, exactly as before, so a write can never
-need to widen anything. And today *every* string in the image is a constant,
-so this variant gets the full 28%.
+need to widen anything. And today *every* string in the image is a constant, so
+this variant gets the full 28%.
 
-**And UTF-8?** We asked that too, and the answer is the reason this chapter has a
-section on choosing. UTF-8 is the encoding the rest of the world uses for
-files, the web and Rust's own `String`. It stores ASCII in one byte and other
-characters in two to four. Variable width is exactly the problem:
+The fourth was a question: what about UTF-8? The answer is the reason this
+chapter has a section on choosing. UTF-8 is the encoding the rest of the world
+uses for files, the web and Rust's own `String`, and it stores ASCII in one
+byte and other characters in two to four. That variable width is exactly the
+problem. Indexing becomes a scan, because to find character 1,000 you have to
+walk the 999 before it, any of which might be wider than a byte, so `(char s
+i)` stops being O(1) and a loop over a string, which the reader and printer are
+made of, becomes O(n²); it would also break rule 9's promise that a primitive
+is bounded. Writing can change the size, since replacing `e` with `λ` turns one
+byte into two, which is the same wall as above for every non-ASCII character.
+And it saves nothing here, because for ASCII text UTF-8 and Latin-1 are byte
+for byte identical.
 
-- **Indexing becomes a scan.** To find character 1,000 you have to walk the
-  999 before it, because any of them might be wider than a byte. `(char s i)`
-  stops being O(1), and a loop over a string, which the reader and printer are
-  made of, becomes O(n²). It would also break rule 9's promise that a primitive
-  is bounded.
-- **Writing can change the size.** Replacing `e` with `λ` turns one byte into
-  two, the same wall as above, for every non-ASCII character.
-- **It saves nothing here.** For ASCII text, UTF-8 and Latin-1 are byte for
-  byte identical.
-
-Systems that keep UTF-8 internally pay to get indexing back. PyPy stores a
-flag saying whether a string is all ASCII. Swift keeps "breadcrumbs", a small
-index of where every so-many characters start. Where UTF-8 does win is at the
-*boundary*. The browser and Rust both speak it, so converting on the way in and
-out would be free. Quokka pays that conversion once per file read or message,
-not once per character, so it was the cheaper thing to keep paying.
+Systems that keep UTF-8 internally pay to get indexing back. PyPy stores a flag
+saying whether a string is all ASCII. Swift keeps "breadcrumbs", a small index
+of where every so-many characters start. Where UTF-8 does win is at the
+*boundary*: the browser and Rust both speak it, so converting on the way in and
+out would be free. Quokka pays that conversion once per file read or message
+rather than once per character, so it was the cheaper thing to keep paying.
 
 | | image | each string | indexing | a write that does not fit |
 | --- | --- | --- | --- | --- |
@@ -184,7 +182,10 @@ pub fn string_length(&self, v: Value<'h>) -> usize {
 }
 
 pub fn string_char(&self, v: Value<'h>, index: usize) -> char {
-    assert!(index < self.string_length(v), "index past the end of a string");
+    assert!(
+        index < self.string_length(v),
+        "index past the end of a string"
+    );
     if self.header(v).object_type == ObjectType::PackedString {
         char::from(self.raw_byte(v, 8 + index))
     } else {
@@ -194,8 +195,8 @@ pub fn string_char(&self, v: Value<'h>, index: usize) -> char {
 ```
 
 `8 + index` skips the count word's eight bytes. `char::from` on a byte is
-Rust's own Latin-1 conversion, the same fact about the first 256 code points
-said in code. `aref`, `length`, `string_to_rust` and `string_is` (the
+Rust's own Latin-1 conversion, which is the same fact about the first 256 code
+points said in code. `aref`, `length`, `string_to_rust` and `string_is` (the
 comparison the symbol table uses) all go through these two. `%set-aref` needed
 one change: it used to refuse `ConstantString`, and now refuses any string that
 is not the writable kind.
@@ -225,25 +226,32 @@ The image is **47% smaller** than when #44 was opened. Strings went from
 17,509 words to about 5,400.
 
 Compressed with gzip, the same three images are 69 KB, 57 KB and 54 KB.
-Compression had already removed most of the waste in the *file*: a word that is
-mostly zero bits compresses very well. That is why "compress the image" was a
-real option in #44, and why it lost anyway. Compression helps the download and
-does nothing for the heap the running system lives in. The reader and printer
-in Lisp are about to create strings constantly, and those strings live in
-memory, not in a file.
+Compression had already removed most of the waste in the *file*, because a word
+that is mostly zero bits compresses very well. That is why "compress the image"
+was a real option in #44, and why it lost anyway: compression helps the
+download and does nothing for the heap the running system lives in. The reader
+and printer in Lisp are about to create strings constantly, and those strings
+live in memory, not in a file.
 
 The Rust cost was 70 lines, most of them comments: a new object type, two
 accessors, a branch in the allocator, the raw-word reader a heap report uses,
 and the image format number. The format went to **3**, because an image with
-type-68 objects would be nonsense to a version-2 reader. Nothing else changed:
-the collector copies a packed string as it copies any raw object, by its header's
-word count, without knowing what is inside.
+type-68 objects would be nonsense to a version-2 reader. Nothing else changed,
+and the collector copies a packed string as it copies any raw object, by its
+header's word count, without knowing what is inside.
 
 What it gave up: writable strings are still eight bytes a character. A
 `make-string` of a megabyte of text is eight megabytes. That is the price of
 never having to widen. If something measures that it matters, the next step is
 the UTF-32 layout for writable strings, which needs no new rule because
 UTF-32 holds any character.
+
+*Later: nothing has measured it. The reader and the printer were both written
+in Lisp over this layout, and the thing that turned out to cost was the number
+of Lisp steps per character rather than the bytes per character (chapter 58).
+The image format moved on twice more: to 4 when hash tables learned to key on
+an address, which `*print-circle*` needed (chapter 52), and to 5 for structures
+(chapter 61).*
 
 ---
 
