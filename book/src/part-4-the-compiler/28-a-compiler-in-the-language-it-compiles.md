@@ -558,8 +558,8 @@ test had ever run them.
 There were three ways forward, and the choice mattered more than most,
 because **every loop in Lisp is a `tagbody` underneath** — `dotimes`,
 `dolist`, `do` and `loop` all expand into one — so whatever is chosen here is
-chosen for every loop. Carsten's question, when the choice was first laid out,
-was the right one: *why not the fastest, just because it is more work?* Work
+chosen for every loop. The question we asked when the choice was first laid
+out was the right one: *why not the fastest, just because it is more work?* Work
 is not a reason. The real reason turned out to be that the fastest option
 could not stand alone.
 

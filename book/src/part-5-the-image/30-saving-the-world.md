@@ -298,7 +298,7 @@ a process that never read a line of Lisp.
 *Added in phase 2 (#51).* For a long time an image could be made only from
 outside: build one from source, or rebuild one. Anything typed into a running
 world was lost when the program ended, which for a system whose pitch is *one
-world you work inside* is backwards. Carsten noticed it while reading the
+world you work inside* is backwards. We noticed it while reading the
 developer manual: the REPL seemed to exist only to build images.
 
 The fix is a REPL command:

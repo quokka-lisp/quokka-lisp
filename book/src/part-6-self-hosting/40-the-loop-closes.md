@@ -56,7 +56,7 @@ meaning not safe to call again before the previous call had finished.
 Nothing seemed to call it that way, until you notice when macros run. A
 macro's expander runs *during* the compilation of the form that uses it. An
 expander that calls `eval` therefore starts a second compilation while the
-first is half done. Carsten asked whether this limit would cause trouble
+first is half done. We asked whether this limit would cause trouble
 later, so it was tested:
 
 ```lisp
@@ -138,12 +138,12 @@ A `defvar` with no value proclaims the variable special and gives it nothing.
 A **REPL** is four steps in a loop: read, evaluate, print, and go round again.
 Until now the loop was Rust (`vm::compile_and_run_forms`). It read with the
 Rust reader, called the image's compiler, ran the result, and printed with the
-Rust printer. Carsten had two options for where it should live:
+Rust printer. We had two options for where it should live:
 
 - **In Lisp**, with each host only calling it.
 - **In Rust**, with each step a call into Lisp.
 
-He chose Lisp. The loop is `%host-step`, in `eval.lisp`:
+We chose Lisp. The loop is `%host-step`, in `eval.lisp`:
 
 ```lisp
 (defun %host-step (ignored)
@@ -170,7 +170,7 @@ debugger, when it comes, will be a change to this loop, made in Lisp.
 ## The gap closes
 
 The second decision was which hosts switch now: all that run an image, or
-only `eval` and `load`. Carsten chose all of them, and the result is the
+only `eval` and `load`. We chose all of them, and the result is the
 measurement chapter 39 was waiting for.
 
 The compiled leg of the differential tests now reads every test file with the

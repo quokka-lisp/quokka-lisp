@@ -50,7 +50,7 @@ Some things differ between generations **by design**:
 
 Everything else is the compiler's business, and has to match.
 
-That led Carsten to choose two comparisons:
+That led us to choose two comparisons:
 
 **Every named function, across all three generations.** Test code walks each
 world's symbols and describes every compiled function: its code bytes,

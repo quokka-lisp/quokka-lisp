@@ -118,14 +118,14 @@ streams; this step built output streams:
   `prin1-to-string` are built on it.
 - the **console stream** is `*standard-output*`.
 
-The question was what a console write *does*, and Carsten had three options:
+The question was what a console write *does*, and we had three options:
 
 - **A host request per write.** The write leaves a request in the heap and the
   machine stops until the host has printed it.
 - **A buffer the host drains** after each form.
 - **No console yet.**
 
-He chose the first. It is the protocol chapter 31 built for reading files,
+We chose the first. It is the protocol chapter 31 built for reading files,
 pointed the other way: `%write-console` is intercepted by the VM exactly as
 `%read-source` is, and the host answers with its existing `write_stdout`. Output
 appears as it is written, and a browser host uses the same protocol around a
@@ -142,7 +142,7 @@ entry point builds the whole text first:
 
 ## A decision taken twice
 
-The second decision was how to test the printer beyond its own file. Carsten
+The second decision was how to test the printer beyond its own file. We
 chose the broadest option: make the compiled leg of the differential harness
 print every result with the Lisp printer, so all twenty files check it against
 SBCL.
@@ -175,7 +175,7 @@ Two ways forward, and the difference between them is the lesson of the chapter:
   reader and a test's `a` becomes `CL-USER::A`. Nothing about the design
   changes; the switch waits for its precondition.
 
-Carsten chose the second. The original choice was right; the *order* was wrong.
+We chose the second. The original choice was right; the *order* was wrong.
 A package-aware printer can only be checked against a package-aware reader,
 and that pairing exists at step D, not before. The harness carries both
 printers now, with a comment saying when to flip it.

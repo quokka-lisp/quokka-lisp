@@ -48,7 +48,7 @@ makes **C2**, and a rebuild in C2 makes **C3**.
 itself, as strings, which is the *image host* `docs/design.md` describes. A
 rebuild would then need nothing from outside, but 163 KB of text would grow
 the image from 348 KB to about 510 KB. Or it could ask the host for the files
-by name, with the `%read-source` request `load` already uses. Carsten chose the
+by name, with the `%read-source` request `load` already uses. We chose the
 host. The native REPL answers with the files on disk, which is what makes
 *edit and rebuild* work. A test, or later the browser, answers from the copies
 the binary already embeds for the cold build. The image pays nothing.
@@ -64,7 +64,7 @@ compiler is compiling itself, which is the hardest place to debug.
 GCC's bootstrap has the same problem and solves it in **stages**. Each stage is
 a complete compiler built entirely by the previous one; a compiler is never
 replaced while it runs. Quokka's cold build already works this way: pass 1
-compiles everything, and pass 2 installs everything. Carsten chose the same
+compiles everything, and pass 2 installs everything. We chose the same
 shape for the rebuild:
 
 ```lisp

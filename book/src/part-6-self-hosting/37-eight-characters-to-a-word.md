@@ -89,7 +89,7 @@ should not have existed at all.
 After the first fix, strings were 17,509 of 43,821 words: 40% of the image.
 All 1,391 of them were constant strings, and every one was plain ASCII. Two
 standard ways of packing characters into words were on the table, a third
-combination came up, and Carsten asked about a fourth.
+combination came up, and we asked about a fourth.
 
 **Two 32-bit characters per word (UTF-32).** A **character encoding** is a rule
 for writing characters' numbers as bytes. UTF-32 writes every character as 32
@@ -121,7 +121,7 @@ strings stay one character per word, exactly as before, so a write can never
 need to widen anything. And today *every* string in the image is a constant,
 so this variant gets the full 28%.
 
-**And UTF-8?** Carsten asked, and the answer is the reason this chapter has a
+**And UTF-8?** We asked that too, and the answer is the reason this chapter has a
 section on choosing. UTF-8 is the encoding the rest of the world uses for
 files, the web and Rust's own `String`. It stores ASCII in one byte and other
 characters in two to four. Variable width is exactly the problem:

@@ -68,7 +68,7 @@ way to evaluate and load, and packages (for a reason given below).
 
 So there was a choice: end phase 2 at the gate and let the rest of tier 1
 arrive when something needs it, or make all of tier 1 part of phase 2.
-**Carsten chose all of tier 1.** The phase is much longer that way, and it
+**We chose all of tier 1.** The phase is much longer that way, and it
 means that when phase 3 begins, the Lisp underneath it is a recognisable Common
 Lisp rather than a compiler's working subset. Floats and bignums, the reader
 and the printer in Lisp, `setf` expanders and `format` all land here.
@@ -135,7 +135,7 @@ only*.
   a special searches the list. Switching threads costs nothing; every read costs
   a search.
 
-**Carsten chose shallow binding.** Genera's processes worked this way. In Quokka
+**We chose shallow binding.** Genera's processes worked this way. In Quokka
 it fits what already exists: the "somewhere" the old value is saved is an unwind
 record on the stack, exactly like the ones `block`, `catch` and `unwind-protect`
 push (chapter 27), so that leaving a binding by a `throw` or an error restores

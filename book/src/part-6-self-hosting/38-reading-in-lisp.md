@@ -36,7 +36,7 @@ has to read the prelude before any Lisp can run. What changes is who reads
 
 ## Two decisions
 
-Two choices had to be made before writing anything, and both were Carsten's.
+Two choices had to be made before writing anything, and both were ours.
 
 **Where does `read` get its characters?** In Common Lisp, from a **stream**: an
 object that hands out characters one at a time and remembers how far it has
