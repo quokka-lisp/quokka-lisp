@@ -2,7 +2,7 @@
 
 Every chapter ends with references to the specific things it leans on, and
 [Where the ideas came from](where-the-ideas-came-from.md) lists them the other
-way round — by decision, with what was taken and what was deliberately left.
+way round, by decision, with what was taken and what was deliberately left.
 This page is the third kind: the handful of sources you would want open in a tab
 while reading the whole book, and the ones Quokka itself is checked against.
 
@@ -10,7 +10,7 @@ while reading the whole book, and the ones Quokka itself is checked against.
 
 Quokka is a Common Lisp subset. Rule 6 says that where it implements a CL
 feature the behaviour must match, which makes the standard something stronger
-than background reading — it is the specification the differential tests
+than background reading: it is the specification the differential tests
 (chapter 12) measure against. When Quokka and SBCL disagree, the first
 question is never "which looks right" but "what does the standard say", and
 several times in this book the answer has been *neither of you is wrong, that
@@ -18,8 +18,8 @@ is unspecified*.
 
 ### [common-lisp.net/documentation](https://common-lisp.net/documentation)
 
-The hub. Books, the standard, the libraries, and — usefully — an opinion
-about *which* rendering of the standard to read. If you want one link, this
+The hub: books, the standard, the libraries, and, usefully, an opinion about
+*which* rendering of the standard to read. If you want one link, this
 is it.
 
 ### [The Common Lisp Metaspec](https://metaspec.dev/)
@@ -28,7 +28,7 @@ The draft standard (X3J13/94-101R) rendered from its **original TeX sources**,
 with the errata, addenda and X3J13 cleanup issues included and the editors'
 margin notes kept.
 
-It is also published **as s-expressions** — a document format of
+It is also published **as s-expressions**, a document format of
 `(node-type property-plist children*)` nodes, with the provenance of the
 original text preserved and every mechanical deviation recorded as an erratum
 ([source](https://codeberg.org/dlowe/metaspectre)). Which means the
@@ -58,17 +58,17 @@ worth reading before writing the corresponding part of Quokka:
 
 | | |
 | --- | --- |
-| [Data structures](https://lispcookbook.github.io/cl-cookbook/data-structures.html) · [Strings](https://lispcookbook.github.io/cl-cookbook/strings.html) · [Arrays](https://lispcookbook.github.io/cl-cookbook/arrays.html) | what chapter 19 built, and the sequence functions it did not |
+| [Data structures](https://lispcookbook.github.io/cl-cookbook/data-structures.html) · [Strings](https://lispcookbook.github.io/cl-cookbook/strings.html) · [Arrays](https://lispcookbook.github.io/cl-cookbook/arrays.html) | what chapter 19 built, and the sequence, string and array functions that followed in chapters 45 and 55 |
 | [Error handling](https://lispcookbook.github.io/cl-cookbook/error_handling.html) | restarts and `handler-bind`, which chapter 20 left for phase 3 |
 | [Macros and backquote](https://lispcookbook.github.io/cl-cookbook/macros.html) | chapters 15 and 17, from a user's side rather than an implementer's |
-| [Equality](https://lispcookbook.github.io/cl-cookbook/equality.html) | `eq`, `eql`, `equal`, `equalp` — Quokka has one of the four, and this is the clearest account of what the others are for |
-| [Iteration](https://lispcookbook.github.io/cl-cookbook/iteration.html) | `loop`, `dolist`, `do` — all outside tier 0 by rule 5, all eventually prelude macros |
+| [Equality](https://lispcookbook.github.io/cl-cookbook/equality.html) | `eq`, `eql`, `equal`, `equalp` — Quokka has all four since chapter 45, and this is the clearest account of what each is for |
+| [Iteration](https://lispcookbook.github.io/cl-cookbook/iteration.html) | `loop`, `dolist`, `do` — all outside tier 0 by rule 5; `dolist`, `dotimes`, `do` and `do*` are library macros from chapter 45, and `loop` waits for tier 2 |
 
 #### The chapters that look irrelevant, and are not
 
 It is tempting to write off the Cookbook's "Editor support" and "Outside
-world" chapters — Quicklisp, Emacs, databases, foreign function interfaces —
-as things Quokka will never have. That is wrong, and the way it is wrong is
+world" chapters, with their Quicklisp, Emacs, databases and foreign function
+interfaces, as things Quokka will never have. That is wrong, and the way it is wrong is
 worth the paragraph.
 
 Every one of those chapters assumes the same thing: that **Lisp is a process on
@@ -76,12 +76,12 @@ a Unix box, talking to other processes**. The editor is a different program.
 The database is a different program. The library archive is a directory on
 disk. Common Lisp grew up in that world and its tooling is shaped by it.
 
-Quokka is not a process. It is a *world* — one image holding the VM, the
+Quokka is not a process. It is a *world*: one image holding the VM, the
 language, the editor and the tools, in the Lisp machine and Smalltalk tradition
 (see [The thing that builds itself](the-bootstrap.md) and `docs/design.md`).
 So those chapters do not transfer as instructions. But each one names a
 capability Quokka still owes its users, and reading it tells you what that
-capability has to *do* — which is the harder half, and independent of
+capability has to *do*, which is the harder half, and independent of
 architecture.
 
 | Chapter | What it assumes | Quokka's answer |
@@ -107,7 +107,7 @@ itself: its LispWorks IDE page describes an IDE written in Common Lisp and
 running in the same image as your program, which is Quokka's model, not Emacs's.
 
 **The database.** The Cookbook's own taxonomy has four categories, and the
-third is *persistent object databases* — libraries where objects simply stay
+third is *persistent object databases*, libraries where objects simply stay
 live and a transaction log lets them come back after a restart. That technique
 has a name, **prevalence** (from the Prevayler project), and it is the
 Quokka-shaped answer: a log of changes plus periodic snapshots, instead of a
@@ -115,8 +115,8 @@ separate process you serialise into and out of.
 
 Which is worth noticing, because Quokka has **half of it already**. Saving an
 image is a snapshot. What `docs/design.md` does not yet describe is a log of
-what happened since the last one — the difference between losing the work since
-your last save and losing nothing. A user who wanted a database in Quokka would
+what happened since the last one, which is the difference between losing the
+work since your last save and losing nothing. A user who wanted a database in Quokka would
 not connect to one; they would define structures and rely on the image, and the
 quality of that experience is a VM decision nobody has made yet ([#24](https://github.com/quokka-lisp/quokka-lisp/issues/24)).
 
@@ -134,12 +134,13 @@ a set of library versions known to build together, rather than "the latest of
 everything". Any eventual Quokka equivalent will face that decision, and
 Quicklisp is the evidence about which way to go.
 
-So: not things Quokka will never have. Things Quokka will have to answer
-differently, from a reference that is honest about what the question is.
+So these are not things Quokka will never have. They are things Quokka will
+have to answer differently, from a reference that is honest about what the
+question is.
 
 **Licence**: BSD-style. Redistribution and use, with or without modification,
 provided the copyright notice, the condition and the disclaimer are reproduced
-with it. Permissive and compatible with rule 8 — with an obligation attached,
+with it. Permissive and compatible with rule 8, with an obligation attached,
 which matters below.
 
 | | |
@@ -153,8 +154,8 @@ Two things make this the right first stop for a reader of *this* book.
 
 The first is the **licence**. It is MIT, which is Quokka's licence (rule 8), so
 its text and examples can be used here without a lawyer. The HyperSpec's
-cannot — it is derived from the published standard under permission that does
-not extend to copying it into other projects. That distinction has had
+cannot, because it is derived from the published standard under permission that
+does not extend to copying it into other projects. That distinction has had
 practical consequences for how Quokka's tests are written; see below.
 
 The second is that the technical reference carries **examples**. The standard
@@ -166,7 +167,7 @@ understanding it.
 ### [The Common Lisp HyperSpec](http://www.lispworks.com/documentation/HyperSpec/Front/index.htm)
 
 The hyperlinked edition that most books, posts and tools point to, hosted by
-LispWorks. Cited throughout this book as **CLHS** with a section number —
+LispWorks. Cited throughout this book as **CLHS** with a section number:
 `CLHS 3.4.1` for ordinary lambda lists, `CLHS 9` for conditions.
 
 It is **not free**. LispWorks permits only complete, unmodified,
@@ -199,7 +200,7 @@ the first is about licensing:
    disclaimer carried along, and the HyperSpec permits no derivative works at
    all. Borrowing means tracking which line came from where, and carrying the
    right notice for each, forever. Writing them here keeps the question from
-   arising — not because borrowing is forbidden, but because the bookkeeping
+   arising, not because borrowing is forbidden but because the bookkeeping
    buys the tests nothing.
 2. **A test file has a job the examples do not.** Look at any file in
    `tests/lisp/`: the comments explain *why a case is there*, and several say
@@ -263,6 +264,7 @@ Named here because they come up repeatedly, with the chapters that use them.
 The oracle (chapter 12). Reading its source is also instructive: the `%`
 convention from chapter 22 is `sb-impl::` there, with a package system behind
 it rather than a naming convention.
+
 ### [Project Oberon](https://people.inf.ethz.ch/wirth/ProjectOberon/index.html)
 
 Not a Lisp, and the closest thing this project has to a precedent. The
@@ -282,13 +284,13 @@ there, the file system is in there, the window manager is in there, and so is
 the gate-level design of the processor it all runs on. You can read the whole
 thing, and then build it on an FPGA.
 
-That is the claim Quokka's second principle makes — *the whole system should
-be readable by one person* — and Oberon is the existence proof. It is also a
+That is the claim Quokka's second principle makes, that *the whole system
+should be readable by one person*, and Oberon is the existence proof. It is also a
 standing rebuke: Wirth got an operating system, a compiler, an editor and a
-CPU into something a person can read, and this project has a 15,000-line
-budget for a Lisp interpreter alone.
+CPU into something a person can read, and this project's budget for a Lisp
+interpreter alone began at fifteen thousand lines.
 
-**The licence is ISC-style** — use, copy, modify and distribute, with the
+**The licence is ISC-style**: use, copy, modify and distribute, with the
 notice preserved. Compatible with rule 8, which makes it unusual among the
 references on this page: the HyperSpec can only be cited, but Oberon's actual
 code could be adapted with attribution if it were ever the right thing to do.
