@@ -1,9 +1,11 @@
 # Functions and scope
 
-> **Where this fits.** The machine from chapter 9 can evaluate arithmetic and
-> make decisions. It cannot define anything. This chapter adds functions of your
-> own — which needs somewhere for their parameters to live, and raises a
-> question about recursion that decides whether loops are usable at all.
+> *Where this fits.* The machine from chapter 9 can evaluate arithmetic and
+> make decisions, but it cannot define anything. This chapter adds functions of
+> your own, which needs somewhere for their parameters to live, and it settles
+> a question about recursion that decides whether loops in this language are
+> usable at all. The answer to that one turns out to have been built already,
+> by a decision made for another reason entirely.
 
 ## Three operators that are easy to confuse
 
@@ -33,7 +35,7 @@ arguments on the way in, and `x` does not exist yet.
 ```
 
 This makes exactly the same function and then puts it in the symbol `SQUARE`'s
-**function cell** — the Lisp-2 slot from chapter 9. It is barely more than:
+**function cell**, the Lisp-2 slot from chapter 9. It is barely more than:
 
 ```lisp
 (setf (symbol-function 'square) (lambda (x) (* x x)))
@@ -43,9 +45,9 @@ In Common Lisp `defun` really is defined that way: it is a *macro* that expands
 into the longer form. Quokka has no macros yet, so for now it is a special
 operator, with a comment saying it should stop being one.
 
-Note what `defun` returns: the **name**, not the function. That is a small thing
-and a deliberate one — it is what makes a file of definitions readable when each
-line echoes at a REPL.
+Note what `defun` returns, which is the name rather than the function. That is a
+small thing and a deliberate one, because it is what makes a file of definitions
+readable when each line echoes at a REPL.
 
 ### `progn` lets many forms stand where one is wanted
 
@@ -55,15 +57,13 @@ line echoes at a REPL.
     (handle-zero))
 ```
 
-`if` takes exactly one form per branch. Sometimes you want three. `progn`
-evaluates them in order and yields the **last** one's value, so a sequence can
-stand wherever a single form is expected.
+`if` takes exactly one form per branch, and sometimes you want three. `progn`
+evaluates them in order and yields the last one's value, so a sequence can stand
+wherever a single form is expected.
 
 It is the least glamorous of the three and the one most woven into the others,
-because:
-
-> The body of a `lambda`, and the body of a `defun`, are each an **implicit
-> `progn`**.
+because the body of a `lambda` and the body of a `defun` are each an **implicit
+`progn`**:
 
 ```lisp
 (defun f (x)
@@ -73,15 +73,15 @@ because:
 
 Nobody writes `progn` there; it is simply how bodies work. In the implementation
 all three share one helper, `begin`, which is also where the tail-call rule
-below is enforced — one place rather than three.
+below is enforced, in one place rather than three.
 
-So: **`lambda` makes a function, `defun` names one, `progn` sequences forms.**
-They co-occur because a named function usually has a multi-form body.
+`lambda` makes a function, `defun` names one, and `progn` sequences forms. They
+co-occur because a named function usually has a multi-form body.
 
 ## What a closure actually is
 
-Evaluating a `lambda` does not produce code. It produces a **closure**: three
-things bundled together.
+Evaluating a `lambda` does not produce code. It produces a **closure**, which is
+three things bundled together.
 
 ```text
    closure
@@ -90,7 +90,7 @@ things bundled together.
    └── env      ← the scope it was written in
 ```
 
-The third is the interesting one, and it is what the word "closure" refers to —
+The third is the interesting one, and it is what the word "closure" refers to:
 the function is *closed over* its surroundings.
 
 ```lisp
@@ -102,11 +102,11 @@ the function is *closed over* its surroundings.
 ```
 
 Look at what has to be true for that to work. By the time `add5` is called,
-`adder` has long since returned. Its parameter `n` belongs to a call that no
+`adder` has long since returned, and its parameter `n` belongs to a call that no
 longer exists. And yet the inner function still knows `n` is 5.
 
 It knows because the closure captured the scope, and the scope is a heap object
-that stays alive exactly as long as something refers to it — which the closure
+that stays alive exactly as long as something refers to it, which the closure
 does. Garbage collection and lexical scope turn out to be the same mechanism
 seen from two directions.
 
@@ -125,7 +125,7 @@ in pairs.
 
 Looking up a name scans this scope's names, follows the link, and finally falls
 back to the symbol's own value cell, which is where globals live. Shadowing
-works for free: inner scopes are searched first.
+works for free, because inner scopes are searched first.
 
 ```lisp
 (setq x 'global)
@@ -135,8 +135,8 @@ works for free: inner scopes are searched first.
 
 ### Three ways to do this
 
-The textbook choice is an **association list** — `((x . 1) (y . 2))`, extended
-by consing a new pair onto the front. It is shorter than what Quokka does, and
+The textbook choice is an **association list**, `((x . 1) (y . 2))`, extended by
+consing a new pair onto the front. It is shorter than what Quokka does, and
 calling a two-argument function allocates four cons cells.
 
 Quokka uses a **frame chain** instead: one object per call, six words for the
@@ -147,34 +147,33 @@ addressing**: resolve `x` to "scope 2, slot 0" once, and make lookup an index
 rather than a search. Every serious Lisp does this.
 
 It is not available here, and the reason is worth understanding. Assigning those
-slot numbers requires walking the function body *before* running it, and
-recording the answer somewhere — which is a compiler. A tree-walking interpreter
+slot numbers requires walking the function body *before* running it and
+recording the answer somewhere, which is a compiler. A tree-walking interpreter
 re-reads the source list on every evaluation and has nowhere to put the result.
 Quokka's compiler arrives in phase 1.
 
-So the frame chain was chosen for a forward-looking reason rather than a
-performance one: **it is the layout lexical addressing uses.** When the compiler
+So we chose the frame chain for a forward-looking reason rather than a
+performance one: it is the layout lexical addressing uses. When the compiler
 lands, the name scan becomes an index and the data structure does not change. An
 association list would have had to be thrown away.
 
 ### A note on the question, not the answer
 
-This decision was first put as "association list or vector — which do you
-prefer?", which was the wrong question. One option required a component that did
-not exist. Offering a choice that is not open wastes the other person's
-judgement on a decision governed by sequencing rather than preference.
+This decision was first put as "association list or vector, which do you
+prefer?", which was the wrong question, because one of the options required a
+component that did not exist. Offering a choice that is not open wastes the
+other person's judgement on a decision governed by sequencing rather than
+preference.
 
-The useful version is: *here is what is possible now, here is what becomes
-possible later, and here is which of the possible ones survives the transition.*
+The useful version is: here is what is possible now, here is what becomes
+possible later, and here is which of the possible ones survives the transition.
 
 ## Tail calls
-
-Now the question that decides whether loops are usable.
 
 ### What a tail call is
 
 A call is in **tail position** when its result is immediately the result of the
-enclosing function — nothing happens afterwards.
+enclosing function, with nothing happening afterwards.
 
 ```lisp
 (defun down (n)
@@ -189,31 +188,32 @@ enclosing function — nothing happens afterwards.
 ```
 
 In `down`, once the recursive call is made there is nothing left for the outer
-call to do. Its frame is dead weight. In `sum` the outer call still has to add
-`n`, so the frame is genuinely needed.
+call to do, so its frame is dead weight. In `sum` the outer call still has to
+add `n`, so the frame is genuinely needed.
 
 This distinction decides what happens when a recursion goes wrong, which is not
-obvious until you see it. `(fact -1)` never reaches its base case — and because
-the `*` is still waiting, it is *not* a tail call, so every level keeps its
+obvious until you see it. `(fact -1)` never reaches its base case, and because
+the `*` is still waiting it is *not* a tail call, so every level keeps its
 frames and the heap fills. The same mistake in a tail-recursive function spins
 forever in constant space. Both are bugs; only one of them takes the process
-with it, which is why [Objects in the heap](../part-1-substrate/05-objects-in-the-heap.md) ends on
-a ceiling.
+with it, which is why
+[Objects in the heap](../part-1-substrate/05-objects-in-the-heap.md) ends on a
+ceiling.
 
 ### Why this matters more in Lisp
 
 In most languages you write a loop with `while` and recursion is a special
-technique. In Lisp, recursion *is* the ordinary way to iterate — and `loop`,
+technique. In Lisp, recursion *is* the ordinary way to iterate, and `loop`,
 `dolist` and friends are macros that expand into it.
 
 Without tail-call elimination, a loop of a million iterations builds a million
 frames and dies. With it, a tail-recursive function uses constant space and is
-exactly a loop. The distinction is not an optimisation; it decides whether an
+exactly a loop. The distinction is not an optimisation. It decides whether an
 entire natural style of programming works.
 
 ### How it fell out of the design
 
-Here is the pleasant part. Look at the Return half of the machine:
+Look at the Return half of the machine:
 
 ```rust
 let f = self.mc.car(stack);
@@ -222,34 +222,32 @@ self.mc.set_register(Register::Stack, rest);   // pop, THEN dispatch
 ```
 
 The frame is popped *before* it is acted on. And applying a closure pushes
-nothing — it just sets `control` to the body and `env` to the new scope.
+nothing: it sets `control` to the body and `env` to the new scope.
 
 So trace `(down 5)` to the recursive call. The `IF` frame was popped when the
-branch was chosen. The `ARGS` frame was popped when the arguments were complete.
-The stack is empty, and `down` is entered with nothing outstanding. That is a
+branch was chosen, the `ARGS` frame was popped when the arguments were complete,
+the stack is empty, and `down` is entered with nothing outstanding. That is a
 tail call, with no mechanism.
 
-And `sum` still works correctly for the same reason: when `(sum (- n 1))` is
-evaluated, the `ARGS` frame for `+` is *still on the stack*, because `+` has not
-had its arguments yet. The frame is retained precisely when it is needed.
+And `sum` still works correctly for the same reason. When `(sum (- n 1))` is
+evaluated, the `ARGS` frame for `+` is still on the stack, because `+` has not
+had its arguments yet, so the frame is retained precisely when it is needed.
 
 Tail-call elimination was not added. It was already there, as a consequence of
-"pop before you dispatch".
+popping before dispatching.
 
 ### What had to be done deliberately
 
-One rule, and it is the whole of the work:
-
-> An operator whose last sub-form is in **tail position** must start that
-> sub-form with no frame outstanding.
+One rule, and it is the whole of the work: an operator whose last sub-form is in
+tail position must start that sub-form with no frame outstanding.
 
 `progn` is where this bites. Evaluating all but the last form needs a frame to
-remember the rest — but the last form must be started with that frame *popped*,
+remember the rest, but the last form must be started with that frame *popped*,
 not pushed again. Get it wrong and every function with a two-form body loses its
 tail calls, silently.
 
 The `begin` helper does this once, and `progn`, `lambda` bodies and `defun`
-bodies all go through it. That is why it is one function and not three.
+bodies all go through it, which is why it is one function and not three.
 
 This is also why the decision was worth making *before* writing the remaining
 nineteen special operators rather than after. One rule applied in one place is
@@ -277,29 +275,28 @@ And then a second test, which is the one worth copying:
 assert!(max_depth > 100, "only {max_depth} frames; the stack should grow here");
 ```
 
-Non-tail recursion must *still consume frames*. Because a machine that silently
-dropped frames — that simply forgot to push when it should have — would sail
+Non-tail recursion must *still consume frames*, because a machine that silently
+dropped frames, that simply forgot to push when it should have, would sail
 through the first test while being catastrophically wrong. The first test says
-"this is efficient"; the second says "and it is still correct".
-
-Any time a test asserts that something is absent, it is worth asking what else
-would make it absent, and testing that the thing is present when it should be.
+this is efficient; the second says it is still correct. Any time a test asserts
+that something is absent, it is worth asking what else would make it absent, and
+testing that the thing is present when it should be.
 
 ## A bug worth the retelling
 
 `(setq a 1 b 2)` assigned `a` and silently ignored `b`.
 
 The cause is specific to this style of machine. The function that handles the
-next assignment is reached from **both halves of the cycle** — from the Eval
-half when `setq` is first seen, and from the Return half after a value arrives.
-It set `control` correctly but did not set the *mode*. Arriving from Return, the
+next assignment is reached from both halves of the cycle, from the Eval half
+when `setq` is first seen and from the Return half after a value arrives. It set
+`control` correctly but did not set the *mode*. Arriving from Return, the
 machine's next step was therefore another Return, which popped the frame that
 had just been pushed.
 
-The general hazard: in a state machine where the mode is implicit, any function
-reachable from two states is a trap. Every transition now says which half it is
-entering, even where it is obvious, because "obvious" is what made this one hard
-to see.
+The general hazard is that in a state machine where the mode is implicit, any
+function reachable from two states is a trap. Every transition now says which
+half it is entering, even where it is obvious, because "obvious" is what made
+this one hard to see.
 
 ## Where this leaves us
 
@@ -313,12 +310,11 @@ DONE
 ```
 
 That first one is the phase 0 gate, and `20!` fitting in a fixnum is almost
-certainly why it asks for twenty rather than a rounder number — the largest
-factorial needing no bignums.
+certainly why it asks for twenty rather than a rounder number, since it is the
+largest factorial needing no bignums.
 
-Six special operators of twenty-five. Missing: `let`, `cond`, `labels`,
-`&rest` parameters, and macros — which is what finally makes `defun` stop being
-a special operator and become what it is in real Common Lisp.
-
-All of them follow the shape these six established, which is exactly why they
-were left until the shape existed.
+Six special operators of twenty-five. Still missing are `let`, `cond`, `labels`,
+`&rest` parameters, and macros, which is what finally makes `defun` stop being a
+special operator and become what it is in real Common Lisp. All of them follow
+the shape these six established, which is exactly why they were left until the
+shape existed.
