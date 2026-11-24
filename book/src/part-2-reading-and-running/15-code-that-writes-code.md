@@ -1,12 +1,12 @@
 # Code that writes code
 
-> **Where this fits.** Chapter 13 listed twenty-five special operators and
+> *Where this fits.* Chapter 13 listed twenty-five special operators and
 > admitted the number was arbitrary. This chapter is how the list stops
-> growing. A macro lets a program add to the language without touching the
-> evaluator, which means every convenience from here on — `when`, `cond`,
-> `and`, eventually `defun` itself — can be written in Lisp instead of Rust.
-> It is the first time rule 1 ("Rust below the primitive table, Lisp above
-> it") earns its keep rather than merely being obeyed.
+> growing. By the end you will be able to add a control structure to the
+> language yourself, in Lisp, without touching the evaluator, which is how
+> `when`, `cond`, `and` and eventually `defun` itself get written. It is the
+> first time rule 1 ("Rust below the primitive table, Lisp above it") earns
+> its keep rather than merely being obeyed.
 
 ## The thing a function cannot do
 
@@ -30,21 +30,20 @@ By the time the body of `my-when` starts running, `(delete-file "/tmp/x")` has
 looked at yet.
 
 This is the same wall chapter 13 ran into with `if`, and the answer there was
-to make `if` a special operator — a form the evaluator recognises by name and
+to make `if` a special operator, a form the evaluator recognises by name and
 treats differently. That answer does not scale. Every convenience anyone ever
 wants would have to be built into the evaluator, in Rust, by whoever maintains
-the evaluator. A language whose users cannot extend it is a language whose
-users file feature requests.
+the evaluator, and the users of such a language can only file feature requests.
 
 ## A function from code to code
 
 A **macro** is a function that runs at a different time, on different data.
 
 An ordinary function is called with *values* and returns a *value*. A macro is
-called with the argument **forms**, unevaluated — the actual list structure the
-reader produced — and returns another form. That returned form is then
-evaluated in place of the original call. The macro itself has disappeared by
-the time anything runs.
+called with the argument **forms**, unevaluated, meaning the actual list
+structure the reader produced, and returns another form. That returned form is
+then evaluated in place of the original call. The macro itself has disappeared
+by the time anything runs.
 
 ```lisp
 (defmacro my-when (test &body body)
@@ -69,9 +68,9 @@ The reason this is possible at all is the one from chapter 8: Lisp programs
 *are* lists. A macro is an ordinary list-manipulating program, and the thing it
 manipulates happens to be the program. In a language whose source is text, the
 equivalent tool is a preprocessor working on strings, which is why C's macros
-are a byword for pain. The technical name for the property is **homoiconicity**
-— code and data have the same representation — and macros are the entire reason
-anybody cares about it.
+are a byword for pain. The technical name for the property is
+**homoiconicity**, meaning that code and data have the same representation, and
+macros are the entire reason anybody cares about it.
 
 ## Expansion in the machine
 
@@ -92,7 +91,7 @@ if closure::is_macro(self.mc, function) {
 Compare this to the ordinary call just below it in the same function. An
 ordinary call pushes an `ARGS` frame and starts evaluating the first argument.
 A macro call pushes an `EXPAND` frame and goes straight to applying the
-closure, handing it `argument_forms` — the forms themselves, untouched. The
+closure, handing it `argument_forms`, the forms themselves, untouched. The
 *absence* of the argument-evaluating step is the whole of what makes a macro a
 macro.
 
@@ -112,10 +111,10 @@ frame::EXPAND => {
 ```
 
 Put the expansion in `Control`, switch back to Eval, carry on. A value that
-arrived is treated as a form to evaluate — which is exactly the sentence "the
-expansion is evaluated in place of the call", written in registers.
+arrived is treated as a form to evaluate, which is the sentence "the expansion
+is evaluated in place of the call" written in registers.
 
-### The bug that proves the point
+### What happened before `Env` was restored
 
 Those two lines restoring `Env` were not there the first time. Without them,
 the tests said this:
@@ -126,22 +125,21 @@ the tests said this:
 ```
 
 Constants worked; variable references did not. The expansion was being
-evaluated in the *macro's* environment — the scope the macro body ran in —
-rather than in the scope where the macro was called.
+evaluated in the *macro's* environment, the scope the macro body ran in, rather
+than in the scope where the macro was called.
 
-This is worth sitting with, because it is a mistake that only exists in a
-machine of this shape. In a recursive `eval`, the caller's environment is a
-local variable in a Rust stack frame, and it comes back by itself when the
-recursive call returns. Chapter 2 gave that up: the environment is a
-**register**, and a register that gets clobbered has to be put back by whoever
-clobbered it. Applying the macro closure sets `Env` to the macro's own scope,
-so something has to remember the old one. That is all the `EXPAND` frame does;
-it carries no other information.
+This is a mistake that only exists in a machine of this shape. In a recursive
+`eval`, the caller's environment is a local variable in a Rust stack frame, and
+it comes back by itself when the recursive call returns. Chapter 2 gave that
+up: the environment is a **register**, and a register that gets clobbered has
+to be put back by whoever clobbered it. Applying the macro closure sets `Env`
+to the macro's own scope, so something has to remember the old one. That is all
+the `EXPAND` frame does; it carries no other information.
 
 The symptom is also instructive. A test using only literals would have passed.
-It took `(let ((v 10)) (twice v))` — a macro called somewhere that a variable
-is in scope — to notice, which is a good argument for tests that look like the
-code people actually write.
+It took `(let ((v 10)) (twice v))`, a macro called somewhere that a variable is
+in scope, to notice, which is a good argument for tests that look like the code
+people actually write.
 
 ## Writing the expansion down
 
@@ -165,12 +163,12 @@ The backquote `` ` `` means *this is a template*. A comma `,` means
 hole is filled by splicing in the elements of a list*. The template is the
 shape of the output, at the size it will be.
 
-This is **quasiquotation**, and it was not invented for Lisp — it comes from
+This is **quasiquotation**, and it was not invented for Lisp. It comes from
 Willard Quine's 1940 *Mathematical Logic*, where the corner quotes ⌜ ⌝ do the
 same job for logical formulae: quote this expression, except the parts I am
 leaving as variables.
 
-### It is not a special operator
+### Where backquote is handled
 
 Backquote is handled in the **reader**, before the evaluator ever sees the
 form. `` `(if ,test (progn ,@body) nil) `` is read as, and is
@@ -199,11 +197,11 @@ head onto the backquoted tail, so the rules apply again to each part, all the
 way down. The whole implementation is about thirty lines.
 
 Doing it in the reader rather than the evaluator is the choice CLHS 2.4.6
-describes and that every implementation makes. It costs nothing at run time —
-the expansion happens once, when the text is read — and it keeps the special
-operator count at twenty-five. A `quasiquote` special operator would have been
-the twenty-sixth, and the evaluator would have had to grow a recursive template
-walker.
+describes and that every implementation makes. It costs nothing at run time,
+since the expansion happens once, when the text is read, and it keeps the
+special operator count at twenty-five. A `quasiquote` special operator would
+have been the twenty-sixth, and the evaluator would have had to grow a
+recursive template walker.
 
 ### A symbol nobody can type
 
@@ -227,11 +225,11 @@ let tag = mc.intern(if splicing {
 
 The first version used `%UNQUOTE`, which a sufficiently unlucky program could
 have written by hand. The repair is the cheapest possible one: pick a name the
-reader cannot produce. It is the same instinct as chapter 12's — *a rule in
-prose is a hope; put it where it fails* — applied to a rule about what input
-can exist.
+reader cannot produce. It is the same instinct as chapter 12's, that a rule in
+prose is a hope and belongs somewhere it can fail, applied to a rule about what
+input can exist.
 
-## The leak
+## Variable capture
 
 Now a macro that is nearly right. This is `or` for two arguments, binding the
 first value so it is evaluated only once:
@@ -253,9 +251,9 @@ substituted *inside* the `let` the macro invented, so the caller's `v` is no
 longer the `v` that gets evaluated. The macro reached out and took a name that
 was not its to take.
 
-This is **variable capture**, and it is the classic macro bug. Note that it is
-invisible at the call site: nothing about `(or2-badly nil v)` suggests that the
-name `v` is dangerous, and the macro's author never meant to publish it.
+This is **variable capture**, and it is the classic macro bug. It is invisible
+at the call site: nothing about `(or2-badly nil v)` suggests that the name `v`
+is dangerous, and the macro's author never meant to publish it.
 
 The cure is to bind a name the caller could not possibly have written:
 
@@ -265,11 +263,11 @@ The cure is to bind a name the caller could not possibly have written:
     `(let ((,tmp ,a)) (if ,tmp ,tmp ,b))))
 ```
 
-`gensym` makes a fresh symbol that is **uninterned** — it is not in the
+`gensym` makes a fresh symbol that is **uninterned**, meaning it is not in the
 obarray, the table chapter 8 uses to make sure that reading `FOO` twice yields
 the same symbol. Reading the text `G17` would produce a *different* symbol from
 the `G17` that `gensym` returned, because interning is what makes two readings
-of a name agree. A name that cannot be written cannot collide.
+of a name agree, so a name that cannot be written cannot collide.
 
 ```rust
 pub fn gensym(&mut self) -> Value<'h> {
@@ -288,6 +286,10 @@ Eight lines, and the counter is a plain `u64` rather than a `Value`, so the
 collector never has to think about it. The name is only for printing; the
 identity is the object.
 
+*Later: the library redefines `gensym` in Lisp, in `packages.lisp`, so that it
+honours the prefix argument the standard gives it. The Rust one stays, because
+the compiler needs gensyms before any library exists.*
+
 ### Hygiene, and why Quokka does not have it
 
 Scheme solved this differently. `syntax-rules` and `syntax-case` macros are
@@ -299,32 +301,32 @@ better at the thing it does.
 Common Lisp did not adopt it, and Quokka follows Common Lisp (rule 6). Three
 reasons, in descending order of how much they matter here:
 
-1. **Compatibility is the whole point.** A CL subset whose macros are hygienic
-   is not a CL subset. Real code calls `gensym`.
-2. **Capture is sometimes wanted.** *Anaphoric* macros deliberately introduce a
-   binding the caller can see — `(aif (lookup x) (use it))`, where `it` is the
-   macro's doing. Hygiene has to provide an escape hatch for this; unhygienic
-   macros are the escape hatch.
-3. **The machinery is large.** Renaming correctly means tracking which
-   identifiers came from where through arbitrarily nested expansions. Against a
-   15k-line budget (rule 7) that is a lot of lines for a problem one call to
-   `gensym` closes.
+1. Compatibility is the whole point. A CL subset whose macros are hygienic is
+   not a CL subset, and real code calls `gensym`.
+2. Capture is sometimes wanted. *Anaphoric* macros deliberately introduce a
+   binding the caller can see, as in `(aif (lookup x) (use it))`, where `it` is
+   the macro's doing. Hygiene has to provide an escape hatch for this;
+   unhygienic macros are the escape hatch.
+3. The machinery is large. Renaming correctly means tracking which identifiers
+   came from where through arbitrarily nested expansions. Against a 15k-line
+   budget (rule 7) that is a lot of lines for a problem one call to `gensym`
+   closes.
 
-The cost is honest: it is an error the language lets you make. The defence is
-that it is a *known* error with a *known* cure, written down here and
-demonstrated in `tests/lisp/macros.lisp`, which keeps both versions of `or2` so
-the difference stays visible.
+So the language lets you make this error, which is the cost. What makes it
+bearable is that it is a *known* error with a *known* cure, written down here
+and demonstrated in `tests/lisp/macros.lisp`, which keeps both versions of
+`or2` so the difference stays visible.
 
 ## append, and the first brush with rule 9
 
-Splicing needs `append`, so `append` became a primitive — and it is the first
+Splicing needs `append`, so `append` became a primitive, and it is the first
 one for which rule 9 ("primitives are bounded") is a live question rather than
 a formality.
 
 Every primitive so far has been O(1): `car`, `cons`, `+`. `append` copies all
 but its last argument, so its cost grows with the *data*, not with the call.
-Chapter 2's slicing promise — the VM always returns control to the browser
-within a bounded time — assumes a single step is short, and a step that is
+Chapter 2's slicing promise, that the VM always returns control to the browser
+within a bounded time, assumes a single step is short, and a step that is
 inside a Rust primitive cannot be interrupted by anything.
 
 The decision for now, recorded in the code:
@@ -348,8 +350,8 @@ and the test file checks it.
 ## Seeing what happened
 
 A macro turns code you wrote into code you did not, and then the evaluator
-runs the second one. When it goes wrong, the thing that is wrong is invisible
-— which is why the first tool anyone wants is a way to look:
+runs the second one. When it goes wrong, the thing that is wrong is invisible,
+so the first tool anyone wants is a way to look:
 
 ```lisp
 (defmacro my-when (test &body body)
@@ -360,7 +362,7 @@ runs the second one. When it goes wrong, the thing that is wrong is invisible
 
 `macroexpand-1` runs one expansion and hands back the form. `macroexpand`
 keeps going until the head is no longer a macro, which matters when macros
-expand into macros — as they usually do, once a prelude exists:
+expand into macros, as they usually do once a prelude exists:
 
 ```lisp
 (defmacro outer (x) (list 'my-when t x))
@@ -373,8 +375,8 @@ Both are written in Lisp, in the prelude, and the reason they *can* be is the
 chapter's own point turned around. Expanding a macro means **running** it, and
 running it means running Lisp. A Rust primitive that wanted to do that would
 have to call the evaluator from inside itself, putting Lisp back on the Rust
-stack — the same wall chapter 18's default forms ran into, and refused for the
-same reason (rule 4).
+stack, which is the same wall chapter 18's default forms ran into, and refused
+for the same reason (rule 4).
 
 So two small things went into Rust and the rest went into Lisp.
 `%macro-function` fetches a symbol's expander, and `apply` calls a function
@@ -397,49 +399,62 @@ is:
 ```
 
 The `%` on `%macro-function` is doing real work. Common Lisp has a
-`macro-function`, and it returns something else — a function of two arguments,
-the whole form and an environment. Giving the standard's name to something
-with a different contract would be worse than not having the name, so the
+`macro-function`, and it returns something else: a function of two arguments,
+the whole form and an environment. Giving the standard's name to something with
+a different contract would be worse than not having the name, so the
 Quokka-specific one is marked as Quokka's.
 
-**One divergence, on purpose.** The standard's `macroexpand` returns two
-values — the form, and whether anything was expanded — and loops on the
-second. Quokka has no multiple values yet, so it loops while the form keeps
-*changing*, compared with `eq`. The two differ only for a macro that returns
-the identical form object it was handed: the standard says that counts as an
-expansion, so a conforming implementation loops forever, and this one stops.
-Diverging towards terminating seemed the better way to be wrong.
+One divergence is on purpose. The standard's `macroexpand` returns two values,
+the form and whether anything was expanded, and loops on the second. Quokka has
+no multiple values yet, so it loops while the form keeps *changing*, compared
+with `eq`. The two differ only for a macro that returns the identical form
+object it was handed: the standard says that counts as an expansion, so a
+conforming implementation loops forever, and this one stops. Diverging towards
+terminating seemed the better way to be wrong.
 
 ## What is still missing
 
 Status, as of this chapter:
 
-- **Nested backquote is wrong.** `` `(a `(b ,,c)) `` expands the inner
+- Nested backquote is wrong. `` `(a `(b ,,c)) `` expands the inner
   backquote first, which is not what the standard says. Real nested
   quasiquotation needs the depth-aware algorithm in [CLtL2][cltl] §2.4.6, and
   nothing in Quokka's own Lisp sources needs it yet.
-- **No `macrolet`**, so a macro cannot be local to a form.
-- **Lambda lists are still simple.** `&optional` with default values,
+- There is no `macrolet`, so a macro cannot be local to a form.
+- Lambda lists are still simple. `&optional` with default values,
   `&key`, and destructuring (`(defmacro m ((a b) c) ...)`) are all absent.
   `&optional` binds `nil`, and that is the whole of it.
+
+*Later: two of those three were closed inside tier 0. `macrolet` arrived with
+`flet` and `labels`, which differ from it in two bits, and
+[Lambda lists](18-lambda-lists.md) builds the full parameter syntax, defaults,
+`&key`, destructuring and all. Multiple values arrived too, in
+[More than one answer](23-more-than-one-answer.md), though `macroexpand` kept
+its one-value loop until the library rewrote it. Nested backquote is still
+wrong, in both readers: the Lisp one counts backquote depth only to catch a
+comma outside every backquote, exactly as the Rust one does.*
 
 ## What this unlocks
 
 Chapter 13 said the special operator list was arbitrary and that most of Lisp
 is not in it. This is the chapter where that becomes true rather than
-aspirational. `when`, `unless`, `cond`, `and`, `or`, `dolist`, `push` — none of
+aspirational. `when`, `unless`, `cond`, `and`, `or`, `dolist`, `push`: none of
 them needs the evaluator to change. They are macros, they will be written in
 Lisp, and they are the beginning of a core library that lives above the
 primitive table.
 
-`defun` is currently a special operator, which is slightly embarrassing: it is
-a macro in every real Common Lisp, expanding roughly into `(setf (symbol-function
-'name) (lambda ...))`. Moving it up is now possible, and is the first test of
-whether the line in rule 1 is in the right place.
+`defun` is currently a special operator, which is slightly embarrassing, since
+it is a macro in every real Common Lisp, expanding roughly into `(setf
+(symbol-function 'name) (lambda ...))`. Moving it up is now possible, and is
+the first test of whether the line in rule 1 is in the right place.
+
+*Later: it moved. `defun` is a macro in `lisp/prelude.lisp` now, and
+[The prelude](16-the-prelude.md) is the chapter where it and the rest of the
+core library go up across the line.*
 
 ---
 
-**References.** Paul Graham, *On Lisp* (1993), chapters 7–10 — still the best
+**References.** Paul Graham, *On Lisp* (1993), chapters 7–10, still the best
 account of what macros are for, and chapter 9 is entirely about capture.
 Christian Queinnec, *Lisp in Small Pieces* (1996), chapter 9, for macro
 expansion as an interpreter design problem. Guy Steele, *[Common Lisp the
