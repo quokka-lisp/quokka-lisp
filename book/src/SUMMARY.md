@@ -83,6 +83,7 @@
 - [Labels, limits and a counter](part-6-self-hosting/60-labels-and-limits.md)
 - [Structures of their own](part-6-self-hosting/61-structures.md)
 - [What the sequence functions skipped](part-6-self-hosting/62-sequence-gaps.md)
+- [The right error](part-6-self-hosting/63-the-right-error.md)
 
 ---
 

@@ -349,9 +349,10 @@
       (%set-nth (- n 1) (cdr list) new)))
 
 (defun %set-elt (sequence index new)
-  (if (listp sequence)
-      (%set-nth index sequence new)
-      (setf (aref sequence index) new)))
+  (cond ((listp sequence) (%set-nth index sequence new))
+        ((and (integerp index) (>= index 0) (< index (length sequence)))
+         (setf (aref sequence index) new))
+        (t (error 'type-error "the index is not inside the sequence" index))))
 
 ;;; `(setf (values a b) form)` stores each value of FORM in its own place:
 ;;; one store per place, so this is the place with several stores.

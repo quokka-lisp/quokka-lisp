@@ -9,22 +9,22 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1452 | 21 | 0 | 1 | 0 | 164 | 1638 |
-| sequences | 2532 | 18 | 0 | 2 | 0 | 606 | 3158 |
+| cons | 1460 | 13 | 0 | 1 | 0 | 164 | 1638 |
+| sequences | 2550 | 0 | 0 | 2 | 0 | 606 | 3158 |
 | strings | 370 | 23 | 0 | 0 | 0 | 108 | 501 |
 | arrays | 629 | 0 | 0 | 1 | 0 | 604 | 1234 |
 | characters | 133 | 0 | 0 | 0 | 0 | 126 | 259 |
-| symbols | 120 | 7 | 0 | 1 | 0 | 1017 | 1145 |
-| packages | 254 | 17 | 0 | 2 | 0 | 67 | 340 |
+| symbols | 122 | 5 | 0 | 1 | 0 | 1017 | 1145 |
+| packages | 261 | 10 | 0 | 2 | 0 | 67 | 340 |
 | numbers | 542 | 3 | 0 | 4 | 0 | 889 | 1438 |
 | reader | 111 | 4 | 0 | 0 | 0 | 50 | 165 |
 | printer | 225 | 5 | 0 | 4 | 0 | 588 | 822 |
-| data-and-control-flow | 1095 | 59 | 13 | 0 | 0 | 253 | 1420 |
+| data-and-control-flow | 1097 | 57 | 13 | 0 | 0 | 253 | 1420 |
 | eval-and-compile | 244 | 27 | 5 | 0 | 0 | 42 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 81 | 1 | 0 | 0 | 0 | 85 | 167 |
 | structures | 60 | 0 | 0 | 0 | 0 | 55 | 115 |
-| **all** | **7943** | **185** | **18** | **15** | **0** | **5397** | **13558** |
+| **all** | **7980** | **148** | **18** | **15** | **0** | **5397** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 

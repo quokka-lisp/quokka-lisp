@@ -66,11 +66,12 @@
 
 ;;; `fdefinition` is `symbol-function` for the names Quokka has: symbols.
 ;;; A name `(setf foo)` would need setf functions, which Quokka does not
-;;; have (#52).
+;;; have (#52), so it names no function; anything else is not a function
+;;; name at all, a `type-error` (#75).
 (defun fdefinition (name)
-  (if (symbolp name)
-      (symbol-function name)
-      (error 'undefined-function)))
+  (cond ((symbolp name) (symbol-function name))
+        ((and (consp name) (eq (car name) 'setf)) (error 'undefined-function))
+        (t (error 'type-error "a function name is a symbol or (setf symbol)" name))))
 
 (defsetf fdefinition (name) (function)
   `(%set-symbol-function ,name ,function))

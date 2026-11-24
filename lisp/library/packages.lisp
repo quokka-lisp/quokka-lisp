@@ -49,7 +49,8 @@
   (cond ((stringp designator) (%simple-string designator))
         ((symbolp designator) (symbol-name designator))
         ((characterp designator) (string designator))
-        (t (error "a package or symbol name must be a string or a symbol"))))
+        (t (error 'type-error "a package or symbol name must be a string or a symbol"
+                  designator))))
 
 (defun %designator-names (designators)
   (if (endp designators)
@@ -79,7 +80,7 @@
   (let ((package (find-package designator)))
     (if package
         package
-        (error "there is no package with that name"))))
+        (%package-error designator "there is no package with that name"))))
 
 (defun package-name (package) (%package-name (%the-package package)))
 (defun package-nicknames (package) (%package-nicknames (%the-package package)))
@@ -537,6 +538,8 @@
 ;;; counts from zero (`%rebuild-world`), or two rebuilds would differ in
 ;;; size for no reason but their numbering.
 (defun gensym (&optional (x "G"))
+  (if (not (and (integerp *gensym-counter*) (>= *gensym-counter* 0)))
+      (error 'type-error "*gensym-counter* wants a non-negative integer" *gensym-counter*))
   (let ((name (cond ((stringp x)
                      (prog1 (%string-append x (%decimal-string *gensym-counter*))
                        (setq *gensym-counter* (+ *gensym-counter* 1))))

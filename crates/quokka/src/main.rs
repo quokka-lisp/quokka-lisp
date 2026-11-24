@@ -143,9 +143,9 @@ fn rebuild(args: &[String]) {
     let ran = quokka_vm::vm::eval_source(
         &mut heap,
         "(quokka::%rebuild-world)",
-        // As `differential.rs` gives it. Twenty was too few once the library
-        // gained floats (#17): a rebuild compiles every form of the system.
-        EVAL_BUDGET * 40,
+        // As `differential.rs` gives it: a rebuild compiles every form of the
+        // system. 20 ran out at floats (#17), 40 at step AB (#75, ~201M steps).
+        EVAL_BUDGET * 60,
         2_000,
         &mut NativeHost,
         |outcome| {

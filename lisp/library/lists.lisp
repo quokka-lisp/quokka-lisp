@@ -158,8 +158,41 @@
 ;;; `(destructuring-bind lambda-list expression body...)`: take EXPRESSION's
 ;;; value apart as a macro takes its arguments apart. The function is made by
 ;;; the compiler from the same rewrite `defmacro` uses.
+;;;
+;;; A `nil` among the required elements is the empty pattern `()`, which
+;;; matches only nil, as in SBCL; the rewrite would bind it as a variable.
+;;; Each one becomes a fresh variable, checked to be nil before the body
+;;; runs (#75).
 (defmacro destructuring-bind (lambda-list expression &body body)
-  `(apply (%destructuring-lambda ,lambda-list ,@body) ,expression))
+  (let ((checked (%empty-patterns lambda-list)))
+    `(apply (%destructuring-lambda ,(car checked) ,@(%body-declarations body)
+                                   ,@(cdr checked) ,@(%body-forms body))
+            ,expression)))
+
+;;; (pattern . checks): PATTERN with its required `nil`s replaced.
+(defun %empty-patterns (pattern)
+  (let ((checks nil))
+    (labels ((walk (p)
+               (cond ((atom p) p)
+                     ((member (car p) '(&optional &rest &body &key &aux &whole &environment
+                                        &allow-other-keys))
+                      p)
+                     ((null (car p))
+                      (let ((empty (gensym "EMPTY")))
+                        (push `(if ,empty (%destructuring-too-long)) checks)
+                        (cons empty (walk (cdr p)))))
+                     ((consp (car p)) (cons (walk (car p)) (walk (cdr p))))
+                     (t (cons (car p) (walk (cdr p)))))))
+      (let ((walked (walk pattern)))
+        (cons walked checks)))))
+
+;;; A form that does not match its pattern is a `program-error` (CLHS
+;;; 3.5.1.6), as SBCL signals; the prelude's, written for tier 0, signal a
+;;; plain error (#75).
+(defun %destructuring-too-short ()
+  (error 'program-error "a macro call is missing arguments its parameter list asked for"))
+(defun %destructuring-too-long ()
+  (error 'program-error "a macro call has more arguments than its parameter list asked for"))
 
 ;;; ------------------------------------------------------------------------
 ;;; Iteration (CLHS 6)
@@ -178,7 +211,7 @@
 (defmacro psetq (&rest pairs)
   `(psetf ,@pairs))
 
-;;; A loop body's leading `(declare ...)` forms, and the forms after them.
+;;; A body's leading `(declare ...)` forms, and the forms after them.
 ;;; The declarations go on the loop's bindings, where they cover the body and
 ;;; the result form; left in the `tagbody` they would be no-ops (`declare` is
 ;;; a macro expanding to nil), and a `special` one would be lost (#66).
@@ -342,8 +375,23 @@
     (dotimes (i size list)
       (setq list (cons initial-element list)))))
 
+;;; `endp` with the check CLHS asks for: the prelude's is `null`, and a
+;;; non-list is a `type-error` (#75). A cons is asked about first: it is
+;;; the common case, and the compiler calls `endp` on every list it walks,
+;;; so the order decides whether a rebuild fits its step budget.
+(defun endp (object)
+  (cond ((consp object) nil)
+        ((null object) t)
+        (t (error 'type-error "endp wants a list" object))))
+
+;;; A count that is not a non-negative integer is a `type-error`, here and
+;;; in `last`, `butlast` and `nbutlast`, which check through this (#75).
+(defun %check-count (n)
+  (if (or (not (integerp n)) (< n 0))
+      (error 'type-error "wants a non-negative integer" n)))
+
 (defun nthcdr (n list)
-  (if (or (not (integerp n)) (< n 0)) (error "NTHCDR wants a non-negative integer" n))
+  (%check-count n)
   (do ((i 0 (+ i 1))
        (tail list (cdr tail)))
       ((= i n) tail)))
@@ -360,10 +408,12 @@
           ((and (eq fast slow) (> n 0)) (return nil)))))
 
 (defun last (list &optional (n 1))
+  (%check-count n)
   (let ((count (length list)))
     (nthcdr (if (> count n) (- count n) 0) list)))
 
 (defun butlast (list &optional (n 1))
+  (%check-count n)
   (let ((keep (- (length list) n)))
     (do ((i 0 (+ i 1))
          (tail list (cdr tail))
@@ -371,6 +421,7 @@
         ((>= i keep) (reverse out)))))
 
 (defun nbutlast (list &optional (n 1))
+  (%check-count n)
   (let ((keep (- (length list) n)))
     (if (<= keep 0)
         nil

@@ -1117,6 +1117,7 @@ cons ENDP-NIL
 cons ENDP-SINGLETON-LIST
 cons ENDP.ERROR.4
 cons ENDP.ERROR.5
+cons ENDP.ERROR.6
 cons ENDP.ORDER.1
 cons FIRST-ETC-2
 cons GET-PROPERTIES.1
@@ -1193,7 +1194,10 @@ cons LAST.4
 cons LAST.5
 cons LAST.6
 cons LAST.7
+cons LAST.ERROR.1
 cons LAST.ERROR.2
+cons LAST.ERROR.3
+cons LAST.ERROR.4
 cons LAST.ERROR.5
 cons LAST.ERROR.6
 cons LAST.ERROR.7
@@ -1453,6 +1457,8 @@ cons NBUTLAST.ERROR.2
 cons NBUTLAST.ERROR.3
 cons NBUTLAST.ERROR.4
 cons NBUTLAST.ERROR.5
+cons NBUTLAST.ERROR.6
+cons NBUTLAST.ERROR.7
 cons NBUTLAST.ERROR.8
 cons NBUTLAST.ERROR.9
 cons NBUTLAST.ORDER.1
@@ -1706,6 +1712,8 @@ cons NTHCDR.3
 cons NTHCDR.4
 cons NTHCDR.5
 cons NTHCDR.ERROR.10
+cons NTHCDR.ERROR.11
+cons NTHCDR.ERROR.6
 cons NTHCDR.ERROR.7
 cons NTHCDR.ERROR.8
 cons NTHCDR.ERROR.9
@@ -2452,6 +2460,7 @@ data-and-control-flow DESTRUCTURING-BIND.7
 data-and-control-flow DESTRUCTURING-BIND.7A
 data-and-control-flow DESTRUCTURING-BIND.8
 data-and-control-flow DESTRUCTURING-BIND.9
+data-and-control-flow DESTRUCTURING-BIND.ERROR.10
 data-and-control-flow DESTRUCTURING-BIND.ERROR.7
 data-and-control-flow DESTRUCTURING-BIND.ERROR.8
 data-and-control-flow DESTRUCTURING-BIND.ERROR.9
@@ -2577,6 +2586,7 @@ data-and-control-flow FDEFINITION.4
 data-and-control-flow FDEFINITION.ERROR.1
 data-and-control-flow FDEFINITION.ERROR.2
 data-and-control-flow FDEFINITION.ERROR.3
+data-and-control-flow FDEFINITION.ERROR.6
 data-and-control-flow FLET.1
 data-and-control-flow FLET.10
 data-and-control-flow FLET.11
@@ -4383,6 +4393,7 @@ packages IN-PACKAGE.1
 packages IN-PACKAGE.2
 packages IN-PACKAGE.3
 packages IN-PACKAGE.4
+packages IN-PACKAGE.5
 packages INTERN.1
 packages INTERN.2
 packages INTERN.4
@@ -4429,6 +4440,9 @@ packages PACKAGE-NAME.13
 packages PACKAGE-NAME.2
 packages PACKAGE-NAME.3
 packages PACKAGE-NAME.4
+packages PACKAGE-NAME.5
+packages PACKAGE-NAME.6
+packages PACKAGE-NAME.6A
 packages PACKAGE-NAME.7
 packages PACKAGE-NAME.8
 packages PACKAGE-NAME.9
@@ -4436,6 +4450,7 @@ packages PACKAGE-NAME.ERROR.1
 packages PACKAGE-NAME.ERROR.2
 packages PACKAGE-NICKNAMES.1
 packages PACKAGE-NICKNAMES.10
+packages PACKAGE-NICKNAMES.11
 packages PACKAGE-NICKNAMES.2
 packages PACKAGE-NICKNAMES.3
 packages PACKAGE-NICKNAMES.4
@@ -4443,6 +4458,8 @@ packages PACKAGE-NICKNAMES.5
 packages PACKAGE-NICKNAMES.6
 packages PACKAGE-NICKNAMES.7
 packages PACKAGE-NICKNAMES.8
+packages PACKAGE-NICKNAMES.9
+packages PACKAGE-NICKNAMES.9A
 packages PACKAGE-NICKNAMES.ERROR.1
 packages PACKAGE-NICKNAMES.ERROR.2
 packages PACKAGE-SHADOWING-SYMBOLS.ERROR.1
@@ -5348,8 +5365,12 @@ sequences ELT-ADJ-ARRAY.8
 sequences ELT-ADJ-ARRAY.9
 sequences ELT-FILL-POINTER.1
 sequences ELT-FILL-POINTER.2
+sequences ELT-FILL-POINTER.3
+sequences ELT-FILL-POINTER.4
 sequences ELT-FILL-POINTER.5
+sequences ELT-FILL-POINTER.6
 sequences ELT-FILL-POINTER.7
+sequences ELT-FILL-POINTER.8
 sequences ELT-V.1
 sequences ELT-V.10
 sequences ELT-V.11
@@ -5359,10 +5380,20 @@ sequences ELT-V.5
 sequences ELT-V.7
 sequences ELT-V.8
 sequences ELT-V.9
+sequences ELT.1
 sequences ELT.10
+sequences ELT.14
+sequences ELT.15
+sequences ELT.16
+sequences ELT.17
+sequences ELT.18
+sequences ELT.19
+sequences ELT.1A
+sequences ELT.1B
 sequences ELT.3
 sequences ELT.4
 sequences ELT.5
+sequences ELT.5A
 sequences ELT.7
 sequences ELT.8
 sequences ELT.9
@@ -5683,10 +5714,12 @@ sequences MAKE-SEQUENCE.ALLOW-OTHER-KEYS.2
 sequences MAKE-SEQUENCE.ALLOW-OTHER-KEYS.3
 sequences MAKE-SEQUENCE.ALLOW-OTHER-KEYS.4
 sequences MAKE-SEQUENCE.ALLOW-OTHER-KEYS.5
+sequences MAKE-SEQUENCE.ERROR.1
 sequences MAKE-SEQUENCE.ERROR.10
 sequences MAKE-SEQUENCE.ERROR.11
 sequences MAKE-SEQUENCE.ERROR.12
 sequences MAKE-SEQUENCE.ERROR.13
+sequences MAKE-SEQUENCE.ERROR.14
 sequences MAKE-SEQUENCE.ERROR.2
 sequences MAKE-SEQUENCE.ERROR.3
 sequences MAKE-SEQUENCE.ERROR.4
@@ -5791,6 +5824,8 @@ sequences MAP.44
 sequences MAP.45
 sequences MAP.46
 sequences MAP.47
+sequences MAP.ERROR.1
+sequences MAP.ERROR.1A
 sequences MAP.ERROR.2
 sequences MAP.ERROR.3
 sequences MAP.ERROR.4
@@ -7854,6 +7889,8 @@ symbols GENSYM.6
 symbols GENSYM.7
 symbols GENSYM.8
 symbols GENSYM.9
+symbols GENSYM.ERROR.10
+symbols GENSYM.ERROR.11
 symbols GENSYM.ERROR.12
 symbols GENSYM.ERROR.7
 symbols GENSYM.ERROR.8

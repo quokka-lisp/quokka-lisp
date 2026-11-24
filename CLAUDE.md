@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1223 :REPLACED 977)` (asserted in `differential.rs`; any new library
+`(:FORMS 1229 :REPLACED 983)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -285,8 +285,17 @@ counts deferred causes as deferred (`defstruct-with-tests`, an error message
 naming a deferred feature, the underflow note). A library file cannot use a
 `setf` place defined in a later file: call the setter. Rust 0. ansi-test:
 **7,943**; plain failures 185.
-**Next:** step AB, typed conditions where CLHS names one and the missing
-argument checks (#39's list). Phase 2's scope is
+**Step AB is done** (#75, chapter 63): the library's checks signal the
+condition type CLHS names (`type-error`, `package-error`, `program-error`)
+instead of `simple-error`; `endp` (redefined in `lists.lisp`), `last`
+counts, `elt` past a fill pointer and a negative `*gensym-counter*` are
+checked; a `nil` in a `destructuring-bind` pattern is the empty pattern.
+**The rebuild's step budget is 60 × a form's** (`quokka rebuild` and
+`differential.rs`): a rebuild takes ~201M steps and grows with the library;
+a `BudgetExhausted` rebuild that finishes in normal time with more budget is
+not a loop. Rust 0. ansi-test: **7,980**; plain failures 148.
+**Next:** step AC, the lambda-list fixes (Rust), then AD and AE, which need
+Carsten's decisions (#39's list). Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -355,8 +364,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**429 tests**; **43 differential files agree with SBCL** — 17 interpreted and
-compiled, plus twenty-six tier-1 files, compiled only, and all 43 also pass in a rebuilt world. The Rust core is **15,537** lines of the 15,537 budget (raised from 15,000 by #67 and from 15,500 by #73).
+**430 tests**; **44 differential files agree with SBCL** — 17 interpreted and
+compiled, plus twenty-seven tier-1 files, compiled only, and all 44 also pass in a rebuilt world. The Rust core is **15,537** lines of the 15,537 budget (raised from 15,000 by #67 and from 15,500 by #73).
 
 ## How phase 1 ended
 

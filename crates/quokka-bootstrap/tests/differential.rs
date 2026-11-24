@@ -148,6 +148,7 @@ tier1_cases! {
     labels_and_limits => "labels-and-limits",
     defstruct_options => "defstruct-options",
     sequence_gaps => "sequence-gaps",
+    condition_types => "condition-types",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -367,7 +368,8 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     eval_source(
         &mut heap,
         "(quokka::%rebuild-world)",
-        BUDGET * 40,
+        // As `quokka rebuild` gives it (`crates/quokka/src/main.rs`, #75).
+        BUDGET * 60,
         2_000,
         &mut host,
         |outcome| {
@@ -378,7 +380,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1223 :REPLACED 977)".into())],
+        [Outcome::Value("(:FORMS 1229 :REPLACED 983)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

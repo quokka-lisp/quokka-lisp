@@ -99,7 +99,7 @@
           ((and (eq head 'vector) (consp type) (consp (cdr type)) (eq (car (cdr type)) 'bit))
            :bit-vector)
           ((member head '(vector simple-vector array simple-array)) :vector)
-          (t (error "not a sequence type Quokka knows" type)))))
+          (t (error 'type-error "not a sequence type Quokka knows" type)))))
 
 ;;; A sequence of KIND holding ITEMS, a list.
 (defun %from-list (kind items)
@@ -183,14 +183,21 @@
 ;;; ------------------------------------------------------------------------
 ;;; Reading
 
-;;; `elt` with the bounds check the prelude's did not make (decision 3).
+;;; `elt` with the bounds check the prelude's did not make (decision 3). An
+;;; index outside the sequence is a `type-error`, and a vector's end is its
+;;; fill pointer, which `aref` does not look at (#75).
 (defun elt (sequence index)
   (if (listp sequence)
       (let ((tail (if (and (integerp index) (>= index 0)) (nthcdr index sequence) nil)))
         (if (consp tail)
             (car tail)
-            (error "index out of range for ELT" index)))
-      (aref sequence index)))
+            (%bad-index sequence index)))
+      (if (and (integerp index) (>= index 0) (< index (length sequence)))
+          (aref sequence index)
+          (%bad-index sequence index))))
+
+(defun %bad-index (sequence index)
+  (error 'type-error "the index is not inside the sequence" (list index (length sequence))))
 
 (defun subseq (sequence start &optional end)
   (%from-list (%kind-of sequence) (%range-list sequence start end)))
