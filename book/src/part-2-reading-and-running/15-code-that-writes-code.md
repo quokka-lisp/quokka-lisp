@@ -273,18 +273,16 @@ of a name agree, so a name that cannot be written cannot collide.
 pub fn gensym(&mut self) -> Value<'h> {
     self.storage.gensym_counter += 1;
     let n = self.storage.gensym_counter;
-    let text = self.alloc_string(&format!("G{n}"));
-    let s = self.alloc(ObjectType::Symbol, symbol::SLOTS);
-    self.set_slot(s, symbol::NAME, text);
-    self.set_slot(s, symbol::VALUE, Value::UNBOUND);
-    self.set_slot(s, symbol::FUNCTION, Value::UNBOUND);
-    s
+    // Interned nowhere, which is the point.
+    self.new_symbol(&format!("G{n}"))
 }
 ```
 
-Eight lines, and the counter is a plain `u64` rather than a `Value`, so the
-collector never has to think about it. The name is only for printing; the
-identity is the object.
+Five lines. `new_symbol` allocates a symbol object and fills its name, value
+and function slots, and the only thing `gensym` adds is that it does not put
+the result in the obarray afterwards. The counter is a plain `u64` rather than
+a `Value`, so the collector never has to think about it. The name is only for
+printing; the identity is the object.
 
 *Later: the library redefines `gensym` in Lisp, in `packages.lisp`, so that it
 honours the prefix argument the standard gives it. The Rust one stays, because
