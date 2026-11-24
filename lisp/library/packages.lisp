@@ -521,6 +521,32 @@
                   (values t (first ,entry) (second ,entry) (third ,entry)))
            nil))))
 
+;;; `(gensym [x])` — a new uninterned symbol, named "G" and the value of
+;;; `*gensym-counter*`, which advances; or named X and the counter, when X is
+;;; a string; or "G" and X, without advancing, when X is an integer (step Y,
+;;; #72). Until here `gensym` was the primitive, whose counter is in Rust and
+;;; which ignored its argument: CLHS makes the counter a special variable a
+;;; program may bind, so the counter has to be one, and then `gensym` has to
+;;; read it. Here because this file loads last, when the digits and `coerce`
+;;; it needs exist; a macro in an earlier file still gets the primitive. The
+;;; variable is in `symbols.lisp`, so that `rebuild.lisp` may bind it.
+;;;
+;;; The compiler calls this `gensym` when it compiles itself. A name now
+;;; carries its prefix — `SETF-EXPANDER1000` — so its length depends on the
+;;; counter, and a longer name is a longer string; a rebuild therefore
+;;; counts from zero (`%rebuild-world`), or two rebuilds would differ in
+;;; size for no reason but their numbering.
+(defun gensym (&optional (x "G"))
+  (let ((name (cond ((stringp x)
+                     (prog1 (%string-append x (%decimal-string *gensym-counter*))
+                       (setq *gensym-counter* (+ *gensym-counter* 1))))
+                    ((and (integerp x) (>= x 0)) (%string-append "G" (%decimal-string x)))
+                    (t (error 'type-error "gensym wants a string or a non-negative integer" x)))))
+    (make-symbol name)))
+
+(defun %decimal-string (integer)
+  (coerce (mapcar #'digit-char (%integer-digits integer 10 nil)) 'string))
+
 ;;; `(gentemp [prefix [package]])` — a new symbol interned in PACKAGE, named
 ;;; PREFIX and a counter, the counter advanced past any name already taken.
 (defvar %gentemp-counter 0)

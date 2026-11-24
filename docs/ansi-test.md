@@ -14,30 +14,25 @@ A test can need several things.
 | strings | 370 | 23 | 0 | 0 | 0 | 108 | 501 |
 | arrays | 629 | 0 | 0 | 1 | 0 | 604 | 1234 |
 | characters | 133 | 0 | 0 | 0 | 0 | 126 | 259 |
-| symbols | 104 | 23 | 0 | 1 | 0 | 1017 | 1145 |
+| symbols | 120 | 7 | 0 | 1 | 0 | 1017 | 1145 |
 | packages | 254 | 17 | 0 | 2 | 0 | 67 | 340 |
-| numbers | 532 | 21 | 0 | 4 | 0 | 881 | 1438 |
-| reader | 111 | 4 | 0 | 1 | 0 | 49 | 165 |
+| numbers | 542 | 11 | 0 | 4 | 0 | 881 | 1438 |
+| reader | 111 | 4 | 0 | 0 | 0 | 50 | 165 |
 | printer | 223 | 19 | 0 | 4 | 0 | 576 | 822 |
-| data-and-control-flow | 1084 | 68 | 13 | 0 | 5 | 250 | 1420 |
-| eval-and-compile | 237 | 28 | 5 | 0 | 6 | 42 | 318 |
+| data-and-control-flow | 1095 | 59 | 13 | 0 | 0 | 253 | 1420 |
+| eval-and-compile | 244 | 27 | 5 | 0 | 0 | 42 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
-| hash-tables | 81 | 1 | 0 | 0 | 3 | 82 | 167 |
+| hash-tables | 81 | 1 | 0 | 0 | 0 | 85 | 167 |
 | structures | 22 | 50 | 0 | 0 | 8 | 35 | 115 |
-| **all** | **7807** | **347** | **18** | **16** | **22** | **5348** | **13558** |
+| **all** | **7851** | **311** | **18** | **15** | **8** | **5355** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
 | needs | tests |
 | --- | ---: |
-| `reader[#=]` | 6 |
-| `reader[#.]` | 4 |
 | `load-error[STRUCT-INCLUDE-02B]` | 3 |
-| `reader[#*]` | 3 |
-| `reader[#A]` | 3 |
 | `load-error[STRUCT-INCLUDE-01B-D]` | 2 |
 | `load-error[STRUCT-INCLUDE-04B]` | 2 |
-| `load-error[DEFSETF.5-ACCESSOR]` | 1 |
 | `load-error[STRUCT-INCLUDE-03B]` | 1 |
 
 ## Deferred features, by how many tests each blocks
@@ -52,9 +47,9 @@ A test can need several things.
 | `HANDLER-BIND[tier-2:conditions]` | 277 |
 | `TYPE-ERROR-DATUM[tier-2:conditions]` | 266 |
 | `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 266 |
+| `FIND-CLASS[tier-2:clos]` | 262 |
 | `MUFFLE-WARNING[tier-2:conditions]` | 261 |
-| `FIND-CLASS[tier-2:clos]` | 259 |
-| `reader[#C]` | 223 |
+| `reader[#C]` | 224 |
 | `SUBTYPEP[phase-3:types]` | 193 |
 | `COMPLEX[deferred:complex-numbers]` | 175 |
 | `DEFGENERIC[tier-2:clos]` | 145 |
@@ -64,18 +59,18 @@ A test can need several things.
 | `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 114 |
 | `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 114 |
 | `FIND-METHOD[tier-2:clos]` | 111 |
-| `ETYPECASE[phase-3:types]` | 74 |
+| `ETYPECASE[phase-3:types]` | 75 |
 | `REALPART[deferred:complex-numbers]` | 72 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 54 |
-| `TYPECASE[phase-3:types]` | 29 |
+| `TYPECASE[phase-3:types]` | 30 |
 | `WITH-OPEN-STREAM[tier-2:streams]` | 29 |
 | `DOCUMENTATION[tier-2:clos]` | 28 |
 | `PPRINT-INDENT[tier-2:pretty-printer]` | 28 |
 | `IMAGPART[deferred:complex-numbers]` | 26 |
 | `COPY-PPRINT-DISPATCH[tier-2:pretty-printer]` | 25 |
 | `PPRINT-NEWLINE[tier-2:pretty-printer]` | 25 |
+| `CTYPECASE[phase-3:types]` | 21 |
 | `COMPLEXP[deferred:complex-numbers]` | 20 |
-| `CTYPECASE[phase-3:types]` | 20 |
 | `LOOP-FINISH[tier-2:loop]` | 20 |
 | `TYPE-OF[phase-3:types]` | 19 |
 | `SET-PPRINT-DISPATCH[tier-2:pretty-printer]` | 17 |
@@ -96,10 +91,10 @@ A test can need several things.
 | `PATHNAME[tier-2:pathnames-and-files]` | 8 |
 | `PPRINT-EXIT-IF-LIST-EXHAUSTED[tier-2:pretty-printer]` | 8 |
 | `MAKE-BROADCAST-STREAM[tier-2:streams]` | 7 |
+| `reader[#P]` | 7 |
 | `DEFCLASS[tier-2:clos]` | 6 |
 | `PACKAGE-ERROR-PACKAGE[tier-2:conditions]` | 6 |
 | `PPRINT-TAB[tier-2:pretty-printer]` | 6 |
-| `reader[#P]` | 6 |
 | `CHECK-TYPE[phase-3:types]` | 5 |
 | `CIS[deferred:complex-numbers]` | 5 |
 | `DEFMETHOD[tier-2:clos]` | 5 |

@@ -163,7 +163,8 @@
 ;;; computes the writer, with the parameters bound to the *temporaries* that
 ;;; hold the place's subforms, and the stores to the store variables. The
 ;;; function below takes the stores first, then the place's arguments, so an
-;;; ordinary lambda list does the binding.
+;;; ordinary lambda list does the binding. BODY is in a block named NAME, as
+;;; CLHS asks, so it may `return-from` the access function's name (step Y).
 (defmacro defsetf (name &rest rest)
   (if (and (consp rest) (symbolp (car rest)) (car rest))
       `(%define-setf-short ',name ',(car rest))
@@ -178,7 +179,9 @@
               (%long-defsetf-expansion
                ',name ,arguments ,(length stores)
                (lambda (,@stores ,@plain)
-                 (let ((,environment (%current-environment))) ,environment ,@body)))))))))
+                 (let ((,environment (%current-environment)))
+                   ,environment
+                   (block ,name ,@body))))))))))
 
 (defun %long-defsetf-expansion (name forms count writer)
   (multiple-value-bind (vars vals args) (%temporaries forms)

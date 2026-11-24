@@ -215,12 +215,14 @@ quokka rebuild c2.qi c3.qi
 **C3** is made by C2's compiler.
 
 What to expect today:
-- C1 is 853,080 bytes; C2 and C3 are 853,616 each. A rebuild takes about
-  twelve seconds.
-- Every rebuild reports `(:FORMS 1148 :REPLACED 934)`.
-- `cmp c2.qi c3.qi` still reports differences, and that is expected. Gensyms
-  are numbered by a counter that keeps rising, the image checksum covers those
-  numbers, and the header counts saves.
+- C1 is 935,016 bytes; C2 and C3 are 936,424 each. A rebuild takes about
+  fifteen seconds.
+- Every rebuild reports `(:FORMS 1186 :REPLACED 940)`.
+- `cmp c2.qi c3.qi` still reports differences, and that is expected. The
+  library's `gensym` starts from `*gensym-counter*` = 0 in every rebuild, so
+  its names repeat exactly (#72), but the machine still makes a few gensyms of
+  its own (rewriting lambda lists) from a counter that keeps rising; the image
+  checksum covers those names, and the header counts saves.
 - **The fixpoint** (phase 2's gate, chapter 42) ignores exactly those
   differences, and checks everything else:
   ```bash

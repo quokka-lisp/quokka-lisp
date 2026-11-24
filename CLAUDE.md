@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1148 :REPLACED 934)` (asserted in `differential.rs`; any new library
+`(:FORMS 1186 :REPLACED 940)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -245,8 +245,22 @@ siblings (fallback slots 9–11 in the symbol cache) in
 The prelude's `setf` of `gethash` evaluates a default form now (the
 two-argument expansion is unchanged, which the fixpoint needs). Rust 214
 (estimate was ~70). ansi-test: **7,807**; needs tier 1 22; plain failures 347.
-**Next:** the plain failures and the last tier-1 gaps in
-`docs/ansi-test.md` (`#n=`/`#n#` reading, `defstruct :include`). Phase 2's scope is
+**Step Y is done** (#72, chapter 60): the Lisp reader reads `#n=`/`#n#` by
+placeholder and patch (`%patch-label`; labels belong to the outermost `read`,
+`%read-labels`); `call-arguments-limit`, `lambda-parameters-limit`,
+`multiple-values-limit` are 256 (measured bytecode ceilings), every float
+format's constants are the double's, `lambda-list-keywords`; the long
+`defsetf` body is in a block; `read` returns nil under `*read-suppress*`.
+**`gensym` is Lisp now** (`packages.lisp`; `*gensym-counter*` is a `defvar`
+in `symbols.lisp`), honouring its prefix — so names vary in length with the
+counter, and **`%rebuild-world` binds `*gensym-counter*` to 0**, or C2 and C3
+differ in size. `defconstant` accepts an `equal` value (a rebuild recompiles
+quoted lists). The runner explains a failed `#.` by its form's operators.
+Rust 0. ansi-test: **7,851**; needs tier 1 8 (all `defstruct :include`);
+plain failures 311.
+**Next:** step Z, `defstruct` with all of CLHS 8 (#73, decision 1 open:
+a structure as a vector or as a heap object of its own), then the plain
+failures in `docs/ansi-test.md`. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -315,8 +329,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**426 tests**; **40 differential files agree with SBCL** — 17 interpreted and
-compiled, plus twenty-three tier-1 files, compiled only, and all 40 also pass in a rebuilt world. The Rust core is **15,468** lines of the 15,500 budget (raised from 15,000 by #67).
+**427 tests**; **41 differential files agree with SBCL** — 17 interpreted and
+compiled, plus twenty-four tier-1 files, compiled only, and all 41 also pass in a rebuilt world. The Rust core is **15,468** lines of the 15,500 budget (raised from 15,000 by #67).
 
 ## How phase 1 ended
 

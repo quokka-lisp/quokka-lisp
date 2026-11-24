@@ -145,6 +145,7 @@ tier1_cases! {
     bit_fields => "bit-fields",
     reader_syntax => "reader-syntax",
     hash_tables_completed => "hash-tables-completed",
+    labels_and_limits => "labels-and-limits",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -375,7 +376,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1148 :REPLACED 934)".into())],
+        [Outcome::Value("(:FORMS 1186 :REPLACED 940)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -559,7 +560,6 @@ const SEQUENCE_WORD: usize = 4;
 const GENSYM_COUNTER_WORD: usize = 4 + 16;
 
 fn confirm_header_layout(image: &[u8]) {
-    use quokka_vm::heap::Register;
     let (header, _) = image_words(image);
     let mut heap = quokka_vm::image::load(image, 1 << 22).expect("the image loads");
     assert_eq!(
@@ -568,11 +568,14 @@ fn confirm_header_layout(image: &[u8]) {
         "the sequence word moved"
     );
     // The counter holds the last number issued, so the next gensym is one
-    // more. `gensym` is called through the trampoline rather than as a form,
-    // because compiling a form can make gensyms of its own first.
-    let mut host = quokka_vm::host::NullHost::default();
-    quokka_vm::vm::call_global(&mut heap, "GENSYM", BUDGET, 2_000, &mut host).expect("gensym runs");
-    let name = heap.mutate(|mc| mc.symbol_name(mc.register(Register::Value)));
+    // more. It is the machine's own counter, which the primitive `gensym`
+    // advanced until the library's `gensym` (step Y, #72) took over with
+    // `*gensym-counter*`; the cold build still uses it, so it is still in
+    // the header, and asked for here directly.
+    let name = heap.mutate(|mc| {
+        let made = mc.gensym();
+        mc.symbol_name(made)
+    });
     assert_eq!(
         name,
         format!("G{}", header[GENSYM_COUNTER_WORD] + 1),

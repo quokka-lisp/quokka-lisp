@@ -87,7 +87,10 @@
 ;;; compiler refuses a binding or `setq` of it in the same form and after;
 ;;; marked on the symbol's property list, which `constantp` reads; and given
 ;;; VALUE unless it already has one `eql` to it, so loading the same file
-;;; twice is harmless, as in SBCL. A different value is an error.
+;;; twice is harmless, as in SBCL. A different value is an error — except
+;;; one `equal` to the old, which keeps the old: a quoted list is a new list
+;;; every time its file is compiled, and a rebuild compiles every file again
+;;; (`lambda-list-keywords`, step Y). CLHS leaves that case undefined.
 (defmacro defconstant (name value &optional documentation)
   (%proclaim-constant name)
   `(progn (%proclaim-constant ',name)
@@ -97,6 +100,7 @@
 (defun %define-constant (name value)
   (cond ((not (boundp name)))
         ((eql (symbol-value name) value))
+        ((equal (symbol-value name) value) (setq value (symbol-value name)))
         (t (error "defconstant: the constant already has a different value" name)))
   (set name value)
   (%put name '%constant t)

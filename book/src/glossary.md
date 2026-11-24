@@ -251,10 +251,13 @@ values it can no longer reach, and reclaiming their memory. The program never
 says "I am finished with this"; it is deduced from what is still reachable.
 ([3](part-1-substrate/03-what-is-alive.md))
 
-**gensym.** A primitive returning a fresh [uninterned symbol](#uninterned-symbol),
-named `G1`, `G2` and so on. Macros use it for temporary bindings, because a
+**gensym.** A function returning a fresh [uninterned symbol](#uninterned-symbol),
+named `G1`, `G2` and so on, or with a prefix of your choosing (`FOO12`).
+Macros use it for temporary bindings, because a
 symbol that is not in the [obarray](#obarray) cannot be named by anything the
-caller writes — so it cannot be [captured](#capture-variable-capture). ([15](part-2-reading-and-running/15-code-that-writes-code.md))
+caller writes — so it cannot be [captured](#capture-variable-capture). The
+number comes from the special variable `*gensym-counter*`, which a program may
+bind; until step Y it was a primitive with its counter in Rust. ([15](part-2-reading-and-running/15-code-that-writes-code.md), [60](part-6-self-hosting/60-labels-and-limits.md))
 
 **Generational collector.** A collector that exploits the fact that most values
 die young, by examining recently created ones often and long-lived ones rarely.
@@ -456,6 +459,10 @@ and how wide — is fixed by the opcode, which is what spares the assembler a
 **Place.** Anything `setf` can write, written as the form that reads it: a
 variable, `(aref v i)`, `(gethash k h)`, a structure slot, `(getf plist :k)`.
 The standard also calls it a *generalized reference*. ([43](part-6-self-hosting/43-places.md))
+
+**Placeholder and patch.** How a reader returns an object that refers to itself before it is finished, as in `#1=(a . #1#)`. `#1=` records a fresh placeholder; a `#1#` read while the object is incomplete returns it; once the object is complete, a walk replaces every placeholder with the object. Also called *backpatching*. ([60](part-6-self-hosting/60-labels-and-limits.md))
+
+**Implementation limit.** A constant with which a Common Lisp tells a program what it may rely on, such as `call-arguments-limit`: an exclusive upper bound, so one more than the most that is guaranteed to work. CLHS sets only minimums. Quokka's are its bytecode's real ceilings, 256 each. ([60](part-6-self-hosting/60-labels-and-limits.md))
 
 **Property list (plist).** A list of alternating keys and values,
 `(:colour red :size 3)`, read with `getf`. Adding a key puts it on the front,

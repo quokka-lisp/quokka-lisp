@@ -221,17 +221,46 @@
 ;;; other float format here (decision 2): `1.5` is a double either way.
 (defvar *read-default-float-format* 'single-float)
 
-(defvar pi (%parse-double "3.141592653589793"))
-(defvar most-positive-double-float (%parse-double "1.7976931348623157e308"))
-(defvar most-negative-double-float (- most-positive-double-float))
-(defvar least-positive-double-float (%parse-double "4.9406564584124654e-324"))
-(defvar least-negative-double-float (- least-positive-double-float))
-(defvar least-positive-normalized-double-float (%parse-double "2.2250738585072014e-308"))
-(defvar least-negative-normalized-double-float (- least-positive-normalized-double-float))
+(defconstant pi (%parse-double "3.141592653589793"))
+(defconstant most-positive-double-float (%parse-double "1.7976931348623157e308"))
+(defconstant most-negative-double-float (- most-positive-double-float))
+(defconstant least-positive-double-float (%parse-double "4.9406564584124654e-324"))
+(defconstant least-negative-double-float (- least-positive-double-float))
+(defconstant least-positive-normalized-double-float (%parse-double "2.2250738585072014e-308"))
+(defconstant least-negative-normalized-double-float (- least-positive-normalized-double-float))
 ;;; The smallest number that changes 1.0 when added to it, as SBCL has it:
 ;;; 2^-53 and a little more, so that the sum rounds up rather than to even.
-(defvar double-float-epsilon (%parse-double "1.1102230246251568e-16"))
-(defvar double-float-negative-epsilon (%parse-double "5.551115123125784e-17"))
+(defconstant double-float-epsilon (%parse-double "1.1102230246251568e-16"))
+(defconstant double-float-negative-epsilon (%parse-double "5.551115123125784e-17"))
+
+;;; The other three formats are the double under other names (decision 2),
+;;; so their limits are the double's (step Y, #72). They were missing, not
+;;; decided: CLHS 12.1.4.1.1 lets an implementation merge formats, never
+;;; leave out their constants.
+(defconstant most-positive-short-float most-positive-double-float)
+(defconstant most-negative-short-float most-negative-double-float)
+(defconstant least-positive-short-float least-positive-double-float)
+(defconstant least-negative-short-float least-negative-double-float)
+(defconstant least-positive-normalized-short-float least-positive-normalized-double-float)
+(defconstant least-negative-normalized-short-float least-negative-normalized-double-float)
+(defconstant short-float-epsilon double-float-epsilon)
+(defconstant short-float-negative-epsilon double-float-negative-epsilon)
+(defconstant most-positive-single-float most-positive-double-float)
+(defconstant most-negative-single-float most-negative-double-float)
+(defconstant least-positive-single-float least-positive-double-float)
+(defconstant least-negative-single-float least-negative-double-float)
+(defconstant least-positive-normalized-single-float least-positive-normalized-double-float)
+(defconstant least-negative-normalized-single-float least-negative-normalized-double-float)
+(defconstant single-float-epsilon double-float-epsilon)
+(defconstant single-float-negative-epsilon double-float-negative-epsilon)
+(defconstant most-positive-long-float most-positive-double-float)
+(defconstant most-negative-long-float most-negative-double-float)
+(defconstant least-positive-long-float least-positive-double-float)
+(defconstant least-negative-long-float least-negative-double-float)
+(defconstant least-positive-normalized-long-float least-positive-normalized-double-float)
+(defconstant least-negative-normalized-long-float least-negative-normalized-double-float)
+(defconstant long-float-epsilon double-float-epsilon)
+(defconstant long-float-negative-epsilon double-float-negative-epsilon)
 
 ;;; ------------------------------------------------------------------------
 ;;; Digits, for the printer and `format`

@@ -47,6 +47,12 @@
 ;;; The radix integers are read in (step Q, #64).
 (defvar *read-base* 10)
 
+;;; The labels `#n=` has defined so far in the object being read (step Y,
+;;; #72): a list of `(n placeholder object)`. A label belongs to the
+;;; outermost call to `read` (CLHS 2.4.8.15), which binds this afresh; a
+;;; read inside a reader macro, a recursive one, sees its caller's labels.
+(defvar %read-labels nil)
+
 ;;; ------------------------------------------------------------------------
 ;;; Characters
 ;;;
@@ -430,6 +436,17 @@
   (do ((char (%next-char stream) (%next-char stream)))
       ((not (and char (eq (%char-syntax char) :whitespace))) char)))
 
+;;; What `read` and `read-preserving-whitespace` share: a fresh set of `#n=`
+;;; labels unless the read is RECURSIVE-P, and nil for anything read while
+;;; `*read-suppress*` is true — CLHS says so of those functions' value, and
+;;; the reader macros below it still build lists of nils (step Y). The end
+;;; of the file is not something read, and still gives EOF-VALUE.
+(defun %read-outermost (stream eof-error-p eof-value recursive-p)
+  (let ((object (if recursive-p
+                    (%read stream eof-error-p eof-value)
+                    (let ((%read-labels nil)) (%read stream eof-error-p eof-value)))))
+    (if (and *read-suppress* (not (eq object eof-value))) nil object)))
+
 ;;; `(read stream eof-error-p eof-value recursive-p)` — the next object.
 ;;;
 ;;; Skip whitespace; at a macro character, call its function, which may
@@ -443,7 +460,7 @@
 ;;; SBCL's does: `(read-from-string "a b")` stops at 2, not 1.
 (defun read (&optional stream (eof-error-p t) eof-value recursive-p)
   (let* ((stream (%input-stream stream))
-         (object (%read stream eof-error-p eof-value)))
+         (object (%read-outermost stream eof-error-p eof-value recursive-p)))
     (unless recursive-p
       (let ((next (read-char stream nil nil)))
         (if (and next (not (%whitespacep next))) (unread-char next stream))))
@@ -473,7 +490,7 @@
 ;;; read made inside another (RECURSIVE-P) never consumes the delimiter
 ;;; anyway, so both kinds are the same call.
 (defun read-preserving-whitespace (&optional stream (eof-error-p t) eof-value recursive-p)
-  (%read (%input-stream stream) eof-error-p eof-value))
+  (%read-outermost (%input-stream stream) eof-error-p eof-value recursive-p))
 
 ;;; `(read-from-string string eof-error-p eof-value :start :end
 ;;; :preserve-whitespace)` — the object, and the position after it.
@@ -791,7 +808,8 @@
 ;;; `(read-delimited-list char stream)` — objects up to CHAR, as a list. What
 ;;; a program's own bracket-like reader macro wants.
 (defun read-delimited-list (char &optional stream recursive-p)
-  (%read-delimited (%input-stream stream) char nil))
+  (let ((items (%read-delimited (%input-stream stream) char nil)))
+    (if *read-suppress* nil items)))
 
 (defun %read-delimited (stream close items)
   (let ((char (%skip-whitespace stream)))
@@ -1019,6 +1037,63 @@
                          (args nil (list* (cadr rest) (intern (string (car rest)) "KEYWORD") args)))
                         ((null rest) (nreverse args))))))))
 
+;;; `#1=object` labels OBJECT, and `#1#` stands for it (CLHS 2.4.8.15 and
+;;; 2.4.8.16): `(#1=(a) #1#)` is a list whose two elements are the same
+;;; cons, and `#1=(a . #1#)` a circular list, which is what the printer
+;;; writes under `*print-circle*` (step Q). The trouble is the second: `#1#`
+;;; is read before the object it names is finished, so there is nothing yet
+;;; to return.
+;;;
+;;; The standard technique, SBCL's and CMUCL's, is a *placeholder* and a
+;;; *patch*. `#1=` records a fresh uninterned symbol under the label, reads
+;;; the object, and then walks it, replacing every occurrence of the
+;;; placeholder with the object itself. A `#1#` met while the object is
+;;; still being read returns the placeholder; one met afterwards, the
+;;; object.
+(defun %read-sharp-equal (stream sub-char argument)
+  (cond ((null argument) (error 'reader-error "#= wants a label: #1="))
+        ((assoc argument %read-labels) (error 'reader-error "that #= label is already defined" argument)))
+  (let* ((placeholder (make-symbol "LABEL"))
+         (entry (list argument placeholder placeholder)))
+    (push entry %read-labels)
+    (let ((object (%read-required stream)))
+      (if (eq object placeholder) (error 'reader-error "#n= labels only itself" argument))
+      (setf (third entry) object)
+      (%patch-label object placeholder object))))
+
+(defun %read-sharp-sharp (stream sub-char argument)
+  (let ((entry (assoc argument %read-labels)))
+    (if (null entry) (error 'reader-error "#n# refers to no label defined before it" argument))
+    (third entry)))
+
+;;; Replace PLACEHOLDER by VALUE everywhere in OBJECT, and return OBJECT. The
+;;; walk goes into conses and arrays — what the reader can build — and
+;;; remembers what it has visited in an `eq` table, because the object is
+;;; circular by the time it is patched. Down a list's spine it loops, so a
+;;; long list costs no depth.
+(defun %patch-label (object placeholder value)
+  (let ((seen (make-hash-table :test 'eq)))
+    (labels ((patch (x)
+               (cond ((gethash x seen))
+                     ((consp x)
+                      (do ((cell x (cdr cell)))
+                          ((or (not (consp cell)) (gethash cell seen))
+                           (if cell (patch cell)))
+                        (setf (gethash cell seen) t)
+                        (if (eq (car cell) placeholder)
+                            (setf (car cell) value)
+                            (patch (car cell)))
+                        (if (eq (cdr cell) placeholder) (setf (cdr cell) value))))
+                     ((and (arrayp x) (not (stringp x)) (not (bit-vector-p x)))
+                      (setf (gethash x seen) t)
+                      (dotimes (i (array-total-size x))
+                        (let ((element (row-major-aref x i)))
+                          (if (eq element placeholder)
+                              (setf (row-major-aref x i) value)
+                              (patch element))))))))
+      (patch object)
+      object)))
+
 ;;; `#:name` — a symbol in no package, new every time it is read.
 (defun %read-sharp-colon (stream sub-char argument)
   (multiple-value-bind (text escaped colons) (%start-token stream (read-char stream))
@@ -1064,5 +1139,7 @@
 (set-dispatch-macro-character #\# #\+ #'%read-sharp-feature %standard-readtable)
 (set-dispatch-macro-character #\# #\- #'%read-sharp-feature %standard-readtable)
 (set-dispatch-macro-character #\# #\. #'%read-sharp-dot %standard-readtable)
+(set-dispatch-macro-character #\# #\= #'%read-sharp-equal %standard-readtable)
+(set-dispatch-macro-character #\# #\# #'%read-sharp-sharp %standard-readtable)
 
 (defvar *readtable* (copy-readtable %standard-readtable))

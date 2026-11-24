@@ -114,3 +114,8 @@
           (if (fboundp symbol) (%set-symbol-function copy (symbol-function symbol)))
           (%set-symbol-plist copy (copy-list (symbol-plist symbol)))))
     copy))
+
+;;; The number the next `gensym` puts in its name (CLHS 10.2). `gensym`
+;;; itself is in `packages.lisp`, which loads last; the variable is here, so
+;;; that it is special before `rebuild.lisp` binds it (step Y, #72).
+(defvar *gensym-counter* 0)

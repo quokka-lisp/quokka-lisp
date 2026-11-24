@@ -197,18 +197,33 @@
         (%set-position start)
         (let ((name (%deftest-name-at start)))
           (%skip-form)
-          (let ((reason (%syntax-reason (subseq (%text) start (%position)))))
+          (let ((reason (%unreadable-reason (subseq (%text) start (%position)))))
             (%break-unreadable-definition start reason)
             (values :unreadable reason name)))))))
 
-;;; Why the reader refused some text, as a "needs" reason: the syntax in it
-;;; that Quokka's reader lacks, or "reader[other]".
+;;; Why the reader refused TEXT, as "needs" reasons. If it reads once `#.`
+;;; is no longer evaluated, the evaluation is what failed, and the form it
+;;; would have evaluated says what is missing — `#.(find-class 'symbol)`
+;;; needs `find-class` (step Y, #72). Otherwise it is syntax.
+(defun %unreadable-reason (text)
+  (let* ((form (%read-without-eval text))
+         (needs (if form (%needs form) nil)))
+    (if needs (format nil "~{~A~^ ~}" needs) (%syntax-reason text))))
+
+(defun %read-without-eval (text)
+  (let ((*readtable* (copy-readtable)))
+    (set-dispatch-macro-character #\# #\. (lambda (stream char argument)
+                                             char argument
+                                             (read stream t nil t)))
+    (ignore-errors (read-from-string text))))
+
+;;; The syntax in TEXT that Quokka's reader lacks, or "reader[other]". Only
+;;; what is still missing is probed for: searching the text cannot tell
+;;; which of several kinds of syntax made the reader give up, so a probe for
+;;; syntax the reader has blames it for a neighbour's failure (#72).
 (defun %syntax-reason (text)
   (let ((found nil))
-    (dolist (probe '(("#+" . "#+") ("#-" . "#-") ("#*" . "#*") ("#." . "#.") ("#c(" . "#C")
-                     ("#C(" . "#C") ("#p\"" . "#P") ("#P\"" . "#P") ("#a(" . "#A") ("#A(" . "#A")
-                     ("2a(" . "#A") ("2A(" . "#A") ("#1=" . "#=") ("#0=" . "#=") ("#s(" . "#S")
-                     ("#S(" . "#S")))
+    (dolist (probe '(("#c(" . "#C") ("#C(" . "#C") ("#p\"" . "#P") ("#P\"" . "#P")))
       (if (and (search (car probe) text) (not (member (cdr probe) found :test #'string=)))
           (push (cdr probe) found)))
     (if (%has-ratio text) (push "ratio" found))

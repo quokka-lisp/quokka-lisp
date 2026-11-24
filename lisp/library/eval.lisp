@@ -174,3 +174,22 @@
 (defun %condition-text (condition)
   (let ((message (%condition-message condition)))
     (if (stringp message) message (princ-to-string message))))
+
+;;; ------------------------------------------------------------------------
+;;; The implementation's limits (step Y, #72)
+
+;;; Each is an *exclusive* upper bound, and each is the bytecode's real
+;;; ceiling (`docs/bytecode.md` §9), measured rather than assumed: a call
+;;; written out in the source passes at most 255 arguments (`CALL`'s count
+;;; is a byte), and a lambda list names at most 256 variables (a scope's).
+;;; `apply` can pass more, and `values` return more, but a limit is a
+;;; promise about what always works, so it is the smaller number. SBCL's are
+;;; all 2^62 - 1.
+(defconstant call-arguments-limit 256)
+(defconstant lambda-parameters-limit 256)
+(defconstant multiple-values-limit 256)
+
+;;; The lambda-list keywords CLHS defines; SBCL's list adds its own
+;;; `sb-int:&more`, which is not ours to copy.
+(defconstant lambda-list-keywords
+  '(&allow-other-keys &aux &body &environment &key &optional &rest &whole))

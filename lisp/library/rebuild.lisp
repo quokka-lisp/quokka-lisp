@@ -48,6 +48,9 @@
 ;;; forms that took and how many names it replaced.
 (defun %rebuild-world ()
   (let ((*package* %quokka-package)
+        ;; Every rebuild numbers its gensyms alike, so that two generations
+        ;; are the same size (step Y, #72; see `gensym`).
+        (*gensym-counter* 0)
         (old (%current-definitions))
         (defined nil)
         (forms 0))
