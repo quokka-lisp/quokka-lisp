@@ -10,21 +10,21 @@ A test can need several things.
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | cons | 1460 | 13 | 0 | 1 | 0 | 164 | 1638 |
-| sequences | 2550 | 0 | 0 | 2 | 0 | 606 | 3158 |
-| strings | 370 | 23 | 0 | 0 | 0 | 108 | 501 |
+| sequences | 2547 | 0 | 0 | 2 | 0 | 609 | 3158 |
+| strings | 363 | 0 | 0 | 0 | 0 | 138 | 501 |
 | arrays | 629 | 0 | 0 | 1 | 0 | 604 | 1234 |
 | characters | 133 | 0 | 0 | 0 | 0 | 126 | 259 |
-| symbols | 122 | 5 | 0 | 1 | 0 | 1017 | 1145 |
-| packages | 261 | 10 | 0 | 2 | 0 | 67 | 340 |
-| numbers | 542 | 3 | 0 | 4 | 0 | 889 | 1438 |
+| symbols | 122 | 4 | 0 | 1 | 0 | 1018 | 1145 |
+| packages | 261 | 9 | 0 | 2 | 0 | 68 | 340 |
+| numbers | 541 | 3 | 0 | 4 | 0 | 890 | 1438 |
 | reader | 111 | 4 | 0 | 0 | 0 | 50 | 165 |
-| printer | 225 | 5 | 0 | 4 | 0 | 588 | 822 |
-| data-and-control-flow | 1122 | 39 | 6 | 0 | 0 | 253 | 1420 |
+| printer | 225 | 3 | 0 | 4 | 0 | 590 | 822 |
+| data-and-control-flow | 1122 | 37 | 6 | 0 | 0 | 255 | 1420 |
 | eval-and-compile | 257 | 18 | 1 | 0 | 0 | 42 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
-| hash-tables | 81 | 1 | 0 | 0 | 0 | 85 | 167 |
+| hash-tables | 81 | 0 | 0 | 0 | 0 | 86 | 167 |
 | structures | 60 | 0 | 0 | 0 | 0 | 55 | 115 |
-| **all** | **8018** | **121** | **7** | **15** | **0** | **5397** | **13558** |
+| **all** | **8007** | **91** | **7** | **15** | **0** | **5438** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -36,7 +36,7 @@ A test can need several things.
 | needs | tests |
 | --- | ---: |
 | `LOOP[tier-2:loop]` | 4147 |
-| `TYPEP[phase-3:types]` | 1147 |
+| `TYPEP[phase-3:types]` | 1141 |
 | `reader[ratio]` | 687 |
 | `ASSERT[tier-2:conditions]` | 608 |
 | `RANDOM[tier-2:random]` | 511 |
@@ -46,7 +46,7 @@ A test can need several things.
 | `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 266 |
 | `MUFFLE-WARNING[tier-2:conditions]` | 261 |
 | `reader[#C]` | 236 |
-| `SUBTYPEP[phase-3:types]` | 205 |
+| `SUBTYPEP[phase-3:types]` | 196 |
 | `COMPLEX[deferred:complex-numbers]` | 175 |
 | `DEFGENERIC[tier-2:clos]` | 157 |
 | `MAKE-RANDOM-STATE[tier-2:random]` | 139 |
@@ -57,7 +57,8 @@ A test can need several things.
 | `RATIONAL[issue-59:ratios]` | 123 |
 | `ETYPECASE[phase-3:types]` | 75 |
 | `REALPART[deferred:complex-numbers]` | 72 |
-| `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 54 |
+| `note[NIL-VECTORS-ARE-STRINGS]` | 57 |
+| `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 53 |
 | `DOCUMENTATION[tier-2:clos]` | 40 |
 | `TYPECASE[phase-3:types]` | 30 |
 | `WITH-OPEN-STREAM[tier-2:streams]` | 29 |

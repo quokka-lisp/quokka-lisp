@@ -1,0 +1,21 @@
+=> NIL
+=> NIL
+=> NIL
+=> NIL
+=> NIL
+=> T
+=> 37
+=> 2
+=> NIL
+=> NIL
+=> NIL
+=> (2 3)
+!! error
+!! error
+=> "abc"
+!! error
+!! error
+=> NIL
+!! error
+=> :ERROR
+=> :ERROR

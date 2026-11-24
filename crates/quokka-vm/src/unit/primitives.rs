@@ -169,7 +169,8 @@ fn the_table_order_is_pinned() {
             "%MAKE-STRUCTURE",
             "%STRUCTURE-LAYOUT",
             "%STRUCTURE-REF",
-            "%SET-STRUCTURE-REF"
+            "%SET-STRUCTURE-REF",
+            "%MAKE-NIL-VECTOR"
         ]
     );
 }

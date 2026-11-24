@@ -150,6 +150,7 @@ tier1_cases! {
     sequence_gaps => "sequence-gaps",
     condition_types => "condition-types",
     macro_lambda_lists => "macro-lambda-lists",
+    nil_arrays => "nil-arrays",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly

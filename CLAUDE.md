@@ -310,7 +310,16 @@ of the place and the environment. Ordinary lambda lists bind `&optional`,
 left; `(&key)` takes keyword arguments; `values-list` checks its arity and
 tail. Image format 6. Rust 176, `LIMIT` 15,713. ansi-test: **8,018**; plain
 failures 121; escapes 7.
-**Next:** AD and AE, which need Carsten's decisions (#39's list). Phase 2's scope is
+**Step AD is done** (#77, chapter 65): arrays of element type nil —
+`ObjectType::NilVector` (raw, a count only), `Kind::Nothing` in
+`array.rs`, `%make-nil-vector`; `array-element-type` nil. **Not a
+string**: SBCL's `stringp` is false of one, against CLHS 15.1.2.2, and
+Quokka follows SBCL; the runner disables ansi-test's note
+`:nil-vectors-are-strings`. Rust 49, `LIMIT` 15,762. ansi-test: 8,007
+(eleven noted tests no longer run); plain failures 91.
+**Carsten, 25 Nov 2026: work through every outstanding step without
+asking; do it the right way now; when in doubt, as SBCL does.**
+**Next:** AE (setf functions, #78), AF, AG, then the rest of #39's list. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -326,7 +335,7 @@ Three things to hold on to while working in phase 2:
   tier 0 because the interpreter runs them (rule 5). Tier 1 is a third body of
   Lisp loaded into the compiled world by its own compiler; the interpreter
   never learns it, and tier-1 differential files run compiled and against SBCL.
-- **The Rust budget: 0 lines left of 15,713, for phases 2 to 6** (raised from 15,000 by step T, from 15,500 by step Z and from 15,537 by step AC) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500; U 11 — `asinh`/`acosh`/`atanh`; W 6 — the `char-names.lisp` entry, float negation; X 214 — the content hash, `equalp` tables, fallbacks; Z 69 — the structure primitives, `ObjectType::Marker`, the `structures.lisp` entry, with `LIMIT` raised to 15,537; AC 176 — expanders of the form and the environment, `&whole`/`&environment`/`&key`/`&aux` in generated destructuring, defaults under fresh names, `values-list`'s checks, with `LIMIT` raised to 15,713).
+- **The Rust budget: 0 lines left of 15,762, for phases 2 to 6** (raised from 15,000 by step T, from 15,500 by step Z, from 15,537 by step AC and from 15,713 by step AD) — **a guide, not a ceiling** (Carsten, 23 Nov 2026): Lisp is still the default and every step still says what Rust it needs, but going over is allowed when a step genuinely needs it; then raise `LIMIT` in `scripts/check-budget.sh` deliberately, in the same commit, with the reason. (A spent 161, B 108, #44 73, C 74, G 59, D 75, E 41, F 0, the crate split and the `quokka` program 90, H 1 — its `boot::LIBRARY` line, I 42 — `DBIND-SYMBOL` and `makunbound`, J1 4, J2 4, J3 4, K 4 — their `boot::LIBRARY` entries; L 381 — the bignum module, twelve primitives, the fallback, the symbol cache; M 515 — `float.rs`, 24 primitives, traps, hashing; O 36 — `BadCall`, `:allow-other-keys`, function designators; P 54 — five symbol-cell primitives; Q 81 — identity hash keys and the collector's stale mark; R and S 0; T 345 — array headers and bit vectors, with `LIMIT` raised to 15,500; U 11 — `asinh`/`acosh`/`atanh`; W 6 — the `char-names.lisp` entry, float negation; X 214 — the content hash, `equalp` tables, fallbacks; Z 69 — the structure primitives, `ObjectType::Marker`, the `structures.lisp` entry, with `LIMIT` raised to 15,537; AC 176 — expanders of the form and the environment, `&whole`/`&environment`/`&key`/`&aux` in generated destructuring, defaults under fresh names, `values-list`'s checks, with `LIMIT` raised to 15,713; AD 49 — `NilVector`, with `LIMIT` raised to 15,762).
   Default for every tier-1 feature is Lisp, with no Rust. Each step says what
   Rust it needs.
 - **The library is `lisp/library/`**, listed in `boot::LIBRARY` and loaded by

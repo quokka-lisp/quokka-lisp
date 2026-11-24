@@ -34,6 +34,18 @@
 //!
 //! A simple bit vector is raw words, 64 bits to a word, the count in raw slot 0
 //! as a packed string's is. An element is a fixnum, 0 or 1.
+//!
+//! # Arrays of element type nil
+//!
+//! `(make-array 5 :element-type nil)` is an array that can hold nothing,
+//! since no object is of type `nil`: it has a length, and every attempt to
+//! read or write an element is an error (#77). SBCL has the same object,
+//! `(simple-array nil (*))`. Its count is raw slot 0, and nothing follows.
+//!
+//! CLHS 15.1.2.2 says `(vector nil)` is a string, since `nil` is a subtype of
+//! `character`; SBCL, the oracle, says it is not (`stringp` is false), and so
+//! does Quokka (rule 6). ansi-test marks the tests that assume otherwise with
+//! the note `:nil-vectors-are-strings`, which the runner disables.
 
 use crate::error::EvalError;
 use crate::heap::{Mutation, ObjectType};
@@ -68,6 +80,8 @@ pub enum Kind {
     String,
     /// A bit vector: 0 and 1.
     Bits,
+    /// An array of element type nil: no element can be read or stored.
+    Nothing,
 }
 
 /// Where an array's elements live: the simple array at the end of its chain,
@@ -108,6 +122,7 @@ fn simple<'h>(mc: &Mutation<'h>, v: Value<'h>) -> Option<(Kind, usize)> {
     match header.object_type {
         ObjectType::Vector => Some((Kind::Vector, header.slots)),
         ObjectType::BitVector => Some((Kind::Bits, mc.raw_slot(v, 0) as usize)),
+        ObjectType::NilVector => Some((Kind::Nothing, mc.raw_slot(v, 0) as usize)),
         t if t.is_string() => Some((Kind::String, mc.string_length(v))),
         _ => None,
     }
@@ -200,12 +215,20 @@ fn row_major(
 }
 
 /// The element at AT, an index already checked by [`element`].
-fn read<'h>(mc: &Mutation<'h>, s: &Storage<'h>, at: usize) -> Value<'h> {
-    match s.kind {
+fn read<'h>(mc: &Mutation<'h>, s: &Storage<'h>, at: usize) -> Result<Value<'h>, EvalError> {
+    Ok(match s.kind {
         Kind::Vector => mc.slot(s.simple, at),
         Kind::String => Value::character(mc.string_char(s.simple, at)),
         Kind::Bits => Value::fixnum(((mc.raw_slot(s.simple, 1 + at / 64) >> (at % 64)) & 1) as i64)
             .expect("a bit"),
+        Kind::Nothing => return Err(holds_nothing("AREF")),
+    })
+}
+
+fn holds_nothing(name: &'static str) -> EvalError {
+    EvalError::WrongType {
+        name,
+        wanted: "an array that can hold an element — one of element type nil holds none",
     }
 }
 
@@ -215,7 +238,7 @@ pub fn aref<'h>(mc: &Mutation<'h>, args: &[Value<'h>]) -> Result<Value<'h>, Eval
     let dims = dimensions(mc, args[0]).ok_or(not_an_array("AREF"))?;
     let index = row_major(&dims, &args[1..], "AREF")?;
     let s = storage(mc, args[0]).ok_or(not_an_array("AREF"))?;
-    Ok(read(mc, &s, element(&s, index)?))
+    read(mc, &s, element(&s, index)?)
 }
 
 /// `(%set-aref array subscript... value)`.
@@ -263,6 +286,7 @@ pub fn set_aref<'h>(mc: &mut Mutation<'h>, args: &[Value<'h>]) -> Result<Value<'
                 (word & !(1 << (at % 64))) | (bit << (at % 64)),
             );
         }
+        Kind::Nothing => return Err(holds_nothing("SET-AREF")),
     }
     Ok(value)
 }
@@ -298,7 +322,7 @@ pub fn is_string<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
 /// Element I of vector V, as `aref` reads it, or nil if there is none.
 pub fn vector_element<'h>(mc: &Mutation<'h>, v: Value<'h>, i: usize) -> Value<'h> {
     storage(mc, v)
-        .and_then(|s| element(&s, i).ok().map(|at| read(mc, &s, at)))
+        .and_then(|s| element(&s, i).ok().and_then(|at| read(mc, &s, at).ok()))
         .unwrap_or(Value::NIL)
 }
 
@@ -310,7 +334,7 @@ pub fn equal_text<'h>(mc: &Mutation<'h>, v: Value<'h>) -> Option<(bool, String)>
         return None;
     }
     let s = storage(mc, v)?;
-    if s.kind == Kind::Vector {
+    if matches!(s.kind, Kind::Vector | Kind::Nothing) {
         return None;
     }
     let n = length(mc, v).ok()?;
@@ -319,7 +343,7 @@ pub fn equal_text<'h>(mc: &Mutation<'h>, v: Value<'h>) -> Option<(bool, String)>
         let at = element(&s, i).ok()?;
         text.push(match s.kind {
             Kind::String => mc.string_char(s.simple, at),
-            _ if read(mc, &s, at) == Value::fixnum(1).expect("small") => '1',
+            _ if read(mc, &s, at).ok()? == Value::fixnum(1).expect("small") => '1',
             _ => '0',
         });
     }
@@ -327,13 +351,14 @@ pub fn equal_text<'h>(mc: &Mutation<'h>, v: Value<'h>) -> Option<(bool, String)>
 }
 
 /// What `%array-kind` answers: 0 not an array, 1 a simple vector, 2 a simple
-/// string, 3 a simple bit vector, 4 a header. Lisp builds every array type
-/// predicate on it.
+/// string, 3 a simple bit vector, 4 a header, 5 a simple array of element
+/// type nil. Lisp builds every array type predicate on it.
 pub fn kind_code<'h>(mc: &Mutation<'h>, v: Value<'h>) -> i64 {
     match simple(mc, v) {
         Some((Kind::Vector, _)) => 1,
         Some((Kind::String, _)) => 2,
         Some((Kind::Bits, _)) => 3,
+        Some((Kind::Nothing, _)) => 5,
         None if is_header(mc, v) => 4,
         None => 0,
     }
@@ -380,5 +405,21 @@ pub fn make_bits<'h>(mc: &mut Mutation<'h>, n: Value<'h>) -> Result<Value<'h>, E
     for w in 0..words {
         mc.set_raw_slot(v, 1 + w, 0);
     }
+    Ok(v)
+}
+
+/// `(%make-nil-vector n)`: a simple array of N elements of type nil.
+pub fn make_nil_vector<'h>(mc: &mut Mutation<'h>, n: Value<'h>) -> Result<Value<'h>, EvalError> {
+    let n = match n.as_fixnum() {
+        Some(n) if n >= 0 => n as u64,
+        _ => {
+            return Err(EvalError::WrongType {
+                name: "MAKE-ARRAY",
+                wanted: "a non-negative fixnum size",
+            })
+        }
+    };
+    let v = mc.alloc(ObjectType::NilVector, 1);
+    mc.set_raw_slot(v, 0, n);
     Ok(v)
 }

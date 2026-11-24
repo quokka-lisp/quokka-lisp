@@ -188,6 +188,7 @@ pub enum Prim {
     StructureLayout = 133,
     StructureRef = 134,
     SetStructureRef = 135,
+    MakeNilVector = 136,
 }
 
 impl Prim {
@@ -622,6 +623,7 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         "%SET-STRUCTURE-REF",
         Arity::Exactly(3),
     ),
+    (Prim::MakeNilVector, "%MAKE-NIL-VECTOR", Arity::Exactly(1)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1035,6 +1037,7 @@ pub fn call_slice<'h>(
             Ok(args[2])
         }
         Prim::MakeBitVector => crate::array::make_bits(mc, args[0]),
+        Prim::MakeNilVector => crate::array::make_nil_vector(mc, args[0]),
         Prim::ArrayKind => Ok(Value::fixnum(crate::array::kind_code(mc, args[0])).expect("small")),
         Prim::Integerp => Ok(truth(
             args[0].as_fixnum().is_some() || crate::bignum::is(mc, args[0]),

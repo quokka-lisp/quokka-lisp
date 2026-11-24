@@ -449,10 +449,14 @@
         ;; reads them back, so CLHS lets each implementation print them its
         ;; own way, and this is the Rust printer's, so both agree. Or
         ;; `*print-array*` false: an array by its dimensions alone.
-        ((not (and (arrayp object) *print-array*))
+        ;; An array of element type nil has no elements to print (#77), so
+        ;; it is printed as SBCL prints one, by its type.
+        ((not (and (arrayp object) *print-array* (array-element-type object)))
          (if (arrayp object)
              (%print-unreadable object
-                                (%string-append (%string-append "#<(ARRAY "
+                                (%string-append (%string-append (if (array-element-type object)
+                                                                    "#<(ARRAY "
+                                                                    "#<(ARRAY NIL ")
                                                                 (princ-to-string (array-dimensions object)))
                                                 ")>")
                                 out)

@@ -85,6 +85,7 @@
 - [What the sequence functions skipped](part-6-self-hosting/62-sequence-gaps.md)
 - [The right error](part-6-self-hosting/63-the-right-error.md)
 - [What a macro is given](part-6-self-hosting/64-what-a-macro-is-given.md)
+- [An array that holds nothing](part-6-self-hosting/65-an-array-that-holds-nothing.md)
 
 ---
 

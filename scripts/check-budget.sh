@@ -36,7 +36,11 @@ cd "$(dirname "$0")/.."
 # code, which needed `&whole`, `&environment`, `&key` and `&aux` there
 # (`lambda_list.rs`); default forms bound under fresh names; `values-list`'s
 # checks (`vm.rs`); image format 6. 176 lines, against an estimate of 80-120.
-LIMIT=15713
+#
+# Raised to 15,762 by step AD (#77, 25 Nov 2026): an array of element type
+# nil is an object of its own, as SBCL's is (`ObjectType::NilVector`, a
+# fourth `Kind` in `array.rs`, the `%make-nil-vector` primitive). 49 lines.
+LIMIT=15762
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

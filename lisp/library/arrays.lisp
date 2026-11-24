@@ -39,11 +39,14 @@
       (setq start (+ start (%offset array)))
       (setq array (%data array)))))
 
-;;; The three kinds of element an array can be specialised to: CLHS lets an
+;;; The kinds of element an array can be specialised to: CLHS lets an
 ;;; implementation *upgrade* any other element type to `t` (15.1.2.1), as
-;;; SBCL does for most.
+;;; SBCL does for most. Element type `nil` is its own kind (#77): an array
+;;; that can hold nothing. CLHS 15.1.2.2 makes it a string; SBCL does not,
+;;; and neither does Quokka (`array.rs` says more).
 (defun %element-kind (type)
-  (cond ((member type '(character base-char standard-char extended-char)) :character)
+  (cond ((null type) :nil)
+        ((member type '(character base-char standard-char extended-char)) :character)
         ((or (eq type 'bit) (equal type '(unsigned-byte 1)) (equal type '(integer 0 1))
              (equal type '(mod 2)))
          :bit)
@@ -52,11 +55,11 @@
 (defun upgraded-array-element-type (type &optional environment)
   environment
   (let ((kind (%element-kind type)))
-    (cond ((eq kind :character) 'character) ((eq kind :bit) 'bit) (t t))))
+    (cond ((eq kind :character) 'character) ((eq kind :bit) 'bit) ((eq kind :nil) nil) (t t))))
 
 (defun array-element-type (array)
   (let ((kind (%array-kind (%storage (%check-array array)))))
-    (cond ((eql kind 2) 'character) ((eql kind 3) 'bit) (t t))))
+    (cond ((eql kind 2) 'character) ((eql kind 3) 'bit) ((eql kind 5) nil) (t t))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Dimensions
@@ -122,7 +125,11 @@
 
 ;;; A fresh simple array of N elements of KIND, each INITIAL if one is given.
 (defun %make-simple (kind n initial initial-p)
-  (cond ((eq kind :character)
+  (cond ((eq kind :nil)
+         (if (and initial-p (> n 0))
+             (error 'type-error "an array of element type nil holds no element" initial))
+         (%make-nil-vector n))
+        ((eq kind :character)
          (make-string n :initial-element (if initial-p initial (code-char 0))))
         ((eq kind :bit)
          (let ((bits (%make-bit-vector n)))

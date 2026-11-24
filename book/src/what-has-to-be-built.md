@@ -318,6 +318,7 @@ Each chapter answers one question.
 | 62 | [What the sequence functions skipped](part-6-self-hosting/62-sequence-gaps.md) | How do you turn a list of failing tests into causes, and what does a standard ask for that a simpler implementation skips? |
 | 63 | [The right error](part-6-self-hosting/63-the-right-error.md) | Why does the type of an error matter as much as the error, and how do you tell a loop from a budget that is too small? |
 | 64 | [What a macro is given](part-6-self-hosting/64-what-a-macro-is-given.md) | What should a macro's expander receive, and what does a default form see when a parameter shadows a variable? |
+| 65 | [An array that holds nothing](part-6-self-hosting/65-an-array-that-holds-nothing.md) | What is an array of element type `nil`, and what do you do when the standard and the oracle disagree? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -333,13 +334,14 @@ Still to come, and deliberately so:
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
   sequence and string functions (chapter 45); basic `format` (chapter
   46); integers of any size (chapter 47); and double floats (chapter 48).
-  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 64
+  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 65
   close the gaps it listed: declarations, symbols' cells, printing readably
   and with shared structure, `compile`, the rest of the package system, every
   kind of array, which moved from tier 2 into tier 1, bit fields, the reader's
   readtable case, character names and syntax types, `equalp` hash tables and
   `sxhash`, reading `#1=` labels, `defstruct` with all its options, the
-  condition types the standard names, and what a macro's expander is given.
+  condition types the standard names, what a macro's expander is given, and
+  arrays of element type `nil`.
   Still to come are ratios (#59, tier undecided), and beyond them `loop`,
   CLOS and the rest, in later phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

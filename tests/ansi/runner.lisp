@@ -68,7 +68,10 @@
 ;;; Notes a test may carry that mark behaviour an implementation is allowed
 ;;; not to have, and Quokka does not have, as SBCL by default does not: a
 ;;; test carrying one is reported as needing it, a deferred reason (#74).
-(defvar *disabled-notes* '(:no-floating-point-underflow-by-default))
+;;; `:nil-vectors-are-strings`: SBCL's `(vector nil)` is not a string, and
+;;; Quokka follows SBCL (#77), as ansi-test's own setup does for OpenMCL and
+;;; ECL.
+(defvar *disabled-notes* '(:no-floating-point-underflow-by-default :nil-vectors-are-strings))
 
 (defun %prepare ()
   (dolist (name *cl-operator-names*)

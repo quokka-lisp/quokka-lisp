@@ -396,6 +396,10 @@ pub enum ObjectType {
     /// A simple bit vector: the count in raw slot 0, then the bits, 64 to a
     /// word (#67). **Not traced.** See `crate::array`.
     BitVector = 70,
+    /// A simple array of element type `nil`: the count in raw slot 0 and
+    /// nothing else, since no object is of type `nil` (#77). **Not traced.**
+    /// CLHS 15.1.2.2 makes it a string; see `crate::array`.
+    NilVector = 71,
     /// An IEEE 754 double, its 64 bits in raw slot 0. **Not traced.**
     ///
     /// Boxed because a double needs all 64 bits of a word and three are the
@@ -449,6 +453,7 @@ impl ObjectType {
             68 => PackedString,
             69 => DoubleFloat,
             70 => BitVector,
+            71 => NilVector,
             _ => return None,
         })
     }
