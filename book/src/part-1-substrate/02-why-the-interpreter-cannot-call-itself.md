@@ -2,8 +2,10 @@
 
 > *Where this fits.* With values settled, the next question is how a
 > computation runs, and in a browser, how it can stop halfway and continue
-> later. The answer rules out the obvious design for an evaluator and reshapes
-> the whole system, and it pays for three other things in later chapters.
+> later. The obvious design for an interpreter cannot do that at all, and this
+> chapter is about what to write instead: an evaluator whose whole state is data you can look at, stop, save
+> to a file and resume. That shape costs us the clearest code in the book, and
+> pays for the debugger, the garbage collector and the saved image.
 
 Here is how you write a Lisp interpreter. It is how almost everyone writes their
 first one, and it is correct:

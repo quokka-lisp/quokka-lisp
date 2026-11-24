@@ -1,26 +1,24 @@
 # Objects in the heap
 
-> **Where this fits.** The contract is settled, so now the thing it protects
-> can be built. This chapter is about what is actually stored in memory and,
-> mostly, about one question that sounds like a detail: walking through the
-> heap, how do you know where one object ends and the next begins? Get it wrong
-> and the collector in the next chapter corrupts everything it touches.
+> *Where this fits.* The contract is settled, so now the thing it protects can
+> be built. This chapter is about what is actually stored in memory and, mostly,
+> about one question that sounds like a detail: walking through the heap, how do
+> you know where one object ends and the next begins? Get it wrong and the
+> collector in the next chapter corrupts everything it touches.
 
-Chapter 1 settled what a single value looks like. Chapter 3 said the heap is an
-array of words and objects are runs of adjacent words in it. This chapter is
+Chapter 1 settled what a single value looks like, and chapter 3 said the heap is
+an array of words with objects as runs of adjacent words in it. This chapter is
 about the runs.
-
-It is mostly a chapter about one question, which looks like a detail and is not.
 
 ## Two kinds of object
 
-**Cons cells are two words.** A car and a cdr, nothing else. No type field, no
-length — the tag on the reference already says "this is a cons", and every cons
-is the same size. That is why cons cells were given a whole tag of their own in
-chapter 1: they are the overwhelming majority of objects in a running Lisp, and
-the tag buys them a representation with no overhead whatsoever.
+Cons cells are two words: a car and a cdr, with no type field and no length. The
+tag on the reference already says "this is a cons", and every cons is the same
+size. That is why cons cells were given a whole tag of their own in chapter 1.
+They are the overwhelming majority of objects in a running Lisp, and the tag
+buys them a representation with no overhead whatsoever.
 
-**Everything else gets a header.** A symbol, a string, a vector, a closure. The
+Everything else gets a header: a symbol, a string, a vector, a closure. The
 first word says what the object is and how many slots follow it:
 
 ```text
@@ -32,23 +30,20 @@ first word says what the object is and how many slots follow it:
 ```
 
 The header has to carry the length because, unlike conses, these objects vary in
-size, and something has to be able to tell where one ends.
+size, and something has to be able to tell where one ends. That something is the
+garbage collector, and it is where the interesting problem appears.
 
-That "something" is the garbage collector, and here is where the interesting
-problem appears.
+## Where does one object end?
 
-## The question
-
-The collector walks to-space **linearly** — start at the beginning, look at an
+The collector walks to-space linearly: start at the beginning, look at an
 object, step over it, look at the next. (Chapter 6 explains why it walks rather
 than recurses; for now take it as given.)
 
-To step over an object you need its size. For a headed object the header says.
-For a cons it is two. So at every position the collector must answer: *am I
-looking at a header, or at a cons cell's car?*
-
-And it cannot tell by looking at where it is, because both are "the first word
-of an object". They occupy exactly the same kind of position.
+To step over an object you need its size. For a headed object the header says,
+and for a cons it is two. So at every position the collector has to answer one
+question: am I looking at a header, or at a cons cell's car? It cannot tell from
+where it is, because both are the first word of an object and they occupy
+exactly the same kind of position.
 
 ```text
           ┌────────┬───────┬───────┐
@@ -56,39 +51,39 @@ of an object". They occupy exactly the same kind of position.
           └────────┴───────┴───────┘
 ```
 
-Get this wrong once and every subsequent step is wrong. The collector would
-read the middle of one object as the start of another, step by a nonsense
-amount, and corrupt the heap in a way that surfaces somewhere else entirely.
+Get this wrong once and every subsequent step is wrong. The collector would read
+the middle of one object as the start of another, step by a nonsense amount, and
+corrupt the heap in a way that surfaces somewhere else entirely.
 
-## Three answers
+## Three ways to tell them apart
 
-**Give cons cells a header too.** Then every object looks the same and the
-problem evaporates. It also makes the most common object in the system 50%
-bigger — three words instead of two, on every cell of every list. For a
-language built out of lists that is not a detail, it is a tax on everything.
+The first is to give cons cells a header too, so that every object looks the
+same and the problem evaporates. It also makes the most common object in the
+system 50% bigger, three words instead of two, on every cell of every list. For
+a language built out of lists that is a tax on everything.
 
-**Put conses in their own region.** Allocate cells from one area and headed
-objects from another. Each region is then homogeneous and the walk knows what it
-is walking. This works, and Lisp machines did organise memory into areas for
-related reasons. It costs two allocation pointers, two scan pointers, and a
-collector that handles two spaces instead of one — real complexity, paid
-forever, against a 15,000-line budget.
+The second is to put conses in their own region, allocating cells from one area
+and headed objects from another. Each region is then homogeneous and the walk
+knows what it is walking. This works, and Lisp machines did organise memory into
+areas for related reasons, but it costs two allocation pointers, two scan
+pointers, and a collector that handles two spaces instead of one: real
+complexity, paid forever, against a 15,000-line budget.
 
-**Make a header impossible to mistake for a value.** If no legitimate value can
-ever have the bit pattern of a header, the test is one comparison and costs
-nothing at all.
+The third is to make a header impossible to mistake for a value. If no
+legitimate value can ever have the bit pattern of a header, the test is one
+comparison and costs nothing at all.
 
-Is there room for that? Chapter 1 left some. Immediates — tag `101` — carry a
-five-bit subtag, of which exactly two were used: one for `nil`/`t`/the unbound
-marker, one for characters. Thirty are spare. Reserve one, never hand it out,
-and a header becomes a bit pattern that no value can hold:
+There is room for that, because chapter 1 left some. Immediates, tag `101`,
+carry a five-bit subtag, of which exactly two were used: one for `nil`, `t` and
+the unbound marker, and one for characters. Thirty are spare. Reserve one, never
+hand it out, and a header becomes a bit pattern that no value can hold:
 
 ```text
 header:   [ length : 48 ][ type : 8 ][ subtag 31 : 5 ][ 101 ]
 ```
 
-A cons cell's car is a value. Values cannot carry subtag 31. Therefore a car can
-never impersonate a header, the walk is a single test, and conses stay two
+A cons cell's car is a value, and values cannot carry subtag 31, so a car can
+never impersonate a header. The walk is a single test, and conses stay two
 words.
 
 ```rust
@@ -102,13 +97,11 @@ pub(crate) const fn is_header(self) -> bool {
 That argument is sound, and an argument is not a test. The claim "no value can
 look like a header" is exactly the sort of thing that is true when written and
 quietly false three features later, when someone adds a subtag and picks a
-number.
+number. So there are two tests, aimed at different failure modes.
 
-So there are two tests, aimed at different failure modes.
-
-One runs every interesting value past `is_header` — every singleton, every tag,
-the boundary fixnums, ten thousand pseudorandom fixnums, characters including
-`\0` and the highest code point — and asserts none of them says yes.
+One runs every interesting value past `is_header`: every singleton, every tag,
+the boundary fixnums, ten thousand pseudorandom fixnums, and characters
+including `\0` and the highest code point. None of them may say yes.
 
 The other walks a deliberately awkward heap:
 
@@ -119,28 +112,27 @@ let awkward = mc.cons(
 );
 ```
 
-A cons whose car is a character — an immediate, same tag as a header, differing
-only in the subtag — and whose cdr is a large fixnum, a word with plenty of bits
+The car is a character, an immediate with the same tag as a header, differing
+only in the subtag, and the cdr is a large fixnum, a word with plenty of bits
 set. Those are the two words most likely to be misread. The test walks the heap
-with the same logic the collector uses and asserts it recovers the exact set of
-objects *and* lands precisely on the end rather than overrunning.
-
-The second assertion matters as much as the first. A walk that finds the right
-objects but finishes one word late has still lost, and would have corrupted
-everything after it.
+with the same logic the collector uses and asserts that it recovers the exact
+set of objects *and* lands precisely on the end rather than overrunning. The
+second assertion matters as much as the first, because a walk that finds the
+right objects but finishes one word late has still lost, and would have
+corrupted everything after it.
 
 ## What the type is for
 
 The header's type field is not just for printing. It answers a question the
-collector cannot work out for itself: **are this object's slots values?**
+collector cannot work out for itself: are this object's slots values?
 
-A vector's slots are values and must be traced. A string's slots are characters.
-A code object's are bytecode. A bignum's are magnitude limbs. Trace those and
-the collector follows numbers as if they were references — reading the letter
+A vector's slots are values and must be traced. A string's slots are characters,
+a code object's are bytecode, and a bignum's are magnitude limbs. Trace those
+and the collector follows numbers as if they were references, reading the letter
 `q` as "the object at index 29", copying whatever is there, and writing a
 corrupted reference back into your string.
 
-So the distinction lives in the type, and it is load-bearing:
+So the distinction lives in the type, and everything depends on it:
 
 ```rust
 pub const fn slots_are_values(self) -> bool {
@@ -148,19 +140,18 @@ pub const fn slots_are_values(self) -> bool {
 }
 ```
 
-The discriminants are chosen so the question is a comparison. Which creates a
+The discriminants are chosen so the question is a comparison, which creates a
 hazard: adding a new type on the wrong side of that line is a silent
 heap-corrupting bug, invisible at the call site and invisible in review, because
 the line is a number rather than a word.
 
 The defence is a test that names every type explicitly and asserts which side it
 is on. It would have been easy to write `assert!(ObjectType::String as u8 >= 64)`
-and feel covered. Naming all eight means adding a ninth without thinking shows
-up as a test that does not mention it.
-
-The accessors follow the same principle: `slot` and `raw_slot` panic if used on
-the wrong kind of object. Loudly wrong beats quietly wrong when the alternative
-is a collector reading text.
+and feel covered. Naming all eight means that adding a ninth without thinking
+shows up as a test that does not mention it. The accessors follow the same
+principle: `slot` and `raw_slot` panic if used on the wrong kind of object.
+Loudly wrong beats quietly wrong when the alternative is a collector reading
+text.
 
 ## Allocation, and a small deliberate cost
 
@@ -175,12 +166,12 @@ pub fn alloc(&mut self, object_type: ObjectType, slots: usize) -> Value<'h> {
 }
 ```
 
-Allocation is a bump — take the next free words, no free list, no search. That
-is a gift from the copying collector: reclaiming space by abandoning a whole
-region means the space that remains is always contiguous.
+Allocation is a bump: take the next free words, with no free list and no search.
+That is a gift from the copying collector, because reclaiming space by
+abandoning a whole region means the space that remains is always contiguous.
 
-The slots are initialised to `nil` rather than left as whatever was there.
-That is a real cost, paid on every allocation, and it buys protection against a
+The slots are initialised to `nil` rather than left as whatever was there. That
+is a real cost, paid on every allocation, and it buys protection against a
 specific sequence: a mutation allocates an object, ends before filling every
 slot, and the next collection traces whatever words happened to be lying in
 those slots. One `resize` is cheaper than that class of bug, which would look
@@ -189,25 +180,24 @@ like memory corruption and be nothing of the sort.
 ## A region that never moves
 
 One part of the heap is exempt from everything in this chapter. The first words
-hold the **static area**: objects the collector copies verbatim and never
-relocates, so a reference into it is a constant.
+hold the **static area**, which holds objects the collector copies verbatim and
+never relocates, so a reference into it is a constant.
 
 It exists because `nil` has to be a symbol *and* a Rust compile-time constant,
 which looks impossible for a heap object and is not. The reasoning is
 [The trouble with nil](../part-2-reading-and-running/11-the-trouble-with-nil.md);
-what matters here is that the heap has two regions and the collector knows
-where the boundary is.
+what matters here is that the heap has two regions and the collector knows where
+the boundary is.
 
 ## Growth, and a bill arriving from chapter 4
 
-Chapter 4 chose lifetime branding, and noted a cost: collection can only happen
+Chapter 4 chose lifetime branding and noted a cost: collection can only happen
 between mutations. Here is where that cost becomes an API.
 
-Allocation happens inside a mutation. Collection cannot. So when the heap is
-full in the middle of a mutation, **it cannot collect — it has to grow.**
-
-Which means allocation can never fail for want of space, and a limit cannot be
-enforced where it is reached. What exists instead is a request:
+Allocation happens inside a mutation and collection cannot, so when the heap is
+full in the middle of a mutation it cannot collect and has to grow. Which means
+allocation can never fail for want of space, and a limit cannot be enforced
+where it is reached. What exists instead is a request:
 
 ```rust
 pub fn wants_collection(&self) -> bool {
@@ -215,29 +205,26 @@ pub fn wants_collection(&self) -> bool {
 }
 ```
 
-The driver checks it *between* mutations and collects if it says yes. A mutation
-that allocates heavily simply overshoots, and asks for a collection afterwards.
+The driver checks it *between* mutations and collects if it says yes, so a
+mutation that allocates heavily simply overshoots and asks for a collection
+afterwards.
 
-And that ought to be affordable, for a reason established two chapters ago:
-rule 4 forbids long mutations, because the evaluator must return control to the
-browser promptly. One evaluator step per mutation would mean the overshoot is
-bounded by whatever a single step can allocate.
+That ought to be affordable, for a reason established two chapters ago. Rule 4
+forbids long mutations, because the evaluator must return control to the browser
+promptly, so one evaluator step per mutation would mean the overshoot is bounded
+by whatever a single step can allocate.
 
-Read that sentence again, because it contains a word doing a great deal of
-work. *Would.*
+The conditional in that sentence is where the argument fails.
 
 ## When the bound is not a bound
 
-The argument above is the one this chapter originally made, and it is wrong in
-a way worth dwelling on, because the mistake is more instructive than the fix.
-
 Rule 4 constrains how long the VM may run without returning. It does not
-constrain how much a *caller* puts inside one `mutate`. And the REPL, written
-three chapters later, evaluates an entire line in one mutation — not one step,
+constrain how much a caller puts inside one `mutate`. And the REPL, written
+three chapters later, evaluates an entire line in one mutation: not one step,
 one line. The bound depended on a convention that nothing enforced, and the
 first caller to come along broke it without noticing.
 
-Here is what that looks like from outside:
+We found this by typing a minus sign:
 
 ```
 quokka> (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1)))))
@@ -245,28 +232,26 @@ FACT
 quokka> (fact -1)
 ```
 
-`(fact -1)` never reaches `(= n 0)`. And because the `*` is still waiting for
-its arguments, it is not a **tail call** — a distinction
+`(fact -1)` never reaches `(= n 0)`. Because the `*` is still waiting for its
+arguments it is not a **tail call**, a distinction
 [Functions and scope](../part-2-reading-and-running/10-functions-and-scope.md)
-is about — so every level of the recursion keeps its frames. Collection cannot help even in principle: every one of those frames is
-reachable, so none of them is garbage.
+is about, so every level of the recursion keeps its frames. Collection cannot
+help even in principle, because every one of those frames is reachable and none
+of them is garbage.
 
-Nineteen seconds later it stopped, having reached 2.3 GB of memory.
-
-Nothing crashed. The step budget eventually ran out and reported itself. But a
-mistyped sign had taken the process to two and a third gigabytes, and in a
-browser — where linear memory stops at 4 GiB and the tab goes with it — the same
-typo would be fatal rather than untidy.
+Nineteen seconds later it stopped, having reached 2.3 GB of memory. Nothing
+crashed: the step budget eventually ran out and reported itself, in a message
+that read like a stutter, "bad the evaluator: ran out of budget". But a mistyped
+sign had taken the process to two and a third gigabytes, and in a browser, where
+linear memory stops at 4 GiB and the tab goes with it, the same typo would be
+fatal rather than untidy.
 
 ## A soft limit needs a hard one behind it
 
-The repair is small, and the principle is the part to keep:
-
-> Growing past a *request* is reasonable. Growing until the operating system
-> intervenes is not.
-
-So there is a second limit, some multiple of the first, past which allocation
-stops being possible at all:
+The repair is small, and the principle is the part to keep: growing past a
+*request* is reasonable, and growing until the operating system intervenes is
+not. So there is a second limit, some multiple of the first, past which
+allocation stops being possible at all:
 
 ```rust
 fn alloc(&mut self, words: usize) -> usize {
@@ -279,13 +264,13 @@ fn alloc(&mut self, words: usize) -> usize {
 }
 ```
 
-Note what it does *not* do: refuse. The allocation still happens, and a flag is
-set instead.
+Note what it does *not* do, which is refuse. The allocation still happens, and a
+flag is set instead.
 
 That looks like a fudge and is a deliberate trade. Refusing would mean every
-allocator returning a `Result`, and every caller — the reader building a list,
-the evaluator pushing a frame — handling a failure it cannot do anything about
-locally. The flag puts the decision in the one place that *can* act on it: the
+allocator returning a `Result`, and every caller, the reader building a list and
+the evaluator pushing a frame, handling a failure it cannot do anything about
+locally. The flag puts the decision in the one place that can act on it: the
 evaluator checks it before each step and halts.
 
 The overshoot is therefore one step's worth of words, perhaps a few dozen,
@@ -302,35 +287,39 @@ The result, with the same typo:
 | time | 19.24 s | 0.88 s |
 | memory | 2,315,288,576 bytes | 104,660,992 bytes |
 
-And the system is still usable afterwards. The REPL collects — which now works,
+Two smaller repairs went with it. The default step budget was 50,000,000, which
+is far too many for an interactive line and is what allowed nineteen seconds of
+silence; it is 5,000,000 now. And running out of heap or budget had been
+reported as `BadSyntax`, the error for faulty code, because there was nothing
+better; both are ordinary conditions now, `HeapExhausted` and `BudgetExhausted`,
+and they say so. In phase 3 they become Lisp conditions, since Common Lisp has
+`storage-condition` for the first of them.
+
+The system is also still usable afterwards. The REPL collects, which now works
 because whatever filled the heap became unreachable the moment the computation
-stopped — and carries on. An error that leaves the system unusable is only
+stopped, and carries on. An error that leaves the system unusable is only
 marginally better than a crash.
 
 ## What this says about the first argument
 
 The original reasoning was not careless. Rule 4 is real, one step per mutation
 *is* the intended shape, and the two constraints really do agree. What it missed
-is that agreement between two rules is not enforcement of either.
-
-> A bound that depends on how callers choose to use an API is not a bound. It is
-> a hope with a justification attached.
-
-The giveaway, in hindsight, is that nothing in the code said "one step per
-mutation". It was a sentence in a design discussion, and sentences do not fail
-the build.
+is that agreement between two rules is not enforcement of either: a bound that
+depends on how callers choose to use an API is not a bound, but a hope with a
+justification attached. The giveaway, in hindsight, is that nothing in the code
+said "one step per mutation". It was a sentence in a design discussion, and
+sentences do not fail the build.
 
 In the browser the ceiling is not theoretical either way. WebAssembly linear
-memory stops at 4 GiB, and browsers cap it lower — which is why this chapter
+memory stops at 4 GiB, and browsers cap it lower, which is why this chapter
 mentions it twice.
 
 ## The same mistake twice
 
 Chapter 1 described a constant that compiled on a 64-bit machine and was a
 compile error on wasm32, because `usize` is 32 bits there. The fix was to notice
-that the limit described an *encoding*, not a machine.
-
-It happened again, in this chapter's code, to a different constant:
+that the limit described an *encoding*, not a machine. It happened again, in
+this chapter's code, to a different constant:
 
 ```rust
 pub const MAX_OBJECT_SLOTS: usize = (1 << (64 - HEADER_LEN_SHIFT)) - 1;
@@ -338,17 +327,14 @@ pub const MAX_OBJECT_SLOTS: usize = (1 << (64 - HEADER_LEN_SHIFT)) - 1;
 
 Identical shape, identical error, caught by the same CI job. The second time is
 more interesting than the first, because it says this is not an accident but a
-*category*: a constant describing a width in a file format must not be typed as
+category: a constant describing a width in a file format must not be typed as
 `usize`, because `usize` means different things on different targets and a file
-format must not.
-
-Twice is a pattern. Three times and it is worth a lint rather than vigilance.
+format must not. Twice is a pattern, and a third time would be worth a lint
+rather than vigilance.
 
 ## Where this leaves us
 
 The heap can hold cons cells and headed objects of eight kinds, a linear walk
 can recover object boundaries exactly, and the type system knows which slots are
-references.
-
-Every one of those is a precondition for the next chapter, which is the one that
-uses them.
+references. Every one of those is a precondition for the next chapter, which is
+the one that uses them.

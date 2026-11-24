@@ -1,75 +1,64 @@
 # Rooting
 
-> **Where this fits.** The previous chapter left a hole: the garbage collector
-> cannot see values held by the implementation language itself. Closing it means
-> fixing a *contract* — what every allocation hands back, and what every
-> function takes — which lands in the signature of code that does not exist yet.
-> That is why it comes before the heap and the collector it protects, even
-> though it sounds like a detail and they sound like the main event.
+> *Where this fits.* The last chapter left a hole: the garbage collector cannot
+> see values held by the implementation language itself, so a Rust local can go
+> on holding a reference to an object that has already been reclaimed, and the
+> program quietly computes a wrong answer. This chapter closes that hole by
+> making the mistake impossible to write rather than merely easy to catch. It
+> takes thirteen lines of Rust and no `unsafe` to do, the whole guarantee turns
+> on how one `PhantomData` is spelled, and it raises a question with no obvious
+> answer: how do you test a claim that certain programs cannot exist? It comes
+> before the heap and the collector it protects because what it settles is a
+> contract, what every allocation hands back and what every function takes, and
+> that contract lands in the signature of code that does not exist yet.
 
-> **Status: decided and implemented.** Option C below was chosen; the ending of
-> this chapter records how it went, including the part that nearly went wrong.
-> The argument is left as it stood, because the reasoning that *lost* is most of
-> what makes the outcome meaningful.
+*Status: decided and built, issue #1.*
 
-The previous chapter ended with a hole. Rust code occasionally has to hold a
-Lisp value across an allocation, the allocation can trigger a collection, and
-the collector cannot see Rust local variables. The value is not merely moved —
-it is reclaimed, because nothing the collector can see wanted it.
+**Rooting** is telling the collector about a location it cannot find for
+itself, and this chapter is about how.
 
-**Rooting** is telling the collector about such a location. This chapter is
-about how.
-
-## Three places, not everywhere
-
-Worth restating the size of the problem, because it determines how much
-machinery is proportionate.
+## Where is rooting necessary?
 
 The evaluator does not need rooting at all. Its state is four registers and a
-frame stack, all in the heap, all already roots. `step()` performs one small
-transition and returns; it barely holds a value long enough to lose one.
+frame stack, all in the heap and all already roots, and `step()` performs one
+small transition and returns, so it barely holds a value long enough to lose
+one. Three places do need it:
 
-Three places do need it:
-
-1. **The reader**, building a list by allocating repeatedly while holding the
+1. The reader, building a list by allocating repeatedly while holding the
    partial structure.
-2. **Primitives that allocate more than once** — accumulating results, copying a
+2. Primitives that allocate more than once, accumulating results or copying a
    tree.
-3. **Bootstrap and image load**, constructing the initial world.
+3. Bootstrap and image load, constructing the initial world.
 
-Three places. Not "all VM code". Any solution costing more than those three
-places are worth is the wrong solution.
+Three places, rather than all VM code. Any solution costing more than those
+three places are worth is the wrong solution.
 
-## Option A: look at the Rust stack anyway
+## Looking at the Rust stack anyway
 
-Scan the Rust call stack word by word and treat anything that looks like a heap
-reference as a root. This is *conservative stack scanning*, and the Boehm
-collector does it for C and C++ precisely because C has no way to enumerate live
-pointers either.
+The first option is to scan the Rust call stack word by word and treat anything
+that looks like a heap reference as a root. This is *conservative stack
+scanning*, and the Boehm collector does it for C and C++ precisely because C has
+no way to enumerate live pointers either. It rules itself out here, twice over.
 
-It rules itself out here, twice over.
+Tagged offsets are indistinguishable from integers. A cons at word index 6 is
+stored as `0x31` and the fixnum 24 is stored as `0x30`, and small integers are
+everywhere on a stack, as loop counters, lengths and indices, so half the heap
+would be pinned by false positives.
 
-**Tagged offsets are indistinguishable from integers.** A cons at word index 6
-is stored as `0x31`; the fixnum 24 is stored as `0x30`. Small integers are
-everywhere on a stack — loop counters, lengths, indices. Half your heap would be
-pinned by false positives.
-
-**You cannot move what you are only guessing about.** If a word might be an
-integer, you cannot rewrite it. So every conservatively discovered object must
+You also cannot move what you are only guessing about. If a word might be an
+integer you cannot rewrite it, so every conservatively discovered object has to
 be *pinned* where it is, which means a mostly-copying collector in the style of
 Bartlett's, with a compaction story full of holes. Our collector moves
-everything; that is the source of its simplicity.
+everything, and that is the source of its simplicity. The option is worth
+knowing as the road not taken, and not worth building.
 
-Worth knowing as the road not taken. Not worth building.
+## An explicit stack of roots
 
-## Option B: an explicit stack of roots
-
-Keep our own stack of roots, outside the Rust call stack, that the collector can
-walk. Rust code that needs a value to survive an allocation puts it there.
-
-This is what V8 does (`HandleScope` and `Handle`) and what SpiderMonkey does
-(`JS::Rooted`), and they chose it for exactly our reason: they are embedded in
-C++, whose stack is opaque to them.
+The second option is to keep our own stack of roots, outside the Rust call
+stack, that the collector can walk, and have Rust code that needs a value to
+survive an allocation put it there. This is what V8 does with `HandleScope` and
+`Handle`, and what SpiderMonkey does with `JS::Rooted`, and they chose it for
+exactly our reason: they are embedded in C++, whose stack is opaque to them.
 
 In Quokka's terms:
 
@@ -108,75 +97,76 @@ let tail = s.cons(Value::fixnum(20), Value::NIL);   // a Root
 let head = s.cons(Value::fixnum(1), s.get(tail));   // re-read through the root
 ```
 
-Two rules do most of the work. **Allocation returns `Root`, never `Value`** —
-type-enforced, so you can never accidentally keep an unprotected result of an
-allocation, because you are never handed one. And **never let a `Value` outlive
-the statement that produced it** if anything in between can allocate — a
-convention, not enforced, but one that torture mode catches immediately.
+Two rules do most of the work. Allocation returns `Root` and never `Value`,
+which the type system enforces, so you can never accidentally keep an
+unprotected result of an allocation because you are never handed one. And a
+`Value` must never outlive the statement that produced it if anything in
+between can allocate, which is a convention rather than something enforced, but
+one that torture mode catches immediately.
 
-There is also a useful side effect in the signatures. A function taking
-`&mut Scope` can allocate and therefore can collect. A function taking `&Heap`
-cannot. One glance answers "can this move my objects?", which turns out to be a
-question you ask constantly. The jargon for a point where collection may happen
-is a **safepoint**; here, the type says so.
+There is also a useful side effect in the signatures. A function taking `&mut
+Scope` can allocate and therefore can collect, and a function taking `&Heap`
+cannot, so one glance answers "can this move my objects?", which turns out to
+be a question you ask constantly. The jargon for a point where collection may
+happen is a **safepoint**, and here the type says so.
 
-Cost: a vector push and pop per temporary, in three places in the codebase. The
-evaluator never touches it. Perhaps eighty lines.
+The cost is a vector push and pop per temporary, in three places in the
+codebase, with the evaluator never touching it. Perhaps eighty lines.
 
-## Option C: make it a compile error
+## Making it a compile error
 
-Give `Value` an invariant lifetime tied to a token that exists only while
-collection cannot happen. Holding a value across an allocation then simply does
-not typecheck. The `gc-arena` crate does this for Rust, and the guarantee is
-real — not a convention, a proof, with no runtime cost.
+The third option is to give `Value` an invariant lifetime tied to a token that
+exists only while collection cannot happen, so that holding a value across an
+allocation does not typecheck. The `gc-arena` crate does this for Rust, and the
+guarantee is real: not a convention but a proof, with no runtime cost.
 
-Two problems, one practical and one about what this project is for.
+There are two problems, one practical and one about what this project is for.
+The practical one is that `gc-arena` is pointer-based, while Quokka's
+references must be offsets so that images relocate and the same code runs on
+64-bit native and wasm32, so you would be reimplementing the discipline rather
+than using the crate.
 
-The practical one: `gc-arena` is pointer-based, and Quokka's references must be
-offsets so that images relocate and the same code runs on 64-bit native and
-wasm32. You would be reimplementing the discipline, not using the crate.
-
-The other one: the lifetime is viral. `'gc` lands in the signature of nearly
+The other is that the lifetime is viral. `'gc` lands in the signature of nearly
 every function that touches a value, along with `PhantomData`, invariance
 tricks, and higher-kinded-type emulation for the root type. For a system with a
 15,000-line budget whose stated purpose includes being readable by someone
-learning how this works, that is a permanent tax on every page.
-
-And consider what it buys: it prevents a bug class that is, here, a wrong answer
-rather than a memory-safety hole. In a C runtime the calculation would come out
+learning how this works, that is a permanent tax on every page. And what it
+buys is the prevention of a bug class that is, here, a wrong answer rather than
+a memory-safety hole. In a C runtime the calculation would come out
 differently.
 
 ## What settled it
 
-The argument above came out slightly in favour of option B, on grounds of
-proportion. It was wrong, and the thing that overturned it was an observation
-about the *shape of the project* rather than about Rust.
+The argument above came out slightly in favour of the second option, on grounds
+of proportion. It was wrong, and what overturned it was an observation about
+the shape of the project rather than about Rust.
 
-Rust is only the VM. Everything above the primitive table is Lisp — and **Lisp
-code cannot have this bug at all.** Not "is unlikely to": cannot. A Lisp value
+Rust is only the VM. Everything above the primitive table is Lisp, and Lisp
+code cannot have this bug at all. Not "is unlikely to", but cannot: a Lisp value
 is always in the heap or in an evaluator frame, and frames are heap objects
-reachable from the registers. There is no such thing as an unrooted Lisp local.
+reachable from the registers, so there is no such thing as an unrooted Lisp
+local.
 
-Which means rule 1 of the project — *Rust below the primitive table, Lisp above
-it* — is a **correctness boundary**, not only a design preference. Every line
-moved above that line is a line that structurally cannot have this class of bug.
-Nobody planned that; it falls out of the explicit-control evaluator from chapter
-2, which was adopted for an entirely different reason.
+Which means that rule 1 of the project, *Rust below the primitive table, Lisp
+above it*, is a correctness boundary and not only a design preference. Every
+line moved above that line is a line that structurally cannot have this class
+of bug. Nobody planned that; it falls out of the explicit-control evaluator
+from chapter 2, which we adopted for an entirely different reason.
 
-And once you see that, the argument for option B inverts. B was justified by
-cost: three places need rooting, eighty lines covers them, branding is
+Once you see that, the argument for the second option inverts. It was justified
+by cost: three places need rooting, eighty lines covers them, and branding is
 expensive. But if the exposed surface is small and permanently bounded, then the
-*cost of the stricter scheme is bounded by exactly the same argument*. You do
-not pay the lifetime tax across a growing system. You pay it once, over a part
-that stops growing.
+cost of the stricter scheme is bounded by exactly the same argument. You do not
+pay the lifetime tax across a growing system; you pay it once, over a part that
+stops growing.
 
-So: option C, with two exit conditions agreed in advance — abandon it if the
-type machinery exceeded about a hundred lines before any heap logic existed, or
-if the guarantee could not be proven sound.
+So we took the third option, with two exit conditions agreed in advance: we
+would abandon it if the type machinery exceeded about a hundred lines before
+any heap logic existed, or if the guarantee could not be proven sound.
 
 ## The mechanism
 
-Thirteen lines, no `unsafe`, no runtime check.
+Thirteen lines, no `unsafe`, and no runtime check.
 
 ```rust
 pub fn mutate<F, R>(&mut self, f: F) -> R
@@ -191,14 +181,13 @@ where
 }
 ```
 
-The higher-ranked bound `for<'h>` means the closure must work for *every* brand.
-`R` is a type fixed outside the closure, so `R` cannot mention `'h`. A
-`Value<'h>` therefore has nowhere to go: not out through the return value, and
-not into anything captured from outside, whose lifetimes are already fixed.
-
-`Heap::collect` takes `&mut self`, which a live `Mutation` borrows, so collecting
-during a mutation does not compile either. Every point where the collector may
-run is a point where no Rust local holds a value.
+The higher-ranked bound `for<'h>` means the closure must work for *every*
+brand. `R` is a type fixed outside the closure, so `R` cannot mention `'h`, and
+a `Value<'h>` therefore has nowhere to go: not out through the return value,
+and not into anything captured from outside, whose lifetimes are already fixed.
+`Heap::collect` takes `&mut self`, which a live `Mutation` borrows, so
+collecting during a mutation does not compile either. Every point where the
+collector may run is a point where no Rust local holds a value.
 
 The broken code from chapter 3 is now unwritable:
 
@@ -229,25 +218,24 @@ Not like this:
 PhantomData<&'h ()>      // covariant — the guarantee silently evaporates
 ```
 
-The obvious spelling is *covariant* in `'h`, meaning a long brand can be
-shortened to a short one at will. That is precisely the escape the whole scheme
-exists to prevent. Writing it that way gives you a proof that is not one — and
-everything still compiles, every test still passes, and you have no way of
-knowing.
+The obvious spelling is *covariant* in `'h`, which means a long brand can be
+shortened to a short one at will, and that is precisely the escape the whole
+scheme exists to prevent. Writing it that way gives you a proof that is not
+one, and everything still compiles, every test still passes, and you have no
+way of knowing. Putting `'h` in both argument and return position of a function
+type forces invariance. It looks like noise, and it is the only thing making
+any of this true.
 
-Putting `'h` in both argument and return position of a function type forces
-invariance. It looks like noise. It is the only thing making any of this true.
-
-Which raises the question the rest of the chapter is really about: **how do you
-test a guarantee?**
+Which raises the question the rest of the chapter is really about: how do you
+test a guarantee?
 
 ## Testing something that is supposed to be impossible
 
 An ordinary test runs code and checks the answer. Here there is no answer to
-check — the claim is that certain programs *do not exist*.
+check, because the claim is that certain programs *do not exist*.
 
-Rust has the tool built in. A doctest marked ```` ```compile_fail ```` **fails if
-the code compiles**:
+Rust has the tool built in. A doctest marked ```` ```compile_fail ```` fails if
+the code compiles:
 
 ```rust
 /// ```compile_fail
@@ -258,64 +246,63 @@ the code compiles**:
 /// ```
 ```
 
-Nine cases were checked before anything was built on the brand: legal use,
+We checked nine cases before building anything on the brand: legal use,
 returning plain data, returning a value, assigning to an outer variable,
 stashing in an outer `Vec`, smuggling through a `Cell`, collecting during a
 mutation, shortening the brand, and the same shortening with a covariant brand.
 
-That last one is not padding. **A compile-fail test that fails for the wrong
-reason proves nothing**, and a test asserting "this does not compile" is
-uniquely prone to it, because almost any mistake makes code not compile. So one
-test asserts that the covariant spelling *would* allow shortening. If that
+That last one is not padding. A compile-fail test that fails for the wrong
+reason proves nothing, and a test asserting "this does not compile" is uniquely
+prone to it, because almost any mistake makes code not compile. So one test
+asserts that the covariant spelling *would* allow shortening, and if that
 stopped passing, the invariance test would be meaningless and we would be told.
 
 This was not a hypothetical worry. The first version of the harness reported
-five escape attempts correctly rejected. They were being rejected because `rustc`
-will not accept a crate name containing a hyphen. Five green ticks, nothing
-tested.
-
-It is the same failure the whole decision was about, one level up: a guarantee
-you believe but have not checked is worse than a convention you know is a
-convention, because you stop looking. Two positive controls were added.
+five escape attempts correctly rejected. They were being rejected because
+`rustc` will not accept a crate name containing a hyphen: five green ticks,
+nothing tested. It is the same failure the whole decision was about, one level
+up. A guarantee you believe but have not checked is worse than a convention you
+know is a convention, because you stop looking. We added two positive controls.
 
 ## What the brand does not do
 
-Two limits worth being precise about.
+Two limits are worth being precise about.
 
-**It stops a value escaping a mutation. It does not stop one being invented
-outside one.** If `Value::cons(42)` were public, anyone could conjure a heap
-reference at an arbitrary brand and the guarantee would be worthless. So the
+It stops a value escaping a mutation, and it does not stop one being invented
+outside one. If `Value::cons(42)` were public, anyone could conjure a heap
+reference at an arbitrary brand and the guarantee would be worthless, so the
 heap-reference constructors are crate-private, reachable only through a
-`Mutation`. Immediates — fixnums, characters, `nil` — stay public, because they
-refer to nothing. The split falls exactly along *does this word point into the
-heap*.
+`Mutation`. Immediates, meaning fixnums, characters and `nil`, stay public,
+because they refer to nothing. The split falls exactly along *does this word
+point into the heap*.
 
-**It protects callers from the collector, not the collector from itself.** It
-does nothing about tracing the wrong field, mis-sizing a header, or botching the
-forwarding-pointer dance. Those produce the same silent wrong answers, and
-honestly they are the likelier bugs — the collector is the part being written
-from scratch for the first time. Branding narrows the problem; the torture mode
-in [Cheney's algorithm](06-cheneys-algorithm.md) is what addresses the rest.
-
-That is worth holding on to, because a compile-time guarantee produces a feeling
-of safety wider than the thing it actually guarantees.
+It also protects callers from the collector rather than the collector from
+itself. It does nothing about tracing the wrong field, mis-sizing a header, or
+botching the forwarding-pointer dance, and those produce the same silent wrong
+answers. They are honestly the likelier bugs, since the collector is the part
+being written from scratch for the first time. Branding narrows the problem,
+and the torture mode in [Cheney's algorithm](06-cheneys-algorithm.md) is what
+addresses the rest. A compile-time guarantee produces a feeling of safety wider
+than the thing it actually guarantees, which is why it is worth saying where
+this one stops.
 
 ## The cost, paid in full
 
 Collection can only happen between mutations, so the heap must absorb whatever
 one mutation allocates. In a general-purpose Rust runtime that is a real
-discipline — `gc-arena`, the crate this technique comes from, documents long
+discipline, and `gc-arena`, the crate this technique comes from, documents long
 mutations as a known limitation.
 
-Here it costs almost nothing, because rule 4 already forbids long mutations. The
-evaluator must return control to the browser promptly, so one step per mutation
-gives fine-grained collection for free. Two constraints adopted for unrelated
-reasons turned out to demand the same thing — which usually means both are
-downstream of something more basic. In this case: a runtime that can be
+Here it costs almost nothing, because rule 4 already forbids long mutations.
+The evaluator must return control to the browser promptly, so one step per
+mutation gives fine-grained collection for free. Two constraints adopted for
+unrelated reasons turned out to demand the same thing, which usually means both
+are downstream of something more basic. In this case, a runtime that can be
 interrupted must keep its state somewhere the interrupter can see.
 
-The heap this protects is [the next chapter](05-objects-in-the-heap.md), and the
-collector it protects it from is [the one after](06-cheneys-algorithm.md).
+The heap this protects is [the next chapter](05-objects-in-the-heap.md), and
+the collector it protects it from is
+[the one after](06-cheneys-algorithm.md).
 
 ---
 
@@ -323,49 +310,51 @@ collector it protects it from is [the one after](06-cheneys-algorithm.md).
 
 Kept because the reasoning is more useful than the conclusion.
 
-## The argument, such as it is
+## The case for an explicit root stack
 
-The case for option B is that it is proportionate: three places need it, eighty
-lines covers them, the enforcement goes where it is cheap, and the cost falls on
-the code that actually allocates rather than on every signature in the system.
+The case for the second option is that it is proportionate: three places need
+it, eighty lines covers them, the enforcement goes where it is cheap, and the
+cost falls on the code that actually allocates rather than on every signature
+in the system.
 
-The case against is honest and should be stated plainly. **It is discipline plus
-testing, not a proof.** Option C is the only one that makes the mistake
-impossible. Choosing B means accepting that a rooting bug can be written, and
-betting that there are few enough places, that torture mode finds it on the
-first run, and that the readability is worth it.
+The case against it is honest and should be stated plainly. It is discipline
+plus testing, not a proof. The third option is the only one that makes the
+mistake impossible, and choosing the second means accepting that a rooting bug
+can be written, and betting that there are few enough places, that torture mode
+finds it on the first run, and that the readability is worth it.
 
-It is also a real fork rather than a deferred decision. Retrofitting lifetime
-branding later would be a large mechanical change across the whole crate.
+It is also a real fork rather than a deferred decision, since retrofitting
+lifetime branding later would be a large mechanical change across the whole
+crate.
 
 ## Which is why torture mode matters so much
 
 If the safety net is tests, the tests have to be vicious. Collecting on every
 single allocation is the obvious part, and it is only the start.
 
-**Poison the abandoned region** after every flip. A stale offset should read
-`0xDEADDEAD...` and fail loudly, not read plausible leftover data and fail
-quietly three evaluations later. Recall that these bugs produce wrong answers,
-not crashes; this is how you convert one into the other.
+Poison the abandoned region after every flip, so that a stale offset reads
+`0xDEADDEAD...` and fails loudly rather than reading plausible leftover data
+and failing quietly three evaluations later. These bugs produce wrong answers
+rather than crashes, and this is how you convert one into the other.
 
-**Shift the heap base by a word on every collection.** Without this, a small
-heap can copy an object back to the index it already had, a stale reference
+Shift the heap base by a word on every collection. Without this, a small heap
+can copy an object back to the index it already had, a stale reference
 accidentally still works, and your nastiest test passes for the wrong reason.
 Forcing every offset to change every time is what makes torture mode prove
 something.
 
 The general principle is worth more than the specific tricks. Torture mode is
-not a stress test in the usual sense — it is not about load. It is a
+not a stress test in the usual sense, because it is not about load. It is a
 *determinism amplifier*: it makes the rare interleaving the only interleaving,
 so a latent bug fails the first time instead of the thousandth.
 
 ## Two things this is not
 
-**Write barriers are a different problem.** A plain Cheney collector needs none.
+Write barriers are a different problem. A plain Cheney collector needs none.
 They arrive with a generational collector, to track references from old objects
 to young ones, and they are about *mutation* rather than about roots.
 
-**No interior pointers, ever.** Every value refers to an object's header or is
-an immediate. Allowing a reference into the middle of an object makes a copying
+No interior pointers, ever. Every value refers to an object's header or is an
+immediate. Allowing a reference into the middle of an object makes a copying
 collector dramatically harder, and the rule is free while nothing relies on
 breaking it.

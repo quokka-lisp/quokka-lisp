@@ -1,11 +1,12 @@
 # What is alive?
 
-> *Where this fits.* A running program creates values it then stops needing,
-> and the memory has to come back. This chapter is about how a system works
-> that out automatically, which is called **garbage collection**, and it
-> introduces the two ideas the next three chapters depend on: the *heap*, and
-> the *roots* a search for live data starts from. It explains the problem, and
-> chapter 6 builds the solution.
+> *Where this fits.* A running program makes values it then stops needing, and
+> the memory has to come back. Working out automatically which values those are
+> is **garbage collection**, and doing it turns out to need about a dozen
+> starting points, called **roots**, however much data the system holds. It
+> fails in exactly one place, the implementation language's own local
+> variables, which is the hole the next chapter exists to close. Chapter 6
+> builds the collector itself.
 
 A program that runs for a while makes things it later stops needing. The space
 those things occupy has to come back, or the program eventually runs out of

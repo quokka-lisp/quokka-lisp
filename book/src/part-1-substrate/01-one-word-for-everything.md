@@ -2,9 +2,11 @@
 
 > *Where this fits.* Every runtime has to answer one question before it can
 > answer any other: how is a piece of data represented, and how do you tell a
-> number from a list? Everything later in the book is constrained by what we
-> decide here, which is why it comes first. It is also the one part of the
-> system where complete confidence is cheap, because nothing moves yet.
+> number from a list? The answer here costs three bits of every word, and pays
+> for itself at once: two integers add without being unwrapped first, and the
+> test for overflow comes free from the hardware. Everything later in the book is constrained by what we settle
+> here, which is why it comes first, and it is the one part of the system where
+> complete confidence is cheap, because nothing moves yet.
 
 Every Lisp object in Quokka, whether it is a number, a character, a symbol, a
 list or a function, is represented by exactly one 64-bit word.

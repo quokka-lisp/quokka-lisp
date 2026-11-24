@@ -152,7 +152,13 @@ chapter; the problem is the pattern.
 6. **Em-dash as the main rhythm.** One or two a page is plenty. Use commas,
    parentheses, or two sentences.
 7. **Restating summaries.** A sentence that repeats what the paragraph just
-   said, or a section ending "In short, …". Delete it.
+   said, or a section ending "In short, …". Delete it. The commonest case is
+   an opening said twice: a standing note at the top (an abstract, a summary
+   box, a "Where this fits") that states the problem, followed by a first
+   paragraph that states it again in other words. Keep whichever one earns its
+   place and cut the other; when the note is doing the work, the body can
+   start at the next thing it has to say. Watch for the note borrowing the
+   body's own phrasing, which is how the repetition hides.
 8. **Announcing importance.** "This is the crucial part", "Crucially",
    "Notably", "It's worth noting". If it matters, the explanation shows it.
 9. **Tidy symmetry, and the rule of three.** Everything in threes, every
@@ -261,6 +267,19 @@ chapter; the problem is the pattern.
     that jump. Each is trivial alone and the pattern is not. Match the file's
     existing conventions, and compare a rewrite against the original for
     quotes and dashes especially, since those change silently.
+
+24. **Process where a reason to read should be.** An opening that tells the
+    reader what state the work is in, who decided what, and how the text is
+    arranged, instead of what they get out of it: "We chose the third option
+    below, and the end records how it went. The argument that lost is kept,
+    because the reasoning that lost is most of what makes the outcome
+    meaningful." All of that is bookkeeping, true and dull, and it belongs on
+    one short status line where the format wants one. Open with the reader's
+    return instead: the problem they will be able to solve, the thing they
+    will be able to do, the question the text answers. Our payoff is not
+    theirs. The same goes for what a decision did for the project ("it
+    reshapes the whole system", "it pays for three later chapters") where
+    what it does for the reader would serve better.
 
 These are signs, not rules. Human writing contains all of them, and a text is
 not machine-written because one appears; it is the density that gives it away.
