@@ -1,14 +1,13 @@
 # Asking the outside world
 
-> **Where this fits.** Chapter 30 made the whole system a file that can be
-> saved and resumed. Everything in it so far happens *inside* the heap: no
-> Lisp program has been able to read a file, ask the time or draw on a
-> screen. This chapter gives Lisp its first way to ask the outside world for
-> something, and it makes that asking **asynchronous** from the very first
-> request, before anything could be built on a shape that would have to be
-> torn out later. It is also where Quokka starts to look like what it really
-> is: an operating system, with programs that make requests and a layer
-> beneath them that answers.
+> *Where this fits.* Chapter 30 made the whole system a file that can be saved
+> and resumed. Everything in it so far happens *inside* the heap: no Lisp
+> program has been able to read a file, ask the time or draw on a screen. This
+> chapter gives Lisp its first way to ask the outside world for something, and
+> it makes that asking **asynchronous** from the very first request, before
+> anything could be built on a shape that would have to be torn out later. By
+> the end you will be able to save a world while it is still waiting for a
+> file, and finish the computation in a different process.
 
 ## The question that started it
 
@@ -58,31 +57,31 @@ phase 0, said:
 > of the request should be decided when there is a real caller for it rather
 > than guessed now.
 
-So the job was not "make a trait asynchronous". It was **give Lisp its first
-way to reach the outside world, and make it asynchronous from the start**,
-with a real caller so that the design was made for a real use rather than
-guessed at. The design already named the first caller: *"Before Quokka has
-file hosts, Lisp source files are loaded through a single host primitive."*
+So the job was not "make a trait asynchronous". It was to give Lisp its first
+way to reach the outside world and make it asynchronous from the start, with a
+real caller so that the design was made for a real use rather than guessed at.
+The design already named the first caller: *"Before Quokka has file hosts,
+Lisp source files are loaded through a single host primitive."*
 
 ## Why a synchronous call cannot work in a browser
 
 A browser tab runs your page on one thread. That thread is driven by an
-**event loop**: the browser keeps a queue of things to do — a key was pressed,
-a timer fired, some data arrived — and takes them off one at a time, running a
-little JavaScript for each. While one piece of JavaScript is running, nothing
-else happens. The page does not repaint. Clicks do not register. That is what
-a "frozen tab" is.
+**event loop**: the browser keeps a queue of things to do, such as a key being
+pressed, a timer firing or some data arriving, and takes them off one at a
+time, running a little JavaScript for each. While one piece of JavaScript is
+running, nothing else happens. The page does not repaint. Clicks do not
+register. That is what a "frozen tab" is.
 
 Reading from the browser's storage or the network takes time, so the browser
-never makes JavaScript wait for it. You ask, you get back a **Promise** — an
-object that stands for "the answer, when it arrives" — and your code finishes.
+never makes JavaScript wait for it. You ask, you get back a **Promise**, an
+object that stands for "the answer, when it arrives", and your code finishes.
 Later, once the answer is there, the browser puts a new item on the event
 loop's queue, and a callback you supplied runs with it.
 
 A `read_source` that returns the text immediately cannot be written on top of
 that. The only way to get the answer would be to sit in a loop until it
-arrives, and while you sit there, the event loop stops, and the answer — which
-is delivered *by* the event loop — never arrives. Rule 4 exists for exactly
+arrives, and while you sit there, the event loop stops, and the answer, which
+is delivered *by* the event loop, never arrives. Rule 4 exists for exactly
 this reason: the VM runs in slices and hands control back so that the browser
 keeps turning.
 
@@ -95,8 +94,8 @@ keeps turning.
 | **Requests in the heap** | the program leaves a request in the heap and the machine stops; the host reads it, does the work however suits it, writes the answer back into the heap and runs the next slice | — |
 
 The third won. Notice that the reason the first two lost is the same reason in
-both cases, and it is the reason chapter 30 worked at all: **anything that is
-not in the heap is lost when you save the world.** A request that is heap data
+both cases, and it is the reason chapter 30 worked at all: anything that is
+not in the heap is lost when you save the world. A request that is heap data
 survives being written to a file. A future or a closure does not.
 
 ## A system call, in miniature
@@ -183,8 +182,9 @@ pub enum Request {
 }
 ```
 
-and `complete` writes the answer back. A host that can answer straight away —
-the native terminal, or the tests — uses a third function that does both:
+and `complete` writes the answer back. A host that can answer straight away,
+meaning the native terminal or the tests, uses a third function that does
+both:
 
 ```rust
 pub fn serve(heap: &mut Heap, host: &mut dyn Host) -> bool {
@@ -234,16 +234,16 @@ uses. A `handler-case` written for SBCL will catch it here too.
 
 ## What it buys
 
-**The VM never waits inside a step.** The native host answers before the next
-slice. A browser host will answer when a Promise resolves. It is the same
+The VM never waits inside a step. The native host answers before the next
+slice; a browser host will answer when a Promise resolves. It is the same
 protocol in both cases.
 
-**Determinism survives.** The computation is frozen until the answer arrives,
-so it cannot tell whether it waited a microsecond or a minute. Rule 4 says
+Determinism survives. The computation is frozen until the answer arrives, so
+it cannot tell whether it waited a microsecond or a minute. Rule 4 says
 slicing must be invisible to the program, and this keeps it invisible across
 I/O too.
 
-**A pending request can be saved in an image.** This test is the point of the
+A pending request can be saved in an image, and this test is the point of the
 whole design:
 
 ```rust
@@ -268,7 +268,7 @@ finished with `("hi" . 7)`. With a Rust future or a callback this test could
 not even be written, because the thing that was waiting would have been in
 the process that exited.
 
-**It generalises.** In phase 3, *blocked* becomes *parked*. Instead of ending
+And it generalises. In phase 3, *blocked* becomes *parked*: instead of ending
 the slice, the scheduler moves on to another process and comes back once the
 answer is in. Each process will hold its own request, and the `Request`
 register will become the running process's one, kept close to hand. The
@@ -301,24 +301,24 @@ only places `%read-source` can run are the compiling REPL and the tests.
 
 ## Found on the way
 
-**A primitive reached by `multiple-value-call` skipped the machine.** The
+A primitive reached by `multiple-value-call` skipped the machine. The
 instruction behind `multiple-value-call` called the primitive table directly,
 while every other way of calling a function went through the machine's own
 check for the primitives it must handle itself. So
 `(multiple-value-call #'funcall …)` was already wrong, and `%read-source`
 would have fallen through the same gap. It now goes the same way as every
-other call, and a test sends `%read-source` down all three side roads —
+other call, and a test sends `%read-source` down all three side roads,
 `funcall`, `apply` and `multiple-value-call`.
 
-**Compiled code could not catch a primitive's error.** The interpreter turns
-an error inside a primitive, such as `(car 5)`, into a condition that a
+Compiled code could not catch a primitive's error. The interpreter turns an
+error inside a primitive, such as `(car 5)`, into a condition that a
 `handler-case` can catch; the VM simply stopped. It was fixed straight
-afterwards, as #36, and turned out to be four faults rather than one —
-chapter 28 has them. Since then a compiled `handler-case` catches a
-`file-error` from a missing file, which is the two changes meeting.
+afterwards, as #36, and turned out to be four faults rather than one, which
+chapter 28 has. Since then a compiled `handler-case` catches a `file-error`
+from a missing file, which is the two changes meeting.
 
-**The image format lasted two days.** Adding a register added a word to the
-image header, so `FORMAT_VERSION` went from 1 to 2. Chapter 30 had fixed that
+The image format lasted two days. Adding a register added a word to the image
+header, so `FORMAT_VERSION` went from 1 to 2, and chapter 30 had fixed that
 format two days earlier. That is an honest measure of how stable a format is
 before anything depends on it, and it is why #34 says the format is stable
 for phase 1 rather than forever. The new word went at the *end* of the header,
@@ -347,19 +347,27 @@ quokka> (%read-source "nope.lisp")
 Built: the protocol, the first request, the synchronous driver, and an image
 that can be saved while a request is waiting.
 
-Not built: **the browser's half.** The browser console still interprets, and
+Not built: the browser's half. The browser console still interprets, and
 compiled code cannot call the interpreted prelude until #33, so there is not
 yet any compiled computation running in a tab that could block. When there
 is, the browser host will be a small JavaScript loop: run a slice; if it
 ended `Blocked`, call `pending`, start the Promise, and when it resolves call
 `complete` and run the next slice.
 
-Also not built: **output.** `write_stdout` is still the host writing to its
-own screen. Output in Common Lisp means *streams* and the special variable
+Also not built: output. `write_stdout` is still the host writing to its own
+screen. Output in Common Lisp means *streams* and the special variable
 `*standard-output*`, and special variables are #34's third question. And
 `load`, which reads a file and evaluates each form in it, will be ordinary
 Lisp written on top of `%read-source` once there is a `read-from-string` to
 write it with.
+
+*Later: all three of those arrived in phase 2, and each came out as this
+section expected. Special variables are chapter 35; `*standard-output*` is a
+console stream whose every write is a `%write-console` request, built on this
+same protocol (chapter 39); and `load` is ordinary Lisp over `%read-source`,
+written once there was a Lisp reader to write it with (chapter 40). The
+browser's half is still the one piece outstanding, for the reason given here:
+its console interprets, and it cannot load a world yet.*
 
 ---
 
