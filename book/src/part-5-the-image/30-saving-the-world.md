@@ -1,16 +1,16 @@
 # Saving the world
 
-> **Where this fits.** Chapter 29 left the system able to compile everything
-> and allowed to install nothing, and said the way out was an image. This is
-> the image: the whole heap written to a file and read back, which is how a
-> Lisp machine started, how Smalltalk still starts, and how Quokka will start
-> from now on. It is also phase 1's gate — *an image saves, reloads and
-> resumes where it left off* — and the surprise is how little code it took,
-> for reasons decided long before anyone was thinking about files.
+> *Where this fits.* Chapter 29 left the system able to compile everything and
+> allowed to install nothing, and said the way out was an image. This is the
+> image: the whole heap written to a file and read back, which is how a Lisp
+> machine started, how Smalltalk still starts, and how Quokka will start from
+> now on. It is also phase 1's gate, *an image saves, reloads and resumes
+> where it left off*, and by the end you will see why that took so little
+> code, for reasons decided long before anyone was thinking about files.
 
 Everything you have built in this book lives in one `Vec<u64>`. Symbols,
 functions, the macro table, a half-finished computation: all of it is words in
-the heap of chapter 4.
+the heap of chapter 5.
 
 An **image** is that heap, written to a file.
 
@@ -35,11 +35,11 @@ quokka> (reverse '(1 2 3))
 (3 2 1)
 ```
 
-**That start did not interpret the prelude.** It did not read
-`prelude.lisp` at all. It read a file of numbers into a vector and began. This
-is what the design means by "booting means loading an image, not running a
-build", and it is the normal condition of a Lisp machine or a Smalltalk: the
-system you are using is a *saved state*, not a program that was run.
+That start did not interpret the prelude. It did not read `prelude.lisp` at
+all. It read a file of numbers into a vector and began. This is what the
+design means by "booting means loading an image, not running a build", and it
+is the normal condition of a Lisp machine or a Smalltalk: the system you are
+using is a *saved state*, not a program that was run.
 
 ## Why this is normally the hard part
 
@@ -47,7 +47,7 @@ Writing a heap to a file sounds like the easiest thing in a runtime and is
 usually one of the hardest. The reason is pointers.
 
 In a typical runtime, an object that refers to another holds that object's
-**address** — where it sits in the process's memory. Say a cons cell at
+**address**, meaning where it sits in the process's memory. Say a cons cell at
 `0x7f3a_1c00_4080` holds `0x7f3a_1c00_41a0` in its `car`. Write those sixteen
 bytes to a file and you have saved a fact about a process that no longer
 exists. The next run will map its heap somewhere else, and
@@ -57,7 +57,7 @@ So the file format has to be a *different representation* from the in-memory
 one, and loading has to rebuild the graph: walk every object, allocate a new
 one, and patch every reference to point at the new address. That is a real
 traversal, with a worklist and a table mapping old locations to new, and it
-has to know the layout of every object type — which means it is a second
+has to know the layout of every object type, which means it is a second
 description of your object layouts, which has to be kept in step with the
 first one forever. Jones, Hosking and Moss survey the variations in *The
 Garbage Collection Handbook* (2012), §11.
@@ -79,31 +79,29 @@ Look again at **rule 3**, from the very first pages of the design:
 > Heap references are offsets, never raw pointers.
 
 A `Value` that names a cons cell does not hold an address. It holds the
-**word index** of that cell within the heap's vector — reference number 4,312,
+**word index** of that cell within the heap's vector: reference number 4,312,
 meaning "the 4,312th word of the heap", whichever memory that vector happens
 to occupy today.
 
 The rule was written for two reasons and neither was files. One: wasm32 has a
 32-bit address space and 64-bit native does not, and a system that stores
 addresses has two different object layouts and one of them has to be
-maintained blind. Two: the collector of chapter 7 moves every object it keeps,
+maintained blind. Two: the collector of chapter 6 moves every object it keeps,
 and a reference that survives moving is a reference that was never tied to a
 location.
 
-The consequence nobody was aiming at: **index 4,312 means the same thing in
-any process that has the same words.** The heap is already
+The consequence nobody was aiming at is that index 4,312 means the same thing
+in any process that has the same words. The heap is already
 position-independent. There is nothing to relocate, because nothing was ever
 located.
 
 This is worth sitting with, because it is the strongest example in this book
-of a decision paying for itself somewhere else. Rule 3 cost something real —
+of a decision paying for itself somewhere else. Rule 3 cost something real:
 every heap access is an index into a vector rather than a dereference, which
 is an extra bounds check the hardware would not have charged for. It bought
 wasm32 and a moving collector. And then, three phases later, it made the image
-a `memcpy`.
-
-That is not luck. Representations that avoid naming a particular machine tend
-to keep being portable, including through time.
+a `memcpy`. Representations that avoid naming a particular machine tend to
+keep being portable, including through time.
 
 ## Saving a computation in mid-air
 
@@ -130,10 +128,10 @@ the file was written, and it was fifty-something frames deep when it was read.
 
 This works for the same kind of reason as the last one. **Rule 4**: the VM
 must be able to yield, so execution state lives in the heap and never on the
-Rust call stack — no recursive `eval`. That rule exists because the browser's
-event loop must keep turning (chapter 5), and it is why chapter 9's evaluator
-is an explicit state machine with its frames as heap objects rather than the
-twenty-line recursive `eval` that every textbook starts with.
+Rust call stack, with no recursive `eval`. That rule exists because the
+browser's event loop must keep turning (chapter 2), and it is why chapter 9's
+evaluator is an explicit state machine with its frames as heap objects rather
+than the twenty-line recursive `eval` that every textbook starts with.
 
 The cost was paid in chapter 9 and it was not small: an explicit-control
 evaluator is harder to write and harder to read than the recursive one. What
@@ -171,28 +169,27 @@ honest way to say so is that the image format is the definition.
 
 ### What is deliberately not saved
 
-Three things, each for a reason worth stating because each one looks like an
-oversight:
+Four things, each for a reason worth stating because each one looks like an
+oversight.
 
-**The heap limits.** `soft_limit` and `hard_limit` are the *host's* policy,
-not the image's property. An image moved from a desktop to a phone should obey
-the phone's limits. So `load` takes a limit from its caller, and the
-browser will pass something smaller than the native REPL does for the same
-file.
+The heap limits. `soft_limit` and `hard_limit` are the *host's* policy, not
+the image's property. An image moved from a desktop to a phone should obey the
+phone's limits. So `load` takes a limit from its caller, and the browser will
+pass something smaller than the native REPL does for the same file.
 
-**`exhausted`.** The flag meaning "an allocation ran past the hard limit". A
-heap that could not allocate is not a heap worth preserving, and restoring the
-flag would halt the evaluator for a reason that no longer applies.
+`exhausted`, the flag meaning "an allocation ran past the hard limit". A heap
+that could not allocate is not a heap worth preserving, and restoring the flag
+would halt the evaluator for a reason that no longer applies.
 
-**`collections`.** It counts collections *in this process*, and it is used
-only by torture mode to vary its padding. Restoring it would be restoring a
-fact about a process that has exited.
+`collections`. It counts collections *in this process*, and it is used only by
+torture mode to vary its padding. Restoring it would be restoring a fact about
+a process that has exited.
 
-**The torture padding.** GC torture mode (chapter 7) pads the front of the
-dynamic area by a varying number of words, so that no object can land where it
-was and a stale reference cannot accidentally still be right. That is the
-correct thing to do to a *running* heap and precisely the wrong thing to write
-to a file, so `save` collects without it.
+The torture padding. GC torture mode (chapter 6) pads the front of the dynamic
+area by a varying number of words, so that no object can land where it was and
+a stale reference cannot accidentally still be right. That is the correct
+thing to do to a *running* heap and precisely the wrong thing to write to a
+file, so `save` collects without it.
 
 This one was a bug before it was a decision, and the shape of it is worth
 keeping. The first version called the ordinary `collect`, and every image test
@@ -210,19 +207,18 @@ both exist is that nothing else would have asked the question.
 
 ### Collecting first
 
-`save` collects the heap before writing it — with padding switched off, see
-above — and three separate reasons point the same way:
+`save` collects the heap before writing it, with padding switched off as
+above, and three separate reasons point the same way:
 
-1. **No garbage in the file.** Every dead word is a word downloaded in a
-   browser.
-2. **Nothing to skip.** A copying collector (chapter 7, Cheney's algorithm)
-   leaves the survivors packed contiguously from the start of the heap, so the
-   live set *is* a run of words and the writer does not need to know where the
+1. No garbage in the file. Every dead word is a word downloaded in a browser.
+2. Nothing to skip. A copying collector (chapter 6, Cheney's algorithm) leaves
+   the survivors packed contiguously from the start of the heap, so the live
+   set *is* a run of words and the writer does not need to know where the
    holes are.
-3. **Canonical output.** The same world saved twice gives the same bytes. That
-   is what phase 2's gate needs — "rebuilt compiler matches the first build
-   byte for byte" — and it is only true because collection puts the survivors
-   in a deterministic order.
+3. Canonical output. The same world saved twice gives the same bytes. That is
+   what phase 2's gate needs, since "rebuilt compiler matches the first build
+   byte for byte" is only true because collection puts the survivors in a
+   deterministic order.
 
 The test asserts exactly that, with one exception:
 
@@ -235,10 +231,9 @@ assert_ne!(first[32..40], second[32..40], "except the sequence number");
 
 Word 4 is a counter that goes up by one on every save. It is the only part of
 the design's change-log work (issue #24) that could not be postponed, and the
-reason is pure format politics: **a field cannot be added to images that
-already exist.** Everything else about recording what happened between two
-snapshots can be decided later; a header field has to be reserved now or
-never.
+reason is pure format politics: a field cannot be added to images that already
+exist. Everything else about recording what happened between two snapshots can
+be decided later; a header field has to be reserved now or never.
 
 What it is for: given two images of the same world, saying which came after
 which without comparing their contents.
@@ -249,8 +244,8 @@ The last thing `load` does is run `Heap::verify`, which walks the heap
 linearly and checks that every reference lands on an object boundary.
 
 The checksum and the verifier answer different questions, and conflating them
-is easy. The checksum proves *the bytes are the bytes that were written* — it
-catches a truncated download, a half-written file, a flipped bit. It says
+is easy. The checksum proves *the bytes are the bytes that were written*, so
+it catches a truncated download, a half-written file, a flipped bit. It says
 nothing about whether those bytes were a **sound heap**, which a collector bug
 could perfectly well have made them not be: a slot the collector forgot to
 update is written faithfully and is still a reference into nowhere.
@@ -258,9 +253,9 @@ update is written faithfully and is still a reference into nowhere.
 Checking once at load rather than on every access is the same bargain the
 bytecode verifier makes in chapter 25, and the JVM makes when it loads a
 class: pay for one linear pass when the thing arrives, and then trust it
-completely for as long as it runs. The alternative — checking each access —
-is a cost on every single operation forever, to catch something that can only
-have gone wrong once.
+completely for as long as it runs. Checking each access instead would be a
+cost on every single operation forever, to catch something that can only have
+gone wrong once.
 
 ## Trying it
 
@@ -289,8 +284,8 @@ quokka> (point-x (make-point :x 7 :y 9))
 7
 ```
 
-A function, a macro and a record type — three quite different kinds of thing,
-one of which generates ten functions of its own (chapter 21) — all present in
+A function, a macro and a record type, three quite different kinds of thing,
+one of which generates ten functions of its own (chapter 21), all present in
 a process that never read a line of Lisp.
 
 ## Saving from inside
@@ -328,15 +323,16 @@ bootstrap, and prompts `boot>`.
 
 ## Status
 
-Built, and phase 1's gate is met: images save, reload, and resume mid-computation.
+Built, and phase 1's gate is met: images save, reload, and resume
+mid-computation.
 
-**When this chapter was written, the world in that image was still
-interpreted**: `prelude.lisp` had been interpreted into it, so `length` in
+When this chapter was written, the world in that image was still
+*interpreted*: `prelude.lisp` had been interpreted into it, so `length` in
 `world.qi` was a tree being walked, not bytecode. Installing compiled code
-became possible here — a heap about to be written to a file and abandoned is
-exactly where it is safe — and chapter 32 does it, in two passes, with a scan
-that proves nothing interpreted survives. `--save-image` (today `quokka build`) now builds that
-compiled world.
+became possible here, since a heap about to be written to a file and abandoned
+is exactly where it is safe, and chapter 32 does it, in two passes, with a
+scan that proves nothing interpreted survives. `--save-image` (today `quokka
+build`) now builds that compiled world.
 
 ---
 

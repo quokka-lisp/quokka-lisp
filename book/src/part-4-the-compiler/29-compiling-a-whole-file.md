@@ -1,17 +1,16 @@
 # Compiling a whole file
 
-> **Where this fits.** Chapter 28 built a compiler that turns *one* form into
-> a function the machine can run. This chapter turns it loose on a file — on
+> *Where this fits.* Chapter 28 built a compiler that turns *one* form into a
+> function the machine can run. This chapter turns it loose on a file: on
 > `prelude.lisp`, six hundred lines of Lisp that nobody wrote to flatter a
-> compiler, and then on the compiler's own source. It ends somewhere
-> surprising: everything compiles, and **none of it is allowed to be
-> installed**. Understanding why not is understanding what the image in
-> chapter 30 is actually for.
+> compiler, and then on the compiler's own source. By the end the compiler
+> will have compiled itself, and you will know why none of what it produced
+> may be installed, which is what the image in chapter 30 is actually for.
 
 Compiling one form at a time is a demonstration. A language is a file.
 
 So the obvious next step is a *file compiler*: read a file, compile every form
-in it, and leave the results behind — so that after compiling `prelude.lisp`
+in it, and leave the results behind, so that after compiling `prelude.lisp`
 the system's `length` is compiled code rather than a tree being walked. That
 is what every compiler you have used does. `javac` writes a class file;
 `rustc` writes an object file; SBCL's `compile-file` writes a fasl and `load`
@@ -39,7 +38,7 @@ part that turns a list of instructions into a function:
 Count the prelude functions in five lines: `setq` is a special operator, but
 `list` and `reverse` are ordinary functions defined in `prelude.lisp`.
 Elsewhere the compiler uses `length`, `second`, `cddr`, `member`, `append` and
-`apply` — all of them prelude functions, all of them interpreted.
+`apply`, all of them prelude functions, all of them interpreted.
 
 Now suppose the file compiler installs what it compiles. It reaches the
 prelude's definition of `length`, compiles it, and puts the compiled function
@@ -76,7 +75,7 @@ fn apply_closure(&mut self, function: Value<'h>, arguments: Value<'h>) -> Transi
 
 `begin` evaluates `body` as a sequence of forms. For an interpreted closure
 the body is a list of forms, which is right. For a *compiled* one the body
-would be a `Function` object — a heap object full of bytes — and a heap object
+would be a `Function` object, a heap object full of bytes, and a heap object
 that is not a list **evaluates to itself**.
 
 So `(length xs)` would not have crashed. It would have returned
@@ -99,11 +98,11 @@ if body.is_object() && self.mc.header(body).object_type == ObjectType::Function 
 }
 ```
 
-**A rule enforced in one direction only is enforced where it happened to be
-tested.** The VM's refusal existed because compiled code calling the prelude
-was the first thing anyone tried. The interpreter's absence of one existed
-because nothing had yet handed the interpreter a compiled function — not
-because anyone had decided it was safe.
+A rule enforced in one direction only is enforced where it happened to be
+tested. The VM's refusal existed because compiled code calling the prelude was
+the first thing anyone tried. The interpreter's absence of one existed because
+nothing had yet handed the interpreter a compiled function, not because anyone
+had decided it was safe.
 
 This is a general shape and it is worth naming, because it recurs in every
 system with two halves that must not mix: *symmetry of enforcement*. If
@@ -123,12 +122,11 @@ crate::code::verify::function(mc, f).err().map(|e| format!("{e:?}"))
 
 Now the exercise has content. "It compiled" only means the compiler did not
 signal an error, and a compiler is perfectly capable of emitting a jump that
-lands in the middle of an instruction while feeling fine about it — chapter 25
-exists because exactly that happened. "It compiled *and verified*" means the
-bytes are a program the machine can actually run: every path through it agrees
-about how deep the stack is, every jump lands on an instruction boundary,
-every constant index is one the function has, and the stack it reserved is
-deep enough.
+lands in the middle of an instruction while feeling fine about it, which is
+why chapter 25 exists. "It compiled *and verified*" means the bytes are a
+program the machine can actually run: every path through it agrees about how
+deep the stack is, every jump lands on an instruction boundary, every constant
+index is one the function has, and the stack it reserved is deep enough.
 
 So the file compiler is a test of the compiler's **output**, across every form
 of a real file, rather than a test of its temper.
@@ -143,9 +141,9 @@ if form.is_cons() && mc.symbol_is(mc.car(form), "DEFMACRO") {
 }
 ```
 
-A *macro* (chapter 11) is a function that runs at compile time and returns a
+A *macro* (chapter 15) is a function that runs at compile time and returns a
 form to compile instead. So when the compiler meets `(when x y)` it **calls**
-`when`'s expander — from the compiler, which is interpreted code.
+`when`'s expander, from the compiler, which is interpreted code.
 
 An expander compiled here could not be called by the interpreted compiler. The
 very next form that used the macro would fail. So the expander has to exist,
@@ -183,7 +181,7 @@ cargo run -p quokka -- bootstrap --compile-file lisp/compiler/compile.lisp
 lisp/compiler/compile.lisp: 40 forms compiled and verified, 0 macro definitions evaluated
 ```
 
-**The compiler compiles itself.**
+The compiler compiles itself.
 
 Be precise about what that does and does not mean, because this is the point
 where it is easy to claim too much. This is the compiler *interpreted*,
@@ -197,56 +195,64 @@ Zero macro definitions, incidentally, is not an accident either: the compiler
 is written in tier 0 (rule 5) and defines no macros of its own, which is one
 less circularity to think about.
 
+*Later: both files have grown a long way past those counts. The prelude is
+near seven hundred lines, and the compiler is several times the forty forms
+printed above, since phase 2 gave it special variables, `symbol-macrolet`,
+compiler macros and the rest. The numbers are left as the session printed
+them; what matters is that the second command still succeeds, and chapter 42
+turned it into something stronger than a precondition.*
+
 ## Where the second half went
 
-So where does installing happen, if not here?
-
-**In the image, in chapter 30.** The sequence is:
+So where does installing happen, if not here? In the image, in chapter 30.
+The sequence is:
 
 1. Start an empty heap and interpret the prelude, as every boot does today.
 2. Interpret the compiler on top of it.
-3. Compile every prelude form and every compiler form — and this time, keep
-   the results, writing them into the function cells.
+3. Compile every prelude form and every compiler form, and this time keep the
+   results, writing them into the function cells.
 4. Save the whole heap to a file.
 5. Throw that process away. It has done its job.
 
 Step 3 is the dangerous one, and it is safe there and not here for a reason
-worth stating plainly: **that heap is never used again**. Nothing calls
-`length` after it has been replaced, because nothing runs in that heap after
-step 3 — it is written to disk and the process exits. The next session starts
-by loading the image, and in *that* session everything is compiled from the
-first instruction. There is no mixed state because there is no moment when
-half the system is compiled and something is still running.
+worth stating plainly: that heap is never used again. Nothing calls `length`
+after it has been replaced, because nothing runs in that heap after step 3.
+It is written to disk and the process exits. The next session starts by
+loading the image, and in *that* session everything is compiled from the first
+instruction. There is no mixed state because there is no moment when half the
+system is compiled and something is still running.
 
 This is the same manoeuvre as the bootstrap itself (`the-bootstrap.md`): do
 the slow, fragile thing exactly once, keep the answer, and never be in that
-position again. The interpreter does not have to be able to call compiled code
-— it has to not exist by the time compiled code is being called.
+position again. The interpreter does not have to be able to call compiled
+code; it has to not exist by the time compiled code is being called.
 
 ## Status
 
-Built and tested. `--compile-file` (today `quokka bootstrap --compile-file`) works on any tier-0 file; the prelude and
-the compiler both compile clean and verify clean.
+Built and tested. `--compile-file` (today `quokka bootstrap --compile-file`)
+works on any tier-0 file; the prelude and the compiler both compile clean and
+verify clean.
 
 Steps 3, 4 and 5 are built too. Chapter 30 is the image; chapter 32 is
 step 3, compiling the prelude and the compiler *and keeping the results*, in
-exactly the heap this chapter said it belonged in — one that is saved and
+exactly the heap this chapter said it belonged in, one that is saved and
 abandoned straight afterwards.
 
-And the check that the compiled world means what the interpreted one meant —
-every differential file, run compiled, against the same baseline — is chapter
-33's, and it found two things the verifier could never have seen, because a
-program can be perfectly well-formed and still compute the wrong thing.
+And the check that the compiled world means what the interpreted one meant,
+which is every differential file run compiled against the same baseline, is
+chapter 33's, and it found two things the verifier could never have seen,
+because a program can be perfectly well-formed and still compute the wrong
+thing.
 
 ---
 
 **References.** Queinnec, *Lisp in Small Pieces*, chapter 9, on macros
 and the separation between the world a compiler expands in and the world its
-output runs in — the root of the bootstrap rule. Hart and Levin, *The New
-Compiler*, MIT AI Memo 39 (1962), for the first compiler brought up by
-running it in the interpreter of the language it compiles. Steele and Gabriel, *The
-Evolution of Lisp* (1993), §2.9, for how real Lisps have drawn the compile
-time / run time line and what `eval-when` exists to say about it. The CLHS
-entry for `compile-file`, §3.2.3, on *literal objects in compiled code* and
-the similarity rules — the standard's own treatment of the fact that a
-compiled file is built in one world and loaded into another.
+output runs in, which is the root of the bootstrap rule. Hart and Levin, *The
+New Compiler*, MIT AI Memo 39 (1962), for the first compiler brought up by
+running it in the interpreter of the language it compiles. Steele and Gabriel,
+*The Evolution of Lisp* (1993), §2.9, for how real Lisps have drawn the
+compile time / run time line and what `eval-when` exists to say about it. The
+CLHS entry for `compile-file`, §3.2.3, on *literal objects in compiled code*
+and the similarity rules, which is the standard's own treatment of the fact
+that a compiled file is built in one world and loaded into another.
