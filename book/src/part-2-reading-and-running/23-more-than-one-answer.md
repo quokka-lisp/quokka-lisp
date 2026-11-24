@@ -1,10 +1,12 @@
 # More than one answer
 
-> **Where this fits.** This is the last chapter of Part II, and it finishes
-> tier 0. It adds the three special operators that were outstanding, and one
-> of them needs something the machine has not had: the ability for a form to
-> return a number of values other than one. That turns out to touch almost
-> every other operator, which is the interesting part.
+> *Where this fits.* This is the last chapter of Part II, and it finishes tier
+> 0. It adds the three special operators that were outstanding, and one of
+> them needs something the machine has not had, which is the ability for a
+> form to return a number of values other than one. By the end you will know
+> why `(gethash k table)` can tell you that a key is missing without
+> allocating anything, and why adding that touched almost every operator in
+> the system.
 
 ## The problem with returning one thing
 
@@ -23,7 +25,7 @@ Common Lisp's answer is that a form may return **any number of values**:
 (gethash 'k table)         ; => NIL, T     — there, and it is nil
 ```
 
-The same shape appears all over the standard — `macroexpand-1` returns the
+The same shape appears all over the standard. `macroexpand-1` returns the
 expansion and whether it expanded, `floor` returns a quotient and a remainder,
 `intern` returns a symbol and how it was found. Each is a case where one
 answer leaves a question open and a second value closes it, without the cost
@@ -31,8 +33,8 @@ of allocating a list or defining a structure.
 
 This is genuinely different from returning a tuple. A tuple is one value that
 happens to have parts, and every caller has to take it apart. Multiple values
-are **free to ignore**: a caller that wants one writes nothing special, and
-the extras evaporate.
+are free to ignore: a caller that wants one writes nothing special, and the
+extras evaporate.
 
 ```lisp
 (+ (gethash 'a table) 1)   ; the second value simply is not there
@@ -45,8 +47,8 @@ pleasant rather than a tax.
 
 Chapter 9's machine has a `Value` register holding the result of the last
 step. The obvious change is to make it hold a list always, and the obvious
-change is wrong: every form in the system returns one value, so every form
-would pay for a cons that nothing reads.
+change is wrong, because every form in the system returns one value, so every
+form would pay for a cons that nothing reads.
 
 Instead there is a second register, and a convention:
 
@@ -64,7 +66,7 @@ delivers into `Value`, sets `Values` to `UNBOUND`, and no allocation occurs.
 Only `(values ...)` and the handful of forms that look fill the second
 register in.
 
-The clearing is not an optimisation, it is the semantics:
+The clearing is part of the semantics rather than an optimisation:
 
 ```rust
 fn deliver(&mut self, v: Value<'h>) -> Transition {
@@ -75,9 +77,9 @@ fn deliver(&mut self, v: Value<'h>) -> Transition {
 ```
 
 Forget that line and a stale second value survives into the next form that
-looks — which would be a bug appearing a very long way from its cause.
+looks, which would be a bug appearing a very long way from its cause.
 
-## The part that touched everything
+## Which forms pass values through
 
 With the registers in place, the two operators are small. `multiple-value-call`
 is an ordinary call whose argument frame collects *lists* and appends them
@@ -85,7 +87,7 @@ rather than collecting values and consing them. `multiple-value-prog1` is a
 frame that holds the first form's values while the rest run.
 
 The work was elsewhere, and it was not anticipated. A great many forms are
-**transparent to values** — they return whatever their last form returned,
+**transparent to values**, returning whatever their last form returned,
 however many that was:
 
 ```lisp
@@ -97,12 +99,12 @@ however many that was:
 ```
 
 Most of those were already right, because a form in tail position simply does
-not re-deliver — the inner form's delivery stands and the outer frame never
+not re-deliver: the inner form's delivery stands and the outer frame never
 touches it. Tail position, built in chapter 10 for an entirely different
 reason, turns out to carry multiple values for free.
 
-Three were wrong, and each in the same way: the frame explicitly read the
-`Value` register and delivered it again.
+Three were wrong, and each in the same way, by explicitly reading the `Value`
+register and delivering it again.
 
 ```rust
 // A block or catch that was left normally: its value is the value.
@@ -125,7 +127,7 @@ fn deliver_unchanged(&mut self) -> Transition {
 
 `unwind-protect` was harder, and worth following. Its cleanup runs *between*
 the protected form finishing and its value being returned, so the value has to
-be held somewhere across the cleanup — in a `CLEANUP` frame. That frame saved
+be held somewhere across the cleanup, in a `CLEANUP` frame. That frame saved
 one value, so `(unwind-protect (values 1 2) 'cleanup)` returned `(1)`. Saving
 the whole list fixed the normal case, and a second line was needed for the
 other one: a `throw` can carry several values, and if it passes a cleanup on
@@ -143,13 +145,10 @@ test rather than by thinking about it.
 
 A macro with a lexical scope. This is the third outstanding operator and it
 needed no new machinery whatsoever, because of two decisions made much
-earlier:
-
-- the evaluator looks an operator up in the **function namespace** through the
-  environment, so `flet` and `labels` already shadow global definitions
-  (chapter 10);
-- it then asks whether what it found is a **macro object**, which is a
-  distinct heap type rather than a flag (chapter 15).
+earlier. The evaluator looks an operator up in the **function namespace**
+through the environment, so `flet` and `labels` already shadow global
+definitions (chapter 10); and it then asks whether what it found is a **macro
+object**, which is a distinct heap type rather than a flag (chapter 15).
 
 So binding a macro object in the function namespace is all `macrolet` is.
 `eval_flet` grew one more boolean and the dispatch grew a line. The whole
@@ -160,7 +159,7 @@ special::MACROLET => self.eval_flet(control, false, true),
 ```
 
 There is one subtlety worth knowing, because it surprises people. A
-`macrolet` expander runs in a **null lexical environment** — it cannot see the
+`macrolet` expander runs in a **null lexical environment** and cannot see the
 variables around it:
 
 ```lisp
@@ -170,9 +169,9 @@ variables around it:
 ```
 
 Which looks arbitrary until you remember *when* the expander runs. Expansion
-happens before the code runs, so `n` does not have a value yet — there is
-nothing for the macro to see. The restriction is not a rule the standard
-imposed; it is a fact about time, written down.
+happens before the code runs, so `n` does not have a value yet, and there is
+nothing for the macro to see. The standard did not impose the restriction; it
+wrote down something that was already true about the order of events.
 
 ## Three apologies withdrawn, again
 
@@ -187,22 +186,22 @@ multiple values. Chapter 19 said the same of `gethash`. Chapter 20 said it of
 (multiple-value-list (macroexpand-1 '(m 1))); => ((LIST 1) T)
 ```
 
-`macroexpand` in particular is now *more* correct than the thing it replaced:
-it loops on the second value as the standard says, rather than on whether the
+`macroexpand` in particular is now *more* correct than the thing it replaced.
+It loops on the second value as the standard says, rather than on whether the
 form changed, so the one case where the two differed is gone.
 
 That is the second time this book has recorded a batch of deliberate
-shortcuts being repaid. It works because each one was written down **in the
-code**, next to the shortcut, saying what would fix it. A note in a commit
+shortcuts being repaid. It works because each one was written down in the
+code, next to the shortcut, saying what would fix it. A note in a commit
 message would have been lost; a note in the source was read again by the
 person who could act on it.
 
 ## Tier 0 is finished
 
 Twenty-two of Common Lisp's twenty-five special operators, which is what
-`docs/design.md` asked for — the missing three are `progv`,
-`load-time-value` and `symbol-macrolet`, excluded on purpose because an
-interpreter can add them later at little cost.
+`docs/design.md` asked for. The missing three are `progv`, `load-time-value`
+and `symbol-macrolet`, excluded on purpose because an interpreter can add them
+later at little cost.
 
 Macros with full lambda lists. Keywords. Vectors, strings, hash tables,
 structures. `setf`. A condition system. Tail calls. A collector that survives
@@ -217,9 +216,19 @@ pointing at since [The thing that builds itself](../the-bootstrap.md): a
 compiler, written in Lisp, interpreted once by the machine Part II built, to
 produce an image containing a compiler that never needs interpreting again.
 
+*Later: the three excluded operators were added in phase 2, and the estimate
+that an interpreter could have them cheaply was never tested, because by then
+the interpreter was not the thing that needed them.
+[The last three](../part-6-self-hosting/44-the-last-three.md) builds all of
+them for the compiler instead: `progv` over a new instruction,
+`load-time-value` as a macro that calls `eval` while expanding, and
+`symbol-macrolet` as a kind of scope the compiler steps over without
+counting. The seventeen test files are forty-four now, and they run on four
+legs rather than three.*
+
 ---
 
 **References.** CLHS 3.1.7 for multiple values and the exhaustive list of
-which forms pass them through — worth reading precisely because the list is
+which forms pass them through, worth reading precisely because the list is
 longer than anyone guesses. *Common Lisp the Language, 2nd edition*, §7.10,
 for the design argument against returning a list instead.
