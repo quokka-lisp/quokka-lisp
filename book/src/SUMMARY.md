@@ -86,6 +86,7 @@
 - [The right error](part-6-self-hosting/63-the-right-error.md)
 - [What a macro is given](part-6-self-hosting/64-what-a-macro-is-given.md)
 - [An array that holds nothing](part-6-self-hosting/65-an-array-that-holds-nothing.md)
+- [Functions named (setf name)](part-6-self-hosting/66-setf-functions.md)
 
 ---
 

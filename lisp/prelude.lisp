@@ -156,15 +156,59 @@
                     (%mentions-return-from name (cdr form)))))
        nil)))
 
+;; The body of a function named NAME: in a block named NAME if it returns
+;; from one, with its leading declarations and documentation string in front
+;; of the block, where they still belong to the function. Until #78 they went
+;; inside the block, where a `special` declaration was an ordinary form and
+;; declared nothing. Used by `defun` and by the compiler's `flet` and
+;; `labels`, whose functions have the same implicit block (CLHS 3.1.2.1.2.4).
+(%set-symbol-function
+ '%block-body
+ (lambda (name body)
+   (if (%mentions-return-from name body)
+       (%block-body-after name body nil)
+       body)))
+
+(%set-symbol-function
+ '%block-body-after
+ (lambda (name body before)
+   (if (%declaration-or-documentation-p body)
+       (%block-body-after name (cdr body) (cons (car body) before))
+       (%prepend-reversed before (list (cons 'block (cons name body)))))))
+
+;; A body starting with a declaration, or with a string that is not its
+;; only form — which is a documentation string, not the value.
+(%set-symbol-function
+ '%declaration-or-documentation-p
+ (lambda (body)
+   (if (consp body)
+       (if (consp (car body))
+           (eq (car (car body)) 'declare)
+           (if (stringp (car body)) (consp (cdr body)) nil))
+       nil)))
+
+(%set-symbol-function
+ '%prepend-reversed
+ (lambda (reversed tail)
+   (if (consp reversed)
+       (%prepend-reversed (cdr reversed) (cons (car reversed) tail))
+       tail)))
+
+;; `(defun name ...)`, and since #78 `(defun (setf name) ...)`: a setf
+;; function, stored in the function cell of the symbol `%setf-function-symbol`
+;; keeps for NAME, its block named NAME.
 (defmacro defun (name args &body body)
-  `(progn
-     (%set-symbol-function
-      ',name
-      (lambda ,args
-        ,@(if (%mentions-return-from name body)
-              (list (cons 'block (cons name body)))
-              body)))
-     ',name))
+  (if (consp name)
+      `(progn
+         (%set-symbol-function
+          (%setf-function-symbol ',(car (cdr name)))
+          (lambda ,args ,@(%block-body (car (cdr name)) body)))
+         ',name)
+      `(progn
+         (%set-symbol-function
+          ',name
+          (lambda ,args ,@(%block-body name body)))
+         ',name)))
 
 ;;; ------------------------------------------------------------------
 ;;; A few functions
@@ -186,6 +230,47 @@
 (defun third (x) (caddr x))
 
 (defun not (x) (null x))
+
+;; `(setf foo)` names a function too (CLHS 5.1.2.9): what `setf` calls for a
+;; place `(foo ...)` that has no other expansion, with the new value first.
+;; Its definition is kept as CLISP keeps one (#78): in the function cell of
+;; an uninterned symbol named `(SETF FOO)`, which FOO's property list holds
+;; under `%setf-function`. So `fboundp`, `fmakunbound`, `flet` and the
+;; compiler's `#'` treat a setf function as the symbol's, and need nothing of
+;; their own. Rejected: a table from names to functions, which every one of
+;; those would have had to search.
+(defun %setf-function-name-p (name)
+  (if (consp name)
+      (if (eq (car name) 'setf)
+          (if (consp (cdr name))
+              (if (symbolp (car (cdr name))) (null (cdr (cdr name))) nil)
+              nil)
+          nil)
+      nil))
+
+(defun %plist-value (plist indicator)
+  (if (consp plist)
+      (if (eq (car plist) indicator)
+          (car (cdr plist))
+          (%plist-value (cdr (cdr plist)) indicator))
+      nil))
+
+;; The symbol holding `#'(setf NAME)`, or nil if there has never been one.
+(defun %setf-function-symbol-if-any (name)
+  (%plist-value (symbol-plist name) '%setf-function))
+
+(defun %setf-function-symbol (name)
+  (let ((found (%setf-function-symbol-if-any name)))
+    (if found
+        found
+        (let ((symbol (make-symbol (%string-append "(SETF "
+                                                   (%string-append (symbol-name name) ")")))))
+          (%set-symbol-plist name (cons '%setf-function (cons symbol (symbol-plist name))))
+          symbol))))
+
+;; A function name as the symbol whose function cell holds it.
+(defun %function-name-symbol (name)
+  (if (%setf-function-name-p name) (%setf-function-symbol (car (cdr name))) name))
 
 ;; `endp` is the standard's list-end test, and the one the compiler's own
 ;; traversals should use: it is `null` plus the promise that the thing being

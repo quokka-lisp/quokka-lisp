@@ -534,11 +534,30 @@
 (defun %compile-local-functions (definitions env)
   (if (endp definitions)
       nil
-      (progn (%compile-lambda (cons 'lambda (cdr (car definitions))) env)
+      (progn (%compile-lambda (%local-lambda (car definitions)) env)
              (%compile-local-functions (cdr definitions) env))))
 
+;;; A local function as a lambda expression. Its body is in a block named
+;;; after it, as a `defun`'s is (CLHS 3.1.2.1.2.4); for `(setf f)`, named f.
+;;; Like `defun`, only when the body returns from it, so a local function
+;;; that loops by calling itself keeps its tail calls (#78).
+(defun %local-lambda (definition)
+  (let ((name (car definition)))
+    (cons 'lambda
+          (cons (second definition)
+                (%block-body (if (consp name) (second name) name) (cddr definition))))))
+
+;;; The names a `flet` or `labels` binds, each as the symbol the scope holds
+;;; it under: a setf function's, `(setf f)`, is the symbol
+;;; `%setf-function-symbol` keeps for f, which `#'(setf f)` also finds.
+(defun %local-function-names (definitions)
+  (if (endp definitions)
+      nil
+      (cons (%function-name-symbol (car (car definitions)))
+            (%local-function-names (cdr definitions)))))
+
 (defun %compile-flet (form env tail)
-  (let ((names (%binding-names (second form))))
+  (let ((names (%local-function-names (second form))))
     (%compile-local-functions (second form) env)
     (%emit (list 'BINDF (%constant-index (apply #'vector names))))
     (%compile-body (cddr form) (cons (%scope ':function names) env) tail)
@@ -563,13 +582,13 @@
 (defun %store-local-functions (definitions env index)
   (if (endp definitions)
       nil
-      (progn (%compile-lambda (cons 'lambda (cdr (car definitions))) env)
+      (progn (%compile-lambda (%local-lambda (car definitions)) env)
              (%emit (list 'FSET 0 index))
              (%emit (list 'POP))
              (%store-local-functions (cdr definitions) env (+ index 1)))))
 
 (defun %compile-labels (form env tail)
-  (let ((names (%binding-names (second form))))
+  (let ((names (%local-function-names (second form))))
     (let ((inner (cons (%scope ':function names) env)))
       (%emit-nils (length names))
       (%emit (list 'BINDF (%constant-index (apply #'vector names))))
@@ -1165,13 +1184,15 @@
          (%bindings-p (cdr bindings)))
         (t nil)))
 
-;;; Local function definitions: each `(name (params) body...)`.
-(defun %function-bindings-p (bindings)
+;;; Local function definitions: each `(name (params) body...)`, where a
+;;; `flet` or `labels` NAME may also be `(setf symbol)` (SETF-NAMES-P).
+(defun %function-bindings-p (bindings setf-names-p)
   (cond ((not (consp bindings)) t)
         ((and (consp (car bindings))
               (consp (cdr (car bindings)))
-              (symbolp (car (car bindings))))
-         (%function-bindings-p (cdr bindings)))
+              (or (symbolp (car (car bindings)))
+                  (and setf-names-p (%setf-function-name-p (car (car bindings))))))
+         (%function-bindings-p (cdr bindings) setf-names-p))
         (t nil)))
 
 ;;; `setq`'s arguments: symbol, value, symbol, value...
@@ -1200,12 +1221,13 @@
           ((or (eq head 'flet) (eq head 'labels) (eq head 'macrolet))
            (if (not (and (consp rest)
                          (or (null (car rest)) (consp (car rest)))
-                         (%function-bindings-p (car rest))))
+                         (%function-bindings-p (car rest) (not (eq head 'macrolet)))))
                (%malformed "flet" "wants a list of (name (params) body...)")))
           ((eq head 'function)
            (if (not (and (consp rest)
                          (null (cdr rest))
                          (or (symbolp (car rest))
+                             (%setf-function-name-p (car rest))
                              (and (consp (car rest)) (eq (car (car rest)) 'lambda)))))
                (%malformed "function" "wants exactly one name or lambda")))
           ((or (eq head 'block) (eq head 'return-from))
@@ -1241,7 +1263,7 @@
           ;; `#'f` is `(function f)`, and what it needs is exactly what a
           ;; call's operator needs: a local function, a global one, or a
           ;; closure made on the spot.
-          ((eq head 'function) (%compile-callee (second form) env))
+          ((eq head 'function) (%compile-callee (%function-name-symbol (second form)) env))
           ((eq head 'block) (%compile-block form env))
           ((eq head '%handler-case) (%compile-handler-case form env tail))
           ((eq head 'tagbody) (%compile-tagbody form env))

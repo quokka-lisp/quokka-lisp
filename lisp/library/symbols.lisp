@@ -64,17 +64,51 @@
 ;;; ------------------------------------------------------------------------
 ;;; Function cells (CLHS 5.3)
 
-;;; `fdefinition` is `symbol-function` for the names Quokka has: symbols.
-;;; A name `(setf foo)` would need setf functions, which Quokka does not
-;;; have (#52), so it names no function; anything else is not a function
-;;; name at all, a `type-error` (#75).
-(defun fdefinition (name)
-  (cond ((symbolp name) (symbol-function name))
-        ((and (consp name) (eq (car name) 'setf)) (error 'undefined-function))
-        (t (error 'type-error "a function name is a symbol or (setf symbol)" name))))
+;;; A function name is a symbol or `(setf symbol)` (CLHS 5.1.2.9, #78).
+;;; Since #78 a setf function is the function of a symbol the prelude's
+;;; `%setf-function-symbol` keeps, so each function below finds that symbol
+;;; and asks the primitive about it. Asking does not make the symbol: only
+;;; defining a setf function does. Anything else is not a function name at
+;;; all, a `type-error` (#75).
+(defun %check-function-name (name)
+  (if (not (or (symbolp name) (%setf-function-name-p name)))
+      (error 'type-error "a function name is a symbol or (setf symbol)" name))
+  name)
 
-(defsetf fdefinition (name) (function)
-  `(%set-symbol-function ,name ,function))
+;;; The symbol whose function cell holds NAME's definition, or nil for a
+;;; setf function never defined.
+(defun %function-cell (name)
+  (if (symbolp (%check-function-name name))
+      name
+      (%setf-function-symbol-if-any (second name))))
+
+(defun fboundp (name)
+  (let ((symbol (%function-cell name)))
+    (cond ((symbolp name) (%fboundp name))
+          (symbol (%fboundp symbol))
+          (t nil))))
+
+(defun fmakunbound (name)
+  (let ((symbol (%function-cell name)))
+    (if (or symbol (symbolp name)) (%fmakunbound (if (symbolp name) name symbol)))
+    name))
+
+;;; `fdefinition` of a special operator is not an error: CLHS leaves its
+;;; value to the implementation, and SBCL's is a function that refuses to be
+;;; called, which is what this is.
+(defun fdefinition (name)
+  (let ((symbol (%function-cell name)))
+    (cond ((and (symbolp name) (special-operator-p name))
+           (lambda (&rest arguments)
+             arguments
+             (error 'undefined-function "a special operator is not a function" name)))
+          ((and symbol (or (symbolp name) (%fboundp symbol))) (symbol-function symbol))
+          (t (error 'undefined-function "undefined function" name)))))
+
+(defun %set-fdefinition (name function)
+  (%set-symbol-function (%function-name-symbol (%check-function-name name)) function))
+
+(defsetf fdefinition %set-fdefinition)
 
 ;;; `(macro-function symbol [environment])` — SYMBOL's expander, as CL calls
 ;;; one: a function of the form and the environment. A local `macrolet`

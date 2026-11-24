@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1229 :REPLACED 983)` (asserted in `differential.rs`; any new library
+`(:FORMS 1248 :REPLACED 997)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -319,7 +319,17 @@ Quokka follows SBCL; the runner disables ansi-test's note
 (eleven noted tests no longer run); plain failures 91.
 **Carsten, 25 Nov 2026: work through every outstanding step without
 asking; do it the right way now; when in doubt, as SBCL does.**
-**Next:** AE (setf functions, #78), AF, AG, then the rest of #39's list. Phase 2's scope is
+**Step AE is done** (#78, chapter 66): setf functions, stored as CLISP
+stores them — an uninterned symbol `(SETF NAME)` on NAME's plist under
+`%setf-function`, whose function cell holds it (`%setf-function-symbol`,
+`%function-name-symbol` in the prelude). `defun`, `#'`, `flet`/`labels`,
+`fdefinition`, `fboundp`, `fmakunbound` map the name; the primitives are
+`%fboundp`/`%fmakunbound` now. An unknown place `(name ...)` expands to
+`(funcall #'(setf name) new args...)`; `apply` is a place. Local functions
+have their implicit block (`%block-body`, only when the body returns from
+it), and a body's declarations stay in front of the block. Rust 0.
+ansi-test: 8,032; plain failures 66.
+**Next:** AF, AG, then the rest of #39's list. Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

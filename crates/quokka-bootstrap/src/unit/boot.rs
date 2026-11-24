@@ -101,6 +101,8 @@ fn booting_costs_a_known_amount_of_heap() {
     // 9,663 once an expander became a function of the form and the
     // environment (#76): every macro now takes its arguments apart in
     // generated code, where a plain lambda list used to be left alone.
+    // 10,588 once the prelude learned setf functions and `%block-body`
+    // (#78): about fifty lines of new functions.
     //
     // The point is not the number but that raising it is a deliberate
     // act with a failing test attached — the same job as
@@ -108,7 +110,7 @@ fn booting_costs_a_known_amount_of_heap() {
     // what was added; this one is.
     let words = heap.used_words();
     assert!(
-        words < 10_000,
+        words < 11_000,
         "the prelude now costs {words} live words after a collection"
     );
 }

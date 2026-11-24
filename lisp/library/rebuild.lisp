@@ -107,7 +107,8 @@
 
 ;;; A name defined by FORM, added to NAMES.
 (defun %note-definition (form names)
-  (if (and (consp form) (or (eq (car form) 'defun) (eq (car form) 'defmacro)))
+  (if (and (consp form) (or (eq (car form) 'defun) (eq (car form) 'defmacro))
+           (symbolp (cadr form)))
       (cons (cadr form) names)
       names))
 

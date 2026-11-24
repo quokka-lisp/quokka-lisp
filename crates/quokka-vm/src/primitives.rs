@@ -569,8 +569,8 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // function, which only Rust can tell from the object's type.
     (Prim::SymbolPlist, "SYMBOL-PLIST", Arity::Exactly(1)),
     (Prim::SetSymbolPlist, "%SET-SYMBOL-PLIST", Arity::Exactly(2)),
-    (Prim::Fboundp, "FBOUNDP", Arity::Exactly(1)),
-    (Prim::Fmakunbound, "FMAKUNBOUND", Arity::Exactly(1)),
+    (Prim::Fboundp, "%FBOUNDP", Arity::Exactly(1)),
+    (Prim::Fmakunbound, "%FMAKUNBOUND", Arity::Exactly(1)),
     (Prim::Functionp, "FUNCTIONP", Arity::Exactly(1)),
     // ---- arrays (#67) ---------------------------------------------------
     // A header's six slots are Lisp's to fill and read (`arrays.lisp`); Rust

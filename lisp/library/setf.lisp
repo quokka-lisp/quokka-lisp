@@ -93,7 +93,19 @@
     (t (multiple-value-bind (expansion expanded) (macroexpand-1 place environment)
          (if expanded
              (get-setf-expansion expansion environment)
-             (%setf-unknown-place place))))))
+             (%setf-function-expansion place))))))
+
+;;; Any other `(name args...)` is a place whose writer is the setf function
+;;; `(setf name)`, called with the new value and then the arguments (CLHS
+;;; 5.1.2.9, #78). Whether that function exists is found out when the writer
+;;; runs, as in SBCL: the place can be expanded before it is defined.
+(defun %setf-function-expansion (place)
+  (if (not (symbolp (car place))) (%setf-unknown-place place))
+  (multiple-value-bind (vars vals args) (%temporaries (cdr place))
+    (let ((store (gensym "NEW")))
+      (values vars vals (list store)
+              `(funcall #'(setf ,(car place)) ,store ,@args)
+              (cons (car place) args)))))
 
 ;;; A temporary for each form, except a constant, which stands for itself:
 ;;; nothing to evaluate twice, and a keyword argument to a long `defsetf`
@@ -440,3 +452,27 @@
                                (values plist t))
                               (t (walk rest))))))
              (walk plist)))))
+
+;;; ------------------------------------------------------------------------
+;;; apply as a place
+
+;;; `(setf (apply #'name args...) new)` (CLHS 5.1.2.5): the place is the
+;;; function's, with its last argument a list, as `apply` spreads it. For
+;;; `aref`, `bit` and `sbit` the writer is `%set-aref`, which wants the new
+;;; value last; for any other name it is the setf function, which wants it
+;;; first, as `apply` can hand it over directly (#78).
+(define-setf-expander apply (function &rest arguments)
+  (if (not (and (consp function) (eq (car function) 'function) (symbolp (second function))))
+      (error "setf of apply wants #'name as the function" function))
+  (let ((name (second function)))
+    (multiple-value-bind (vars vals args) (%temporaries arguments)
+      (let ((store (gensym "NEW")))
+        (values vars vals (list store)
+                (if (or (eq name 'aref) (eq name 'bit) (eq name 'sbit))
+                    `(apply #'%apply-set-aref ,store ,@args)
+                    `(apply #'(setf ,name) ,store ,@args))
+                `(apply #',name ,@args))))))
+
+(defun %apply-set-aref (value array &rest subscripts)
+  (apply #'%set-aref array (append subscripts (list value)))
+  value)

@@ -19,12 +19,12 @@ A test can need several things.
 | numbers | 541 | 3 | 0 | 4 | 0 | 890 | 1438 |
 | reader | 111 | 4 | 0 | 0 | 0 | 50 | 165 |
 | printer | 225 | 3 | 0 | 4 | 0 | 590 | 822 |
-| data-and-control-flow | 1122 | 37 | 6 | 0 | 0 | 255 | 1420 |
-| eval-and-compile | 257 | 18 | 1 | 0 | 0 | 42 | 318 |
+| data-and-control-flow | 1139 | 20 | 6 | 0 | 0 | 255 | 1420 |
+| eval-and-compile | 265 | 10 | 1 | 0 | 0 | 42 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 81 | 0 | 0 | 0 | 0 | 86 | 167 |
 | structures | 60 | 0 | 0 | 0 | 0 | 55 | 115 |
-| **all** | **8007** | **91** | **7** | **15** | **0** | **5438** | **13558** |
+| **all** | **8032** | **66** | **7** | **15** | **0** | **5438** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
