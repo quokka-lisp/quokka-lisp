@@ -260,15 +260,15 @@
         (setq count (+ count 1))))
     (coerce out 'string)))
 
-;;; ~C: the character itself; `:` its name if it has one; `@` as the reader
-;;; would read it, `#\a` — and `#\ ` for a space, which is graphic, as SBCL
-;;; writes it.
+;;; ~C: the character itself; `:` the name of one that does not print, and
+;;; of a space; `@` as the reader would read it, which is what `prin1`
+;;; writes. Since every Latin-1 character has a name (#70), `:` asks whether
+;;; the character prints first, as SBCL does: `~:C` of `a` is `a`, not
+;;; `LATIN_SMALL_LETTER_A`.
 (defun %format-character (char stream colon at)
-  (cond (at (write-string "#\\" stream)
-            (if (graphic-char-p char)
-                (write-char char stream)
-                (write-string (char-name char) stream)))
-        ((and colon (char-name char)) (write-string (char-name char) stream))
+  (cond (at (prin1 char stream))
+        ((and colon (or (not (graphic-char-p char)) (eql char #\Space)) (char-name char))
+         (write-string (char-name char) stream))
         (t (write-char char stream))))
 
 ;;; ~P: "s" unless the argument is 1. `:` uses the previous argument again;

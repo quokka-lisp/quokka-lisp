@@ -769,3 +769,11 @@ simple copying collector here does not.
 **Unit in the last place (ulp).** The gap between a floating-point number and the next one, and so the smallest error a result can have. Most C libraries promise their logarithms and hyperbolic functions to within one ulp, not exactly, which is why two of them can disagree in the last digit. ([56](part-6-self-hosting/56-small-functions.md))
 
 **Byte specifier.** What `(byte size position)` returns: the name of a field of SIZE bits in an integer, starting POSITION bits from the least significant. Not eight bits, despite the name. `ldb` reads such a field and `dpb` replaces it; in Quokka, as in SBCL, a byte specifier is a cons of the two numbers. ([57](part-6-self-hosting/57-bit-fields.md))
+
+**Readtable case.** A setting of the [readtable](#readtable) saying what the reader does to the unescaped letters of a [token](#token): `:upcase` (the standard) raises them, `:downcase` lowers them, `:preserve` leaves them, and `:invert` flips a token whose letters are all one case. The printer follows it, so that what it writes reads back. ([58](part-6-self-hosting/58-the-readers-last-gaps.md))
+
+**Syntax type.** What a character is to the reader: whitespace, a *constituent* (an ordinary character of a [token](#token)), a single escape `\`, a multiple escape `|`, or a [reader macro](#reader-macro) character. `set-syntax-from-char` gives one character another's type. ([58](part-6-self-hosting/58-the-readers-last-gaps.md))
+
+**Constituent trait.** A property a character keeps whatever its [syntax type](#syntax-type): whether it is a letter, a digit, a package marker, or *invalid*. An invalid character (whitespace, backspace, rubout) may not appear unescaped in a token, and reading one there signals `reader-error`. ([58](part-6-self-hosting/58-the-readers-last-gaps.md))
+
+**Fast path.** A short route through code for the common case, taken after a cheap test, with the general mechanism kept for the rest. The reader skips its syntax table while no character's type has been changed; `make-array` skips keyword parsing when given only a size. ([55](part-6-self-hosting/55-arrays.md), [58](part-6-self-hosting/58-the-readers-last-gaps.md))

@@ -78,6 +78,7 @@
 - [Arrays, all of them](part-6-self-hosting/55-arrays.md)
 - [The small functions](part-6-self-hosting/56-small-functions.md)
 - [Bit fields](part-6-self-hosting/57-bit-fields.md)
+- [The reader's last gaps](part-6-self-hosting/58-the-readers-last-gaps.md)
 
 ---
 

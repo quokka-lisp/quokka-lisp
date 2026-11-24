@@ -136,21 +136,6 @@
   (let ((code (char-code char)))
     (or (and (> code 31) (< code 127)) (> code 159))))
 
-;;; SBCL's names for the ASCII controls, by code, and for space and rubout.
-;;; Above ASCII SBCL uses Unicode's names, which would need Unicode's name
-;;; table; Quokka has none, so `char-name` answers nil there and the printer
-;;; writes the character itself, which SBCL reads back just the same.
-(defvar %control-names
-  #("Nul" "Soh" "Stx" "Etx" "Eot" "Enq" "Ack" "Bel" "Backspace" "Tab" "Newline"
-    "Vt" "Page" "Return" "So" "Si" "Dle" "Dc1" "Dc2" "Dc3" "Dc4" "Nak" "Syn"
-    "Etb" "Can" "Em" "Sub" "Esc" "Fs" "Gs" "Rs" "Us" "Space"))
-
-(defun char-name (char)
-  (let ((code (char-code char)))
-    (cond ((< code 33) (aref %control-names code))
-          ((eq code 127) "Rubout")
-          (t nil))))
-
 ;;; The character for digit WEIGHT in RADIX, or nil: `digit-char-p` backwards.
 (defun digit-char (weight &optional (radix 10))
   (cond ((or (< weight 0) (not (< weight radix))) nil)
@@ -555,7 +540,11 @@
 (defun %print-character (char out)
   (if *print-escape*
       (progn (write-string "#\\" out)
-             (if (graphic-char-p char)
+             ;; As SBCL: an ASCII graphic character as itself, and any other
+             ;; by its name if it has one (#70). Only Latin-1 characters have
+             ;; names in Quokka, so above 255 the character itself is
+             ;; written, where SBCL writes a Unicode name; both read back.
+             (if (and (graphic-char-p char) (< (char-code char) 128))
                  (write-char char out)
                  (let ((name (char-name char)))
                    (if name (write-string name out) (write-char char out)))))
@@ -624,13 +613,15 @@
     (%print-name name out)))
 
 ;;; With escapes, a name the reader would change goes in bars; otherwise it
-;;; is written in `*print-case*`.
+;;; is written in `*print-case*`, as the readtable's case allows.
 (defun %print-name (name out)
   (if (and *print-escape* (%needs-bars-p name))
       (progn (write-char #\| out)
              (%print-escaped name out 0 (length name) #\|)
              (write-char #\| out))
       (%print-cased name out)))
+
+(defun %current-case () (%readtable-case (%the-readtable *readtable*)))
 
 ;;; Where the symbol comes from, if `*package*` would not find it alone:
 ;;; `:` for a keyword, `#:` for no package at all, and otherwise the home
@@ -651,8 +642,10 @@
 
 ;;; Would the reader read NAME back as something else? It would if NAME is
 ;;; empty, all dots, has the syntax of a number in `*print-base*`, or
-;;; contains a lower-case letter (upcased), whitespace, a macro character, a
-;;; colon or an escape. SBCL counts `#` anywhere, though the reader only
+;;; contains a letter the readtable's case would fold (a lower-case one in
+;;; `:upcase`, an upper-case one in `:downcase`; none in `:preserve` and
+;;; `:invert`, where what is printed reads back as it was), whitespace, a
+;;; macro character, a colon or an escape. SBCL counts `#` anywhere, though the reader only
 ;;; dispatches on it at the start of a token; matching SBCL wins.
 (defun %needs-bars-p (name)
   (let ((end (length name)))
@@ -661,7 +654,7 @@
         (%token-integer name 10)
         (%ratio-or-float-p name)
         (and (not (eq *print-base* 10)) (%digits-in-base-p name *print-base*))
-        (%special-char-in-p name 0 end))))
+        (%special-char-in-p name 0 end (%current-case)))))
 
 (defun %digits-in-base-p (name base)
   (let* ((end (length name))
@@ -673,30 +666,56 @@
       (and (digit-char-p (aref name at) base) (%all-digits-in-base-p name (+ at 1) end base))
       t))
 
-(defun %special-char-in-p (name at end)
+(defun %special-char-in-p (name at end case)
   (and (< at end)
        (let ((char (aref name at)))
-         (or (lower-case-p char)
-             (%whitespacep char)
-             (member char '(#\| #\\ #\:))
-             (gethash char (%readtable-macros (%the-readtable *readtable*)))
-             (%special-char-in-p name (+ at 1) end)))))
+         (or (and (eq case :upcase) (lower-case-p char))
+             (and (eq case :downcase) (upper-case-p char))
+             (eq char #\:)
+             (not (eq (%char-syntax char) :constituent))
+             (%special-char-in-p name (+ at 1) end case)))))
 
-;;; `*print-case*` changes only upper-case letters: :downcase lowers them all;
-;;; :capitalize keeps the first letter of each word — a run of letters and
-;;; digits — and lowers the rest. `FOO-BAR` becomes `Foo-Bar`, `X2Y` `X2y`.
+;;; How the letters of a name are written, from the readtable's case and
+;;; `*print-case*` together (CLHS 22.1.3.3.2):
+;;;
+;;; - `:upcase`: `*print-case*` applies to the upper-case letters, which are
+;;;   the ones the reader folds to; lower-case letters are written as they
+;;;   are. `:downcase` lowers them all; `:capitalize` keeps the first letter
+;;;   of each word — a run of letters and digits — and lowers the rest, so
+;;;   `FOO-BAR` becomes `Foo-Bar` and `X2Y` `X2y`.
+;;; - `:downcase`: the mirror image. `*print-case*` applies to the lower-case
+;;;   letters: `:upcase` raises them, `:capitalize` raises the first of each
+;;;   word.
+;;; - `:preserve`: every letter as it is; `*print-case*` is ignored.
+;;; - `:invert`: a name whose letters are all of one case is written in the
+;;;   other, a mixed one as it is; `*print-case*` is ignored. What the reader
+;;;   inverts, the printer inverts back.
 (defun %print-cased (name out)
-  (cond ((eq *print-case* :downcase) (%print-downcased name out 0 (length name)))
-        ((eq *print-case* :capitalize) (%print-capitalized name out 0 (length name) t))
-        (t (write-string name out))))
+  (let ((case (%current-case))
+        (end (length name)))
+    (cond ((eq case :preserve) (write-string name out))
+          ((eq case :invert) (%print-inverted name out))
+          ((eq *print-case* :downcase) (%print-folded name out 0 end case #'char-downcase nil))
+          ((eq *print-case* :upcase) (%print-folded name out 0 end case #'char-upcase nil))
+          (t (%print-folded name out 0 end case nil t)))))
 
-(defun %print-downcased (name out at end)
+;;; Write NAME, passing each letter of the case CASE folds *to* through FOLD.
+;;; FOLD nil is `:capitalize`: the first letter of a word upper case, the
+;;; rest lower. Letters of the other case are written as they are.
+(defun %print-folded (name out at end case fold word-start)
   (if (< at end)
-      (progn (write-char (char-downcase (aref name at)) out)
-             (%print-downcased name out (+ at 1) end))))
+      (let* ((char (aref name at))
+             (mine (if (eq case :upcase) (upper-case-p char) (lower-case-p char))))
+        (write-char (cond ((not mine) char)
+                          (fold (funcall fold char))
+                          (word-start (char-upcase char))
+                          (t (char-downcase char)))
+                    out)
+        (%print-folded name out (+ at 1) end case fold (not (alphanumericp char))))))
 
-(defun %print-capitalized (name out at end word-start)
-  (if (< at end)
-      (let ((char (aref name at)))
-        (write-char (if word-start char (char-downcase char)) out)
-        (%print-capitalized name out (+ at 1) end (not (alphanumericp char))))))
+(defun %print-inverted (name out)
+  (let ((upper (some #'upper-case-p name))
+        (lower (some #'lower-case-p name)))
+    (cond ((and upper lower) (write-string name out))
+          (upper (dotimes (i (length name)) (write-char (char-downcase (aref name i)) out)))
+          (t (dotimes (i (length name)) (write-char (char-upcase (aref name i)) out))))))

@@ -307,6 +307,7 @@ Each chapter answers one question.
 | 55 | [Arrays, all of them](part-6-self-hosting/55-arrays.md) | How can an array grow and stay the same object, share another's elements, or have several dimensions, and what does Rust need to know about it? |
 | 56 | [The small functions](part-6-self-hosting/56-small-functions.md) | How do you write twenty-three functions once, and why can't an oracle be trusted on the last bit of a logarithm? |
 | 57 | [Bit fields](part-6-self-hosting/57-bit-fields.md) | How does an integer behave as an endless row of bits, and how can a `setf` place sit inside another place? |
+| 58 | [The reader's last gaps](part-6-self-hosting/58-the-readers-last-gaps.md) | How does a readtable fold the case of names, how does the printer follow it, and where does a character's syntax type live? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -322,10 +323,12 @@ Still to come, and deliberately so:
   `symbol-macrolet` in tier 1, compiled only (chapter 44); and the list,
   sequence and string functions (chapter 45); basic `format` (chapter
   46); integers of any size (chapter 47); and double floats (chapter 48).
-  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 57
+  Tier 1 is measured against ansi-test (chapter 49), and chapters 50 to 58
   close the gaps it listed first: declarations, symbols' cells, printing
   readably and with shared structure, `compile`, the rest of the package
-  system, and every kind of array, which moved from tier 2 into tier 1. Still to come are the gaps after those; then ratios
+  system, every kind of array, which moved from tier 2 into tier 1, bit
+  fields, and the reader's readtable case, character names and syntax
+  types. Still to come are the gaps after those; then ratios
   (#59, tier undecided); beyond it, `loop`, CLOS and the rest, in later
   phases.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

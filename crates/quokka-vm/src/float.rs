@@ -130,6 +130,8 @@ pub fn arithmetic<'h>(
 ) -> Option<Result<Value<'h>, EvalError>> {
     let reals = reals(mc, args, op == Op::Div)?;
     let result = match reals.as_slice() {
+        // Negation flips the sign: `0 - 0.0` is +0.0, and `(- 0.0)` is -0.0.
+        [Real::Float(x)] if op == Op::Sub => Ok(Real::Float(-x)),
         [only] if op == Op::Sub => combine(Op::Sub, Real::Int(0), *only),
         [only] if op == Op::Div => combine(Op::Div, Real::Int(1), *only),
         [first, rest @ ..] => rest.iter().try_fold(*first, |a, b| combine(op, a, *b)),

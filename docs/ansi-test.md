@@ -13,18 +13,18 @@ A test can need several things.
 | sequences | 2480 | 70 | 0 | 2 | 0 | 606 | 3158 |
 | strings | 370 | 23 | 0 | 0 | 4 | 104 | 501 |
 | arrays | 629 | 0 | 0 | 1 | 13 | 591 | 1234 |
-| characters | 130 | 0 | 0 | 0 | 32 | 97 | 259 |
+| characters | 133 | 0 | 0 | 0 | 22 | 104 | 259 |
 | symbols | 104 | 23 | 0 | 1 | 2 | 1015 | 1145 |
 | packages | 254 | 17 | 0 | 2 | 1 | 66 | 340 |
-| numbers | 528 | 21 | 0 | 4 | 20 | 865 | 1438 |
-| reader | 75 | 8 | 0 | 1 | 52 | 29 | 165 |
-| printer | 208 | 19 | 0 | 4 | 77 | 514 | 822 |
+| numbers | 532 | 21 | 0 | 4 | 16 | 865 | 1438 |
+| reader | 111 | 4 | 0 | 1 | 1 | 48 | 165 |
+| printer | 223 | 19 | 0 | 4 | 15 | 561 | 822 |
 | data-and-control-flow | 1073 | 79 | 13 | 0 | 17 | 238 | 1420 |
 | eval-and-compile | 237 | 28 | 5 | 0 | 25 | 23 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
 | hash-tables | 42 | 9 | 0 | 0 | 63 | 53 | 167 |
 | structures | 22 | 50 | 0 | 0 | 10 | 33 | 115 |
-| **all** | **7699** | **370** | **18** | **16** | **322** | **5133** | **13558** |
+| **all** | **7757** | **366** | **18** | **16** | **195** | **5206** | **13558** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -32,12 +32,8 @@ A test can need several things.
 | --- | ---: |
 | `load-error[*HASH-TABLES*]` | 111 |
 | `load-error[*STREAMS*]` | 111 |
-| `READTABLE-CASE[tier-1]` | 75 |
-| `READ-PRESERVING-WHITESPACE[tier-1]` | 27 |
 | `SXHASH[tier-1]` | 24 |
-| `NAME-CHAR[tier-1]` | 18 |
 | `WITH-HASH-TABLE-ITERATOR[tier-1]` | 17 |
-| `SET-SYNTAX-FROM-CHAR[tier-1]` | 11 |
 | `HASH-TABLE-TEST[tier-1]` | 7 |
 | `HASH-TABLE-REHASH-SIZE[tier-1]` | 6 |
 | `HASH-TABLE-REHASH-THRESHOLD[tier-1]` | 6 |
