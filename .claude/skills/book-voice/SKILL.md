@@ -132,8 +132,14 @@ chapter; the problem is the pattern.
 1. **Aphoristic closers.** A paragraph or section ending on a punchline: "That
    is the point." "Not luck." "The jargon is the wall." End on the last piece
    of information instead, or on the sentence that leads into the next section.
-2. **"X, not Y" contrasts as a reflex.** "A basis, not a feature list." Keep
-   one where the contrast is the actual content; otherwise just say what it is.
+2. **Negative parallelisms as a reflex.** "A basis, not a feature list."
+   The same shape has three common forms, and all three are tells: "not only
+   X, but also Y", "not X, but Y", and the reversed "Y rather than X". They
+   read as though correcting a misconception the reader never had. Keep one
+   where the contrast is the actual content, as in "offsets, not addresses",
+   and otherwise just say what the thing is. The fault is the reflex, not the
+   words: "a trait rather than a method on `Vm`" is ordinary English naming a
+   real alternative, and should stay.
 3. **Bold lead-ins on every paragraph or bullet.** Bold is for the first use of
    a term (the book's convention for glossary terms) and, rarely, for the one
    sentence a reader must not miss. Never as a paragraph label.
@@ -149,29 +155,142 @@ chapter; the problem is the pattern.
    said, or a section ending "In short, …". Delete it.
 8. **Announcing importance.** "This is the crucial part", "Crucially",
    "Notably", "It's worth noting". If it matters, the explanation shows it.
-9. **Tidy symmetry.** Everything in threes, every option the same length,
-   every section the same shape. Let sections be as long as their content.
+9. **Tidy symmetry, and the rule of three.** Everything in threes, every
+   option the same length, every section the same shape. Watch especially for
+   "adjective, adjective, adjective" and "short phrase, short phrase, and
+   short phrase", which is how a thin observation is dressed up as a thorough
+   one. Count the items: if there are three because there are three, keep
+   them; if the third is padding, cut it. Let sections be as long as their
+   content.
 10. **The narrator who knows the ending.** Decisions told as clean arguments.
     The book's rule is to write from the real questions, so tell it as it
     happened: what we expected, what turned up, what we changed. "We first
     tried…; it failed because…; so we…".
 11. **Inflated vocabulary.** "Leverage", "robust", "seamlessly", "delve",
-    "load-bearing", "crucially", "elegant", "powerful". Use the plain word.
+    "load-bearing", "crucially", "elegant", "powerful", "unlock". Use the
+    plain word. The set shifts as models change, and the words travel in
+    packs: where one appears, look for the others. Current company includes
+    "underscore", "showcase", "highlight" as a verb, "foster", "enhance",
+    "align with", "pivotal", "intricate", "landscape" and "tapestry" as
+    abstract nouns, "testament", "meticulous", "multifaceted", "quietly" and
+    "steady".
 12. **Question heading, fragment answer.** A heading asks "What was
     missing?" and the first line answers "Fifteen operators, led by …".
     Open with a full sentence that tells what happened ("While running the
-    tests we found that …"), or use a plain heading.
+    tests we found that …"), or use a plain heading. A "Why …?" heading
+    answered by "Because …" is the same fault: drop the "Because" and let the
+    sentence stand on its own.
 13. **Rhetorical questions as section openers** ("So what does a macro see?").
     Allowed when it is the question the reader would actually ask; not as a
     device in every section.
+14. **Stage directions.** A sentence, usually a fragment, that announces where
+    in the argument the reader is instead of saying anything: "Before the
+    answer, the thing being referred to.", "First, some background.", "With
+    that out of the way.". Delete it; the paragraph it introduces reads better
+    without it, and the section heading has already said what is coming. The
+    same goes for a sentence that counts or previews the headings below it
+    ("Three questions fall out of that table."): the headings follow
+    naturally, and the reader can see them.
+15. **Dramatising a plain question.** Announcing that a statement is bold or
+    surprising, raising an objection on the reader's behalf and answering it
+    in instalments: "That is a strong claim, so start with the obvious
+    objection.", "The claim is narrower than it sounds." Ask the reader's
+    question plainly instead, in one sentence, and say that the chapter
+    answers it. Three sentences of build-up usually compress to one.
+16. **Telegraphic sentences.** Economy is a virtue until the reader has to
+    decode the sentence: "The scheme is Symbolics'." makes them work out that
+    the apostrophe means a company, that the company built hardware, and that
+    the scheme was theirs. Write "This is the scheme that was used by
+    Symbolics in their Lisp Machine." The compressed version saves eight
+    words and costs a re-read, and a reader who does not already know the
+    reference gets nothing from it at all. Attribution especially should be a
+    plain full sentence: who, what, where.
+17. **A payoff with no setup.** A sentence that lands a result the reader
+    cannot value, because the chapter never said what was at stake. "Nothing
+    is given up to get them." is a relief only once the reader knows that the
+    bits in a word are scarce and that a fixnum pays for its tag with a bit of
+    range. Before writing that something is free, cheap, exact or fast, say
+    what the budget is and what it costs elsewhere; usually one short
+    paragraph, placed where the design first spends the resource. More
+    generally, name the constraints a design works under before showing how
+    the decisions fare against them, because a reader new to the field does
+    not know which resources are scarce in a runtime and will not supply them
+    for you.
+
+18. **Avoiding "is" and "are".** "The reader serves as the front end", "the
+    heap functions as a work queue", "`setf` represents the general
+    mechanism", "the crate features three modules". Machine prose reaches for
+    "serves as", "stands as", "functions as", "represents", "features",
+    "offers", "boasts" and "refers to" where a person writes "is", "are" or
+    "has"; one study measured the word "is" dropping by a tenth in academic
+    writing the year chatbots arrived. Use the copula. "The reader is the
+    front end" is shorter, says the same thing, and loses nothing.
+19. **Participle tails.** A sentence that has said its piece and then grows an
+    "-ing" clause explaining the significance of what was just said: "…,
+    highlighting the flexibility of the design", "…, underscoring its
+    importance", "…, reflecting the project's priorities", "…, ensuring
+    correctness". The tail almost never carries a fact. It adds a judgement
+    the reader did not ask for and cannot check, and it is one of the
+    strongest tells there is. Delete it; if the point is real, make it a
+    sentence of its own with something concrete in it.
+20. **Significance padding.** Sentences that tie the subject to a broader
+    trend, a wider history or an ongoing debate in order to make it matter:
+    "plays a role in", "forms part of the wider history of", "has shaped
+    discussions about", "contributes to the broader field of". A decision's
+    significance is what it lets you build next, which is a fact. Its
+    contribution to the discourse is not. Say what it enables, point at where
+    that happens, and stop.
+21. **Vague attribution, and vague connection.** "Experts argue", "industry
+    reports suggest", "it is widely regarded as", "several sources" when you
+    have one. Name the source or drop the claim. The same goes for
+    relationships: "X is associated with Y", "X is connected to Y", where the
+    honest sentence is "X wrote Y" or "X calls Y". Where the relation is
+    genuinely unclear, that uncertainty is the thing to write down, in those
+    words.
+22. **Chat residue and placeholders.** Nothing addressed to the person who
+    asked for the text should survive in it: "Certainly!", "Here is a draft",
+    "I hope this helps", "Would you like me to…", "Note: verify before
+    publishing". Nor should placeholders: "(add link here)", "[TODO:
+    numbers]", an invented date, a reference that looks plausible and was
+    never checked. A text containing any of these has not been finished. A gap
+    that is real gets a plain sentence saying what is missing and why.
+23. **Mechanical tells.** Title case in headings where the document uses
+    sentence case; curly quotes and apostrophes mixed into a file that uses
+    straight ones; emoji on headings or list items; asterisks as decoration;
+    stacked lists where every item is a bold label and a colon; heading levels
+    that jump. Each is trivial alone and the pattern is not. Match the file's
+    existing conventions, and compare a rewrite against the original for
+    quotes and dashes especially, since those change silently.
+
+These are signs, not rules. Human writing contains all of them, and a text is
+not machine-written because one appears; it is the density that gives it away.
+Fixing the surface without fixing what it points at only makes the trouble
+harder to find: if a sentence grew a participle tail because the paragraph had
+nothing to say, deleting the tail is not the repair.
 
 A quick check after a rewrite, from the repository root (counts, not proof):
 
 ```bash
 grep -cE ' — ' FILE                       # em-dashes
 grep -cE '^\*\*[^*]+\.\*\*|^- \*\*' FILE    # bold lead-ins
-grep -ciE 'crucial|notably|load-bearing|that is the point|seamless|robust' FILE
+grep -oiE 'crucial|notably|load-bearing|seamless|robust|leverage|delve|underscor|showcas|pivotal|tapestry|foster|multifaceted' FILE | wc -l
+grep -oiE 'serves as|stands as|functions as|serve to|is characterised by|boasts' FILE | wc -l
+grep -oiE ', (highlight|underscor|reflect|emphasi|ensur|showcas|demonstrat|contribut)ing' FILE | wc -l
+grep -oiE 'not only .{1,40} but|not just .{1,40} but' FILE | wc -l
+grep -oE '‘|’|“|”' FILE | wc -l       # curly quotes
 ```
+
+Count occurrences, not lines, and read every hit before changing it. These
+patterns are broad on purpose and most of what they catch is innocent: "rather
+than" and "refers to" are ordinary English, and the first draft of this check
+flagged thirteen correct uses of "rather than" in three chapters. A bracket
+expression of curly quotes also matches the bytes inside an em-dash or an
+arrow, which is why the check lists them as alternatives instead. The counts
+find candidates; you decide.
+
+Habits 18 to 23, and the sharper forms of 2, 9 and 11, draw on Wikipedia's
+*Signs of AI writing* (WP:AISIGNS), the field guide WikiProject AI Cleanup
+keeps for spotting undisclosed machine text.
 
 ## Before and after
 
@@ -200,6 +319,35 @@ In the book's voice:
 > environment in a variable, `%expansion-scopes`, next to `%local-macros`
 > where `macrolet` already kept the local macros. The two together are what
 > we hand the macro as its environment.
+
+From chapter 1, in a first pass of this rewrite:
+
+> ## The heap
+>
+> Before the answer, the thing being referred to. The heap is an array of
+> 64-bit words that the VM owns, in Rust literally a `Vec<u64>`, and an
+> object is a run of adjacent words in that array.
+
+In the book's voice, with the stage direction simply gone:
+
+> ## The heap
+>
+> The heap is an array of 64-bit words that the VM owns, in Rust literally a
+> `Vec<u64>`, and an object is a run of adjacent words in that array.
+
+Also from chapter 1, after the sentence saying every object is one 64-bit
+word:
+
+> That is a strong claim, so start with the obvious objection. A list of a
+> thousand elements is not going to fit in eight bytes, and neither is a
+> string. The claim is narrower than it sounds, and the distinction it rests
+> on is the subject of this chapter.
+
+In the book's voice, asking the reader's question instead of selling it:
+
+> If every object is represented by only 64 bits, how can we fit in those
+> larger objects, like lists, or functions? We will explore how this works in
+> this chapter.
 
 ## Rewriting a chapter
 
