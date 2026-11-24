@@ -1,17 +1,19 @@
 # A compiler in the language it compiles
 
-> **Where this fits.** Part III built a machine: thirty-six instructions, a
+> *Where this fits.* Part III built a machine: thirty-six instructions, a
 > stack, a verifier, and no way to produce a program for it except by hand.
 > This part is the program that produces them, and it is a different kind of
-> thing from everything before it — not a piece of the runtime but a **Lisp
-> program**, which happens to take Lisp as input.
+> thing from everything before it, not a piece of the runtime but a **Lisp
+> program** which happens to take Lisp as input. By the end you will have read
+> the compiler's own code for constants, `if`, calls and `unwind-protect`, and
+> you will know which of its decisions are settled and which are placeholders.
 >
 > It opens its own part for a reason worth stating. The machine is close to
 > finished and will change rarely; the compiler is where the judgement lives,
 > and most of what it decides today is provisional. The last section of this
 > chapter is a list of those decisions and how long each is expected to last.
 >
-> **Status: it runs.** `(+ 1 2)` compiles and evaluates to 3, with nothing in
+> *Status: it runs.* `(+ 1 2)` compiles and evaluates to 3, with nothing in
 > Rust deciding what the instructions should be.
 
 ## Trying it
@@ -41,8 +43,9 @@ run are two jumps.
 
 ### Looking at the output
 
-`--show-code` (today `quokka bootstrap --show-code`) prints the instructions before running them, which is the only
-way to check that a compiler is doing what you think:
+`--show-code` (today `quokka bootstrap --show-code`) prints the instructions
+before running them, which is the only way to check that a compiler is doing
+what you think:
 
 ```
 quokka> ((lambda (x) (+ x 1)) 41)
@@ -63,21 +66,21 @@ COMPILED-FORM NIL  ; stack 2
 
 Four things in that listing are worth reading rather than skimming.
 
-**The constants are resolved.** `GFREF 0` on its own is unreadable; `GFREF 0
-; +` is a sentence. A disassembler that prints only numbers is a disassembler
+The constants are resolved. `GFREF 0` on its own is unreadable; `GFREF 0 ; +`
+is a sentence, and a disassembler that prints only numbers is a disassembler
 nobody uses twice.
 
-**The nested function is indented beneath the `CLOSURE` that makes it**, which
-is where it lives: in the outer function's constants vector. The structure of
-the source survives into the structure of the listing.
+The nested function is indented beneath the `CLOSURE` that makes it, which is
+where it lives: in the outer function's constants vector. The structure of the
+source survives into the structure of the listing.
 
-**`LREF 0 0`** is chapter 26's lexical address, in the wild: `x` is the
-innermost scope, slot zero, and the name is gone.
+`LREF 0 0` is chapter 26's lexical address, in the wild. `x` is the innermost
+scope, slot zero, and the name is gone.
 
-**Both calls are `TCALL`.** The inner `(+ x 1)` is the lambda's whole body, so
-it is in tail position; the outer call is the whole form. Chapter 25 said the
+Both calls are `TCALL`. The inner `(+ x 1)` is the lambda's whole body, so it
+is in tail position; the outer call is the whole form. Chapter 25 said the
 compiler decides tail position from the shape of the source and writes it
-down — this is it written down.
+down, and this is it written down.
 
 ## The smallest real thing
 
@@ -121,7 +124,7 @@ It is in Lisp because of the sentence this whole project is arranged around:
 A compiler is the most opinionated program in a language implementation. It
 decides what `let` costs, whether a call is a jump, which functions may be
 inlined and when a variable can live somewhere cheaper. Those are exactly the
-decisions a person working *inside* the system would want to change — and a
+decisions a person working *inside* the system would want to change, and a
 compiler in Rust is one they cannot reach without rebuilding the compiler that
 built their image.
 
@@ -142,7 +145,7 @@ is **lifecycle**, not size:
 Every REPL start would otherwise interpret six hundred lines of compiler it is
 not going to use. They also fail differently: a broken prelude form means
 nothing works at all, and a broken compiler form means an image cannot be
-built from source — which is bad in a quite different way.
+built from source, which is bad in a quite different way.
 
 ## The boundary, which was decided before there was a compiler
 
@@ -160,9 +163,9 @@ So the Lisp side produces this:
 and one primitive, `%assemble`, turns it into a function: resolve the labels,
 encode the operands, verify the result, work out how deep its stack gets.
 
-**The alternative is to assemble in Lisp, and it is a mistake this project had
-already made once elsewhere.** Opcode numbers and operand widths would then
-live in `code.rs` *and* in a Lisp file, with nothing checking that they agree.
+The alternative is to assemble in Lisp, and it is a mistake this project had
+already made once elsewhere. Opcode numbers and operand widths would then live
+in `code.rs` *and* in a Lisp file, with nothing checking that they agree.
 Adding an instruction would mean editing both; a disagreement would produce a
 program that assembles cleanly and executes nonsense. The stack-effect table
 would be in a third place.
@@ -173,7 +176,7 @@ and the assembler knows what they are.
 There is a second benefit that was not the reason but is the better argument.
 `%assemble` builds the function with a deliberately huge stack reservation,
 runs the verifier to find out what it actually needs, and rebuilds with that.
-**The compiler never computes how deep its own output gets** — so it cannot
+The compiler never computes how deep its own output gets, so it cannot
 disagree with the verifier about it, which is a whole category of bug that
 simply does not arise.
 
@@ -205,9 +208,9 @@ A small integer goes in the instruction itself:
 ```
 
 because `FIX` has a signed 16-bit operand, and small integers are most of what
-a program mentions. Anything else — a symbol, a string, a list, a large
-number — goes in the function's constants vector, and the compiler remembers
-what it has put there so that two mentions share a slot.
+a program mentions. Anything else, meaning a symbol, a string, a list or a
+large number, goes in the function's constants vector, and the compiler
+remembers what it has put there so that two mentions share a slot.
 
 Shared by `eq`, not by `equal`, and that is a decision rather than laziness.
 Two occurrences of the symbol `foo` are the same object, because symbols are
@@ -218,7 +221,7 @@ of `"text"` are **not** the same object, and a program can tell:
 (eq "text" "text")   ; => NIL, and must stay NIL
 ```
 
-Chapter 26's literals are read-only, which would make sharing them *sound* —
+Chapter 26's literals are read-only, which would make sharing them *sound*,
 but soundness is not the question here. The question is whether a program can
 observe the difference, and for strings it can.
 
@@ -238,8 +241,8 @@ observe the difference, and for strings it can.
 ```
 
 `gensym` for the labels, because a nested `if` would otherwise collide with
-itself — the same reason macros need it (chapter 15), arriving in a program
-that is not a macro.
+itself, which is the same reason macros need it (chapter 15), arriving in a
+program that is not a macro.
 
 And a thing that went right the first time because of work done earlier: both
 arms **must** leave exactly one value, or the verifier refuses the whole
@@ -258,7 +261,7 @@ somewhere far away.
 ```
 
 Callee, then arguments, then `CALL`. `GFREF` reads the symbol's function cell
-at run time, so redefining the function takes effect — which is ordinary Lisp
+at run time, so redefining the function takes effect, which is ordinary Lisp
 and has to keep working.
 
 For `+` it is waste. Chapter 25 explained why `+` could be a single `PRIM`
@@ -273,7 +276,7 @@ when somebody breaks a rule deserves its own change and its own paragraph.
 ## The decisions that are provisional
 
 Which is the real reason this is a part of its own. The machine is nearly
-settled — thirty-nine instructions, and changing one is a format change. The
+settled, at thirty-nine instructions, and changing one is a format change. The
 compiler is a pile of judgements, and most of today's will not survive.
 
 | decision | why it is that way now | what changes it |
@@ -294,9 +297,18 @@ rather than a wish.
 
 None of the rest is a bug and each is a thing to come back to. The point of
 writing them down here is that a reader of this chapter in a year should be
-able to tell **which parts of the compiler were decisions and which were
-accidents** — and in a compiler, that distinction is harder to recover
-afterwards than anywhere else in the system.
+able to tell which parts of the compiler were decisions and which were
+accidents, and in a compiler that distinction is harder to recover afterwards
+than anywhere else in the system.
+
+*Later: two rows have been overtaken and two have not, which is about the
+rate the table expected. Special variables arrived in phase 2, so the "when
+there are any" has happened, and `%constants` is still an ordinary global
+because nothing has needed it to be otherwise. Constants are still found by
+scanning. Calls still go through `GFREF`, and the compiler emits no `PRIM`
+instruction at all; the fixpoint in chapter 42 is part of why that change got
+harder rather than easier, since any inlining decision now has to produce the
+same code when the compiler compiles itself.*
 
 ## `handler-case`, and four faults behind one symptom
 
@@ -309,31 +321,28 @@ interpreted and stopped the machine when compiled.
 It looked like one bug. It was four, and the instructive part is that each
 would have hidden the next.
 
-**1 · The compiler had no case for it.** In Quokka `handler-case` is a macro
-in the prelude, expanding to the special operator `%handler-case`, and
-`compile.lisp` had no clause for `%handler-case`. So the compiler did what it
-does with any unknown head: it compiled a *call* to a function of that name.
-There is no such function, and the compiling REPL said so: *"the function
-%HANDLER-CASE is undefined"*.
-
-**2 · The machine handed the handler `nil`.** When an unwind reaches a
-`HANDLER` record (chapter 27), the VM jumps to the handler's code and pushes a
-value for it. It pushed the `Value` register, which is right for `block` and
-`catch` — they exist to carry a value out — and wrong here, because `error`
-starts its unwind with `nil` in that register. A compiled handler would never
-have seen the condition it is meant to look at. The VM's own test had not
-noticed: its handler threw away whatever arrived.
-
-**3 · The VM could not turn an error into a condition.** When a primitive
-fails — `(car 5)` is a primitive being handed a number — the interpreter asks
-whether any `handler-case` is open, and if so builds a condition and unwinds
-to it. The VM simply stopped. So even with 1 and 2 fixed, an error from inside
-a primitive was uncatchable in compiled code.
-
-**4 · `(error c)` lost the condition's type.** Given a condition object, the
-standard says `error` signals *that* condition. The VM's `error` wrapped it in
-a fresh `simple-error`. That matters exactly where 1 to 3 lead: re-signalling a
-condition that a clause did not want.
+1. The compiler had no case for it. In Quokka `handler-case` is a macro in the
+   prelude, expanding to the special operator `%handler-case`, and
+   `compile.lisp` had no clause for `%handler-case`. So the compiler did what
+   it does with any unknown head: it compiled a *call* to a function of that
+   name. There is no such function, and the compiling REPL said so: *"the
+   function %HANDLER-CASE is undefined"*.
+2. The machine handed the handler `nil`. When an unwind reaches a `HANDLER`
+   record (chapter 27), the VM jumps to the handler's code and pushes a value
+   for it. It pushed the `Value` register, which is right for `block` and
+   `catch`, since they exist to carry a value out, and wrong here, because
+   `error` starts its unwind with `nil` in that register. A compiled handler
+   would never have seen the condition it is meant to look at. The VM's own
+   test had not noticed: its handler threw away whatever arrived.
+3. The VM could not turn an error into a condition. When a primitive fails,
+   and `(car 5)` is a primitive being handed a number, the interpreter asks
+   whether any `handler-case` is open, and if so builds a condition and
+   unwinds to it. The VM simply stopped. So even with 1 and 2 fixed, an error
+   from inside a primitive was uncatchable in compiled code.
+4. `(error c)` lost the condition's type. Given a condition object, the
+   standard says `error` signals *that* condition. The VM's `error` wrapped it
+   in a fresh `simple-error`. That matters exactly where 1 to 3 lead: in
+   re-signalling a condition that a clause did not want.
 
 ### The clause dispatch is compiled code
 
@@ -382,8 +391,8 @@ The matching is the same flat matching the interpreter does in Rust, but it is
 decided **at compile time** where it can be: the clause's type is right there
 in the source, so a catch-all clause compiles to no test at all. And a
 catch-all ends the dispatch. The first version went on to emit the re-signal
-after it — dead code the verifier would have accepted — and a test counting
-tail calls found two where the source had one.
+after it, which is dead code the verifier would have accepted, and a test
+counting tail calls found two where the source had one.
 
 That last clause, `(t (error c))`, is the re-signal. By the time it runs the
 `HANDLER` record has been popped, so the search for a handler carries on
@@ -391,14 +400,14 @@ That last clause, `(t (error c))`, is the re-signal. By the time it runs the
 fix earning its keep: without it, the outer handler would have received a
 `simple-error` instead of the `type-error` it was written for.
 
-The protected form is not in tail position — the record must outlive anything
-it calls, which is the rule `block` already follows. A clause body *is* in
-tail position, because by then the record is gone.
+The protected form is not in tail position, because the record must outlive
+anything it calls, which is the rule `block` already follows. A clause body
+*is* in tail position, because by then the record is gone.
 
 ### Which errors are the program's to catch
 
-Fault 3's fix copies the interpreter's rule — *if a handler is open and the
-error is the program's fault, signal it* — with one distinction the interpreter
+Fault 3's fix copies the interpreter's rule, *if a handler is open and the
+error is the program's fault, signal it*, with one distinction the interpreter
 never needed.
 
 In compiled code, a `BadSyntax` error always means the **bytecode** is wrong.
@@ -434,29 +443,30 @@ check rather than eleven edits a reader has to trust.
 Fault 4 is the one to remember. The interpreter's `error` was right; the VM's
 was subtly different in two ways, and both evaluators had passed their own
 tests for weeks. Nothing compared them. That is precisely the gap the fourth
-leg of the differential tests (step E of #23, and chapter 33) exists to close: the same file,
-interpreted and compiled, must print the same thing. Until it exists, every
-feature implemented twice is a feature that can quietly disagree with itself.
+leg of the differential tests (step E of #23, and chapter 33) exists to close:
+the same file, interpreted and compiled, must print the same thing. Until it
+exists, every feature implemented twice is a feature that can quietly disagree
+with itself.
 
 ## The rest of the special operators
 
 The section above ended by saying the compiler lacked three more operators.
 It lacked ten. The three had come from a comment in the compiler listing what
-"must cancel tail position, when they are implemented" — a list of the forms
-that leave a record, not a list of what was missing. Checked against the
+"must cancel tail position, when they are implemented", which is a list of the
+forms that leave a record, not a list of what was missing. Checked against the
 interpreter's own table of special operators, `eval::special::ALL`, the
 missing ones were `catch`, `throw`, `unwind-protect`, `multiple-value-prog1`,
 `the`, `locally`, `eval-when`, `tagbody`, `go` and `macrolet`.
 
-The lesson is the one this chapter keeps arriving at: **count against the
-source of truth, not against a description of it.**
+The lesson is the one this chapter keeps arriving at: count against the source
+of truth, not against a description of it.
 
 ### A guard, so it cannot happen again
 
 How had ten operators gone missing without a single failure? Because of what
 the compiler did with a head it did not recognise. It assumed a function call.
 `(tagbody top)` compiled to "call the function `TAGBODY` with the argument
-`top`", which assembled, passed the verifier, and failed only when run — and
+`top`", which assembled, passed the verifier, and failed only when run, and
 nothing had run it.
 
 The interpreter already knows which symbols are special operators: each one
@@ -471,7 +481,7 @@ reads that slot, and the compiler asks it before falling back to a call:
 
 Now an operator the compiler has no case for is a compile error that names it.
 The name has a `%` because Common Lisp's `special-operator-p` gives SBCL's
-answer, and Quokka's is different — `lambda` and `defmacro` are operators here
+answer, and Quokka's is different: `lambda` and `defmacro` are operators here
 and macros there.
 
 ### `unwind-protect`, compiled twice
@@ -506,17 +516,17 @@ the cleanup and `UNPROTECT` picks the interrupted unwind back up.
 
 Compiling something twice sounds wasteful, and it is a deliberate choice made
 in `docs/bytecode.md`. The alternative is one shared copy that both paths
-call, which needs somewhere to remember where to come back to — a return
-address, which means a frame, which is exactly what the record design was
-built to avoid allocating. Code size was the cheaper thing to spend.
+call, which needs somewhere to remember where to come back to, which is a
+return address, which means a frame, which is exactly what the record design
+was built to avoid allocating. Code size was the cheaper thing to spend.
 
 `catch` and `throw` are `block` and `return-from` with the identity found at
-run time instead of in the source. `multiple-value-prog1` is the `MVSAVE` /
+run time instead of in the source. `multiple-value-prog1` is the `MVSAVE` and
 `MVRESTORE` pair on its own. `the`, `locally` and `eval-when` compile to
 nothing of their own: the first two are their bodies, and `eval-when` is
 decided while compiling, so the output holds either the body or a `NIL`, never
 a test. All three follow the interpreter's rules exactly, down to the three
-spellings of `:execute` it accepts until there are packages — because two
+spellings of `:execute` it accepts until there are packages, because two
 evaluators that disagree is the bug the section above was about.
 
 ### A bug that had been there since the start
@@ -528,8 +538,8 @@ since the VM was built.
 
 `BLOCK` binds the block's name in a new scope and pushes a record. It did them
 in that order, so the record saved the environment *including* the block's
-scope. Both ways of leaving a block — `UNMARK` at the end and the unwinder
-landing after a `return-from` — restore the record's environment, so both put
+scope. Both ways of leaving a block, `UNMARK` at the end and the unwinder
+landing after a `return-from`, restore the record's environment, so both put
 the block's scope back on. After any compiled `block`, every variable was
 looked up one link too deep.
 
@@ -550,20 +560,19 @@ scope bound. `(block b (go top))` has a record open. A jump leaves all of
 them behind.
 
 And `TAG`/`GO`, as first built, could not loop. They shared `BLOCK`'s code,
-so when a `go` landed, the record was popped — and the next `go` to the same
+so when a `go` landed, the record was popped, and the next `go` to the same
 tag found nothing. Pushing it again made a new marker, so a closure made on
 an earlier trip round the loop would be holding a marker with no record. No
 test had ever run them.
 
 There were three ways forward, and the choice mattered more than most,
-because **every loop in Lisp is a `tagbody` underneath** — `dotimes`,
-`dolist`, `do` and `loop` all expand into one — so whatever is chosen here is
+because **every loop in Lisp is a `tagbody` underneath**, since `dotimes`,
+`dolist`, `do` and `loop` all expand into one, so whatever is chosen here is
 chosen for every loop. The question we asked when the choice was first laid
-out was the right one: *why not the fastest, just because it is more work?* Work
-is not a reason. The real reason turned out to be that the fastest option
-could not stand alone.
-
-**A `go` from inside a closure can only be done by unwinding.**
+out was the right one: *why not the fastest, just because it is more work?*
+Work is not a reason. The real reason turned out to be that the fastest option
+could not stand alone, because a `go` from inside a closure can only be done
+by unwinding.
 
 ```lisp
 (tagbody
@@ -598,9 +607,9 @@ in a register. The VM now does the same:
 ```
 
 `(go tag1)` is `GO depth index`, found through the environment like a
-variable. The unwinder carries the index to the `TAG` record, and there —
-unlike every other landing — **the record stays**. Everything above it is
-dropped, the environment it saved is put back, and control resumes at
+variable. The unwinder carries the index to the `TAG` record, and there,
+unlike every other landing, the record stays. Everything above it is dropped,
+the environment it saved is put back, and control resumes at
 `table + 3 × index`.
 
 That last part is a **jump table**: a row of jumps, one per tag, all the same
@@ -608,7 +617,7 @@ size, so that "go to the *i*th tag" becomes "go to the *i*th row". It is the
 classic way to compile a computed goto, and the same thing a C compiler does
 with a `switch` on small integers. The verifier had to learn about it,
 because every row after the first is reached *only* by a `go` landing, never
-by falling through — without being told, it would have checked the first row
+by falling through, and without being told it would have checked the first row
 and never looked at the rest. Now it checks that every row is a `JMP`, and
 follows each one.
 
@@ -631,20 +640,21 @@ inside it. So the thirty-eighth instruction, `JMP-TAG`, simply drops the stack
 to the top of the innermost record, puts back the environment saved in it,
 and jumps. One step.
 
-The insight that made it small: **the compiler does not count anything.**
+The insight that made it small is that the compiler does not count anything.
 The obvious way to do option C was for the compiler to track how many values
 are on the stack and how many scopes are bound at every `go`, and emit the
 right number of `POP`s and an `UNBIND`. The compiler does not track stack
 depth, and teaching it to would have meant a second copy of what every
-instruction does to the stack, which must agree with the verifier's — the
-exact duplication issue #30 removed. Using the record makes the question
+instruction does to the stack, which must agree with the verifier's, which is
+the exact duplication issue #30 removed. Using the record makes the question
 disappear: whatever was pushed or bound since the tagbody began, the record
 undoes.
 
 What the compiler does decide is *when* `JMP-TAG` is safe. It keeps a list of
-what is open around the form it is compiling — a nested function, a form
-whose record is on the stack, a tagbody — and a `go` uses `JMP-TAG` only when
-its own tagbody is the innermost thing on that list. Otherwise, `GO`.
+what is open around the form it is compiling, meaning a nested function, a
+form whose record is on the stack, or a tagbody, and a `go` uses `JMP-TAG`
+only when its own tagbody is the innermost thing on that list. Otherwise,
+`GO`.
 
 ```lisp
 (defun %innermost-tagbody (scope)
@@ -657,10 +667,10 @@ its own tagbody is the innermost thing on that list. Otherwise, `GO`.
 And the verifier checks it statically. Until now it tracked *how many*
 records were open at each instruction. `JMP-TAG` needs to know *where* the
 innermost one starts and *what kind* it is, so its state became a list of
-records rather than a count — the Rust side of the boundary this chapter has
-been drawing all along: decisions in Lisp, stack accounting in Rust. The
-machine checks again at run time, because a wrong record would leave it in a
-state nothing else would notice.
+records rather than a count, which is the Rust side of the boundary this
+chapter has been drawing all along: decisions in Lisp, stack accounting in
+Rust. The machine checks again at run time, because a wrong record would leave
+it in a state nothing else would notice.
 
 | | steps per local `go` | |
 | --- | --- | --- |
@@ -672,18 +682,24 @@ state nothing else would notice.
 
 A local macro's expander is a function the compiler must *call* while it is
 compiling. The compiler is interpreted until #33, so it can only call
-interpreted functions — and it cannot make one out of a list, because there
-is no `eval`. Once #33 has compiled the compiler, it can compile the expander
+interpreted functions, and it cannot make one out of a list, because there is
+no `eval`. Once #33 has compiled the compiler, it can compile the expander
 with `compile-form` and call it like anything else. `defmacro` waits for the
 same reason. Building either now would mean building it twice.
+
+*Later: both arrived, and the reasoning above is exactly why they could. A
+compiled compiler can compile an expander and call it, so `%compile-macrolet`
+and `%compile-defmacro` are ordinary clauses in the dispatch now, and
+`symbol-macrolet` joined them in phase 2 as a kind of scope the compiler steps
+over without counting.*
 
 ### The differential files, compiled
 
 For a while the differential tests had a second half here: every file compiled
 form by form by the bootstrap compiler, everything it emitted verified, and a
 form allowed to fail only where its baseline said it was an error. It was the
-best check possible before a compiled world existed — it proved the compiler
-could handle each form, without running any of them — and it found the
+best check possible before a compiled world existed, since it proved the
+compiler could handle each form without running any of them, and it found the
 `tagbody` gaps and the deliberate-error forms that a first version, stopping at
 the first failure, had silently skipped.
 
@@ -700,7 +716,7 @@ quokka> (length '(1 2 3))
   compiled code, and the prelude is not compiled yet
 ```
 
-`length` is in the prelude, which is still *interpreted* — so a compiled
+`length` is in the prelude, which is still *interpreted*, so a compiled
 program calling it is exactly the mixing of the two evaluators that chapter 24
 ruled out. The VM refuses by design rather than by accident.
 
@@ -711,20 +727,19 @@ quokka> (compile-form '(+ 1 2))
 ; bad CALL: reached an interpreted closure — ...
 ```
 
-**The compiler cannot be called from compiled code either**, because the
-compiler is interpreted. Typed into the interpreting REPL it works; typed into
-the compiling one it is refused, by the same machinery and for the same
-reason.
+The compiler cannot be called from compiled code either, because the compiler
+is interpreted. Typed into the interpreting REPL it works; typed into the
+compiling one it is refused, by the same machinery and for the same reason.
 
 Both stop being errors when the prelude and the compiler are themselves
 compiled, which is the next piece of work and most of what phase 1 has left.
-Chapter 29 compiles both of them, and finds that the second half — installing
-what was compiled — cannot be done here at all, and belongs to the image.
+Chapter 29 compiles both of them, and finds that the second half, installing
+what was compiled, cannot be done here at all, and belongs to the image.
 Until then they are the right failure: a rule enforced from the day it is
 made, rather than one observed until something needs breaking it.
 
 *Since chapter 32 they are not errors any more.* In a built image the prelude
-and the compiler are compiled, and both forms above work — from compiled code,
+and the compiler are compiled, and both forms above work, from compiled code,
 with the interpreter nowhere in the loop.
 
 ---
@@ -734,5 +749,5 @@ compiler to a bytecode machine written in the language it compiles, which is
 this chapter's exact shape done properly. SICP §5.5 for a compiler for an
 explicit-control machine, and §4.1.7 for the idea it rests on. Appel, *Modern
 Compiler Implementation* (1998), chapter 1, for how much of a compiler is a
-dispatch on the shape of a form — a thing that looks accidental in one
+dispatch on the shape of a form, a thing that looks accidental in one
 compiler and obviously structural across three.
