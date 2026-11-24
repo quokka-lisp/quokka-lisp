@@ -193,3 +193,27 @@
 ;;; `sb-int:&more`, which is not ours to copy.
 (defconstant lambda-list-keywords
   '(&allow-other-keys &aux &body &environment &key &optional &rest &whole))
+
+;;; ------------------------------------------------------------------------
+;;; lambda and defmacro are macros
+
+;;; CLHS makes `lambda` and `defmacro` macros. Quokka's compiler compiles
+;;; both forms itself, as the interpreter evaluates them, so these
+;;; expanders are never used by it; they are what `macro-function` and
+;;; `macroexpand` find (#80). `lambda` expands as SBCL's does, to
+;;; `(function (lambda ...))`. `defmacro` expands to what the compiler
+;;; compiles a `defmacro` form into, with `%macro-lambda` for the expander.
+(%set-symbol-function
+ 'lambda
+ (%make-macro (lambda (form environment)
+                environment
+                (list 'function form))))
+
+(%set-symbol-function
+ 'defmacro
+ (%make-macro (lambda (form environment)
+                environment
+                (destructuring-bind (name lambda-list &body body) (cdr form)
+                  `(progn
+                     (%set-symbol-function ',name (%make-macro (%macro-lambda ,lambda-list ,@body)))
+                     ',name)))))

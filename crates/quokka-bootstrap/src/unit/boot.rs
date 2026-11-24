@@ -102,7 +102,8 @@ fn booting_costs_a_known_amount_of_heap() {
     // environment (#76): every macro now takes its arguments apart in
     // generated code, where a plain lambda list used to be left alone.
     // 10,588 once the prelude learned setf functions and `%block-body`
-    // (#78): about fifty lines of new functions.
+    // (#78): about fifty lines of new functions. 11,623 with the condition
+    // types' lattice and `multiple-value-bind`'s declarations (#80, #81).
     //
     // The point is not the number but that raising it is a deliberate
     // act with a failing test attached — the same job as
@@ -110,7 +111,7 @@ fn booting_costs_a_known_amount_of_heap() {
     // what was added; this one is.
     let words = heap.used_words();
     assert!(
-        words < 11_000,
+        words < 12_000,
         "the prelude now costs {words} live words after a collection"
     );
 }

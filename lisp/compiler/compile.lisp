@@ -110,6 +110,25 @@
          (append (cdr (car specifiers)) (%special-names (cdr specifiers))))
         (t (%special-names (cdr specifiers)))))
 
+;;; A body's `notinline` declarations, as a compile-only scope like the
+;;; `special` one: a compiler macro is not applied to a call of a function
+;;; declared `notinline` where the call is (CLHS 3.2.2.1.3; ansi-test
+;;; define-compiler-macro.7, #80). `%lookup` steps over the scope.
+(defun %notinline-scope (body env)
+  (let ((names (%notinline-names (%declarations body))))
+    (if names (cons (cons ':notinline names) env) env)))
+
+(defun %notinline-names (specifiers)
+  (cond ((endp specifiers) nil)
+        ((and (consp (car specifiers)) (eq (car (car specifiers)) 'notinline))
+         (append (cdr (car specifiers)) (%notinline-names (cdr specifiers))))
+        (t (%notinline-names (cdr specifiers)))))
+
+(defun %notinline-p (name env)
+  (cond ((null env) nil)
+        ((and (eq (car (car env)) ':notinline) (member name (cdr (car env)))) t)
+        (t (%notinline-p name (cdr env)))))
+
 ;;; Is NAME special in a form that declares DECLARED special?
 (defun %special-here-p (name declared)
   (or (%special-variable-p name) (member name declared)))
@@ -255,6 +274,10 @@
 (defun %position (item remaining index)
   (cond ((null remaining) nil)
         ((eq (car remaining) item) index)
+        ;; A `go` tag may be an integer, and two bignums read separately
+        ;; are `eql` without being `eq` (CLHS `tagbody`; ansi-test
+        ;; tagbody.15, #80). Names are symbols, so this costs a type test.
+        ((and (integerp item) (integerp (car remaining)) (= (car remaining) item)) index)
         (t (%position item (cdr remaining) (+ index 1)))))
 
 (defun %lookup (name env depth tag)
@@ -263,6 +286,7 @@
     ;; A `symbol-macrolet` scope exists only while compiling: nothing is
     ;; pushed for it at run time, so it is not a link and is not counted.
     ((eq (car (car env)) ':symbol-macro) (%lookup name (cdr env) depth tag))
+    ((eq (car (car env)) ':notinline) (%lookup name (cdr env) depth tag))
     ;; Nor is a `special` declaration's (#62): a variable it names is not
     ;; lexical here, whatever binds it further out.
     ((eq (car (car env)) ':special)
@@ -457,6 +481,7 @@
   (let ((outer-code %code)
         (outer %constants)
         (outer-count %constant-count))
+    (setq env (%notinline-scope body env))
     (setq %code nil)
     (%reset-constants)
     (%with-open ':function
@@ -560,8 +585,24 @@
   (let ((names (%local-function-names (second form))))
     (%compile-local-functions (second form) env)
     (%emit (list 'BINDF (%constant-index (apply #'vector names))))
-    (%compile-body (cddr form) (cons (%scope ':function names) env) tail)
+    (%compile-local-function-body (cddr form) names (cons (%scope ':function names) env) tail)
     (%emit (list 'UNBIND 1))))
+
+;;; The body of a `flet` or `labels`: its declarations apply as `locally`'s
+;;; do, and a local function hides a `macrolet` macro of the same name from
+;;; further out, as it hides a global one (CLHS 3.1.1.2; ansi-test
+;;; macrolet.37, #80). `%local-macros` gets an entry with no expander for
+;;; each name, which `%find-macro` finds first and answers nil for.
+(defun %compile-local-function-body (body names env tail)
+  (let ((outer %local-macros))
+    (setq %local-macros (%shadowing-entries names outer))
+    (%compile-body body (%special-scope (%declared-specials body) env) tail)
+    (setq %local-macros outer)))
+
+(defun %shadowing-entries (names macros)
+  (if (endp names)
+      macros
+      (cons (cons (car names) nil) (%shadowing-entries (cdr names) macros))))
 
 ;;; `(labels ((f (x) ... (f ...))) ...)`
 ;;;
@@ -593,7 +634,7 @@
       (%emit-nils (length names))
       (%emit (list 'BINDF (%constant-index (apply #'vector names))))
       (%store-local-functions (second form) inner 0)
-      (%compile-body (cddr form) inner tail)
+      (%compile-local-function-body (cddr form) names inner tail)
       (%emit (list 'UNBIND 1)))))
 
 ;;; `(block out ...)` and `(return-from out value)`
@@ -752,10 +793,11 @@
 ;;; answer, and the reason this waited for #33.
 (setq %local-macros nil)
 
+;;; Its body's declarations apply as `locally`'s do (ansi-test macrolet.47).
 (defun %compile-macrolet (form env tail)
   (let ((outer %local-macros))
     (setq %local-macros (%local-expanders (second form) outer))
-    (%compile-body (cddr form) env tail)
+    (%compile-body (cddr form) (%special-scope (%declared-specials (cddr form)) env) tail)
     (setq %local-macros outer)))
 
 (defun %local-expanders (definitions macros)
@@ -907,7 +949,7 @@
 
 ;;; FORM rewritten by its compiler macro, or FORM itself.
 (defun %apply-compiler-macro (form env)
-  (let ((expander (%compiler-macro-for form env)))
+  (let ((expander (if (%notinline-p (car form) env) nil (%compiler-macro-for form env))))
     (if expander
         (%expand expander form env %local-macros)
         form)))
@@ -931,6 +973,15 @@
 ;;; `lambda` would lose the `&optional` defaults.
 (defun %compile-destructuring-lambda (form env)
   (let ((rewritten (%rewrite-macro-lambda-list (second form) (cddr form) t)))
+    (%compile-rewritten-lambda (first rewritten) (second rewritten) (third rewritten) env)))
+
+;;; `(%macro-lambda lambda-list body...)` (#80): the expander `defmacro`
+;;; makes, a function of the form and the environment, on its own — what
+;;; the library's `defmacro` macro expands into, so that `defmacro` can be a
+;;; macro as CL says while the compiler still compiles a `defmacro` form
+;;; directly, as the interpreter evaluates one.
+(defun %compile-macro-lambda (form env)
+  (let ((rewritten (%rewrite-macro-lambda-list (second form) (cddr form))))
     (%compile-rewritten-lambda (first rewritten) (second rewritten) (third rewritten) env)))
 
 ;;; `(%dynamic-bind symbol value body...)` (#53): bind the special variable
@@ -1140,7 +1191,17 @@
 (defun %handler-test (condition type)
   (if (or (eq type t) (eq type 'error) (eq type 'condition))
       t
-      (list 'eq (list '%condition-type condition) (list 'quote type))))
+      ;; A subtype is caught too: `stream-error` catches `end-of-file` (#81).
+      ;; The subtypes are listed now, from the prelude's table, so that the
+      ;; test is still `eq` on the type, which compiled code can do before
+      ;; the prelude is compiled (the bootstrap's own tests run it so).
+      (cons 'or (%condition-type-tests condition (%condition-subtypes type)))))
+
+(defun %condition-type-tests (condition types)
+  (if (endp types)
+      nil
+      (cons (list 'eq (list '%condition-type condition) (list 'quote (car types)))
+            (%condition-type-tests condition (cdr types)))))
 
 ;;; `(multiple-value-call f a b)`
 ;;;
@@ -1273,6 +1334,7 @@
           ((eq head 'symbol-macrolet) (%compile-symbol-macrolet form env tail))
           ((eq head '%dynamic-bind) (%compile-dynamic-bind form env))
           ((eq head '%destructuring-lambda) (%compile-destructuring-lambda form env))
+          ((eq head '%macro-lambda) (%compile-macro-lambda form env))
           ((eq head 'catch) (%compile-catch form env))
           ((eq head 'throw) (%compile-throw form env))
           ((eq head 'unwind-protect) (%compile-unwind-protect form env))
@@ -1285,7 +1347,10 @@
                (%compile-body (cddr form) env tail)
                (error "the wants a type and a form")))
           ((eq head 'locally)
-           (%compile-body (cdr form) (%special-scope (%declared-specials (cdr form)) env) tail))
+           (%compile-body (cdr form)
+                          (%notinline-scope (cdr form)
+                                            (%special-scope (%declared-specials (cdr form)) env))
+                          tail))
           ((eq head 'eval-when)
            (if (%executes-p (second form))
                (%compile-body (cddr form) env tail)

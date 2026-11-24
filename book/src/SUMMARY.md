@@ -88,6 +88,8 @@
 - [An array that holds nothing](part-6-self-hosting/65-an-array-that-holds-nothing.md)
 - [Functions named (setf name)](part-6-self-hosting/66-setf-functions.md)
 - [Lists that do not end in nil](part-6-self-hosting/67-list-gaps.md)
+- [What the compiler skipped](part-6-self-hosting/68-compiler-gaps.md)
+- [The last gaps](part-6-self-hosting/69-the-last-gaps.md)
 
 ---
 

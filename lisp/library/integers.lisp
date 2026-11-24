@@ -375,12 +375,17 @@
 ;;; converted to two's complement in enough limbs, the operation is done
 ;;; limb by limb, and the result converted back — as CPython does.
 
+;;; A shift right past every bit is 0 or -1 without computing a power of
+;;; two as large as the count, and shifting 0 is 0: `(logbitp
+;;; most-positive-fixnum 0)` shifts by that much (ansi-test logbitp.3,
+;;; which ran out of steps).
 (defun ash (integer count)
-  (if (>= count 0)
-      (* integer (expt 2 count))
-      ;; `floor`, not `truncate`: shifting right rounds towards minus
-      ;; infinity, as an arithmetic shift does.
-      (nth-value 0 (floor integer (expt 2 (- count))))))
+  (cond ((eql integer 0) (if (integerp count) 0 (error 'type-error "not an integer" count)))
+        ((>= count 0) (* integer (expt 2 count)))
+        ((>= (- count) (integer-length integer)) (if (minusp integer) -1 0))
+        ;; `floor`, not `truncate`: shifting right rounds towards minus
+        ;; infinity, as an arithmetic shift does.
+        (t (nth-value 0 (floor integer (expt 2 (- count)))))))
 
 (defun integer-length (integer)
   (if (minusp integer)

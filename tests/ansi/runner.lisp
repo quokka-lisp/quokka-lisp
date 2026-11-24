@@ -82,6 +82,16 @@
   (dolist (name names)
     (setf (gethash (find-symbol (string name) "COMMON-LISP") *deferred*) reason)))
 
+;;; Tests SBCL fails too, giving the answer Quokka gives: where the suite
+;;; and the oracle disagree, Quokka follows the oracle (rule 6), and such a
+;;; failure is explained by that, as `sbcl[REASON]` (#81). Each name is
+;;; there because we asked SBCL; `deferred.lisp` says why.
+(defvar *follows-sbcl* (make-hash-table :test 'equal))
+
+(defun %follows-sbcl (reason &rest names)
+  (dolist (name names)
+    (setf (gethash (string name) *follows-sbcl*) reason)))
+
 ;;; Does Quokka have OPERATOR as a function, a macro or a special operator?
 ;;; SYMBOL-MACROLET is the one special operator only the compiler knows
 ;;; (#53), so the table of special operators does not list it.
@@ -177,10 +187,19 @@
 (defvar *file* nil)
 (defvar *file-package* nil)
 
+;;; A file's tests, run once the file has been read to its end, as rt runs
+;;; every test after loading (#81): a file may define, after a test, what
+;;; the test uses (defun.lsp defines a setf function after defun.4). Kept in
+;;; reverse until the end of the file, then in order.
+(defvar *pending-tests* nil)
+(defvar *pending-ready* nil)
+
 (defun %open (name)
   (setq *stream* (make-string-input-stream (quokka::%read-source name))
         *file* name
-        *file-package* (find-package "CL-TEST"))
+        *file-package* (find-package "CL-TEST")
+        *pending-tests* nil
+        *pending-ready* nil)
   t)
 
 (defun %position () (quokka::%string-input-stream-position *stream*))
@@ -350,14 +369,22 @@
 
 (defun %step ()
   (setq *current* "-")
+  (setq *current-test* nil)
   (let ((*package* *file-package*)
         (*produced* nil))
-    (multiple-value-bind (form reason name) (%read-next)
+    (multiple-value-bind (form reason name) (if *pending-ready* :eof (%read-next))
+      (if (and (eq form :eof) (not *pending-ready*))
+          (setq *pending-tests* (reverse *pending-tests*) *pending-ready* t))
+      (if (and (eq form :eof) *pending-tests*)
+          (setq form (pop *pending-tests*)))
       (let ((line (cond ((eq form :eof) "DONE")
                         ((eq form :unreadable)
                          (if name
                              (format nil "UNREADABLE ~A ~A" name (%one-line reason))
                              (format nil "LOAD unreadable ~A" (%one-line reason))))
+                        ((and (consp form) (eq (car form) 'deftest) (not *pending-ready*))
+                         (push form *pending-tests*)
+                         "")
                         ((and (consp form) (eq (car form) 'deftest))
                          (handler-case (%run-test form)
                            (error (condition)
@@ -377,6 +404,17 @@
 ;;; ------------------------------------------------------------------------
 ;;; Running a test
 
+;;; The form of the test being run, for `%timeout-needs`.
+(defvar *current-test* nil)
+
+;;; A test that ran out of steps is explained the way a failing one is, by
+;;; the operators it uses (#81): a test that loops through `loop`, which is
+;;; deferred, may not finish rather than fail. The driver asks after a
+;;; timeout; the empty string means nothing explains it.
+(defun %timeout-needs ()
+  (let ((needs (if *current-test* (%needs *current-test*) nil)))
+    (if needs (format nil "~{~A~^ ~}" needs) "")))
+
 (defun %run-test (form)
   (let* ((name (second form))
          (rest (cddr form))
@@ -390,6 +428,7 @@
            (disabled (%disabled-note (if (listp notes) notes (list notes))))
            (*test* name))
       (setq *current* (symbol-name name))
+      (setq *current-test* test)
       (if disabled
           (format nil "NEEDS ~A note[~A]" name (symbol-name disabled))
           (let ((values (handler-case (multiple-value-list (eval test))
@@ -401,7 +440,9 @@
                 ;; failed, to explain the failure (decision 4). Asking first
                 ;; would skip tests that pass, such as one using a helper that
                 ;; needs LOOP only in a branch the test does not take.
-                (let ((needs (or (%needs test) (%message-needs values))))
+                (let ((needs (or (%needs test) (%message-needs values)
+                                 (let ((reason (gethash (symbol-name name) *follows-sbcl*)))
+                                   (if reason (list (format nil "sbcl[~A]" reason)) nil)))))
                   (if needs
                       (format nil "NEEDS ~A ~{~A~^ ~}" name needs)
                       (format nil "FAIL ~A ~A" name (%one-line (%describe values)))))))))))
@@ -480,6 +521,8 @@
 ;;; same question asked later.
 (defun %load-form (form)
   (let ((names (%defined-names form)))
+    ;; Named, so that a load that runs out of steps says what it was loading.
+    (setq *current* (format nil "load~A" (or names "-")))
     (cond ((and names (%common-lisp-p (car names)))
            (format nil "LOAD ~A not redefined: it is COMMON-LISP's" (car names)))
           ((and names (gethash (car names) *provided*))

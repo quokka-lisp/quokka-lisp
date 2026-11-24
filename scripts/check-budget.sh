@@ -45,7 +45,13 @@ cd "$(dirname "$0")/.."
 # symbol from a string read one that is not simple (a fill pointer,
 # displaced) by its active characters. 8 lines, 3 of them under the old
 # limit.
-LIMIT=15767
+#
+# Raised to 15,838 by step AG (#80, 25 Nov 2026): `throw` looks for its
+# catch before unwinding, so a missing one is a catchable control-error
+# (`vm.rs`); a lambda list's rewrite puts a `special` declaration of a
+# required parameter in front of its `let*`, and a macro's `&optional`/`&key`
+# take nested patterns (`lambda_list.rs`). 71 lines.
+LIMIT=15838
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

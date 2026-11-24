@@ -246,7 +246,9 @@
          ,@(%body-declarations body)
          (tagbody
           ,top
-            (if (>= ,var ,count) (go ,end))
+            ;; The primitive `<`, not the library's n-ary `>=`: this test runs
+            ;; on every iteration of every loop (ansi-test length.list.3).
+            (if (< ,var ,count) nil (go ,end))
             ,@(%body-forms body)
             (setq ,var (+ ,var 1))
             (go ,top)
@@ -382,11 +384,14 @@
   (if (or (not (integerp n)) (< n 0))
       (error 'type-error "wants a non-negative integer" n)))
 
+;;; The walk stops at nil, whose every tail is nil: `(nthcdr 1000000 nil)`
+;;; is nil at once, and `elt` past the end of a list finds out in as many
+;;; steps as the list is long (ansi-test elt.2).
 (defun nthcdr (n list)
   (%check-count n)
   (do ((i 0 (+ i 1))
        (tail list (cdr tail)))
-      ((= i n) tail)))
+      ((or (= i n) (null tail)) tail)))
 
 ;;; The length, or nil for a circular list — found by a pointer that moves
 ;;; twice as fast as the other (Floyd's cycle-finding, "tortoise and hare").
@@ -417,8 +422,10 @@
          (lead lead (cdr lead)))
         ((atom lead) tail))))
 
-;;; How many conses LIST has before its end, proper or dotted.
+;;; How many conses LIST has before its end, proper or dotted. Not a list
+;;; at all is a `type-error`, as `length` made it before (#80).
 (defun %cons-count (list)
+  (if (not (listp list)) (error 'type-error "not a list" list))
   (do ((n 0 (+ n 1))
        (tail list (cdr tail)))
       ((atom tail) n)))

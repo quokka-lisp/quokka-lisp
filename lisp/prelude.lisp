@@ -632,6 +632,65 @@
 (defmacro handler-case (form &rest clauses)
   (cons '%handler-case (cons form clauses)))
 
+;; The standard condition types and their direct supertypes (CLHS 9, Figure
+;; 9-1 and each type's page), so that a clause naming `stream-error` catches
+;; an `end-of-file` and one naming `arithmetic-error` a `division-by-zero`
+;; (#81). A clause naming `error`, `condition` or `t` catches everything, as
+;; before: every condition Quokka signals is an error. Conditions a program
+;; defines are tier 2's (`define-condition`), and will put their own types
+;; in this lattice; since the compiler lists a clause's subtypes when it
+;; compiles the clause, tier 2 will have to test the type when the clause
+;; runs instead, as SBCL's `typep` does.
+(setq %condition-supertypes
+      '((arithmetic-error error) (cell-error error) (control-error error)
+        (division-by-zero arithmetic-error) (end-of-file stream-error)
+        (error serious-condition) (file-error error)
+        (floating-point-inexact arithmetic-error)
+        (floating-point-invalid-operation arithmetic-error)
+        (floating-point-overflow arithmetic-error)
+        (floating-point-underflow arithmetic-error)
+        (package-error error) (parse-error error) (print-not-readable error)
+        (program-error error) (reader-error parse-error stream-error)
+        (serious-condition condition) (simple-condition condition)
+        (simple-error simple-condition error)
+        (simple-type-error simple-condition type-error)
+        (simple-warning simple-condition warning)
+        (storage-condition serious-condition) (stream-error error)
+        (style-warning warning) (type-error error) (unbound-slot cell-error)
+        (unbound-variable cell-error) (undefined-function cell-error)
+        (warning condition)))
+
+;; Is TYPE, a condition type's name, SUPERTYPE or a subtype of it?
+(defun %condition-subtype-p (type supertype)
+  (if (eq type supertype)
+      t
+      (%some-condition-subtype-p (cdr (%condition-entry type %condition-supertypes))
+                                 supertype)))
+
+(defun %some-condition-subtype-p (types supertype)
+  (if (consp types)
+      (if (%condition-subtype-p (car types) supertype)
+          t
+          (%some-condition-subtype-p (cdr types) supertype))
+      nil))
+
+(defun %condition-entry (type entries)
+  (if (consp entries)
+      (if (eq (car (car entries)) type) (car entries) (%condition-entry type (cdr entries)))
+      nil))
+
+;; TYPE and every standard condition type below it: what a compiled
+;; `handler-case` clause naming TYPE tests the condition's type against.
+(defun %condition-subtypes (type)
+  (cons type (%condition-subtypes-in type %condition-supertypes)))
+
+(defun %condition-subtypes-in (type entries)
+  (if (consp entries)
+      (if (if (eq (car (car entries)) type) nil (%condition-subtype-p (car (car entries)) type))
+          (cons (car (car entries)) (%condition-subtypes-in type (cdr entries)))
+          (%condition-subtypes-in type (cdr entries)))
+      nil))
+
 ;; Run a form; if it signals, yield nil and the condition — two values, so a
 ;; caller can tell "it failed" from "it returned nil".
 (defmacro ignore-errors (&rest forms)
@@ -793,13 +852,28 @@
 ;; `&optional` gives the missing-values rule for free — a variable with no
 ;; value gets nil — and `&rest` discards the extras. The lambda list work from
 ;; chapter 18 doing a job nobody had it in mind for.
+;; BODY's declarations go first in the function, where they declare its
+;; parameters (a `special` one binds dynamically), and an empty body is
+;; nil, not the extra values (#80).
 (defmacro multiple-value-bind (variables form &body body)
   (let ((extra (gensym)))
     `(multiple-value-call
          (lambda (&optional ,@variables &rest ,extra)
+           ,@(%leading-declarations body)
            ,extra
-           ,@body)
+           ,@(if (%after-declarations body) (%after-declarations body) (list nil)))
        ,form)))
+
+;; A body's leading `declare` forms, and what follows them.
+(defun %leading-declarations (body)
+  (if (and (consp body) (consp (car body)) (eq (car (car body)) 'declare))
+      (cons (car body) (%leading-declarations (cdr body)))
+      nil))
+
+(defun %after-declarations (body)
+  (if (and (consp body) (consp (car body)) (eq (car (car body)) 'declare))
+      (%after-declarations (cdr body))
+      body))
 
 (defmacro multiple-value-list (form)
   `(multiple-value-call (function list) ,form))

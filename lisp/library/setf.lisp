@@ -252,11 +252,16 @@
                    (t (walk (cdr rest) (cons (car rest) required))))))
     (walk lambda-list nil)))
 
+;;; The place's subforms, then the arguments, then the place is read (CLHS
+;;; 5.1.3): `(incf x (setf x 1))` reads x after the delta has set it, and is
+;;; 2 (#80). The arguments get temporaries so the reader can come last.
 (defun %modify-place (place function arguments environment)
   (multiple-value-bind (vars vals stores writer reader) (get-setf-expansion place environment)
-    `(let* (,@(%bindings vars vals)
-            (,(%one-store stores place) (,function ,reader ,@arguments)))
-       ,writer)))
+    (multiple-value-bind (argument-vars argument-vals argument-forms) (%temporaries arguments)
+      `(let* (,@(%bindings vars vals)
+              ,@(%bindings argument-vars argument-vals)
+              (,(%one-store stores place) (,function ,reader ,@argument-forms)))
+         ,writer))))
 
 (define-modify-macro incf (&optional (delta 1)) +)
 (define-modify-macro decf (&optional (delta 1)) -)

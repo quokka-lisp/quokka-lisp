@@ -77,3 +77,12 @@
   :lisp-implementation-version :short-site-name :long-site-name)
 
 (%deferred "tier-2:random" :random :make-random-state :random-state-p)
+
+;;; Tests where SBCL, the oracle, gives the answer Quokka gives and the suite
+;;; expects another (#81). Each was checked by running the test's form in
+;;; SBCL 2.6.
+;;;
+;;; print.array.level.8: an array nested too deep for *print-level*. SBCL
+;;; prints `#2A((#2A#))`, its rank and then `#` for the contents; the suite
+;;; expects `#2A((#))`.
+(%follows-sbcl "same-as-sbcl" :print.array.level.8)

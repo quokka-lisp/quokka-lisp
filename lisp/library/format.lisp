@@ -315,24 +315,38 @@
 ;;; ~{…~}: the clause once per element of a list argument — or, with `@`, of
 ;;; the remaining arguments. `:` makes each element a sublist of arguments.
 ;;; ~^ inside ends the iteration when nothing is left to iterate over.
+;;;
+;;; An empty body, `~{~}`, takes its control from the arguments, before the
+;;; list it iterates over (CLHS 22.3.7.4): a string, or a function such as
+;;; `formatter` makes, called with the stream and the arguments and
+;;; returning the ones it did not use (#81; it looped).
 (defun %format-iteration (directive stream args colon at)
   (let* ((body (first (%format-directive-clauses directive)))
          (limit (car (%params directive args '(nil))))
+         (control (if body nil (%next-arg args)))
+         (body (if (stringp control) (%parse-control control) body))
+         (function (if (stringp control) nil control))
          (source (if at nil (%next-arg args)))
          (state (if at args (make-%format-args :all source :rest source)))
-         (once (%format-directive-once directive))
          (count 0))
     (catch 'format-iteration
       (let ((%format-escape-tag (if colon 'format-step 'format-iteration))
             (%format-steps state))
         (do () ((or (and limit (>= count limit))
-                    (and (null (%format-args-rest state)) (not (and once (= count 0))))))
+                    (and (null (%format-args-rest state))
+                         (not (and (%format-directive-once directive) (= count 0))))))
           (if colon
               (let ((sublist (%next-arg state)))
                 (catch 'format-step
-                  (%run-items body stream (make-%format-args :all sublist :rest sublist))))
-              (%run-items body stream state))
+                  (%format-iteration-step body function stream
+                                          (make-%format-args :all sublist :rest sublist))))
+              (%format-iteration-step body function stream state))
           (setq count (+ count 1)))))))
+
+(defun %format-iteration-step (body function stream state)
+  (if function
+      (setf (%format-args-rest state) (apply function stream (%format-args-rest state)))
+      (%run-items body stream state)))
 
 ;;; ~^: stop if nothing is left. Inside ~:{ it ends the step, and ~:^ the
 ;;; whole iteration; elsewhere it ends the innermost ~{, or the whole format.

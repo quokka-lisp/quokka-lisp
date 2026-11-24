@@ -944,8 +944,10 @@ cons BUTLAST.7
 cons BUTLAST.8
 cons BUTLAST.9
 cons BUTLAST.ERROR.1
+cons BUTLAST.ERROR.2
 cons BUTLAST.ERROR.3
 cons BUTLAST.ERROR.4
+cons BUTLAST.ERROR.5
 cons BUTLAST.ORDER.1
 cons BUTLAST.ORDER.2
 cons CAAAAR.ERROR.1
@@ -1461,6 +1463,10 @@ cons NBUTLAST.7
 cons NBUTLAST.8
 cons NBUTLAST.9
 cons NBUTLAST.ERROR.1
+cons NBUTLAST.ERROR.10
+cons NBUTLAST.ERROR.2
+cons NBUTLAST.ERROR.3
+cons NBUTLAST.ERROR.4
 cons NBUTLAST.ERROR.5
 cons NBUTLAST.ERROR.6
 cons NBUTLAST.ERROR.7
@@ -2428,6 +2434,7 @@ data-and-control-flow DEFSETF.7A
 data-and-control-flow DEFUN.1
 data-and-control-flow DEFUN.2
 data-and-control-flow DEFUN.3
+data-and-control-flow DEFUN.4
 data-and-control-flow DEFUN.5
 data-and-control-flow DEFUN.6
 data-and-control-flow DEFUN.7
@@ -2866,18 +2873,24 @@ data-and-control-flow MACROLET.19
 data-and-control-flow MACROLET.2
 data-and-control-flow MACROLET.20
 data-and-control-flow MACROLET.21
+data-and-control-flow MACROLET.22
+data-and-control-flow MACROLET.22A
 data-and-control-flow MACROLET.23
 data-and-control-flow MACROLET.24
 data-and-control-flow MACROLET.25
 data-and-control-flow MACROLET.26
+data-and-control-flow MACROLET.27
+data-and-control-flow MACROLET.28
 data-and-control-flow MACROLET.29
 data-and-control-flow MACROLET.3
 data-and-control-flow MACROLET.30
+data-and-control-flow MACROLET.31
 data-and-control-flow MACROLET.32
 data-and-control-flow MACROLET.33
 data-and-control-flow MACROLET.34
 data-and-control-flow MACROLET.35
 data-and-control-flow MACROLET.36
+data-and-control-flow MACROLET.37
 data-and-control-flow MACROLET.38
 data-and-control-flow MACROLET.39
 data-and-control-flow MACROLET.4
@@ -2888,6 +2901,7 @@ data-and-control-flow MACROLET.43
 data-and-control-flow MACROLET.44
 data-and-control-flow MACROLET.45
 data-and-control-flow MACROLET.46
+data-and-control-flow MACROLET.47
 data-and-control-flow MACROLET.48
 data-and-control-flow MACROLET.49
 data-and-control-flow MACROLET.5
@@ -2900,13 +2914,16 @@ data-and-control-flow MACROLET.8
 data-and-control-flow MACROLET.9
 data-and-control-flow MULTIPLE-VALUE-BIND.1
 data-and-control-flow MULTIPLE-VALUE-BIND.10
+data-and-control-flow MULTIPLE-VALUE-BIND.11
 data-and-control-flow MULTIPLE-VALUE-BIND.12
+data-and-control-flow MULTIPLE-VALUE-BIND.13
 data-and-control-flow MULTIPLE-VALUE-BIND.14
 data-and-control-flow MULTIPLE-VALUE-BIND.2
 data-and-control-flow MULTIPLE-VALUE-BIND.3
 data-and-control-flow MULTIPLE-VALUE-BIND.4
 data-and-control-flow MULTIPLE-VALUE-BIND.5
 data-and-control-flow MULTIPLE-VALUE-BIND.6
+data-and-control-flow MULTIPLE-VALUE-BIND.7
 data-and-control-flow MULTIPLE-VALUE-BIND.8
 data-and-control-flow MULTIPLE-VALUE-BIND.9
 data-and-control-flow MULTIPLE-VALUE-BIND.ERROR.1
@@ -3307,6 +3324,8 @@ data-and-control-flow TAGBODY.11
 data-and-control-flow TAGBODY.12
 data-and-control-flow TAGBODY.13
 data-and-control-flow TAGBODY.14
+data-and-control-flow TAGBODY.15
+data-and-control-flow TAGBODY.16
 data-and-control-flow TAGBODY.17
 data-and-control-flow TAGBODY.18
 data-and-control-flow TAGBODY.2
@@ -3317,6 +3336,7 @@ data-and-control-flow TAGBODY.6
 data-and-control-flow TAGBODY.7
 data-and-control-flow TAGBODY.8
 data-and-control-flow TAGBODY.9
+data-and-control-flow THROW-ERROR
 data-and-control-flow UNLESS.1
 data-and-control-flow UNLESS.10
 data-and-control-flow UNLESS.11
@@ -3420,6 +3440,7 @@ eval-and-compile DECLAIM.9
 eval-and-compile DECLARATION.1
 eval-and-compile DECLARATION.2
 eval-and-compile DECLARATION.3
+eval-and-compile DEFINE-COMPILER-MACRO.7
 eval-and-compile DEFINE-COMPILER-MACRO.8
 eval-and-compile DEFINE-COMPILER-MACRO.ERROR.1
 eval-and-compile DEFINE-COMPILER-MACRO.ERROR.2
@@ -3437,6 +3458,7 @@ eval-and-compile DEFMACRO.16
 eval-and-compile DEFMACRO.17
 eval-and-compile DEFMACRO.17A
 eval-and-compile DEFMACRO.18
+eval-and-compile DEFMACRO.19
 eval-and-compile DEFMACRO.20
 eval-and-compile DEFMACRO.21
 eval-and-compile DEFMACRO.3
@@ -3444,6 +3466,9 @@ eval-and-compile DEFMACRO.6
 eval-and-compile DEFMACRO.7
 eval-and-compile DEFMACRO.8
 eval-and-compile DEFMACRO.9
+eval-and-compile DEFMACRO.ERROR.1
+eval-and-compile DEFMACRO.ERROR.2
+eval-and-compile DEFMACRO.ERROR.3
 eval-and-compile DYNAMIC-EXTENT.1
 eval-and-compile DYNAMIC-EXTENT.10
 eval-and-compile DYNAMIC-EXTENT.11
@@ -3460,6 +3485,7 @@ eval-and-compile DYNAMIC-EXTENT.7
 eval-and-compile DYNAMIC-EXTENT.8
 eval-and-compile DYNAMIC-EXTENT.9
 eval-and-compile EVAL-AND-COMPILE-FNS
+eval-and-compile EVAL-AND-COMPILE-MACROS
 eval-and-compile EVAL-WHEN.10
 eval-and-compile EVAL-WHEN.11
 eval-and-compile EVAL-WHEN.12
@@ -3559,9 +3585,14 @@ eval-and-compile LAMBDA.60
 eval-and-compile LAMBDA.61
 eval-and-compile LAMBDA.62
 eval-and-compile LAMBDA.63
+eval-and-compile LAMBDA.64
 eval-and-compile LAMBDA.7
 eval-and-compile LAMBDA.8
 eval-and-compile LAMBDA.9
+eval-and-compile LAMBDA.ERROR.1
+eval-and-compile LAMBDA.ERROR.2
+eval-and-compile LAMBDA.ERROR.3
+eval-and-compile LAMBDA.MACRO.1
 eval-and-compile LAMBDA.MACRO.2
 eval-and-compile LOCALLY.1
 eval-and-compile LOCALLY.2
@@ -3961,6 +3992,7 @@ numbers DECF.5
 numbers DECF.9
 numbers DECF.ORDER.2
 numbers DECF.ORDER.3
+numbers DECF.ORDER.4
 numbers DEPOSIT-FIELD.ERROR.1
 numbers DEPOSIT-FIELD.ERROR.2
 numbers DEPOSIT-FIELD.ERROR.3
@@ -4037,6 +4069,7 @@ numbers INCF.5
 numbers INCF.9
 numbers INCF.ORDER.2
 numbers INCF.ORDER.3
+numbers INCF.ORDER.4
 numbers INTEGER-LENGTH.ERROR.1
 numbers INTEGER-LENGTH.ERROR.2
 numbers INTEGER-LENGTH.ERROR.3
@@ -4084,6 +4117,10 @@ numbers LOGANDC2.ERROR.3
 numbers LOGANDC2.ERROR.4
 numbers LOGANDC2.ERROR.5
 numbers LOGANDC2.ORDER.1
+numbers LOGBITP.3
+numbers LOGBITP.4
+numbers LOGBITP.5
+numbers LOGBITP.6
 numbers LOGBITP.ERROR.1
 numbers LOGBITP.ERROR.2
 numbers LOGBITP.ERROR.3
@@ -4634,6 +4671,7 @@ packages USE-PACKAGE.ERROR.2
 packages WITH-PACKAGE-ITERATOR.11
 packages WITH-PACKAGE-ITERATOR.22
 printer FORMAT.:@{.ERROR.5
+printer FORMAT.:{.6
 printer FORMAT.:{.ERROR.1
 printer FORMAT.:{.ERROR.3
 printer FORMAT.:{.ERROR.4
@@ -4684,7 +4722,10 @@ printer FORMAT.S.1
 printer FORMAT.S.3
 printer FORMAT.S.4
 printer FORMAT.S.5
+printer FORMAT.{.17
 printer FORMAT.{.18
+printer FORMAT.{.19
+printer FORMAT.{.20
 printer FORMAT.{.ERROR.5
 printer PPRINT-EXIT-IF-LIST-EXHAUSTED.ERROR.1
 printer PPRINT-EXIT-IF-LIST-EXHAUSTED.ERROR.1-UNSAFE
@@ -4907,6 +4948,8 @@ reader READ-PRESERVING-WHITESPACE.7
 reader READ-PRESERVING-WHITESPACE.8
 reader READ-PRESERVING-WHITESPACE.9
 reader READ-PRESERVING-WHITESPACE.ERROR.1
+reader READ-PRESERVING-WHITESPACE.ERROR.2
+reader READ-PRESERVING-WHITESPACE.ERROR.3
 reader READ-PRESERVING-WHITESPACE.ERROR.4
 reader READ-PRESERVING-WHITESPACE.ERROR.5
 reader READ-PRESERVING-WHITESPACE.ERROR.6
@@ -4928,6 +4971,8 @@ reader READ.7
 reader READ.8
 reader READ.9
 reader READ.ERROR.1
+reader READ.ERROR.2
+reader READ.ERROR.3
 reader READ.ERROR.4
 reader READ.ERROR.5
 reader READ.ERROR.6
@@ -5478,6 +5523,7 @@ sequences ELT.18
 sequences ELT.19
 sequences ELT.1A
 sequences ELT.1B
+sequences ELT.2
 sequences ELT.3
 sequences ELT.4
 sequences ELT.5
@@ -5748,6 +5794,7 @@ sequences LENGTH.ERROR.7
 sequences LENGTH.ERROR.8
 sequences LENGTH.LIST.1
 sequences LENGTH.LIST.2
+sequences LENGTH.LIST.3
 sequences LENGTH.NONSIMPLE-VECTOR.1
 sequences LENGTH.NONSIMPLE-VECTOR.2
 sequences LENGTH.STRING.1

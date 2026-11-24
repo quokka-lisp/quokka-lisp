@@ -1064,6 +1064,20 @@ impl<'a, 'h> Vm<'a, 'h> {
         false
     }
 
+    /// Is a `catch` for TAG open anywhere on the stack? The same walk.
+    fn has_catch(&self, tag: Value<'h>) -> bool {
+        let mut at = self.mc.mp();
+        while at != usize::MAX {
+            if self.mark_slot(at, mark::KIND).as_fixnum() == Some(mark::CATCH)
+                && self.mark_slot(at, mark::DATUM) == tag
+            {
+                return true;
+            }
+            at = self.read_index(at, mark::PREV);
+        }
+        false
+    }
+
     /// Pick up the host's answer, or go on waiting for it.
     ///
     /// The answer goes exactly where the primitive's return value would have
@@ -1430,6 +1444,15 @@ impl Steppable for Vm<'_, '_> {
             Op::Throw => {
                 let v = self.pop();
                 let tag = self.pop();
+                // A throw to a tag nobody is catching is a `control-error`
+                // signalled where the throw is, before anything unwinds, so
+                // a handler around it still exists to catch it (CLHS
+                // `throw`; ansi-test throw-error, #80). Found only after
+                // unwinding everything, it could only stop the machine.
+                if !self.has_catch(tag) {
+                    let what = crate::printer::print(self.mc, tag);
+                    return self.fail(EvalError::NoSuchExit(what));
+                }
                 return self.start_unwind(tag, v);
             }
             Op::Handler => {

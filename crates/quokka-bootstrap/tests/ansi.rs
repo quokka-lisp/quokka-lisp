@@ -209,11 +209,22 @@ fn run_file(
                     quokka_vm::error::EvalError::BudgetExhausted => "TIMEOUT",
                     _ => "ESCAPED",
                 };
+                // A test that ran out of steps and uses something Quokka
+                // lacks is explained by it, as a failing one is (#81).
+                let needs = match (status, run_one(heap, host, "(rt::%timeout-needs)")) {
+                    ("TIMEOUT", Outcome::Value(text)) => unquote(&text),
+                    _ => String::new(),
+                };
+                let (status, detail) = if needs.is_empty() {
+                    (status.to_string(), e.to_string())
+                } else {
+                    ("NEEDS".to_string(), needs)
+                };
                 results.push(TestResult {
                     group: group.to_string(),
-                    status: status.to_string(),
+                    status,
                     name,
-                    detail: e.to_string(),
+                    detail,
                 });
             }
         }

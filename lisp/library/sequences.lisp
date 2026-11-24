@@ -352,19 +352,43 @@
 
 ;;; Of each set of duplicates in the range, the *last* is kept — or the
 ;;; first, with `:from-end` (CLHS).
+;;; With one of the four standard tests, a hash table of the keys seen so
+;;; far finds a duplicate at once, as SBCL's does, where comparing every pair
+;;; is quadratic: ansi-test removes the duplicates from every keyword (#81).
+;;; Without `from-end` the last of equal elements is kept, so the walk then
+;;; goes backwards.
 (defun remove-duplicates (sequence &key from-end test test-not (start 0) end key)
   (multiple-value-bind (s e) (%bounds sequence start end)
     (let* ((same (%test test test-not))
            (range (%from-list :vector (%range-list sequence s e)))
            (n (length range))
-           (flags (make-array (length sequence))))
-      (dotimes (j n)
-        (let ((this (%key key (aref range j))))
-          (if (if from-end
-                  (%some-index (lambda (k) (funcall same (%key key (aref range k)) this)) 0 j)
-                  (%some-index (lambda (k) (funcall same this (%key key (aref range k)))) (+ j 1) n))
-              (setf (aref flags (+ s j)) t))))
+           (flags (make-array (length sequence)))
+           (table-test (if test-not nil (%hash-table-test-for test))))
+      (if table-test
+          (let ((seen (make-hash-table :test table-test)))
+            (dotimes (i n)
+              (let* ((j (if from-end i (- n 1 i)))
+                     (this (%key key (aref range j))))
+                (if (nth-value 1 (gethash this seen))
+                    (setf (aref flags (+ s j)) t)
+                    (setf (gethash this seen) t)))))
+          (dotimes (j n)
+            (let ((this (%key key (aref range j))))
+              (if (if from-end
+                      (%some-index (lambda (k) (funcall same (%key key (aref range k)) this)) 0 j)
+                      (%some-index (lambda (k) (funcall same this (%key key (aref range k))))
+                                   (+ j 1) n))
+                  (setf (aref flags (+ s j)) t)))))
       (%without-marked sequence flags))))
+
+;;; The hash table test that is the same as TEST, a `:test` argument, or nil.
+(defun %hash-table-test-for (test)
+  (cond ((null test) 'eql)
+        ((or (eq test 'eq) (eq test #'eq)) 'eq)
+        ((or (eq test 'eql) (eq test #'eql)) 'eql)
+        ((or (eq test 'equal) (eq test #'equal)) 'equal)
+        ((or (eq test 'equalp) (eq test #'equalp)) 'equalp)
+        (t nil)))
 
 (defun delete-duplicates (sequence &key from-end test test-not (start 0) end key)
   (remove-duplicates sequence :from-end from-end :test test :test-not test-not

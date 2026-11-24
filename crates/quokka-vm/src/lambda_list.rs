@@ -204,9 +204,9 @@ pub fn rewrite<'h>(
                 }
                 rest = Some(item);
             }
-            Section::Optional => optional.push(parse_entry(mc, item, false)?),
-            Section::Key => keys.push(parse_entry(mc, item, true)?),
-            Section::Aux => aux.push(parse_entry(mc, item, false)?),
+            Section::Optional => optional.push(parse_entry(mc, item, false, false)?),
+            Section::Key => keys.push(parse_entry(mc, item, true, false)?),
+            Section::Aux => aux.push(parse_entry(mc, item, false, false)?),
         }
     }
     if !cursor.is_nil() {
@@ -307,16 +307,59 @@ pub fn rewrite<'h>(
         bindings.push(b);
     }
 
-    Ok((simple, let_star(mc, &bindings, body)))
+    Ok((simple, let_star(mc, &bindings, body, &required)))
 }
 
 /// `((let* BINDINGS . BODY))`, a body of one form.
-fn let_star<'h>(mc: &mut Mutation<'h>, bindings: &[Value<'h>], body: Value<'h>) -> Value<'h> {
+///
+/// A `special` declaration of a REQUIRED parameter also goes in front of the
+/// `let*`, where it reaches the function that binds the parameter, so that
+/// it is bound dynamically before any default form runs: CLHS 3.4.1 binds
+/// each parameter before the next one's default is evaluated (ansi-test
+/// lambda.64, #80). Nothing else is copied there. A declaration of a name
+/// the lambda list does not bind is *free*, and CLHS 3.3.4 keeps a free
+/// declaration away from the default forms (ansi-test lambda.52), which is
+/// where the body's declarations inside the `let*` leave it.
+fn let_star<'h>(
+    mc: &mut Mutation<'h>,
+    bindings: &[Value<'h>],
+    body: Value<'h>,
+    required: &[Value<'h>],
+) -> Value<'h> {
+    let mut specials = Vec::new();
+    let mut rest = body;
+    while rest.is_cons() && mc.car(rest).is_cons() && mc.symbol_is(mc.car(mc.car(rest)), "DECLARE")
+    {
+        let mut specifiers = mc.cdr(mc.car(rest));
+        while specifiers.is_cons() {
+            let specifier = mc.car(specifiers);
+            if specifier.is_cons() && mc.symbol_is(mc.car(specifier), "SPECIAL") {
+                let mut names = mc.cdr(specifier);
+                while names.is_cons() {
+                    if required.contains(&mc.car(names)) {
+                        specials.push(mc.car(names));
+                    }
+                    names = mc.cdr(names);
+                }
+            }
+            specifiers = mc.cdr(specifiers);
+        }
+        rest = mc.cdr(rest);
+    }
     let bindings = list_of(mc, bindings);
     let let_star = mc.intern("LET*");
     let form = mc.cons(bindings, body);
     let form = mc.cons(let_star, form);
-    mc.cons(form, Value::NIL)
+    let out = mc.cons(form, Value::NIL);
+    if specials.is_empty() {
+        return out;
+    }
+    let special = mc.intern("SPECIAL");
+    let declare = mc.intern("DECLARE");
+    let names = list_of(mc, &specials);
+    let specifier = mc.cons(special, names);
+    let declaration = list2(mc, declare, specifier);
+    mc.cons(declaration, out)
 }
 
 /// A macro's lambda list, or `destructuring-bind`'s, rewritten.
@@ -339,7 +382,7 @@ fn rewrite_destructuring<'h>(
     if kind == Kind::Destructuring {
         destructure(mc, params, whole, &mut bindings)?;
         let simple = mc.cons(whole, Value::NIL);
-        return Ok((simple, let_star(mc, &bindings, body)));
+        return Ok((simple, let_star(mc, &bindings, body, &[])));
     }
     let environment = mc.gensym();
     // `&environment` may stand anywhere at the top level; take it out.
@@ -378,7 +421,7 @@ fn rewrite_destructuring<'h>(
     let arguments = list2(mc, cdr, whole);
     destructure(mc, pattern, arguments, &mut bindings)?;
     let simple = list2(mc, whole, environment);
-    Ok((simple, let_star(mc, &bindings, body)))
+    Ok((simple, let_star(mc, &bindings, body, &[])))
 }
 
 /// Take a nested pattern apart, appending `let*` bindings that bind every
@@ -498,7 +541,7 @@ fn destructure<'h>(
                 bindings.push(b);
             }
             Section::Optional => {
-                let e = parse_entry(mc, entry, false)?;
+                let e = parse_entry(mc, entry, false, true)?;
                 let default = e.default.unwrap_or(Value::NIL);
                 let empty = list2(mc, null, cursor);
                 if let Some(given) = e.supplied {
@@ -515,8 +558,8 @@ fn destructure<'h>(
                 bindings.push(b);
             }
             Section::Rest => return Err(bad("&rest takes one name")),
-            Section::Key => keys.push(parse_entry(mc, entry, true)?),
-            Section::Aux => aux.push(parse_entry(mc, entry, false)?),
+            Section::Key => keys.push(parse_entry(mc, entry, true, true)?),
+            Section::Aux => aux.push(parse_entry(mc, entry, false, false)?),
         }
     }
 
@@ -530,7 +573,7 @@ fn destructure<'h>(
         tail_taken = true;
     }
     if saw_key {
-        destructure_keys(mc, &keys, cursor, allow_other_keys, bindings);
+        destructure_keys(mc, &keys, cursor, allow_other_keys, bindings)?;
     }
     // Anything still in the cursor is an argument the pattern did not ask for.
     if !tail_taken {
@@ -563,7 +606,7 @@ fn destructure_keys<'h>(
     cursor: Value<'h>,
     allow_other_keys: bool,
     bindings: &mut Vec<Value<'h>>,
-) {
+) -> Result<(), EvalError> {
     let quote_ = mc.intern("QUOTE");
     let eq = mc.intern("EQ");
     let if_ = mc.intern("IF");
@@ -601,9 +644,9 @@ fn destructure_keys<'h>(
         }
         let default = e.default.unwrap_or(Value::NIL);
         let pick = list_of(mc, &[if_, missing, default, value]);
-        let b = list2(mc, e.name, pick);
-        bindings.push(b);
+        bind_here(mc, e.name, pick, bindings)?;
     }
+    Ok(())
 }
 
 /// The keyword that selects a `&key` parameter: the one written, or its
@@ -642,11 +685,15 @@ fn bind_here<'h>(
 }
 
 /// `name`, `(name default)`, `(name default supplied-p)`, or for `&key` also
-/// `((:keyword name) default ...)`.
+/// `((:keyword name) default ...)`. In a destructuring pattern (PATTERNS),
+/// the name may itself be a nested pattern, `&optional ((a b) '(1 2))` or
+/// `&key ((:k (a b)))` (CLHS 3.4.4; ansi-test macrolet.22, #80); `bind_here`
+/// takes it apart.
 fn parse_entry<'h>(
     mc: &mut Mutation<'h>,
     item: Value<'h>,
     is_key: bool,
+    patterns: bool,
 ) -> Result<Entry<'h>, EvalError> {
     if mc.is_symbol(item) {
         return Ok(Entry {
@@ -665,12 +712,13 @@ fn parse_entry<'h>(
         // ((:outside inside) default)
         let keyword = mc.car(head);
         let inner = mc.cdr(head);
-        if !inner.is_cons() || !mc.is_symbol(mc.car(inner)) {
+        let named = inner.is_cons() && (mc.is_symbol(mc.car(inner)) || patterns);
+        if !named {
             return Err(bad("&key wants (keyword variable) when naming both"));
         }
         (mc.car(inner), Some(keyword))
     } else {
-        if !mc.is_symbol(head) {
+        if !(mc.is_symbol(head) || patterns && head.is_cons()) {
             return Err(bad("wants a symbol for a parameter name"));
         }
         (head, None)

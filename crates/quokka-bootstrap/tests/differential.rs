@@ -153,6 +153,8 @@ tier1_cases! {
     nil_arrays => "nil-arrays",
     setf_functions => "setf-functions",
     list_gaps => "list-gaps",
+    compiler_gaps => "compiler-gaps",
+    remaining_gaps => "remaining-gaps",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -384,7 +386,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1251 :REPLACED 1000)".into())],
+        [Outcome::Value("(:FORMS 1270 :REPLACED 1016)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
