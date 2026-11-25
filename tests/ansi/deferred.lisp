@@ -33,10 +33,6 @@
   :stream-error-stream :file-error-pathname :print-not-readable-object
   :arithmetic-error-operation :arithmetic-error-operands :unbound-slot-instance)
 
-(%deferred "phase-3:types"
-  :typep :subtypep :type-of :deftype :typecase :etypecase :ctypecase :check-type
-  :upgraded-complex-part-type)
-
 (%deferred "tier-2:streams"
   :open :close :with-open-file :with-open-stream :read-line :read-byte :write-byte
   :make-two-way-stream :make-echo-stream :make-broadcast-stream
@@ -64,7 +60,8 @@
   :file-write-date :file-author :user-homedir-pathname)
 
 (%deferred "deferred:complex-numbers"
-  :complex :complexp :realpart :imagpart :cis :phase :conjugate)
+  :complex :complexp :realpart :imagpart :cis :phase :conjugate
+  :upgraded-complex-part-type)
 
 (%deferred "deferred:compile-file" :compile-file :compile-file-pathname :with-compilation-unit)
 
@@ -85,3 +82,8 @@
 ;;; prints `#2A((#2A#))`, its rank and then `#` for the contents; the suite
 ;;; expects `#2A((#))`.
 (%follows-sbcl "same-as-sbcl" :print.array.level.8)
+
+;;; typep.error.7: `(typep nil '(function () t))`. CLHS says `typep`
+;;; refuses a function type specifier; SBCL refuses it only when the object
+;;; is a function, and answers nil for nil (#124).
+(%follows-sbcl "same-as-sbcl" :typep.error.7)

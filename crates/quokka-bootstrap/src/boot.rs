@@ -148,6 +148,14 @@ pub const LIBRARY: &[(&str, &str)] = &[
         include_str!("../../../lisp/library/ratios.lisp"),
     ),
     (
+        "types.lisp",
+        include_str!("../../../lisp/library/types.lisp"),
+    ),
+    (
+        "type-algebra.lisp",
+        include_str!("../../../lisp/library/type-algebra.lisp"),
+    ),
+    (
         "char-names.lisp",
         include_str!("../../../lisp/library/char-names.lisp"),
     ),

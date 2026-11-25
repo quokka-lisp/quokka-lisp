@@ -154,15 +154,20 @@
 ;;; environment; the rest of it is matched against the call's arguments —
 ;;; after `#'name` when the call is `(funcall #'name ...)`.
 (defmacro define-compiler-macro (name lambda-list &body body)
-  (let ((form (or (%lambda-list-marker '&whole lambda-list) (gensym)))
-        (environment (or (%lambda-list-marker '&environment lambda-list) (gensym))))
+  (let* ((form (or (%lambda-list-marker '&whole lambda-list) (gensym)))
+         (environment (or (%lambda-list-marker '&environment lambda-list) (gensym)))
+         ;; The body is in a block named after the function, as a macro's
+         ;; is (CLHS 3.2.2.1.1); for (setf name), the block is NAME.
+         (block-name (if (consp name) (second name) name))
+         (body (if (and (stringp (car body)) (cdr body)) (cdr body) body)))
     `(progn
        (setf (compiler-macro-function ',name)
              (lambda (,form ,environment)
                ,environment
                (destructuring-bind ,(%without-markers lambda-list)
                    (if (eq (car ,form) 'funcall) (cddr ,form) (cdr ,form))
-                 ,@body)))
+                 ,@(%body-declarations body)
+                 (block ,block-name ,@(%body-forms body)))))
        ',name)))
 
 ;;; The variable after MARKER (`&whole`, `&environment`) in LAMBDA-LIST, or nil.
@@ -178,14 +183,20 @@
          (%without-markers (cddr lambda-list)))
         (t (cons (car lambda-list) (%without-markers (cdr lambda-list))))))
 
+;;; A compiler macro for (setf NAME) is kept under the symbol that holds
+;;; NAME's setf function (chapter 66), since the table compares keys with
+;;; `eq` and every (setf NAME) a program writes is a new list.
+(defun %compiler-macro-key (name)
+  (if (consp name) (%setf-function-symbol (second name)) name))
+
 (defun compiler-macro-function (name &optional environment)
   environment
-  (values (gethash name %compiler-macros)))
+  (values (gethash (%compiler-macro-key name) %compiler-macros)))
 
 (defun %set-compiler-macro-function (name function)
   (if function
-      (setf (gethash name %compiler-macros) function)
-      (remhash name %compiler-macros))
+      (setf (gethash (%compiler-macro-key name) %compiler-macros) function)
+      (remhash (%compiler-macro-key name) %compiler-macros))
   function)
 
 (defsetf compiler-macro-function (name &optional environment) (function)

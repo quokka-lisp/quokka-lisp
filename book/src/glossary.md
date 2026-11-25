@@ -101,6 +101,9 @@ caller also uses, so the caller's variable silently disappears inside the
 expansion. The classic macro bug; Common Lisp's cure is to bind a
 [gensym](#gensym) instead, and Scheme's is [hygiene](#hygiene). ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
+<a id="canonical-type"></a>
+**Canonical type.** A [type specifier](#type-specifier) rewritten into a standard form, so that two specifiers naming the same set of objects are written the same way. Quokka's, like SBCL's *ctypes*, divide the world into disjoint [kinds](#kind) and say for each kind which of its objects the type holds; `subtypep` then asks whether *A and not B* is empty. ([72](part-7-objects/72-what-is-a-type.md))
+
 <a id="car"></a>
 **car.** The first slot of a [cons cell](#cons-cell) — the item. The name is
 an abbreviation of an IBM 704 instruction from 1958 and means nothing now. Read
@@ -461,6 +464,9 @@ marker instead. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 breaking its callers. Matched by [keyword](#keyword), leftmost occurrence
 first, and an unrecognised one is an error unless `&allow-other-keys` says
 otherwise. ([18](part-2-reading-and-running/18-lambda-lists.md))
+
+<a id="kind"></a>
+**Kind (of object).** In Quokka's [canonical types](#canonical-type), one of the disjoint groups every object falls into: integers, ratios, floats, characters, symbols, keywords, conses, arrays, structures, conditions, functions and a few more. Because no object is of two kinds, `and`, `or` and `not` on types can be worked out one kind at a time. ([72](part-7-objects/72-what-is-a-type.md))
 
 <a id="label"></a>
 **Label.** A name standing for a position in a function's instructions, so
@@ -964,6 +970,9 @@ and delivered it again, which was *almost* right. ([23](part-2-reading-and-runni
 <a id="two-s-complement"></a>
 **Two's complement.** How machines store signed integers: the top bit counts as a large negative value. A fixed width therefore holds one more negative number than positive, so negating the most negative one overflows. Common Lisp's bit operations behave as if every integer were stored this way, infinitely wide; Quokka stores bignums as sign and magnitude and converts for `logand` and its relatives. ([39](part-6-self-hosting/39-printing-in-lisp.md), [47](part-6-self-hosting/47-bignums.md))
 
+<a id="type-specifier"></a>
+**Type specifier.** A Lisp object naming a set of objects: a symbol such as `integer`, a list such as `(integer 0 9)` or `(or string symbol)`, or a name a program gave one with `deftype`. `typep` asks whether one object is in the set, `subtypep` whether one set lies inside another. ([72](part-7-objects/72-what-is-a-type.md))
+
 <a id="unbound"></a>
 **Unbound.** A variable or function cell with no value at all, which is not `nil`, since `nil` is a value. Reading one is an error. Inside, the cell holds a marker only Rust can see, so that the difference between "this variable does not exist" and "this variable holds the empty list" is one the system can tell; `boundp` asks, and `makunbound` puts the marker back. ([8](part-2-reading-and-running/08-text-becomes-structure.md), [44](part-6-self-hosting/44-the-last-three.md))
 
@@ -978,6 +987,9 @@ type refers to it; only whoever holds the object does. See [gensym](#gensym).
 
 <a id="unwinding"></a>
 **Unwinding.** Discarding frames until one matches, running any cleanups passed on the way. The third half-step of the machine, and what every non-local exit is made of. ([14](part-2-reading-and-running/14-leaving-early.md))
+
+<a id="upgrading"></a>
+**Upgrading (an element type).** Replacing the element type a program asks an array for with the nearest one the implementation can store: CLHS lets an implementation keep only a few specialised kinds of array. Quokka's are `t`, `character`, `bit` and `nil`, so `(make-array 3 :element-type 'fixnum)` makes an array of `t`, and `base-char` upgrades to `character`. `upgraded-array-element-type` says what a type upgrades to. ([55](part-6-self-hosting/55-arrays.md), [72](part-7-objects/72-what-is-a-type.md))
 
 <a id="value"></a>
 **Value.** One piece of Lisp data as the machine holds it: in Quokka, exactly one

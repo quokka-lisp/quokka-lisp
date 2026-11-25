@@ -100,3 +100,14 @@
 (progn (setf (compiler-macro-function 'compile-test-tag) nil)
        (list (compiler-macro-function 'compile-test-tag)
              (funcall (compile nil '(lambda () (compile-test-tag :k))))))
+
+;; A compiler macro's body is in a block named after the function.
+(defun cm-early (x) x)
+(define-compiler-macro cm-early (&whole form x) (declare (ignore x)) (return-from cm-early form))
+(funcall (compiler-macro-function 'cm-early) '(cm-early 5) nil)
+(cm-early 5)
+(defun cm-first (x) (car x))
+(defun (setf cm-first) (new x) (setf (car x) new))
+(define-compiler-macro (setf cm-first) (new x) `(setf (car ,x) ,new))
+(functionp (compiler-macro-function '(setf cm-first)))
+(let ((arg (list 1 2))) (list (setf (cm-first arg) 'z) arg))

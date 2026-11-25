@@ -27,7 +27,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// The groups tier 1 is measured by (#60, decision 3), in this order.
-/// `arrays` joined when step T moved arrays into tier 1 (#67).
+/// `arrays` joined when step T moved arrays into tier 1 (#67), and
+/// `types-and-classes` when phase 3 began with the type system (#124).
 const GROUPS: &[&str] = &[
     "cons",
     "sequences",
@@ -44,6 +45,7 @@ const GROUPS: &[&str] = &[
     "iteration",
     "hash-tables",
     "structures",
+    "types-and-classes",
 ];
 
 /// What ansi-test's own loader (`gclload1.lsp`) loads before any group:

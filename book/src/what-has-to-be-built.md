@@ -249,6 +249,10 @@ before the work, kept so that what happens can correct it. Its gate falls in
 the middle rather than at the end, at chapter 42, where the compiler is shown
 to compile itself into exactly the same code; the chapters after it build the
 rest of tier 1 and measure it against the standard's own test suite.
+Part VII is **phase 3**, which builds towards a debugger in which a
+function can be fixed from inside an error and the call retried. It starts
+with objects: first a type system, then CLOS, the object system that the
+condition system and every later tool dispatch through.
 
 Each chapter answers one question.
 
@@ -325,6 +329,7 @@ Each chapter answers one question.
 | 69 | [The last gaps](part-6-self-hosting/69-the-last-gaps.md) | How should a measurement count a test the oracle fails too, or one that cannot finish without a deferred feature? |
 | 70 | [Ratios](part-6-self-hosting/70-ratios.md) | Why is `(/ 1 3)` neither 0 nor 0.333, and how does one number keep one representation? |
 | 71 | [Phase 2 ends](part-6-self-hosting/71-phase-two-ends.md) | What does it mean that tier 1 is complete and measured, and what does it not mean? |
+| 72 | [What is a type?](part-7-objects/72-what-is-a-type.md) | How can a program ask whether every object of one type is also of another? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -351,8 +356,9 @@ Still to come, and deliberately so:
   arrays of element type `nil`, setf functions, dotted and circular
   lists, what the compiler skipped, and the standard condition types'
   lattice.
-  Chapter 70 adds ratios, the last numbers of tier 1. Still to come are
-  `loop`, CLOS and the rest, in later phases.
+  Chapter 70 adds ratios, the last numbers of tier 1. Chapter 72 begins
+  tier 2 with the type system, `typep` and `subtypep`. Still to come are
+  CLOS, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a
   **compiler**, written in Lisp, that translates source into those instructions.

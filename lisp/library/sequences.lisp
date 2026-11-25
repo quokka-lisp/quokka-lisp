@@ -169,17 +169,7 @@
       (%do-sequence (element sequence) (push element items)))
     (%of-type result-type (nreverse items))))
 
-;;; `coerce`, for sequences and floats only: the type system is phase 3.
-;;; `t` asks for the object as it is.
-(defun coerce (object type)
-  (cond ((eq type t) object)
-        ((member type '(float double-float single-float short-float long-float))
-         (float object))
-        ((and (eq (%kind-of-type type) :list) (listp object)) object)
-        ((and (eq (%kind-of-type type) :string) (stringp object)) object)
-        ((and (eq (%kind-of-type type) :bit-vector) (bit-vector-p object)) object)
-        ((and (eq (%kind-of-type type) :vector) (vectorp object)) object)
-        (t (%of-type type (%range-list object 0 nil)))))
+;;; `coerce` is in `types.lisp`, which knows every type specifier.
 
 ;;; ------------------------------------------------------------------------
 ;;; Reading
@@ -227,7 +217,20 @@
       (revappend sequence nil)
       (%from-list (%kind-of sequence) (revappend (%range-list sequence 0 nil) nil))))
 
-(defun nreverse (sequence) (reverse sequence))
+;;; A vector is reversed in place, so that it keeps its fill pointer, its
+;;; adjustability and its type (ansi-test nreverse-vector.5). A list, and a
+;;; simple string, are reversed into a new object, which CLHS allows: a
+;;; literal string is packed and cannot be written (chapter 37), and
+;;; reversing one is common enough to keep working.
+(defun nreverse (sequence)
+  (if (and (vectorp sequence) (not (simple-string-p sequence)))
+      (do ((i 0 (+ i 1))
+           (j (- (length sequence) 1) (- j 1)))
+          ((>= i j) sequence)
+        (let ((x (aref sequence i)))
+          (setf (aref sequence i) (aref sequence j))
+          (setf (aref sequence j) x)))
+      (reverse sequence)))
 
 ;;; ------------------------------------------------------------------------
 ;;; Matching

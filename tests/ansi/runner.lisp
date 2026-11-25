@@ -599,13 +599,19 @@
       nil
       (let ((head (car form)))
         (cond ((member head '(defun defmacro defgeneric defvar defparameter defconstant
-                              defsetf define-modify-macro))
+                              defsetf define-modify-macro defclass define-condition deftype))
                (let ((name (second form)))
                  (if (and (consp name) (eq (car name) 'setf)) nil (list name))))
               ;; The suite's DEFSTRUCT-WITH-TESTS takes `defstruct`'s syntax.
               ((or (eq head 'defstruct)
                    (and (symbolp head) (string= (symbol-name head) "DEFSTRUCT-WITH-TESTS")))
                (%struct-names (second form) (cddr form)))
+              ;; ansi-test guards some definitions, as in `(unless
+              ;; (find-class 'x nil) (defstruct x ...))`.
+              ((member head '(when unless))
+               (let ((names nil))
+                 (dolist (sub (cddr form) names)
+                   (setq names (append (%defined-names sub) names)))))
               ((member head '(progn eval-when locally let let*))
                (let ((names nil))
                  (dolist (sub (cdr form) names)

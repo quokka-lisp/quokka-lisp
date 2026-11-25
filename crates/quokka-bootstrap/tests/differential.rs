@@ -174,6 +174,8 @@ tier1_cases! {
     ratios => "ratios",
     toplevel_forms => "toplevel-forms",
     review_fixes => "review-fixes",
+    types => "types",
+    subtypep => "subtypep",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -405,7 +407,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1332 :REPLACED 1072)".into())],
+        [Outcome::Value("(:FORMS 1464 :REPLACED 1193)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -881,6 +883,17 @@ impl quokka_vm::host::Host for SharedHost {
 /// to test it, since SBCL's oracle would read a real file and Quokka's
 /// harness has none. The file defines a function, changes package, and a
 /// form after the `load` sees that the package change stayed inside it.
+/// A chain of `deftype`s that never ends is an error, not a hang (#124).
+/// SBCL never returns from one, so this cannot be a differential file.
+#[test]
+fn a_circular_deftype_is_an_error() {
+    let out = run_compiled(
+        "(deftype loop-a () 'loop-b) (deftype loop-b () 'loop-a) \
+         (handler-case (typep 1 'loop-a) (error () :error))",
+    );
+    assert_eq!(out, "=> LOOP-A\n=> LOOP-B\n=> :ERROR\n");
+}
+
 #[test]
 fn load_reads_a_file_through_the_host() {
     use quokka_vm::vm::{eval_source, Outcome};

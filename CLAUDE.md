@@ -434,7 +434,31 @@ by `collect_for_image` and rebuilt on first use). Anything that puts a symbol
 on the obarray must go through `intern_in`, or the index will not know it.
 `%assemble` verifies the function it makes and not the functions among its
 constants, which were verified when they were made.
-**Next: phase 3, conditions and processes** (`docs/design.md`). Phase 2's scope is
+**Phase 3 has begun** (#123, 26 Nov 2026): **CLOS first** (Carsten's call,
+over conditions on a class layer of their own), **a small MOP written new**
+after AMOP Part I (over no MOP, or porting PCL). The design and its seven
+sub-steps are `docs/clos.md`; the step is #124. **Sub-step 1, types, is
+done** (chapter 72): `lisp/library/types.lisp` (`deftype`, `typep`,
+`type-of`, `typecase`/`etypecase`/`ctypecase`, `check-type`, `coerce`) and
+`lisp/library/type-algebra.lisp` (`subtypep`), after `ratios.lisp`.
+**`typep` never builds canonical types** — `typecase` calls it per clause;
+**`subtypep` asks whether A-and-not-B is empty** over ctypes, unions over
+disjoint *kinds* of object (`%kinds`): a new kind of object needs a kind
+there, in `%object-kind`, and in `%parse-atom`. Inside a cons type, `:any`
+stands for every object (the universe contains `(cons t t)`, so it cannot
+contain itself). `satisfies` and function types are unknown sets, decided
+by supposing each everything or nothing. One float format (four names, one
+type; `-0.0` its own kind); no base strings (`base-char` upgrades to
+`character`, `base-string` = `string`). `upgraded-array-element-type` and
+`%element-kind` now go through `subtypep`. `coerce` lives in `types.lisp`;
+`sequences.lisp`'s `%kind-of-type`, `%length-of-type`, `%of-type` are
+wrapped there to expand `deftype`s. ansi-test runs sixteen groups now
+(`types-and-classes` joined); the runner treats `defclass`,
+`define-condition` and `deftype` as defining their name. A rebuild
+reports `(:FORMS 1464 :REPLACED 1193)`. ansi-test: **9,919 of 15,984**,
+no plain failure. Rust 0.
+**Next: CLOS sub-step 2** — funcallable instances, the class bootstrap,
+`defclass`. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -506,8 +530,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**485 tests**; **53 differential files agree with SBCL** — 17 interpreted and
-compiled, plus thirty-six tier-1 files, compiled only, and all 53 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
+**487 tests**; **55 differential files agree with SBCL** — 17 interpreted and
+compiled, plus thirty-eight tier-1 files, compiled only, and all 55 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
 **The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 7** (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 

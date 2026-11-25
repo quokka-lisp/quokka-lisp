@@ -30,3 +30,12 @@
 => (:REWRITTEN :K)
 => (:LOCAL :K)
 => (NIL (:FUNCTION :K))
+=> CM-EARLY
+=> CM-EARLY
+=> (CM-EARLY 5)
+=> 5
+=> CM-FIRST
+=> (SETF CM-FIRST)
+=> (SETF CM-FIRST)
+=> T
+=> (Z (Z 2))

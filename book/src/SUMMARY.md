@@ -93,6 +93,10 @@
 - [Ratios](part-6-self-hosting/70-ratios.md)
 - [Phase 2 ends](part-6-self-hosting/71-phase-two-ends.md)
 
+# Part VII · Objects
+
+- [What is a type?](part-7-objects/72-what-is-a-type.md)
+
 ---
 
 [Glossary](glossary.md)
