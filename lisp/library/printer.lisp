@@ -111,8 +111,20 @@
     (terpri stream)
     string))
 
+;;; One character. Into a string stream it is one cons, directly: by way
+;;; of a one-character string and `%stream-write` it was 310 steps a
+;;; character, and `format` writes its literal text a character at a time
+;;; (#112).
 (defun write-char (char &optional stream)
-  (%stream-write (%output-stream stream) (make-string 1 :initial-element char) 0 1)
+  (let ((stream (%output-stream stream)))
+    (if (%console-stream-p stream)
+        (%stream-write stream (%make-string 1 char) 0 1)
+        (progn
+          (setf (%string-output-stream-chars stream)
+                (cons char (%string-output-stream-chars stream)))
+          (setf (%string-output-stream-count stream)
+                (+ (%string-output-stream-count stream) 1))
+          (setf (%string-output-stream-fresh stream) (eq char #\Newline)))))
   char)
 
 (defun terpri (&optional stream)
@@ -233,19 +245,33 @@
         (*print-circle* circle) (*print-pretty* pretty) (*print-lines* lines)
         (*print-miser-width* miser-width) (*print-right-margin* right-margin)
         (*print-pprint-dispatch* pprint-dispatch))
-    (let ((out (make-string-output-stream)))
-      (if *print-readably*
-          ;; CLHS 22.1.3: printing readably implies escapes, arrays and
-          ;; gensym prefixes, and nothing cut short by length or level.
-          (let ((*print-escape* t) (*print-array* t) (*print-gensym* t)
-                (*print-length* nil) (*print-level* nil) (*print-lines* nil))
-            (%print-top object out))
+    (%print-to-string object)))
+
+;;; OBJECT as text, under the printer variables as they stand. What
+;;; `write-to-string` comes to once its keywords are bound, and what
+;;; `prin1-to-string` and `princ-to-string` call directly: each of those
+;;; differs from the current settings in one or two variables, and going
+;;; through `write-to-string` to say so parsed fifteen keywords and made
+;;; fifteen dynamic bindings on every call (#112).
+(defun %print-to-string (object)
+  (let ((out (make-string-output-stream)))
+    (if *print-readably*
+        ;; CLHS 22.1.3: printing readably implies escapes, arrays and
+        ;; gensym prefixes, and nothing cut short by length or level.
+        (let ((*print-escape* t) (*print-array* t) (*print-gensym* t)
+              (*print-length* nil) (*print-level* nil) (*print-lines* nil))
           (%print-top object out))
-      (get-output-stream-string out))))
+        (%print-top object out))
+    (get-output-stream-string out)))
 
 ;;; `princ` is `write` with neither escapes nor readability (CLHS 22.4).
-(defun prin1-to-string (object) (write-to-string object :escape t))
-(defun princ-to-string (object) (write-to-string object :escape nil :readably nil))
+(defun prin1-to-string (object)
+  (let ((*print-escape* t))
+    (%print-to-string object)))
+
+(defun princ-to-string (object)
+  (let ((*print-escape* nil) (*print-readably* nil))
+    (%print-to-string object)))
 
 ;;; Each builds the whole text first and writes it once, so printing to the
 ;;; console is one request to the host, not one per character. `write` takes

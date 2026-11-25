@@ -351,20 +351,25 @@ pub struct Tally {
 pub fn compile_source(heap: &mut quokka_vm::heap::Heap, source: &str) -> Result<Tally, BootError> {
     let mut tally = Tally::default();
     let mut failure = None;
-    let read = compile_each_in(heap, source, Mode::Check, |form, outcome| match outcome {
-        Ok(Handled::Compiled) => {
-            tally.compiled += 1;
-            true
-        }
-        Ok(Handled::Evaluated) => {
-            tally.interpreted += 1;
-            true
-        }
-        Err(error) => {
-            failure = Some(BootError::Eval { form, error });
-            false
-        }
-    });
+    let read = compile_each_in(
+        heap,
+        source,
+        Mode::Check,
+        |_, form, outcome| match outcome {
+            Ok(Handled::Compiled) => {
+                tally.compiled += 1;
+                true
+            }
+            Ok(Handled::Evaluated) => {
+                tally.interpreted += 1;
+                true
+            }
+            Err(error) => {
+                failure = Some(BootError::Eval { form, error });
+                false
+            }
+        },
+    );
     if let Err(e) = read {
         return Err(BootError::Read(e));
     }
@@ -374,9 +379,29 @@ pub fn compile_source(heap: &mut quokka_vm::heap::Heap, source: &str) -> Result<
     }
 }
 
+/// Compile each form of `source` with the bootstrap compiler and hand each
+/// outcome to `each`, with the heap: for [`Handled::Compiled`] the verified
+/// function is in the `Value` register, for [`Handled::Evaluated`] the
+/// macro definition's value is. `each` says whether to go on.
+///
+/// For a host that wants to do something with each function — the
+/// bootstrap REPL disassembles and runs it. The host used to carry its own
+/// copy of this loop, the quoting of the form and the `defmacro` rule
+/// included (#121); the comment on [`compile_source`] said "now there is
+/// one copy" while there were two.
+pub fn compile_each(
+    heap: &mut quokka_vm::heap::Heap,
+    source: &str,
+    mut each: impl FnMut(&mut quokka_vm::heap::Heap, Result<Handled, EvalError>) -> bool,
+) -> Result<(), ReadError> {
+    compile_each_in(heap, source, Mode::Check, |heap, _, outcome| {
+        each(heap, outcome)
+    })
+}
+
 /// What a pass over a file did with one form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Handled {
+pub enum Handled {
     /// Compiled, and the verifier accepted every function that came out.
     Compiled,
     /// A macro definition, evaluated by the interpreter instead — see
@@ -408,7 +433,7 @@ fn compile_each_in<F>(
     mut each: F,
 ) -> Result<(), ReadError>
 where
-    F: FnMut(usize, Result<Handled, EvalError>) -> bool,
+    F: FnMut(&mut quokka_vm::heap::Heap, usize, Result<Handled, EvalError>) -> bool,
 {
     use quokka_vm::heap::Register;
     use quokka_vm::value::Value;
@@ -498,7 +523,7 @@ where
                 Ok(Handled::Compiled)
             }),
         };
-        if !each(form_number, outcome) {
+        if !each(heap, form_number, outcome) {
             return Ok(());
         }
     }
@@ -553,16 +578,21 @@ pub fn build_image(heap: &mut quokka_vm::heap::Heap) -> Result<Built, BootError>
     let mut forms = 0usize;
     for source in sources {
         let mut failure = None;
-        let read = compile_each_in(heap, source, Mode::Build, |form, outcome| match outcome {
-            Ok(_) => {
-                forms += 1;
-                true
-            }
-            Err(error) => {
-                failure = Some(BootError::Eval { form, error });
-                false
-            }
-        });
+        let read = compile_each_in(
+            heap,
+            source,
+            Mode::Build,
+            |_, form, outcome| match outcome {
+                Ok(_) => {
+                    forms += 1;
+                    true
+                }
+                Err(error) => {
+                    failure = Some(BootError::Eval { form, error });
+                    false
+                }
+            },
+        );
         read.map_err(BootError::Read)?;
         if let Some(e) = failure {
             return Err(e);

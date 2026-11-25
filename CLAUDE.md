@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1329 :REPLACED 1068)` (asserted in `differential.rs`; any new library
+`(:FORMS 1330 :REPLACED 1069)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -455,7 +455,7 @@ abandoned straight afterwards (chapter 32).
 **484 tests**; **53 differential files agree with SBCL** — 17 interpreted and
 compiled, plus thirty-six tier-1 files, compiled only, and all 53 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
-**The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 7** (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `main.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
+**The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 7** (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 
 ## How phase 1 ended
 
@@ -623,8 +623,10 @@ crates/quokka-vm         the machine: tagged words, heap, GC, bytecode VM, primi
                          protocol (no host dependencies, and no interpreter — #29)
 crates/quokka-bootstrap  the cold build: Rust reader, tree-walking interpreter, build_image;
                          and the whole-system tests (tests/differential.rs)
-crates/quokka            the `quokka` program: runs a world (`quokka WORLD.qi`), builds and
-                         rebuilds one, and the bootstrap REPL (#51)
+crates/quokka            the `quokka` program (#51), one concern a file: `main.rs` the command
+                         line, `host.rs` what a world may ask of this machine, `world.rs`
+                         running, building, rebuilding and saving one, `bootstrap.rs` the
+                         bootstrap REPL
 crates/quokka-wasm       the browser host: loads a world and runs it in slices (#84), and the dev console page
 lisp/                    Lisp sources: the prelude and compiler (tier 0), the library (tier 1)
 tests/lisp/              differential test files
