@@ -50,6 +50,18 @@ pub enum EvalError {
         /// How many it got.
         got: usize,
     },
+    /// A compiled function given the wrong number of arguments, by name.
+    /// [`WrongArgumentCount`](Self::WrongArgumentCount) names a primitive
+    /// with a string the program holds; a function's name is in the heap
+    /// and has to be copied out, so it is a variant of its own (#110).
+    WrongArgumentsTo {
+        /// The function's name.
+        function: String,
+        /// How many it wanted.
+        wanted: usize,
+        /// How many it got.
+        got: usize,
+    },
     /// A call whose arguments do not fit the function's lambda list: an odd
     /// number of keyword arguments, or a keyword the function does not take.
     /// A fault in the *call*, so the program may catch it — CLHS calls it a
@@ -109,6 +121,11 @@ impl core::fmt::Display for EvalError {
             EvalError::WrongArgumentCount { name, wanted, got } => {
                 write!(f, "{name} wants {wanted} argument(s), got {got}")
             }
+            EvalError::WrongArgumentsTo {
+                function,
+                wanted,
+                got,
+            } => write!(f, "{function} wants {wanted} argument(s), got {got}"),
             EvalError::WrongType { name, wanted } => write!(f, "{name} wants {wanted}"),
             EvalError::Signalled(what) => write!(f, "{what}"),
             EvalError::IndexOutOfBounds { index, length } => {

@@ -102,6 +102,14 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
             "PROGRAM-ERROR",
             format!("{name} wants {wanted} arguments and got {got}"),
         ),
+        EvalError::WrongArgumentsTo {
+            function,
+            wanted,
+            got,
+        } => (
+            "PROGRAM-ERROR",
+            format!("{function} wants {wanted} arguments and got {got}"),
+        ),
         EvalError::WrongType { name, wanted } => ("TYPE-ERROR", format!("{name} wants {wanted}")),
         EvalError::BadCall(detail) => ("PROGRAM-ERROR", format!("bad call: {detail}")),
         EvalError::IndexOutOfBounds { index, length } => (

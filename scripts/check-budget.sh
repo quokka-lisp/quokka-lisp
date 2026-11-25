@@ -103,7 +103,12 @@ cd "$(dirname "$0")/.."
 # with the world intact (`main.rs`, ~190). About a third is the comments
 # that say why. #89 asks what the budget should count now that phases 3 to
 # 6 have none left; this raise is evidence for that question, not an answer.
-LIMIT=17165
+#
+# Raised to 17,225 by #110 (25 Nov 2026): an arity error names the function
+# (`EvalError::WrongArgumentsTo`, the name copied out of the heap in
+# `vm.rs`), and a typed condition keeps the text it was signalled with, in
+# both evaluators. 58 lines. The rest of #110 to #112 is Lisp.
+LIMIT=17225
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

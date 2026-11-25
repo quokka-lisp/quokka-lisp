@@ -199,8 +199,22 @@
 (defun %bad-index (sequence index)
   (error 'type-error "the index is not inside the sequence" (list index (length sequence))))
 
+;;; A simple vector or a simple string — nearly every call, and all of
+;;; `copy-seq`'s — is copied element to element. The general path below
+;;; makes a list of the elements and a sequence from the list, which for a
+;;; string of seven characters was 1,360 steps; and `string-upcase`, and so
+;;; `name-char` and every `#\Name` read, paid it (#112). `%array-kind` is 1
+;;; for a simple vector and 2 for a simple string.
 (defun subseq (sequence start &optional end)
-  (%from-list (%kind-of sequence) (%range-list sequence start end)))
+  (let ((kind (%array-kind sequence)))
+    (if (or (eq kind 1) (eq kind 2))
+        (multiple-value-bind (s e) (%bounds sequence start end)
+          (let ((out (if (eq kind 2) (%make-string (- e s) #\Space) (make-array (- e s)))))
+            (do ((i s (+ i 1))
+                 (j 0 (+ j 1)))
+                ((not (< i e)) out)
+              (%set-aref out j (aref sequence i)))))
+        (%from-list (%kind-of sequence) (%range-list sequence start end)))))
 
 (defsetf subseq (sequence start &optional end) (new)
   `(progn (replace ,sequence ,new :start1 ,start :end1 ,end) ,new))
@@ -236,8 +250,21 @@
   (%do-sequence (element sequence :start start :end end :from-end from-end)
     (if (funcall matches element) (return element))))
 
+;;; In a whole list, by `eql`, from the front — the plain call — `find` is
+;;; `member`'s walk, and `position` the same walk counting (#112).
+(defun %plain-search-p (item sequence from-end test test-not start end key)
+  (and (listp sequence) (eql start 0) (%eq-suffices-p item)
+       (not (or from-end test test-not end key))))
+
+(defun %position-eq (item list index)
+  (cond ((consp list)
+         (if (eq item (car list)) index (%position-eq item (cdr list) (+ index 1))))
+        (t (endp list) nil)))
+
 (defun find (item sequence &key from-end test test-not (start 0) end key)
-  (%find (%matches item key test test-not) sequence from-end start end))
+  (if (%plain-search-p item sequence from-end test test-not start end key)
+      (car (%member-eq item sequence))
+      (%find (%matches item key test test-not) sequence from-end start end)))
 (defun find-if (predicate sequence &key from-end (start 0) end key)
   (%find (%satisfies predicate key) sequence from-end start end))
 (defun find-if-not (predicate sequence &key from-end (start 0) end key)
@@ -249,7 +276,9 @@
     (if (funcall matches element) (return i))))
 
 (defun position (item sequence &key from-end test test-not (start 0) end key)
-  (%position-of (%matches item key test test-not) sequence from-end start end))
+  (if (%plain-search-p item sequence from-end test test-not start end key)
+      (%position-eq item sequence 0)
+      (%position-of (%matches item key test test-not) sequence from-end start end)))
 (defun position-if (predicate sequence &key from-end (start 0) end key)
   (%position-of (%satisfies predicate key) sequence from-end start end))
 (defun position-if-not (predicate sequence &key from-end (start 0) end key)
@@ -470,10 +499,25 @@
       (let ((answer (apply function (mapcar (lambda (v) (aref v i)) vectors))))
         (if (if decisive answer (not answer)) (return (list answer)))))))
 
+;;; Over one list the answer may be at the front, and copying the list into
+;;; a vector first, as the general walk does, made `(some #'p long-list)`
+;;; cost the whole list whichever element decided it (#112).
+(defun %some-1 (predicate list)
+  (cond ((consp list) (or (funcall predicate (car list)) (%some-1 predicate (cdr list))))
+        (t (endp list) nil)))
+
+(defun %every-1 (predicate list)
+  (cond ((consp list) (if (funcall predicate (car list)) (%every-1 predicate (cdr list)) nil))
+        (t (endp list) t)))
+
 (defun some (predicate sequence &rest more)
-  (car (%first-row predicate (cons sequence more) t)))
+  (if (and (null more) (listp sequence))
+      (%some-1 predicate sequence)
+      (car (%first-row predicate (cons sequence more) t))))
 (defun every (predicate sequence &rest more)
-  (not (%first-row predicate (cons sequence more) nil)))
+  (if (and (null more) (listp sequence))
+      (%every-1 predicate sequence)
+      (not (%first-row predicate (cons sequence more) nil))))
 (defun notany (predicate sequence &rest more)
   (not (%first-row predicate (cons sequence more) t)))
 (defun notevery (predicate sequence &rest more)

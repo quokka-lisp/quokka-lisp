@@ -402,7 +402,18 @@ impl<'a, 'h> Machine<'a, 'h> {
             return Ok(datum);
         }
         if self.mc.is_symbol(datum) {
-            return Ok(quokka_vm::condition::make(self.mc, datum, Value::NIL, rest));
+            // The text after the type is the message, as in the VM (#110).
+            let first = if rest.is_cons() {
+                self.mc.car(rest)
+            } else {
+                Value::NIL
+            };
+            let message = if first.is_object() && self.mc.header(first).object_type.is_string() {
+                first
+            } else {
+                Value::NIL
+            };
+            return Ok(quokka_vm::condition::make(self.mc, datum, message, rest));
         }
         if datum.is_object() && self.mc.header(datum).object_type.is_string() {
             let simple = self.mc.intern("SIMPLE-ERROR");

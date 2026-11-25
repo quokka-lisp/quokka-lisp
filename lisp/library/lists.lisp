@@ -160,9 +160,21 @@
         (%case-clauses key (cdr clauses)
                        (cons (list (cond ((or (eq keys t) (eq keys 'otherwise)) t)
                                          ((listp keys) (%case-test key keys))
-                                         (t (list 'eql key (list 'quote keys))))
+                                         (t (%case-compare key keys)))
                                    (cons 'progn body))
                              acc)))))
+
+;;; One key's test. `case` compares with `eql`, and `eql` is `eq` for every
+;;; key but a number that is boxed — a bignum, a float, a ratio. The key is
+;;; in the source, so that is known now, and a symbol, a character or a
+;;; small integer is compared by the `eq` primitive in place of a call to
+;;; the library's `eql`: about a third of a clause's cost (#112).
+(defun %case-compare (key k)
+  (list (if (%eq-suffices-p k) 'eq 'eql) key (list 'quote k)))
+
+;;; Is `eql` to OBJECT the same question as `eq` to it?
+(defun %eq-suffices-p (object)
+  (not (or (%bignump object) (floatp object) (%ratiop object))))
 
 (defun %case-test (key keys)
   (if (null keys)
@@ -172,7 +184,7 @@
 (defun %case-tests (key keys)
   (if (null keys)
       nil
-      (cons (list 'eql key (list 'quote (car keys))) (%case-tests key (cdr keys)))))
+      (cons (%case-compare key (car keys)) (%case-tests key (cdr keys)))))
 
 ;;; `(destructuring-bind lambda-list expression body...)`: take EXPRESSION's
 ;;; value apart as a macro takes its form apart. The function is made by the
@@ -278,7 +290,9 @@
          ,top
            (if ,end-test (go ,end))
            ,@(%body-forms body)
-           (,stepper ,@(%do-steps bindings))
+           ,(if (eq stepper 'psetq)
+                (%parallel-setq (%do-steps bindings))
+                `(,stepper ,@(%do-steps bindings)))
            (go ,top)
          ,end)
         (progn ,@result)))))
@@ -289,6 +303,27 @@
       (let ((b (car bindings)))
         (cons (if (consp b) (list (car b) (car (cdr b))) (list b nil))
               (%do-inits (cdr bindings))))))
+
+;;; Every variable of a `do` to its step, all steps computed first. `psetq`
+;;; means that too, but by way of `psetf`, which must allow for any place:
+;;; nested `let*` and `multiple-value-bind`, a closure and an `&optional`
+;;; parse for each variable, on every trip round every loop — 39 steps an
+;;; iteration where this is about a dozen (#112). A `do` variable is a plain
+;;; variable, bound by the `do` itself, so temporaries and one `setq` do.
+(defun %parallel-setq (pairs)
+  (cond ((null pairs) nil)
+        ((null (cdr (cdr pairs))) (cons 'setq pairs))
+        (t (%parallel-setq-with pairs nil nil))))
+
+;;; Written out with `cons`: `push` and `mapcar` are defined after the first
+;;; `do` in this file is expanded.
+(defun %parallel-setq-with (pairs bindings assignments)
+  (if (null pairs)
+      (list 'let (reverse bindings) (cons 'setq (reverse assignments)))
+      (let ((temporary (gensym "STEP")))
+        (%parallel-setq-with (cdr (cdr pairs))
+                             (cons (list temporary (car (cdr pairs))) bindings)
+                             (cons temporary (cons (car pairs) assignments))))))
 
 ;;; `var step` for each binding that has a step.
 (defun %do-steps (bindings)
@@ -545,10 +580,28 @@
       (let ((value (apply function (if tails rest (%cars rest)))))
         (if (not (eq how :discard)) (push value out))))))
 
+;;; Over one list — nearly every call — there is nothing to keep in step:
+;;; one walk, one call an element. The general walk above conses a list of
+;;; tails and a list of heads and `apply`s for each element, 630 steps
+;;; against some 40 (#112). By tail calls, which the machine runs as jumps.
+(defun %mapcar-1 (function list out)
+  (if (consp list)
+      (%mapcar-1 function (cdr list) (cons (funcall function (car list)) out))
+      (progn (endp list) (%prepend-reversed out nil))))
+
+(defun %mapc-1 (function list)
+  (if (consp list)
+      (progn (funcall function (car list)) (%mapc-1 function (cdr list)))
+      (endp list)))
+
 (defun mapcar (function list &rest more)
-  (%map-lists function (cons list more) nil :collect))
+  (if more
+      (%map-lists function (cons list more) nil :collect)
+      (%mapcar-1 function list nil)))
 (defun mapc (function list &rest more)
-  (%map-lists function (cons list more) nil :discard))
+  (if more
+      (%map-lists function (cons list more) nil :discard)
+      (progn (%mapc-1 function list) list)))
 (defun mapcan (function list &rest more)
   (%map-lists function (cons list more) nil :concatenate))
 (defun maplist (function list &rest more)
@@ -561,14 +614,39 @@
 ;;; ------------------------------------------------------------------------
 ;;; Membership and association
 
+;;; The two walks first: the compiler calls `member` for every form it
+;;; compiles, the next one included, so what the new `member` calls must
+;;; exist before it does.
+(defun %member-eq (item list)
+  (cond ((consp list) (if (eq item (car list)) list (%member-eq item (cdr list))))
+        (t (endp list) nil)))
+
+(defun %assoc-eq (item alist)
+  (cond ((consp alist)
+         (if (and (consp (car alist)) (eq item (car (car alist))))
+             (car alist)
+             ;; A nil in an alist is skipped; anything else that is not a
+             ;; cons is an error, which taking its `car` signals.
+             (progn (if (car alist) (car (car alist)))
+                    (%assoc-eq item (cdr alist)))))
+        (t (endp alist) nil)))
+
 ;;; The prelude's `member` compares with `eq` and takes no keywords; this is
 ;;; CL's (decision 3). On the compiler's own two-argument calls it answers as
 ;;; the prelude's did, since `eql` is `eq`.
+;;;
+;;; With no keyword, and an item `eq` can decide — a symbol, a character, a
+;;; small integer, which is nearly every call and every one of the
+;;; compiler's — the search is a loop over `eq`, a primitive. Through
+;;; `funcall` of the library's `eql` and a call of `%key` it was 100 steps
+;;; an element (#112).
 (defun member (item list &key key test test-not)
-  (let ((same (%test test test-not)))
-    (do ((tail list (cdr tail)))
-        ((endp tail) nil)
-      (if (funcall same item (%key key (car tail))) (return tail)))))
+  (if (or key test test-not (not (%eq-suffices-p item)))
+      (let ((same (%test test test-not)))
+        (do ((tail list (cdr tail)))
+            ((endp tail) nil)
+          (if (funcall same item (%key key (car tail))) (return tail))))
+      (%member-eq item list)))
 
 (defun member-if (predicate list &key key)
   (do ((tail list (cdr tail)))
@@ -593,9 +671,11 @@
 
 ;;; A nil in an alist is skipped, as CLHS says.
 (defun assoc (item alist &key key test test-not)
-  (let ((same (%test test test-not)))
-    (dolist (pair alist nil)
-      (if (and pair (funcall same item (%key key (car pair)))) (return pair)))))
+  (if (or key test test-not (not (%eq-suffices-p item)))
+      (let ((same (%test test test-not)))
+        (dolist (pair alist nil)
+          (if (and pair (funcall same item (%key key (car pair)))) (return pair))))
+      (%assoc-eq item alist)))
 
 (defun assoc-if (predicate alist &key key)
   (dolist (pair alist nil)

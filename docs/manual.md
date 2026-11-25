@@ -235,7 +235,7 @@ quokka rebuild c2.qi c3.qi
 What to expect today:
 - C1 is 976,856 bytes; C2 and C3 are 978,464 each. A rebuild takes about
   seventeen seconds.
-- Every rebuild reports `(:FORMS 1294 :REPLACED 1039)`. It runs as one form
+- Every rebuild reports `(:FORMS 1323 :REPLACED 1064)`. It runs as one form
   with sixty times an ordinary form's step budget (300 million steps) and
   needs about 201 million; a rebuild that runs out says `BudgetExhausted`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. The

@@ -450,6 +450,23 @@ impl<'a, 'h> Vm<'a, 'h> {
             };
             match self.bind_parameters(params, args, captured) {
                 Ok(s) => s,
+                // Say which function, now that a function knows its name:
+                // "this function wants 2 arguments" in a program of fifty
+                // functions names none of them (#110).
+                Err(EvalError::WrongArgumentCount { wanted, got, .. }) => {
+                    let name = self.mc.slot(code_object, function::NAME);
+                    let function = if self.mc.is_symbol(name) && !self.mc.symbol_is(name, "LAMBDA")
+                    {
+                        self.mc.symbol_name(name)
+                    } else {
+                        String::from("this function")
+                    };
+                    return self.fail(EvalError::WrongArgumentsTo {
+                        function,
+                        wanted,
+                        got,
+                    });
+                }
                 Err(e) => return self.fail(e),
             }
         };
@@ -794,7 +811,17 @@ impl<'a, 'h> Vm<'a, 'h> {
             data = self.mc.cons(*v, data);
         }
         if self.mc.is_symbol(datum) {
-            return Ok(crate::condition::make(self.mc, datum, Value::NIL, data));
+            // `(error 'type-error "why" datum)` is how the library signals a
+            // typed condition, and the text is the first thing after the
+            // type. It was dropped, so every such error read "; NIL" (#110).
+            // The arguments stay whole in the data, for whoever reads them.
+            let message = match rest.first() {
+                Some(text) if text.is_object() && self.mc.header(*text).object_type.is_string() => {
+                    *text
+                }
+                _ => Value::NIL,
+            };
+            return Ok(crate::condition::make(self.mc, datum, message, data));
         }
         if datum.is_object() && self.mc.header(datum).object_type.is_string() {
             let simple = self.mc.intern("SIMPLE-ERROR");

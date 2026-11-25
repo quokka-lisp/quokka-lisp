@@ -43,33 +43,50 @@
 ;;; apart only if it is written as a `progn`, not if a local macro would
 ;;; expand into one. Seeing that needs the macrolet's environment, which
 ;;; only the compiler builds.
+;;;
+;;; CONTEXT is the form as it was written, carried down so that a compile
+;;; error can say where it is: by the time anything is compiled, a `defun`
+;;; has become a `%set-symbol-function` inside a `progn`, and "in
+;;; %SET-SYMBOL-FUNCTION" would name nothing the programmer wrote (#110).
 (defun eval (form)
+  (%eval-in form form))
+
+(defun %eval-in (form context)
   (let ((form (macroexpand form)))
-    (cond ((not (consp form)) (funcall (compile-form form)))
-          ((eq (car form) 'progn) (%eval-each (cdr form) nil))
+    (cond ((not (consp form)) (funcall (%compile-in context form)))
+          ((eq (car form) 'progn) (%eval-each (cdr form) nil context))
           ((eq (car form) 'eval-when)
            (if (or (member :execute (cadr form)) (member 'eval (cadr form)))
-               (%eval-each (cddr form) nil)
+               (%eval-each (cddr form) nil context)
                nil))
           ((or (eq (car form) 'locally) (eq (car form) 'macrolet)
                (eq (car form) 'symbol-macrolet))
-           (%eval-binder form))
-          (t (funcall (compile-form form))))))
+           (%eval-binder form context))
+          (t (funcall (%compile-in context form))))))
+
+;;; Compile FORM, with CONTEXT as the form any error is said to be in. Bound
+;;; for the compilation only: the function is called after the binding is
+;;; gone, so a program's own `eval` does not inherit it.
+(defvar %toplevel-form nil)
+
+(defun %compile-in (context form)
+  (let ((%toplevel-form context))
+    (compile-form form)))
 
 ;;; Evaluate FORMS in turn, each inside PREFIX if there is one — the head of
 ;;; a `locally` or `macrolet` and what it declares or defines. The values are
 ;;; the last form's.
-(defun %eval-each (forms prefix)
+(defun %eval-each (forms prefix context)
   (if (null forms)
       nil
       (let ((rest forms))
         (tagbody
          next
            (if (cdr rest)
-               (progn (eval (%eval-wrap (car rest) prefix))
+               (progn (%eval-in (%eval-wrap (car rest) prefix) context)
                       (setq rest (cdr rest))
                       (go next))))
-        (eval (%eval-wrap (car rest) prefix)))))
+        (%eval-in (%eval-wrap (car rest) prefix) context))))
 
 (defun %eval-wrap (form prefix)
   (if prefix (append prefix (list form)) form))
@@ -78,7 +95,7 @@
 ;;; split when there is something to split: several forms, or one `progn`.
 ;;; Otherwise it is compiled whole — which is also what ends the recursion,
 ;;; since each piece is a binder around a single form.
-(defun %eval-binder (form)
+(defun %eval-binder (form context)
   (let* ((locally (eq (car form) 'locally))
          (body (if locally (cdr form) (cddr form)))
          (prefix (if locally (list 'locally) (list (car form) (cadr form)))))
@@ -88,10 +105,10 @@
            (progn (setq prefix (append prefix (list (car body))))
                   (setq body (cdr body))
                   (go next))))
-    (cond ((and body (cdr body)) (%eval-each body prefix))
+    (cond ((and body (cdr body)) (%eval-each body prefix context))
           ((and body (consp (car body)) (eq (car (car body)) 'progn))
-           (%eval-each (cdr (car body)) prefix))
-          (t (funcall (compile-form form))))))
+           (%eval-each (cdr (car body)) prefix context))
+          (t (funcall (%compile-in context form))))))
 
 ;;; ------------------------------------------------------------------------
 ;;; compile (step R, #65)

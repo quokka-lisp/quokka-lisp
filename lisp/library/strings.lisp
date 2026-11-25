@@ -167,8 +167,11 @@
 (defun %change-case (string start end function copy)
   (let ((out (if copy (copy-seq (string string)) string)))
     (multiple-value-bind (s e) (%bounds out start end)
-      (do ((i s (+ i 1))) ((>= i e) out)
-        (setf (char out i) (funcall function (char out i)))))))
+      ;; The primitives `<`, `aref` and `%set-aref`, and not the library's
+      ;; n-ary `>=`, `char` and its `setf`: this is a loop over characters,
+      ;; and by way of those it cost 270 steps for each one (#112).
+      (do ((i s (+ i 1))) ((not (< i e)) out)
+        (%set-aref out i (funcall function (aref out i)))))))
 
 (defun string-upcase (string &key (start 0) end)
   (%change-case string start end #'char-upcase t))

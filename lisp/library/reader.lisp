@@ -96,13 +96,28 @@
   '(("Linefeed" . 10) ("Null" . 0) ("Delete" . 127) ("Del" . 127) ("Escape" . 27)
     ("Lf" . 10) ("Cr" . 13) ("Bs" . 8) ("Ht" . 9) ("Ff" . 12) ("Nl" . 10) ("Sp" . 32)))
 
+;;; Every name and alias, upcased, to its code. `name-char` used to compare
+;;; the name with each of the 256 in turn, by `string-equal`, so reading
+;;; `#\Newline` cost 6,300 steps (#112); a name is found in a table by its
+;;; hash. Made here, when the library is loaded, so that it is in the image:
+;;; filling it costs about a million steps, which a world should pay once
+;;; when it is built and not at its first `#\Space`.
+(defun %make-char-name-codes ()
+  (let ((table (make-hash-table :test 'equal)))
+    (dolist (alias %character-aliases)
+      (setf (gethash (string-upcase (car alias)) table) (cdr alias)))
+    ;; The names after the aliases, so that a name wins over an alias spelt
+    ;; the same, as the search in that order did.
+    (dotimes (code 256 table)
+      (let ((name (aref %latin-1-char-names code)))
+        (if name (setf (gethash (string-upcase name) table) code))))))
+
+(defvar %char-name-codes (%make-char-name-codes))
+
 (defun name-char (name)
-  (let ((name (string name)))
-    (or (let ((code (position name %latin-1-char-names :test #'string-equal)))
-          (and code (code-char code)))
-        (let ((alias (assoc name %character-aliases :test #'string-equal)))
-          (and alias (code-char (cdr alias))))
-        (%hex-char-name name))))
+  (let* ((name (string name))
+         (code (gethash (string-upcase name) %char-name-codes)))
+    (if code (code-char code) (%hex-char-name name))))
 
 (defun %hex-char-name (name)
   (let* ((end (length name))

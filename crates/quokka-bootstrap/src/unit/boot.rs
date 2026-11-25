@@ -2199,3 +2199,46 @@ fn float_and_character_keys_do_not_share_a_bucket() {
     );
     assert_eq!(said, ["(20000 1234 T)", "(97 T)"]);
 }
+
+/// **A compile error says where, and a function knows its name** (#110).
+/// "return-from names a block that is not here" was true of some function
+/// in the file; an arity error was about "a compiled function"; a typed
+/// error from the library printed as `NIL`; and a form past one of the
+/// bytecode's ceilings was refused by the assembler in the assembler's
+/// words.
+#[test]
+fn errors_say_where_and_functions_say_who() {
+    let mut heap = compiled_world();
+    let args = vec!["1"; 300].join(" ");
+    let source = format!(
+        "(defun lost (x) (return-from nowhere x))
+         (defun two (a b) (list a b))
+         (two 1)
+         (flet ((inner (x) x)) (inner))
+         (funcall (lambda (x) x))
+         (prin1-to-string #'two)
+         (tagbody a a)
+         (list {args})
+         (length (apply #'list (quote ({args}))))
+         (evenp 1.5d0)
+         (handler-case (eval '(let ((t 1)) t)) (program-error () :still-a-program-error))"
+    );
+    let said = said_by_the_world(&mut heap, &source);
+    assert_eq!(
+        said[0],
+        "; in DEFUN LOST: return-from names a block that is not here: NOWHERE"
+    );
+    assert_eq!(said[2], "; TWO wants 2 arguments and got 1");
+    assert_eq!(said[3], "; INNER wants 1 arguments and got 0");
+    assert_eq!(said[4], "; this function wants 1 arguments and got 0");
+    assert_eq!(said[5], "\"#<function TWO>\"");
+    assert!(
+        said[6].contains("in TAGBODY") && said[6].contains("same tag twice"),
+        "{}",
+        said[6]
+    );
+    assert!(said[7].contains("more than 255 arguments"), "{}", said[7]);
+    assert_eq!(said[8], "300", "apply is not bound by the ceiling");
+    assert_eq!(said[9], "; EVENP wants an integer");
+    assert_eq!(said[10], ":STILL-A-PROGRAM-ERROR");
+}

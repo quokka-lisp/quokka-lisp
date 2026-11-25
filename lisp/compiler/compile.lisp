@@ -75,7 +75,9 @@
 (defun %refuse-constants (names)
   (cond ((endp names) nil)
         ((and (symbolp (car names)) (%constant-name-p (car names)))
-         (error 'program-error))
+         (error 'program-error
+                (%string-append (symbol-name (car names))
+                                " is a constant, and a constant cannot be bound or assigned")))
         (t (%refuse-constants (cdr names)))))
 
 ;;; Declarations (#62, part 5). `(declare ...)` at the start of a body is
@@ -269,7 +271,16 @@
 ;;; still a link. Chapter 26 works the case through; this is where the
 ;;; counting has to be right, and `LREF` and `FREF` check the namespace on
 ;;; arrival so that getting it wrong is an error rather than a wrong answer.
-(defun %scope (tag names) (cons tag names))
+;;;
+;;; A scope's slots are numbered in one byte of an instruction, so it holds
+;;; at most 256 names. Checked here, where the names are still names: left
+;;; to the assembler it was "an operand too large for the field the opcode
+;;; gives it", which is true and tells the programmer nothing (#110).
+(defun %scope (tag names)
+  (if (> (length names) 256)
+      (%malformed "binding form"
+                  "binds more than 256 names at once, which is the most one scope holds (lambda-parameters-limit)"))
+  (cons tag names))
 
 (defun %position (item remaining index)
   (cond ((null remaining) nil)
@@ -477,10 +488,24 @@
 ;;; saving and restoring the accumulators of whatever was being compiled
 ;;; around it. Split out of the above so that `macrolet` can have a function
 ;;; *now*, at compile time, rather than an instruction that makes one later.
+;;;
+;;; **A function knows its name** (#110). Every function used to be
+;;; assembled under the name `lambda`, so a disassembly, an arity error and
+;;; — once there is one — a backtrace named none of them. The name is left
+;;; in `%pending-name` by whoever knows it: `%compile-call`, on seeing the
+;;; call a `defun` expands into; `flet` and `labels`; `defmacro`. It is taken
+;;; here and cleared at once, so that it names this function and not one
+;;; inside it. A global that is set and consumed with nothing expanded in
+;;; between, in place of a `%named-lambda` operator that both evaluators and
+;;; every code walker would have to learn.
+(setq %pending-name nil)
+
 (defun %assemble-lambda (params body names env)
   (let ((outer-code %code)
         (outer %constants)
-        (outer-count %constant-count))
+        (outer-count %constant-count)
+        (name (if %pending-name %pending-name 'lambda)))
+    (setq %pending-name nil)
     (setq env (%notinline-scope body env))
     (setq %code nil)
     (%reset-constants)
@@ -500,7 +525,7 @@
                                                        (cons (%scope ':variable names) env))
                                        t)))))
     (%emit (list 'RET))
-    (let ((compiled (%assemble (reverse %code) (%constants-vector) params 'lambda)))
+    (let ((compiled (%assemble (reverse %code) (%constants-vector) params name)))
       (setq %code outer-code)
       (setq %constants outer)
       (setq %constant-count outer-count)
@@ -547,6 +572,15 @@
 ;;; still open, so getting this wrong is a build failure and not a lost
 ;;; cleanup.
 (defun %compile-call (form env tail)
+  ;; The count is a byte of `CALL`. `apply` passes as many as there are.
+  (if (> (length (cdr form)) 255)
+      (%malformed "call"
+                  "passes more than 255 arguments written out (call-arguments-limit); apply takes a list of any length"))
+  ;; `(%set-symbol-function 'NAME (lambda ...))` is a definition: the
+  ;; function it stores is NAME's, and is told so.
+  (if (eq (car form) '%set-symbol-function)
+      (if (%definition-p (cdr form))
+          (setq %pending-name (second (second form)))))
   (%compile-callee (car form) env)
   (%compile-arguments (cdr form) env)
   (%emit (list (if tail 'TCALL 'CALL) (length (cdr form)))))
@@ -556,10 +590,40 @@
 ;;; The closures are made *before* the scope exists, in the enclosing
 ;;; environment — which is exactly what distinguishes `flet` from `labels`:
 ;;; an `flet` function cannot see itself or its siblings.
+;;; Is ARGUMENTS `((quote NAME) FUNCTION)`, NAME a symbol and FUNCTION a
+;;; `lambda` form — a `defun` — or `(%make-macro (%macro-lambda ...))`, which
+;;; is what the library's `defmacro` expands into? Both, or a macro compiled
+;;; through `eval` would be named `lambda` where the same macro compiled by
+;;; `%compile-defmacro` has its name, and the cold build and the rebuild
+;;; would differ in every macro: the fixpoint test found exactly that.
+(defun %definition-p (arguments)
+  (if (consp arguments)
+      (if (consp (car arguments))
+          (if (eq (car (car arguments)) 'quote)
+              (if (symbolp (second (car arguments)))
+                  (if (consp (cdr arguments))
+                      (%function-form-p (second arguments))
+                      nil)
+                  nil)
+              nil)
+          nil)
+      nil))
+
+(defun %function-form-p (form)
+  (cond ((not (consp form)) nil)
+        ((eq (car form) 'lambda) t)
+        ((eq (car form) '%make-macro)
+         (if (consp (cdr form))
+             (if (consp (second form)) (eq (car (second form)) '%macro-lambda) nil)
+             nil))
+        (t nil)))
+
 (defun %compile-local-functions (definitions env)
   (if (endp definitions)
       nil
-      (progn (%compile-lambda (%local-lambda (car definitions)) env)
+      (progn (if (symbolp (car (car definitions)))
+                 (setq %pending-name (car (car definitions))))
+             (%compile-lambda (%local-lambda (car definitions)) env)
              (%compile-local-functions (cdr definitions) env))))
 
 ;;; A local function as a lambda expression. Its body is in a block named
@@ -668,7 +732,12 @@
     (if place
         (progn (%compile (third form) env nil)
                (%emit (list 'RETFROM (car place) (cdr place))))
-        (error "return-from names a block that is not here"))))
+        (error (%string-append "return-from names a block that is not here: "
+                               (%name-text (second form)))))))
+
+;;; A block's or a tag's name as text, for a message. Tier 0 has no printer.
+(defun %name-text (name)
+  (if (symbolp name) (symbol-name name) "one that is not a symbol"))
 
 ;;; Forms evaluated for their effect: each compiled and its value popped.
 (defun %compile-for-effect (forms env)
@@ -721,7 +790,41 @@
 ;;; `MVSAVE` and `MVRESTORE` are there because `unwind-protect` returns every
 ;;; value of its protected form, and the cleanup in between would otherwise
 ;;; overwrite them (chapter 23).
+;;;
+;;; Two copies of the *code* are harmless; two *compilations* of the source
+;;; were not (#111). A macro in a cleanup was expanded twice, so an expander
+;;; with an effect had it twice and a `load-time-value` was evaluated twice;
+;;; and a cleanup inside a cleanup was compiled four times, the next eight.
+;;; So a cleanup that could contain a macro is first made a function — the
+;;; cleanup forms compiled once, as a closure's body — and what is emitted
+;;; twice is the call of it. (The JVM's `jsr`/`ret` solved the same problem
+;;; with a subroutine inside the method; a closure needs no new instruction
+;;; and costs an allocation, on a path that is not hot.) A cleanup of plain
+;;; assignments and variables is left inline: nothing in it can expand.
 (defun %compile-unwind-protect (form env)
+  (if (%plain-forms-p (cddr form))
+      (%compile-unwind-protect-inline form env)
+      (let ((cleanup (gensym)))
+        (%compile (list 'let
+                        (list (list cleanup (cons 'lambda (cons nil (cddr form)))))
+                        (list 'unwind-protect (second form) (list 'funcall cleanup)))
+                  env nil))))
+
+;;; Forms with nothing in them to expand: an atom, `(funcall variable)`, or
+;;; a `setq` of atoms.
+(defun %plain-forms-p (forms)
+  (cond ((endp forms) t)
+        ((not (consp (car forms))) (%plain-forms-p (cdr forms)))
+        ((if (eq (car (car forms)) 'setq) t (eq (car (car forms)) 'funcall))
+         (if (%atoms-p (cdr (car forms))) (%plain-forms-p (cdr forms)) nil))
+        (t nil)))
+
+(defun %atoms-p (items)
+  (cond ((not (consp items)) t)
+        ((consp (car items)) nil)
+        (t (%atoms-p (cdr items)))))
+
+(defun %compile-unwind-protect-inline (form env)
   (let ((cleanup (gensym))
         (done (gensym)))
     (%emit (list 'PROTECT cleanup))
@@ -780,6 +883,7 @@
     (%compile-callee '%set-symbol-function env)
     (%compile-value name)
     (%compile-callee '%make-macro env)
+    (setq %pending-name name)
     (%compile-rewritten-lambda (first rewritten) (second rewritten) (third rewritten) env)
     (%emit (list 'CALL 1))
     (%emit (list 'CALL 2))
@@ -845,7 +949,7 @@
     ;; its own symbol macros special is a `program-error` (CLHS). Found when
     ;; ansi-test could first load this file (#68).
     (if (%symbol-macro-declared-special-p definitions declared)
-        (error 'program-error))
+        (error 'program-error "symbol-macrolet names a symbol its body declares special"))
     (%compile-body (cddr form)
                    (%special-scope declared (cons (cons ':symbol-macro definitions) env))
                    tail)))
@@ -1057,6 +1161,8 @@
 
 (defun %compile-tagbody (form env)
   (let ((tags (%tagbody-tags (cdr form))))
+    (if (%repeated-p tags)
+        (%malformed "tagbody" "has the same tag twice, so a go to it could mean either place"))
     (if (endp tags)
         (progn (%compile-for-effect (cdr form) env)
                (%emit (list 'NIL)))
@@ -1089,7 +1195,7 @@
 (defun %compile-go (form env)
   (let ((place (%lookup (second form) env 0 ':tag)))
     (if (null place)
-        (error "go names a tag that is not here")
+        (error (%string-append "go names a tag that is not here: " (%name-text (second form))))
         (let ((entry (%innermost-tagbody (%tag-scope (second form) env))))
           (if entry
               (%emit (list 'JMP-TAG
@@ -1261,6 +1367,11 @@
 ;;; run compiled. Each condition below is the interpreter's, read from
 ;;; `eval.rs` rather than guessed from its message, because two evaluators that
 ;;; disagree about what is a program are two languages.
+(defun %repeated-p (items)
+  (cond ((endp items) nil)
+        ((member (car items) (cdr items)) t)
+        (t (%repeated-p (cdr items)))))
+
 (defun %malformed (operator detail)
   (error (%string-append "bad " (%string-append operator (%string-append ": " detail)))))
 
@@ -1456,7 +1567,49 @@
 ;;; That makes compiling re-entrant, which is not the same as safe for two
 ;;; processes compiling at once: a switch between them would land in the
 ;;; middle of both. That is phase 3's question, and #34's.
+;;;
+;;; **An error says where** (#110). The compiler's messages — "bad let: ...",
+;;; "return-from names a block that is not here" — were true and placeless:
+;;; in a file of forty definitions they did not say which. So an error on
+;;; its way out of here is signalled again, as the same type, with the form
+;;; it was in: the top-level form as written when `eval` says what that was
+;;; (`%toplevel-form`), and the form being compiled otherwise. A condition
+;;; that could be *annotated* as it passes would be better than one that is
+;;; replaced, and is what `handler-bind` is for; that is phase 3's.
+(setq %toplevel-form nil)
+
 (defun compile-form (form)
+  (handler-case (%compile-form form)
+    (error (condition)
+      (error (%condition-type condition)
+             (%string-append
+              "in "
+              (%string-append
+               (%form-description (if %toplevel-form %toplevel-form form))
+               (%string-append
+                ": "
+                (if (stringp (%condition-message condition))
+                    (%condition-message condition)
+                    "it cannot be compiled"))))))))
+
+;;; What a person would call FORM: its operator, and for a definition the
+;;; name it defines — `DEFUN FACT`, `LET`.
+(defun %form-description (form)
+  (cond ((not (if (consp form) (symbolp (car form)) nil)) "a form")
+        ((if (%defining-p (symbol-name (car form)))
+             (if (consp (cdr form)) (if (second form) (symbolp (second form)) nil) nil)
+             nil)
+         (%string-append (symbol-name (car form))
+                         (%string-append " " (symbol-name (second form)))))
+        (t (symbol-name (car form)))))
+
+;;; Is NAME a defining operator's — does it begin DEF?
+(defun %defining-p (name)
+  (if (> (length name) 3)
+      (if (eq (aref name 0) #\D) (if (eq (aref name 1) #\E) (eq (aref name 2) #\F) nil) nil)
+      nil))
+
+(defun %compile-form (form)
   (let ((outer-code %code)
         (outer-open %open)
         (outer-macros %local-macros)
@@ -1468,6 +1621,7 @@
            (setq %code nil)
            (setq %open nil)
            (setq %local-macros nil)
+           (setq %pending-name nil)
            (setq %expansion-scopes nil)
            (%reset-constants)
            (%compile form nil t)
