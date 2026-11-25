@@ -389,7 +389,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1330 :REPLACED 1069)".into())],
+        [Outcome::Value("(:FORMS 1333 :REPLACED 1071)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -827,7 +827,10 @@ fn run_compiled_in(image: &[u8], source: &str) -> String {
                 out.push_str(&text);
                 out.push('\n');
             }
-            Outcome::Error(_) | Outcome::Failed(_) => out.push_str("!! error\n"),
+            Outcome::Error { condition, .. } => {
+                out.push_str(&quokka_vm::condition::report(&condition))
+            }
+            Outcome::Failed(e) => out.push_str(&quokka_vm::condition::report_error(&e)),
         }
         true
     });
@@ -880,7 +883,11 @@ fn load_reads_a_file_through_the_host() {
     assert_eq!(results[0], Outcome::Value("T".into()));
     assert_eq!(results[1], Outcome::Value("42".into()));
     assert_eq!(results[2], Outcome::Value("\"COMMON-LISP-USER\"".into()));
-    assert!(matches!(results[3], Outcome::Error(_)), "{:?}", results[3]);
+    assert!(
+        matches!(results[3], Outcome::Error { .. }),
+        "{:?}",
+        results[3]
+    );
 }
 
 /// Which printer writes a result in [`run_compiled_rust_read`].
@@ -940,7 +947,7 @@ fn run_compiled_rust_read(source: &str, printer: Printer) -> String {
                 out.push_str(&text);
                 out.push('\n');
             }
-            Err(_) => out.push_str("!! error\n"),
+            Err(e) => out.push_str(&quokka_vm::condition::report_error(&e)),
         }
     }
     out

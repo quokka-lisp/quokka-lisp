@@ -749,11 +749,12 @@
 ;; Called from the code `lambda_list::destructure` generates, when a macro
 ;; call does not fit the shape its parameter list described. These were
 ;; missing entirely until there was something to signal into.
+;; A `program-error` (CLHS 3.5.1.6), as SBCL signals.
 (defun %destructuring-too-short ()
-  (error "a macro call is missing arguments its parameter list asked for"))
+  (error 'program-error "a macro call is missing arguments its parameter list asked for"))
 
 (defun %destructuring-too-long ()
-  (error "a macro call has more arguments than its parameter list asked for"))
+  (error 'program-error "a macro call has more arguments than its parameter list asked for"))
 
 ;; `&key` in a pattern (#76). The rest of the list is a property list, and
 ;; there is no argument binder to search it, so the generated code calls

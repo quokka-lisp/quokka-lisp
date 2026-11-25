@@ -33,6 +33,21 @@
               (let ((value (handler-bind ((warning #'muffle-warning))
                              (eval form))))
                 (format t "=> ~S~%" value))
-            (error () (format t "!! error~%"))))))))
+            ;; Which kind of error, when it is one of the types CLHS names:
+            ;; `!! type-error`. Without the type every error looked alike, and
+            ;; Quokka failing for the wrong reason agreed with SBCL signalling
+            ;; the condition the test was written for (#103). The list is
+            ;; `condition::REPORTED` in Rust, most specific first here, since
+            ;; SBCL's own condition is usually a subclass of several.
+            (error (e)
+              (let ((type (find-if (lambda (type) (typep e type))
+                                   '(division-by-zero floating-point-overflow
+                                     floating-point-underflow floating-point-inexact
+                                     floating-point-invalid-operation unbound-slot
+                                     unbound-variable undefined-function end-of-file
+                                     reader-error print-not-readable arithmetic-error
+                                     cell-error control-error file-error package-error
+                                     parse-error program-error stream-error type-error))))
+                (format t "!! ~(~a~)~%" (or type 'error))))))))))
 
 (run-file (second sb-ext:*posix-argv*))

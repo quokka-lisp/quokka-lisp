@@ -2083,7 +2083,7 @@ fn said_by_the_world(heap: &mut Heap, source: &str) -> Vec<String> {
     quokka_vm::vm::eval_source(heap, source, 10_000_000, 2_000, &mut host, |outcome| {
         out.push(match outcome {
             quokka_vm::vm::Outcome::Value(text) => text,
-            quokka_vm::vm::Outcome::Error(text) => format!("; {text}"),
+            quokka_vm::vm::Outcome::Error { message, .. } => format!("; {message}"),
             quokka_vm::vm::Outcome::Failed(e) => format!("; failed: {e}"),
         });
         true

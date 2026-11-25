@@ -305,6 +305,15 @@ impl<'a, 'h> Machine<'a, 'h> {
                 detail: "wants a test and a consequent",
             });
         }
+        // `(if a b c d)`: the fourth form could only be a mistake, and was
+        // silently never evaluated (#110).
+        let after_then = self.mc.cdr(self.mc.cdr(rest));
+        if after_then.is_cons() && !self.mc.cdr(after_then).is_nil() {
+            return self.fail(EvalError::BadSyntax {
+                operator: "if",
+                detail: "takes a test, a consequent and at most one alternative",
+            });
+        }
         let test = self.mc.car(rest);
         let branches = self.mc.cdr(rest);
         let env = self.mc.register(Register::Env);
@@ -905,9 +914,14 @@ impl<'a, 'h> Machine<'a, 'h> {
         }
         let name = self.mc.car(rest);
         let env = self.mc.register(Register::Env);
+        // No block of that name in sight is a mistake in the program's
+        // text, a `program-error`, as the compiler and SBCL have it (#103);
+        // a block that has been left is the `control-error`.
         let Some(marker) = env::lookup_marker(self.mc, env, env::BLOCK, name) else {
-            let what = self.mc.symbol_name(name);
-            return self.fail(EvalError::NoSuchExit(what));
+            return self.fail(EvalError::BadSyntax {
+                operator: "return-from",
+                detail: "names a block that is not here",
+            });
         };
 
         // The value form is evaluated first, then the unwind happens — which is
@@ -1024,8 +1038,10 @@ impl<'a, 'h> Machine<'a, 'h> {
         let tag = self.mc.car(rest);
         let env = self.mc.register(Register::Env);
         let Some(marker) = env::lookup_marker(self.mc, env, env::TAG, tag) else {
-            let what = quokka_vm::printer::print(self.mc, tag);
-            return self.fail(EvalError::NoSuchExit(what));
+            return self.fail(EvalError::BadSyntax {
+                operator: "go",
+                detail: "names a tag that is not here",
+            });
         };
         // The tag travels as the value; the tagbody frame reads it on arrival.
         self.mc.set_register(Register::Value, tag);

@@ -1905,7 +1905,17 @@ pub fn step_outcome(heap: &mut crate::heap::Heap) -> Option<Outcome> {
         Some(if mc.symbol_is(kind, "VALUE") {
             Outcome::Value(text)
         } else {
-            Outcome::Error(text)
+            // `(:error message type-name)`.
+            let named = mc.cdr(mc.cdr(result));
+            let condition = if named.is_cons() {
+                mc.string_to_rust(mc.car(named))
+            } else {
+                String::from("ERROR")
+            };
+            Outcome::Error {
+                message: text,
+                condition,
+            }
         })
     })
 }
@@ -1951,8 +1961,13 @@ pub fn source_complete(
 pub enum Outcome {
     /// The form's value, as `prin1` wrote it.
     Value(String),
-    /// A Lisp error, caught by the loop: its message.
-    Error(String),
+    /// A Lisp error, caught by the loop.
+    Error {
+        /// What it said.
+        message: String,
+        /// The condition's type, as a symbol's name: `TYPE-ERROR`.
+        condition: String,
+    },
     /// What the loop could not catch, such as the step budget running out.
     Failed(EvalError),
 }

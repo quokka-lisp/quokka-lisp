@@ -655,6 +655,10 @@ const TABLE: &[(Prim, &str, Arity)] = &[
 /// fast path cannot answer — on overflow, or when an argument is a bignum
 /// (#16, decision 1) — and its slot in the symbol cache. `Vm::call_value`
 /// makes the call; the fast path never pays for it.
+///
+/// The numbers are each fallback's place among the symbol cache's fallback
+/// slots (`heap::symbol_cache::FALLBACKS` onwards). This match is the whole
+/// table: a new fallback takes the next number here and nowhere else.
 pub fn fallback(index: u32) -> Option<(usize, &'static str)> {
     let (n, name) = match Prim::from_u32(index)? {
         Prim::Add => (0, "%GENERIC-+"),

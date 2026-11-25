@@ -27,13 +27,18 @@ One line per top-level form:
 
 ```text
 => 42          the form's value, printed as the reader would want it back
-!! error       the form signalled
+!! type-error  the form signalled, and what kind of condition
+!! error       it signalled one with no standard type of its own
 ```
 
-Errors are flattened to one token on purpose. Quokka says "the function NOPE is
-undefined", SBCL says something else with a condition class and a restart list,
-and the text will never agree. Comparing condition *classes* would be stronger
-and waits for the condition system; this still catches the case that matters,
+An error is its condition type and nothing more. Quokka says "the function
+NOPE is undefined", SBCL says something else with a restart list, and the text
+will never agree; the *type* does, and since #103 it is compared: until then
+every error was `!! error`, and Quokka failing for the wrong reason agreed
+with SBCL signalling the condition a test was written for. The types printed
+are the ones CLHS names (`condition::REPORTED` in Rust, the same list in
+`scripts/oracle.lisp`); a `simple-error`, or a type a program made up, is
+plain `!! error`. This catches the case that matters,
 which is one implementation signalling where the other does not.
 
 The `.expected` files hold that output. They are the baseline the Rust test

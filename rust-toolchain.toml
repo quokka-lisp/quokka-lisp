@@ -1,6 +1,12 @@
 # Pinned so that native and both wasm targets are always available.
 # Rule 2 in CLAUDE.md: every change must build and test for native and wasm32.
+#
+# A version, not "stable" (#117). CI treats warnings as errors, so a new
+# compiler or a new clippy lint used to turn `main` red with no commit, and a
+# developer's machine and CI could be two different compilers without anyone
+# having chosen that. To move to a newer Rust: change this line, fix what it
+# reports, and commit the two together.
 [toolchain]
-channel = "stable"
+channel = "1.95.0"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown", "wasm32-wasip1"]

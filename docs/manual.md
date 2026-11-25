@@ -164,6 +164,12 @@ it sizes each slice from how long the last one took, and collects what the
 world wrote with `take_output`. `crates/quokka-wasm/src/lib.rs` says why it
 is shaped that way.
 
+A form after `#` in the address is evaluated once the world is up:
+`http://localhost:8080/#(+ 1 2)`. Two scripts check the result of those
+three commands, and CI runs both: `node scripts/smoke-wasm.mjs` loads the
+bundle in Node and has a world answer, and `scripts/smoke-browser.sh` opens
+the page itself in a headless Chrome and looks for the answer in it.
+
 ---
 
 ## 3. Making a world
@@ -248,7 +254,7 @@ quokka rebuild c2.qi c3.qi
 What to expect today:
 - C1 is 976,856 bytes; C2 and C3 are 978,464 each. A rebuild takes about
   seventeen seconds.
-- Every rebuild reports `(:FORMS 1330 :REPLACED 1069)`. It runs as one form
+- Every rebuild reports `(:FORMS 1333 :REPLACED 1071)`. It runs as one form
   with sixty times an ordinary form's step budget (300 million steps) and
   needs about 201 million; a rebuild that runs out says `BudgetExhausted`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. The

@@ -95,3 +95,16 @@
 => ("|A/B|" "|FACE|" "|1G|" "G1" "|-F|")
 => (".5|.5" ".12" "12.3" ".50")
 => (T T)
+!! program-error
+!! program-error
+!! program-error
+=> 2
+!! program-error
+!! program-error
+!! type-error
+!! undefined-function
+!! unbound-variable
+!! error
+!! division-by-zero
+!! control-error
+!! end-of-file

@@ -46,8 +46,8 @@ pub(crate) fn build(args: &[String]) {
             &mut NativeHost,
             |outcome| match outcome {
                 Outcome::Value(_) => true,
-                Outcome::Error(e) => {
-                    failed = Some(e);
+                Outcome::Error { message, .. } => {
+                    failed = Some(message);
                     false
                 }
                 Outcome::Failed(e) => {
@@ -99,7 +99,7 @@ pub(crate) fn rebuild(args: &[String]) {
             println!("rebuilt: {report}");
             None
         }
-        (Ok(()), Some(Outcome::Error(message))) => Some(message),
+        (Ok(()), Some(Outcome::Error { message, .. })) => Some(message),
         (Ok(()), Some(Outcome::Failed(e))) | (Err(e), _) => Some(e.to_string()),
         (Ok(()), None) => Some("the world read no form to rebuild with".to_string()),
     };
@@ -347,7 +347,7 @@ pub(crate) fn image_print(heap: &mut Heap, line: &str, host: &mut NativeHost) ->
         }
         match outcome {
             Outcome::Value(text) => out.push_str(&text),
-            Outcome::Error(message) => out.push_str(&format!("; {message}")),
+            Outcome::Error { message, .. } => out.push_str(&format!("; {message}")),
             Outcome::Failed(e) => out.push_str(&format!("; {e}")),
         }
         true

@@ -42,5 +42,5 @@
 => T
 => NIL
 => T
-!! error
-!! error
+!! package-error
+!! package-error

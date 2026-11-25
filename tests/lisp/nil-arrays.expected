@@ -10,12 +10,12 @@
 => NIL
 => NIL
 => (2 3)
-!! error
-!! error
+!! type-error
+!! type-error
 => "abc"
-!! error
-!! error
+!! type-error
+!! type-error
 => NIL
-!! error
+!! type-error
 => :ERROR
 => :ERROR

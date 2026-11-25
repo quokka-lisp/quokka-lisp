@@ -220,7 +220,9 @@ impl Quokka {
                     return;
                 }
                 Some(Outcome::Value(text)) => self.output.push_str(&format!("{text}\n")),
-                Some(Outcome::Error(text)) => self.output.push_str(&format!("; {text}\n")),
+                Some(Outcome::Error { message, .. }) => {
+                    self.output.push_str(&format!("; {message}\n"))
+                }
                 Some(Outcome::Failed(e)) => self.output.push_str(&format!("; {e}\n")),
             }
         }

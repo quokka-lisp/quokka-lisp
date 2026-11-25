@@ -136,17 +136,28 @@
         }
       };
 
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (vm.busy()) return;
-        const line = input.value;
-        input.value = "";
+      const evaluate = (line) => {
         print("quokka> " + line + "\n");
         vm.submit(line);
         input.disabled = true;
         stop.disabled = false;
         pump();
+      };
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (vm.busy()) return;
+        const line = input.value;
+        input.value = "";
+        evaluate(line);
       });
+
+      // A form after `#` in the address is evaluated once the world is up:
+      // index.html#(+ 1 2). A link can carry an example, and it is how CI
+      // drives the page in a headless browser, which has no keyboard.
+      if (location.hash.length > 1) {
+        evaluate(decodeURIComponent(location.hash.slice(1)));
+      }
 
       // The line may never end; the page is never stuck waiting for it.
       stop.addEventListener("click", () => vm.interrupt());

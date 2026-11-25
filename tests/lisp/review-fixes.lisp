@@ -130,3 +130,18 @@
 (let ((*print-base* 16)) (mapcar #'prin1-to-string '(|A/B| |FACE| |1G| g1 |-F|)))
 (list (format nil "~1F|~2F" 0.5d0 0.5d0) (format nil "~3F" 0.123d0) (format nil "~4F" 12.345d0) (format nil "~3,2F" 0.5d0))
 (list (boundp '*load-pathname*) (boundp '*load-truename*))
+
+;;; What the compiler refuses (#110), and as which condition (#103).
+(if 1 2 3 4)
+(let ((twice-bound 1) (twice-bound 2)) twice-bound)
+(funcall (lambda (twice-bound twice-bound) twice-bound) 1 2)
+(let* ((bound-in-turn 1) (bound-in-turn 2)) bound-in-turn)
+(return-from no-such-block 1)
+(tagbody (go no-such-tag))
+(car 5)
+(undefined-function-zz 1)
+unbound-variable-zz
+(error "a plain error")
+(/ 1 0)
+(throw 'no-such-catch 1)
+(read-from-string "(1 2")

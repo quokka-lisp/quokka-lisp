@@ -389,11 +389,31 @@
 
 ;;; Run a control string, or a function made by `formatter`, against
 ;;; ARGUMENTS on STREAM, and return the arguments left over.
+;;; A control string's directives, parsed once. `format` is called again
+;;; and again with the same string — it is a literal in the program — and
+;;; parsing it was nearly all of a call's cost: about 8,000 steps for
+;;; `(format nil "K~D" i)` (#112). So the parse is remembered against the
+;;; string *object*, in an `eq` table, with a copy of the text it was made
+;;; from: a string that has been changed since is parsed again. This is
+;;; *memoisation*, and the cheap half of #58, which would compile a control
+;;; string into a function. The table is emptied when it is full, so a
+;;; program that builds its control strings cannot grow it without end.
+(defvar %format-parses (make-hash-table :test 'eq))
+
+(defun %parsed-control (control)
+  (let ((known (gethash control %format-parses)))
+    (if (and known (string= (car known) control))
+        (cdr known)
+        (let ((items (%parse-control control)))
+          (if (> (hash-table-count %format-parses) 256) (clrhash %format-parses))
+          (setf (gethash control %format-parses) (cons (copy-seq control) items))
+          items))))
+
 (defun %format-to (stream control arguments)
   (if (not (stringp control))
       (apply control stream arguments)
       (let ((args (make-%format-args :all arguments :rest arguments))
-            (items (%parse-control control)))
+            (items (%parsed-control control)))
         ;; A ~^ outside any ~{ ends the whole format.
         (let ((%format-escape-tag 'format-done))
           (catch 'format-done

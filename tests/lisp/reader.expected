@@ -18,7 +18,7 @@
 => (Y 4)
 => :EMPTY
 => :EMPTY
-!! error
+!! end-of-file
 => (A (B C) NIL D)
 => (A . B)
 => (A B C D)
@@ -29,17 +29,17 @@
 => (FUNCTION CAR)
 => #(1 TWO "three")
 => (A .B)
-!! error
-!! error
-!! error
-!! error
+!! end-of-file
+!! reader-error
+!! reader-error
+!! reader-error
 => "FOOBAR"
 => "Mixed Case"
 => "AbC"
 => "ABcdEF"
 => T
 => T
-!! error
+!! reader-error
 => "GEN"
 => NIL
 => NIL
@@ -52,15 +52,15 @@
 => T
 => "READER-TEST"
 => T
-!! error
-!! error
-!! error
+!! reader-error
+!! reader-error
+!! reader-error
 => (1 2 3 :EOF)
 => (#\b #\c #\c :EOF)
 => (#\x #\y)
 => #\z
 => #\c
-!! error
+!! end-of-file
 => T
 => NIL
 => 65

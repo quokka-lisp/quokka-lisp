@@ -759,14 +759,17 @@ fn nested_cleanups_run_inside_out() {
 
 #[test]
 fn an_exit_with_no_target_signals() {
-    for source in [
-        "(return-from nowhere 1)",
-        "(throw 'nothing 1)",
-        "(go nowhere)",
-    ] {
+    // A throw with no catch is found when it runs: a control error.
+    assert!(matches!(
+        eval_all("(throw 'nothing 1)"),
+        Err(EvalError::NoSuchExit(_))
+    ));
+    // A block or tag that is nowhere in sight is a mistake in the text: a
+    // program error, as the compiler and SBCL have it (#103).
+    for source in ["(return-from nowhere 1)", "(go nowhere)"] {
         assert!(
-            matches!(eval_all(source), Err(EvalError::NoSuchExit(_))),
-            "{source} should have nowhere to go"
+            matches!(eval_all(source), Err(EvalError::BadSyntax { .. })),
+            "{source} names something that is not there"
         );
     }
     assert!(matches!(

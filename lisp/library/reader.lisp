@@ -778,7 +778,10 @@
         (if (and (eq char #\.)
                  (or (eq (+ i 1) end) (not (digit-char-p (aref text (+ i 1))))))
             (write-char #\0 out))))
-    (%parse-double (get-output-stream-string out))))
+    ;; A float too large to be one is a fault in the text being read, a
+    ;; `reader-error`, not the arithmetic error it is inside (#103).
+    (handler-case (%parse-double (get-output-stream-string out))
+      (arithmetic-error () (error 'reader-error "a float outside the range of a double" text)))))
 
 ;;; `(parse-integer string &key start end radix junk-allowed)` (#68): an
 ;;; integer, with whitespace around it allowed and a sign before it, and the

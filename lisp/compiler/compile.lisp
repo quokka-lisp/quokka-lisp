@@ -277,6 +277,12 @@
 ;;; to the assembler it was "an operand too large for the field the opcode
 ;;; gives it", which is true and tells the programmer nothing (#110).
 (defun %scope (tag names)
+  ;; One scope cannot bind a name twice: `(let ((x 1) (x 2)) x)` and
+  ;; `(lambda (x x) x)` were accepted, and meant whichever slot the lookup
+  ;; found first (#110). `let*` is not here: it makes a scope a variable.
+  (if (eq tag ':variable)
+      (if (%repeated-p names)
+          (%malformed "binding form" "binds the same variable twice")))
   (if (> (length names) 256)
       (%malformed "binding form"
                   "binds more than 256 names at once, which is the most one scope holds (lambda-parameters-limit)"))
@@ -732,7 +738,8 @@
     (if place
         (progn (%compile (third form) env nil)
                (%emit (list 'RETFROM (car place) (cdr place))))
-        (error (%string-append "return-from names a block that is not here: "
+        (error 'program-error
+               (%string-append "return-from names a block that is not here: "
                                (%name-text (second form)))))))
 
 ;;; A block's or a tag's name as text, for a message. Tier 0 has no printer.
@@ -1195,7 +1202,8 @@
 (defun %compile-go (form env)
   (let ((place (%lookup (second form) env 0 ':tag)))
     (if (null place)
-        (error (%string-append "go names a tag that is not here: " (%name-text (second form))))
+        (error 'program-error
+               (%string-append "go names a tag that is not here: " (%name-text (second form))))
         (let ((entry (%innermost-tagbody (%tag-scope (second form) env))))
           (if entry
               (%emit (list 'JMP-TAG
@@ -1373,8 +1381,12 @@
         ((member (car items) (cdr items)) t)
         (t (%repeated-p (cdr items)))))
 
+;;; A `program-error`, as SBCL's is and CLHS 3.5 names it: the differential
+;;; tests could not see that it was a plain error until they printed the
+;;; type (#103).
 (defun %malformed (operator detail)
-  (error (%string-append "bad " (%string-append operator (%string-append ": " detail)))))
+  (error 'program-error
+         (%string-append "bad " (%string-append operator (%string-append ": " detail)))))
 
 ;;; A binding list: nil, or a list whose elements are each a symbol or a list
 ;;; starting with one.
@@ -1409,7 +1421,10 @@
                (%malformed "quote" "wants exactly one argument")))
           ((eq head 'if)
            (if (not (and (consp rest) (consp (cdr rest))))
-               (%malformed "if" "wants a test and a consequent")))
+               (%malformed "if" "wants a test and a consequent"))
+           ;; A fourth form could only be a mistake, and was never run (#110).
+           (if (if (consp (cddr rest)) (cdr (cddr rest)) nil)
+               (%malformed "if" "takes a test, a consequent and at most one alternative")))
           ((eq head 'setq)
            (if (not (%setq-pairs-p rest))
                (%malformed "setq" "wants alternating symbols and values")))

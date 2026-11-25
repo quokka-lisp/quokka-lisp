@@ -321,9 +321,6 @@ impl<'h> Value<'h> {
     /// into the heap. If anyone could construct one at an arbitrary brand the
     /// lifetime guarantee would be worthless — it stops a value escaping a
     /// mutation, not being invented outside one.
-    // Not called from the library yet: #2 gives heap objects their headers. The tests below do
-    // exercise it, but test-only use does not satisfy dead-code analysis.
-    #[allow(dead_code)]
     pub(crate) const fn object(word_index: usize) -> Option<Value<'h>> {
         Value::heap_ref(word_index, TAG_OBJECT)
     }
@@ -334,9 +331,6 @@ impl<'h> Value<'h> {
     /// into the heap. If anyone could construct one at an arbitrary brand the
     /// lifetime guarantee would be worthless — it stops a value escaping a
     /// mutation, not being invented outside one.
-    // Not called from the library yet: #3 writes the collector. The tests below do
-    // exercise it, but test-only use does not satisfy dead-code analysis.
-    #[allow(dead_code)]
     pub(crate) const fn forwarding(word_index: usize) -> Option<Value<'h>> {
         Value::heap_ref(word_index, TAG_FORWARDING)
     }

@@ -191,7 +191,7 @@ fn run_file(
                     record(group, file, line, results, log);
                 }
             }
-            Outcome::Error(message) => {
+            Outcome::Error { message, .. } => {
                 log.push_str(&format!("{file}: the runner failed: {message}\n"));
                 if last_error.as_ref() == Some(&message) {
                     return;

@@ -45,9 +45,9 @@
 => (1 2 THREE FOUR)
 => EXACTLY-TWO
 => (1 2)
-!! error
-!! error
-!! error
+!! program-error
+!! program-error
+!! program-error
 => OPT
 => (1 NIL)
 => (1 2)

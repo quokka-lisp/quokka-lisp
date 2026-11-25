@@ -88,7 +88,66 @@ pub fn matches<'h>(mc: &Mutation<'h>, wanted: Value<'h>, condition: Value<'h>) -
 /// The type symbols are Common Lisp's, so a program that catches
 /// `undefined-function` catches what it expects to.
 pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value<'h>> {
-    let (type_name, message) = match e {
+    let (type_name, message) = classify(e)?;
+    let type_name = mc.intern(type_name);
+    let message = mc.alloc_string(&message);
+    Some(make(mc, type_name, message, Value::NIL))
+}
+
+/// The condition types CLHS names that a test may tell apart, most of them
+/// leaves of the lattice. Anything else — a `simple-error`, a type a
+/// program made up — is reported as plain `error`.
+const REPORTED: &[&str] = &[
+    "ARITHMETIC-ERROR",
+    "CELL-ERROR",
+    "CONTROL-ERROR",
+    "DIVISION-BY-ZERO",
+    "END-OF-FILE",
+    "FILE-ERROR",
+    "FLOATING-POINT-INEXACT",
+    "FLOATING-POINT-INVALID-OPERATION",
+    "FLOATING-POINT-OVERFLOW",
+    "FLOATING-POINT-UNDERFLOW",
+    "PACKAGE-ERROR",
+    "PARSE-ERROR",
+    "PRINT-NOT-READABLE",
+    "PROGRAM-ERROR",
+    "READER-ERROR",
+    "STREAM-ERROR",
+    "TYPE-ERROR",
+    "UNBOUND-SLOT",
+    "UNBOUND-VARIABLE",
+    "UNDEFINED-FUNCTION",
+];
+
+/// The line a differential test prints for a form that signalled:
+/// `!! type-error`, or `!! error` for a condition with no standard type of
+/// its own. `scripts/oracle.lisp` prints the same line for SBCL.
+///
+/// The type is in the line because without it every error looked alike, and
+/// Quokka failing for the wrong reason — an undefined function, say — agreed
+/// with SBCL signalling the `type-error` the test was written for (#103).
+pub fn report(condition_type: &str) -> String {
+    if REPORTED.contains(&condition_type) {
+        format!("!! {}\n", condition_type.to_lowercase())
+    } else {
+        String::from("!! error\n")
+    }
+}
+
+/// [`report`] for an error that reached the top as an [`EvalError`].
+pub fn report_error(e: &EvalError) -> String {
+    match e {
+        // "TYPE: message", as `describe` writes an uncaught condition.
+        EvalError::Signalled(what) => report(what.split(':').next().unwrap_or("")),
+        _ => report(classify(e).map_or("", |(type_name, _)| type_name)),
+    }
+}
+
+/// The condition type and message an `EvalError` stands for, or `None` if
+/// it is not the program's fault.
+fn classify(e: &EvalError) -> Option<(&'static str, String)> {
+    Some(match e {
         EvalError::UnboundVariable(name) => ("UNBOUND-VARIABLE", format!("{name} is unbound")),
         EvalError::UndefinedFunction(name) => {
             ("UNDEFINED-FUNCTION", format!("{name} is undefined"))
@@ -135,10 +194,7 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
         | EvalError::HeapExhausted
         | EvalError::BudgetExhausted
         | EvalError::Blocked => return None,
-    };
-    let type_name = mc.intern(type_name);
-    let message = mc.alloc_string(&message);
-    Some(make(mc, type_name, message, Value::NIL))
+    })
 }
 
 /// How a condition prints when nothing caught it.

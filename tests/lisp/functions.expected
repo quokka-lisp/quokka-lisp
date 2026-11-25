@@ -28,5 +28,5 @@
 => 2432902008176640000
 => DOWN
 => DONE
-!! error
-!! error
+!! program-error
+!! program-error

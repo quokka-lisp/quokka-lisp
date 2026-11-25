@@ -36,8 +36,7 @@
 => RAN
 => NIL
 => NIL
-!! error
-!! error
-!! error
-!! error
-!! error
+!! program-error
+!! program-error
+!! program-error
+!! undefined-function

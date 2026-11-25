@@ -124,8 +124,7 @@ jobs:
       # this step nothing in CI produced the bundle index.html imports, let
       # alone called it. Node runs the same engine a Chromium browser does;
       # what it has no part of is the page itself — the DOM, `fetch`, the
-      # timer between slices — which wants a headless browser and is not
-      # here yet.
+      # timer between slices — which the step after it covers.
       - name: Bundle the dev console
         run: |
           cargo install wasm-pack --locked --version 0.15.1
@@ -134,6 +133,13 @@ jobs:
         run: |
           cargo run --locked --release -p quokka -- build crates/quokka-wasm/www/world.qi
           node scripts/smoke-wasm.mjs
+      # And the page itself, in the runner's Chrome with no window: it
+      # fetches the world, runs a form in slices between which the browser
+      # has the thread, and the answer is found in the document.
+      - name: The page answers in a headless browser
+        run: ./scripts/smoke-browser.sh
+        env:
+          SMOKE_BROWSER_REQUIRED: "1"
 
   wasm-wasi:
     name: wasm32-wasip1 (tests under wasmtime)

@@ -4,7 +4,7 @@
 => 1
 => YES
 => (NIL)
-!! error
+!! type-error
 => (1 2 3)
 => NIL
 => (1)

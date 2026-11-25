@@ -25,7 +25,7 @@ pub mod reader;
 ///
 /// ```text
 /// => 42          the form's value
-/// !! error       the form signalled
+/// !! type-error  the form signalled, and the condition's type if CLHS names it
 /// ```
 pub fn run_forms(source: &str, budget: u64) -> String {
     use quokka_vm::heap::Heap;
@@ -46,7 +46,7 @@ pub fn run_forms(source: &str, budget: u64) -> String {
                 out.push_str(&print(mc, value));
                 out.push('\n');
             }
-            Err(_) => out.push_str("!! error\n"),
+            Err(e) => out.push_str(&quokka_vm::condition::report_error(&e)),
         }
         true
     });

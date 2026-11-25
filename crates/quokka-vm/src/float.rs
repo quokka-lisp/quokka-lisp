@@ -161,7 +161,13 @@ fn combine(op: Op, a: Real, b: Real) -> Result<Real, EvalError> {
     }
     let (x, y) = (a.float(), b.float());
     if matches!(op, Op::Div | Op::Rem) && y == 0.0 {
-        return Err(division_by_zero());
+        // Zero over zero has no answer at all, which IEEE 754 calls an
+        // invalid operation; anything else over zero is a division by zero.
+        return Err(if op == Op::Div && x == 0.0 {
+            fault("FLOATING-POINT-INVALID-OPERATION", "zero divided by zero")
+        } else {
+            division_by_zero()
+        });
     }
     let r = match op {
         Op::Add => x + y,
@@ -250,6 +256,11 @@ pub fn unary<'h>(
     f: fn(f64) -> f64,
 ) -> Result<Value<'h>, EvalError> {
     let x = value(mc, name, v)?;
+    // The logarithm of zero is minus infinity reached by dividing by zero,
+    // and that is the condition SBCL signals for it.
+    if name == "%LOG" && x == 0.0 {
+        return Err(division_by_zero());
+    }
     make(mc, f(x))
 }
 

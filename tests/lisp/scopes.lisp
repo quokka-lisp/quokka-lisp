@@ -76,6 +76,8 @@ h
 ;; Malformed forms signal.
 (let)
 (let* 1)
+;; `(function)` with no argument was here. Both refuse it, with different
+;; condition types — SBCL a plain error, Quokka a program-error — and CLHS
+;; does not say which, so it is not a thing to compare.
 (flet ((f)) 1)
-(function)
 (function nosuchfunction)
