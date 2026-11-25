@@ -77,10 +77,7 @@
                                ((%environment-function-p environment (car form)) nil)
                                (t (%macro-function (car form))))))
            (if expander
-               (values (%expand expander form
-                                (if environment (second environment) nil)
-                                (if environment (third environment) nil))
-                       t)
+               (values (%expand expander form environment) t)
                (values form nil))))
         (t (values form nil))))
 

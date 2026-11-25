@@ -657,12 +657,17 @@ only when its own tagbody is the innermost thing on that list. Otherwise,
 `GO`.
 
 ```lisp
-(defun %innermost-tagbody (scope)
-  (let ((innermost (car %open)))
-    (if (and (consp innermost) (eq (second innermost) scope))
-        innermost
-        nil)))
+(defun %local-go-label (tag open)
+  (if (eq (car open) ':tagbody)
+      (let ((index (%position tag (second open) 0)))
+        (if index (nth index (third open)) nil))
+      nil))
 ```
+
+OPEN is the innermost thing open, and the answer is the label to jump to, or
+nil for "use `GO`". (The list was a variable of its own, `%open`, when this
+chapter was written. Since #111 the same entries sit in the compiler's
+environment beside the scopes, and the function above is that version.)
 
 And the verifier checks it statically. Until now it tracked *how many*
 records were open at each instruction. `JMP-TAG` needs to know *where* the

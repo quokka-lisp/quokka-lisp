@@ -86,6 +86,7 @@ pub enum Kind {
 
 /// Where an array's elements live: the simple array at the end of its chain,
 /// and the index there of its first element.
+#[derive(Debug)]
 pub struct Storage<'h> {
     /// The simple array.
     pub simple: Value<'h>,

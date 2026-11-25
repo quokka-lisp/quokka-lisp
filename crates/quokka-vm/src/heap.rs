@@ -656,6 +656,31 @@ impl Storage {
         at
     }
 
+    /// The **store barrier**: called before a reference is stored into the
+    /// object or cons at word `holder`, and empty.
+    ///
+    /// It is here for the collector this heap will have and does not have
+    /// yet (#86, decided 25 Nov 2026). A *generational* collector keeps new
+    /// objects in a small nursery and collects only that, most of the time,
+    /// on the observation that most objects die young. To do so it must find
+    /// every reference *into* the nursery without scanning the old objects,
+    /// and the only way an old object comes to hold one is by being written
+    /// to after it was made. So every such write is noted, in a *remembered
+    /// set*, and a nursery collection treats the noted objects as roots (the
+    /// Garbage Collection Handbook, chapter 9; Ungar 1984). Noting the write
+    /// is this function's whole job.
+    ///
+    /// Empty now, because Cheney's collector copies everything each time and
+    /// needs nothing remembered, and placed now, because the alternative is
+    /// to find every store in the machine again on the day the collector
+    /// changes. There are exactly three: `set_car`, `set_cdr` and
+    /// `set_slot`. A raw slot holds no reference, a fresh object's first
+    /// contents are written to the youngest object there is, and the
+    /// registers are roots, scanned whole at every collection.
+    #[inline(always)]
+    #[allow(clippy::unused_self)]
+    fn note_store(&mut self, _holder: usize) {}
+
     /// Set the flag if `words` more would pass the hard limit.
     fn note_growth(&mut self, words: usize) {
         if self.words.len() + words - self.dynamic_start > self.hard_limit {
@@ -672,6 +697,17 @@ impl Storage {
 pub struct Mutation<'h> {
     storage: &'h mut Storage,
     _brand: Invariant<'h>,
+}
+
+/// How much of the heap is in use, and not the heap: a `Mutation` borrows
+/// every word there is, and printing them would be the whole world.
+impl fmt::Debug for Mutation<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Mutation")
+            .field("used_words", &self.used_words())
+            .field("exhausted", &self.storage.exhausted)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'h> Mutation<'h> {
@@ -705,12 +741,14 @@ impl<'h> Mutation<'h> {
     /// Replace the car of a cons cell.
     pub fn set_car(&mut self, v: Value<'h>, new: Value<'h>) {
         let at = self.cell(v);
+        self.storage.note_store(at);
         self.storage.words[at] = new.bits();
     }
 
     /// Replace the cdr of a cons cell.
     pub fn set_cdr(&mut self, v: Value<'h>, new: Value<'h>) {
         let at = self.cell(v);
+        self.storage.note_store(at);
         self.storage.words[at + 1] = new.bits();
     }
 
@@ -798,6 +836,7 @@ impl<'h> Mutation<'h> {
     /// As [`Self::slot`].
     pub fn set_slot(&mut self, v: Value<'h>, index: usize, new: Value<'h>) {
         let at = self.slot_at(v, index, true);
+        self.storage.note_store(at);
         self.storage.words[at] = new.bits();
     }
 

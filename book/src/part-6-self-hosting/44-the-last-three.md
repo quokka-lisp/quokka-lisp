@@ -189,6 +189,12 @@ rewrite in Rust has no `&environment`, and it does not need one: the compiler
 takes `&environment e` out of a `defmacro` or `macrolet` lambda list before
 the rewrite, and wraps the body in `(let ((e (%current-environment))) ...)`.
 
+(Both halves of that have since been replaced. Step AC made the environment
+the expander's second argument, as it is in Common Lisp; and #111 put the
+local macros into the compiler's environment itself, as `(:macro ...)`
+entries beside the scopes, so that what we hand a macro is now that one list
+and nothing is kept in a variable while it runs.)
+
 The library then redefines `macroexpand-1` and `macroexpand` to take an
 environment. They see its symbol macros and local macros, and run an expander
 *inside* it, so a nested macro that asks for its environment gets the right

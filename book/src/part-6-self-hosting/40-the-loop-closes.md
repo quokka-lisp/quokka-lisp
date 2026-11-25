@@ -51,7 +51,10 @@ symbol (chapter 35), and the compiled code finds it there.
 `compile-form` keeps its work in progress in five global variables: `%code`,
 `%constants`, `%constant-count`, `%open` and `%local-macros`. It started each
 compilation by resetting them, which made it not **re-entrant**, meaning not
-safe to call again before the previous call had finished.
+safe to call again before the previous call had finished. (There are four
+now, and they are not the same four: #111 moved `%open` and `%local-macros`
+into the environment, which is an argument and needs no saving, and gave the
+constants a table.)
 
 Nothing seemed to call it that way, until you notice when macros run. A macro's
 expander runs *during* the compilation of the form that uses it, so an expander

@@ -23,20 +23,97 @@
 ;;; the discipline that makes a global safe here.
 ;;;
 ;;; Held reversed and counted, so adding one is a `cons` rather than a walk to
-;;; the end.
+;;; the end; and beside the list a table from each constant to its index, so
+;;; that asking whether one is already there is not a walk either. Until #111
+;;; it was: every mention of a constant searched the list, which nobody
+;;; notices in a function written by hand and which is quadratic in one a
+;;; macro wrote — a `progn` of 500 calls to 500 different functions ran out
+;;; of the read-eval-print loop's step budget, where 1,000 calls to one
+;;; function compiled.
 
 (setq %constants nil)
 (setq %constant-count 0)
+(setq %constant-table (%make-hash-table 'eq))
 
-;;; What is open around the form being compiled, innermost first: `:record`
-;;; for a form whose unwind record is on the stack while its body runs,
-;;; `:function` for the edge of a nested function, and an entry per
-;;; `tagbody`. A `go` reads it to decide whether it may be a one-step
-;;; `JMP-TAG` — only if its own tagbody is the innermost thing open (#37).
+;;; The lexical environment (#111)
 ;;;
-;;; Not part of the environment, because the environment mirrors the run-time
-;;; chain of scopes link for link, and most of these leave no scope behind.
-(setq %open nil)
+;;; Everything the compiler knows about the text around the form it is
+;;; compiling is one list, ENV, passed down as an argument: innermost entry
+;;; first, each entry `(kind . what-it-holds)`, and nil for the null lexical
+;;; environment, as in CL. It is also, unchanged, the object a macro receives
+;;; as `&environment`.
+;;;
+;;; Four kinds are **run-time scopes**. The machine builds one link of its
+;;; scope chain for each, so `%lookup` counts them, and the count is the
+;;; `depth` in `LREF depth index`:
+;;;
+;;;     (:variable name...)   `let`, `let*`, a function's parameters   BIND
+;;;     (:function name...)   `flet`, `labels`                         BINDF
+;;;     (:block name)         `block`                                  BLOCK
+;;;     (:tag tag...)         `tagbody`                                TAG
+;;;
+;;; The rest exist **only while compiling**. Nothing is pushed for them at
+;;; run time, so `%lookup` steps over them without counting:
+;;;
+;;;     (:macro (name . expander)...)      `macrolet`
+;;;     (:symbol-macro (name . form)...)   `symbol-macrolet`
+;;;     (:special name...)                 a `special` declaration
+;;;     (:notinline name...)               a `notinline` declaration
+;;;     (:record)                          an unwind record is on the stack
+;;;     (:tagbody tags labels)             a tagbody's record, and its labels
+;;;     (:lambda)                          the edge of a nested function
+;;;
+;;; The last three say what is *open* between a form and the start of its
+;;; function, which a `go` reads to decide whether it may be a one-step
+;;; `JMP-TAG` (#37).
+;;;
+;;; **One list, where there were three.** Until #111 only the scopes were in
+;;; ENV. What was open lived in a global, `%open`, pushed and popped around
+;;; each body by a function that took a thunk; and the `macrolet` expanders
+;;; lived in another, `%local-macros`, which had no way to know that an
+;;; `flet` further in had taken a macro's name, so `flet` pushed an entry
+;;; with no expander on it to say so. A macro's environment was a record of
+;;; two of the three. All of them describe the same thing — where in the
+;;; text we are — and all are pushed when a form is entered and dropped when
+;;; it is left, which is what passing an argument does by itself. So:
+;;;
+;;; - a local function hides a `macrolet` macro of the same name because its
+;;;   `:function` scope is met first on the way out, and the other way round
+;;;   (`%local-macro`); nothing has to be arranged;
+;;; - compiling is re-entrant in these with no saving and restoring: an
+;;;   expander that calls `eval` starts a compilation with its own ENV;
+;;; - what a macro is handed is the whole of it, and a code walker can extend
+;;;   it by consing an entry on the front.
+;;;
+;;; SBCL's `lexenv` holds the same knowledge as a structure with a list per
+;;; namespace (`vars`, `funs`, `blocks`, `tags`, `cleanup`). That shape was
+;;; rejected here: the machine's scope chain is one chain across all
+;;; namespaces, and `depth` counts links of it, so a list per namespace would
+;;; need the interleaving recorded a second time. A record of three fields
+;;; `(scopes macros open)` was the other candidate, and is the three
+;;; structures again with one name.
+;;;
+;;; The price is that `%lookup` walks past entries it does not count, and
+;;; that every entry must be a cons, since everything here reads its `car`.
+
+;;; ENV with a record open: `block`, `catch`, `unwind-protect`, a handler, a
+;;; dynamic binding — any form whose record is on the stack while its body
+;;; runs.
+(defun %open-record (env)
+  (cons '(:record) env))
+
+;;; The innermost thing open in ENV, or nil when nothing is.
+(defun %innermost-open (env)
+  (cond ((null env) nil)
+        ((%open-entry-p (car (car env))) (car env))
+        (t (%innermost-open (cdr env)))))
+
+(defun %open-entry-p (kind)
+  (or (eq kind ':record) (eq kind ':tagbody) (eq kind ':lambda)))
+
+;;; Is KIND a scope the machine builds a link for?
+(defun %run-time-scope-p (kind)
+  (or (eq kind ':variable) (eq kind ':function) (eq kind ':block) (eq kind ':tag)))
 
 ;;; Special variables (#40): the symbols `defvar` and `defparameter` have
 ;;; proclaimed. Every binding of one is dynamic, wherever it appears — a `let`,
@@ -185,37 +262,28 @@
 (defun %compile-with-dynamic-binds (names renamed body env declared)
   (let ((count (length (%specials-among names declared))))
     (%emit-dynamic-binds names renamed 0 declared)
-    (%with-open ':record (lambda () (%compile-body body env nil)))
+    (%compile-body body (%open-record env) nil)
     (%emit-unmarks count)))
-
-;;; Compile with ENTRY open, by calling THUNK. The save and restore are by
-;;; hand because tier 0 has no special variables to bind.
-(defun %with-open (entry thunk)
-  (let ((outer %open))
-    (setq %open (cons entry %open))
-    (funcall thunk)
-    (setq %open outer)))
 
 (defun %reset-constants ()
   (setq %constants nil)
-  (setq %constant-count 0))
-
-(defun %find-constant (value remaining index)
-  (cond ((null remaining) nil)
-        ((eq (car remaining) value) index)
-        (t (%find-constant value (cdr remaining) (- index 1)))))
+  (setq %constant-count 0)
+  (setq %constant-table (%make-hash-table 'eq)))
 
 ;;; The index of VALUE, adding it if it is not there.
 ;;;
-;;; Matched with `eq`, so two occurrences of a symbol share a slot and two
-;;; equal strings do not. That is the right way round: a symbol is interned
-;;; and a literal string is a separate object whose identity a program can
-;;; observe (chapter 26 and issue #26).
+;;; Matched with `eq` — the table's test — so two occurrences of a symbol
+;;; share a slot and two equal strings do not. That is the right way round:
+;;; a symbol is interned and a literal string is a separate object whose
+;;; identity a program can observe (chapter 26 and issue #26). The table
+;;; hashes such a string by its address, and is rehashed if a collection
+;;; moves it (#64), which nothing here has to know.
 (defun %constant-index (value)
-  (let ((found (%find-constant value %constants (- %constant-count 1))))
+  (let ((found (%gethash value %constant-table nil)))
     (if found
         found
         (progn
+          (%set-gethash value %constant-table %constant-count)
           (setq %constants (cons value %constants))
           (setq %constant-count (+ %constant-count 1))
           (- %constant-count 1)))))
@@ -264,7 +332,8 @@
          (%emit (list 'FIX value)))
         (t (%emit (list 'CONST (%constant-index value))))))
 
-;;; A scope is `(tag name ...)`, where the tag is `:variable` or `:function`.
+;;; A run-time scope is `(tag name ...)`, where the tag is `:variable`,
+;;; `:function`, `:block` or `:tag`.
 ;;;
 ;;; The tag matters because `depth` counts **every** link, whatever namespace
 ;;; it binds in — an `flet` scope is stepped over by a variable lookup and is
@@ -297,27 +366,25 @@
         ((and (integerp item) (integerp (car remaining)) (= (car remaining) item)) index)
         (t (%position item (cdr remaining) (+ index 1)))))
 
+;;; Where NAME is in ENV, in the namespace TAG names: `(depth . index)`, or
+;;; nil if it is not lexical here. DEPTH is how many run-time scopes lie
+;;; between, of any namespace; an entry that exists only while compiling is
+;;; stepped over and not counted, since nothing was pushed for it.
 (defun %lookup (name env depth tag)
-  (cond
-    ((null env) nil)
-    ;; A `symbol-macrolet` scope exists only while compiling: nothing is
-    ;; pushed for it at run time, so it is not a link and is not counted.
-    ((eq (car (car env)) ':symbol-macro) (%lookup name (cdr env) depth tag))
-    ((eq (car (car env)) ':notinline) (%lookup name (cdr env) depth tag))
-    ;; Nor is a `special` declaration's (#62): a variable it names is not
-    ;; lexical here, whatever binds it further out.
-    ((eq (car (car env)) ':special)
-     (if (and (eq tag ':variable) (member name (cdr (car env))))
-         nil
-         (%lookup name (cdr env) depth tag)))
-    (t
-      (let ((scope (car env)))
-        (let ((index (if (eq (car scope) tag)
-                         (%position name (cdr scope) 0)
-                         nil)))
-          (if index
-              (cons depth index)
-              (%lookup name (cdr env) (+ depth 1) tag)))))))
+  (if (null env)
+      nil
+      (let ((kind (car (car env))))
+        (cond ((eq kind tag)
+               (let ((index (%position name (cdr (car env)) 0)))
+                 (if index
+                     (cons depth index)
+                     (%lookup name (cdr env) (+ depth 1) tag))))
+              ((%run-time-scope-p kind) (%lookup name (cdr env) (+ depth 1) tag))
+              ;; A `special` declaration's scope (#62): a variable it names is
+              ;; not lexical here, whatever binds it further out.
+              ((and (eq kind ':special) (eq tag ':variable) (member name (cdr (car env))))
+               nil)
+              (t (%lookup name (cdr env) depth tag))))))
 
 ;;; `(if test then else)`
 ;;;
@@ -420,9 +487,8 @@
             ;; seen every binding before it, and every binding after it sees
             ;; this one.
             (progn (%emit (list 'DBIND (%constant-index name)))
-                   (%with-open ':record
-                               (lambda () (%compile-let*-declaring (cdr bindings) body env nil
-                                                                    declared)))
+                   (%compile-let*-declaring (cdr bindings) body (%open-record env) nil
+                                            declared)
                    (%emit (list 'UNMARK)))
             (progn (%emit (list 'BIND (%constant-index (vector name))))
                    (%compile-let*-declaring (cdr bindings)
@@ -510,31 +576,32 @@
   (let ((outer-code %code)
         (outer %constants)
         (outer-count %constant-count)
+        (outer-table %constant-table)
         (name (if %pending-name %pending-name 'lambda)))
     (setq %pending-name nil)
-    (setq env (%notinline-scope body env))
+    ;; `(:lambda)` marks the function's edge: what is open outside it is not
+    ;; open in it, since the closure may be called from anywhere.
+    (setq env (cons '(:lambda) (%notinline-scope body env)))
     (setq %code nil)
     (%reset-constants)
-    (%with-open ':function
-                (lambda ()
-                  (let ((declared (%declared-specials body)))
-                    (if (%specials-among names declared)
-                        ;; A parameter that names a special variable binds it
-                        ;; dynamically for the call — `(defun f (*x*) ...)`.
-                        (let ((renamed (%rename-specials names declared)))
-                          (%compile-with-dynamic-binds
-                           names renamed body
-                           (%special-scope declared (cons (%scope ':variable renamed) env))
-                           declared))
-                        (%compile-body body
-                                       (%special-scope declared
-                                                       (cons (%scope ':variable names) env))
-                                       t)))))
+    (let ((declared (%declared-specials body)))
+      (if (%specials-among names declared)
+          ;; A parameter that names a special variable binds it dynamically
+          ;; for the call — `(defun f (*x*) ...)`.
+          (let ((renamed (%rename-specials names declared)))
+            (%compile-with-dynamic-binds
+             names renamed body
+             (%special-scope declared (cons (%scope ':variable renamed) env))
+             declared))
+          (%compile-body body
+                         (%special-scope declared (cons (%scope ':variable names) env))
+                         t)))
     (%emit (list 'RET))
     (let ((compiled (%assemble (reverse %code) (%constants-vector) params name)))
       (setq %code outer-code)
       (setq %constants outer)
       (setq %constant-count outer-count)
+      (setq %constant-table outer-table)
       compiled)))
 
 (defun %compile-arguments (arguments env)
@@ -655,24 +722,16 @@
   (let ((names (%local-function-names (second form))))
     (%compile-local-functions (second form) env)
     (%emit (list 'BINDF (%constant-index (apply #'vector names))))
-    (%compile-local-function-body (cddr form) names (cons (%scope ':function names) env) tail)
+    (%compile-local-function-body (cddr form) (cons (%scope ':function names) env) tail)
     (%emit (list 'UNBIND 1))))
 
 ;;; The body of a `flet` or `labels`: its declarations apply as `locally`'s
-;;; do, and a local function hides a `macrolet` macro of the same name from
+;;; do. A local function hides a `macrolet` macro of the same name from
 ;;; further out, as it hides a global one (CLHS 3.1.1.2; ansi-test
-;;; macrolet.37, #80). `%local-macros` gets an entry with no expander for
-;;; each name, which `%find-macro` finds first and answers nil for.
-(defun %compile-local-function-body (body names env tail)
-  (let ((outer %local-macros))
-    (setq %local-macros (%shadowing-entries names outer))
-    (%compile-body body (%special-scope (%declared-specials body) env) tail)
-    (setq %local-macros outer)))
-
-(defun %shadowing-entries (names macros)
-  (if (endp names)
-      macros
-      (cons (cons (car names) nil) (%shadowing-entries (cdr names) macros))))
+;;; macrolet.37, #80) — which needs nothing here: its `:function` scope is in
+;;; ENV, nearer than the macro, and `%local-macro` stops at it.
+(defun %compile-local-function-body (body env tail)
+  (%compile-body body (%special-scope (%declared-specials body) env) tail))
 
 ;;; `(labels ((f (x) ... (f ...))) ...)`
 ;;;
@@ -704,7 +763,7 @@
       (%emit-nils (length names))
       (%emit (list 'BINDF (%constant-index (apply #'vector names))))
       (%store-local-functions (second form) inner 0)
-      (%compile-local-function-body (cddr form) names inner tail)
+      (%compile-local-function-body (cddr form) inner tail)
       (%emit (list 'UNBIND 1)))))
 
 ;;; `(block out ...)` and `(return-from out value)`
@@ -728,8 +787,9 @@
   (let ((done (gensym))
         (name (second form)))
     (%emit (list 'BLOCK (%constant-index name) done))
-    (%with-open ':record
-                (lambda () (%compile-body (cddr form) (cons (%scope ':block (list name)) env) nil)))
+    ;; `BLOCK` pushes two things, and ENV gets an entry for each: the scope
+    ;; that holds the marker, and the record.
+    (%compile-body (cddr form) (%open-record (cons (%scope ':block (list name)) env)) nil)
     (%emit (list 'UNMARK))
     (%emit-label done)))
 
@@ -766,7 +826,7 @@
   (let ((done (gensym)))
     (%compile (second form) env nil)
     (%emit (list 'CATCH done))
-    (%with-open ':record (lambda () (%compile-body (cddr form) env nil)))
+    (%compile-body (cddr form) (%open-record env) nil)
     (%emit (list 'UNMARK))
     (%emit-label done)))
 
@@ -835,7 +895,7 @@
   (let ((cleanup (gensym))
         (done (gensym)))
     (%emit (list 'PROTECT cleanup))
-    (%with-open ':record (lambda () (%compile (second form) env nil)))
+    (%compile (second form) (%open-record env) nil)
     (%emit (list 'UNMARK))
     (%emit (list 'MVSAVE))
     (%compile-for-effect (cddr form) env)
@@ -844,7 +904,7 @@
     (%emit-label cleanup)
     ;; This copy runs with a paused record on the stack; the inline one above
     ;; runs after `UNMARK`, with none.
-    (%with-open ':record (lambda () (%compile-for-effect (cddr form) env)))
+    (%compile-for-effect (cddr form) (%open-record env))
     (%emit (list 'UNPROTECT))
     (%emit-label done)))
 
@@ -902,44 +962,66 @@
 ;;; Local macros, which exist only while the body is being *compiled*: the
 ;;; expanders run in the compiler and nothing of them reaches the output.
 ;;; Each is compiled here and now into a function, made a macro, and held in
-;;; `%local-macros` for the body's extent, where `%compile-cons` consults it
-;;; before any global macro.
+;;; a `(:macro (name . expander)...)` entry of ENV for the body, where
+;;; `%compile-cons` consults it before any global macro.
 ;;;
 ;;; Only a compiled compiler can do this, because the expanders it makes are
 ;;; compiled and it has to call them. Run by the interpreted compiler, the
 ;;; first use is refused by the one-evaluator rule — which is the right
 ;;; answer, and the reason this waited for #33.
-(setq %local-macros nil)
-
+;;;
 ;;; Its body's declarations apply as `locally`'s do (ansi-test macrolet.47).
 (defun %compile-macrolet (form env tail)
-  (let ((outer %local-macros))
-    (setq %local-macros (%local-expanders (second form) outer))
-    (%compile-body (cddr form) (%special-scope (%declared-specials (cddr form)) env) tail)
-    (setq %local-macros outer)))
+  (let ((macros (%local-expanders (second form) (%expander-environment env) nil)))
+    (%compile-body (cddr form)
+                   (%special-scope (%declared-specials (cddr form))
+                                   (cons (cons ':macro macros) env))
+                   tail)))
 
-(defun %local-expanders (definitions macros)
+;;; The environment a `macrolet` expander is compiled in. The expander runs
+;;; now, in the compiler, when none of the variables and functions around the
+;;; `macrolet` exist; so of ENV it keeps the entries that are themselves
+;;; compile-time — outer `macrolet` and `symbol-macrolet` definitions, and
+;;; declarations — and drops the rest (CLHS `macrolet`: those "affect the
+;;; local macro definitions", and referring to a local variable or function
+;;; there has undefined consequences). SBCL makes the same cut, and with the
+;;; same effect at the edge: a macro that an `flet` between had hidden is
+;;; visible again in the expander.
+(defun %expander-environment (env)
+  (cond ((null env) nil)
+        ((%kept-for-expanders-p (car (car env)))
+         (cons (car env) (%expander-environment (cdr env))))
+        (t (%expander-environment (cdr env)))))
+
+(defun %kept-for-expanders-p (kind)
+  (or (eq kind ':macro) (eq kind ':symbol-macro) (eq kind ':special) (eq kind ':notinline)))
+
+;;; `((name . expander) ...)` for DEFINITIONS, the last first, so that of two
+;;; with one name the later is found.
+(defun %local-expanders (definitions env macros)
   (if (endp definitions)
       macros
       (%local-expanders (cdr definitions)
+                        env
                         (cons (cons (car (car definitions))
-                                    (%local-expander (car definitions)))
+                                    (%local-expander (car definitions) env))
                               macros))))
 
-(defun %local-expander (definition)
+(defun %local-expander (definition env)
   (let ((rewritten (%rewrite-macro-lambda-list
                     (second definition)
                     (%block-body (car definition) (cddr definition)))))
-    (%make-macro (%assemble-lambda (first rewritten) (second rewritten) (third rewritten) nil))))
+    (%make-macro (%assemble-lambda (first rewritten) (second rewritten) (third rewritten) env))))
 
-;;; The local macro named HEAD, innermost first, or nil.
-(defun %local-macro (head)
-  (%find-macro head %local-macros))
-
-(defun %find-macro (head macros)
-  (cond ((endp macros) nil)
-        ((eq (car (car macros)) head) (cdr (car macros)))
-        (t (%find-macro head (cdr macros)))))
+;;; The expander of the local macro named HEAD in ENV, or nil: nil also when
+;;; a local function of that name is nearer, which hides the macro.
+(defun %local-macro (head env)
+  (cond ((null env) nil)
+        ((eq (car (car env)) ':macro)
+         (let ((entry (%assq head (cdr (car env)))))
+           (if entry (cdr entry) (%local-macro head (cdr env)))))
+        ((and (eq (car (car env)) ':function) (%position head (cdr (car env)) 0)) nil)
+        (t (%local-macro head (cdr env)))))
 
 ;;; `(symbol-macrolet ((name expansion) ...) body...)` (#53)
 ;;;
@@ -1014,30 +1096,18 @@
 ;;; the **lexical environment** of the call as an object, which
 ;;; `macroexpand-1` and `get-setf-expansion` accept.
 ;;;
-;;; Here the object is `(:environment scopes local-macros)`: the compiler's
-;;; ENV, and `%local-macros`, as they stand while the expander runs. The
-;;; compiler records ENV in `%expansion-scopes` for the length of each
-;;; expansion; nil for both is the null environment, and is written nil.
-(setq %expansion-scopes nil)
+;;; Here the object is the compiler's ENV itself, as it stands where the
+;;; macro call is (#111); nil is the null lexical environment. It is to be
+;;; read through the three functions further down — `%environment-macro`,
+;;; `%environment-symbol-macro`, `%environment-function-p` — which is all
+;;; the library's `macroexpand-1` and `macro-function` know of it.
 
-;;; Call EXPANDER on FORM with SCOPES and MACROS as its environment. An
-;;; expander is a function of the form and the environment, a macro's and a
-;;; compiler macro's alike (#76). SCOPES and MACROS stay recorded while it
-;;; runs, as they were when an expander asked for them (#53).
-(defun %expand (expander form scopes macros)
-  (let ((outer-scopes %expansion-scopes)
-        (outer-macros %local-macros))
-    (setq %expansion-scopes scopes)
-    (setq %local-macros macros)
-    (let ((expansion (funcall expander form (%current-environment))))
-      (setq %expansion-scopes outer-scopes)
-      (setq %local-macros outer-macros)
-      expansion)))
-
-(defun %current-environment ()
-  (if (or %expansion-scopes %local-macros)
-      (list ':environment %expansion-scopes %local-macros)
-      nil))
+;;; Call EXPANDER on FORM in ENVIRONMENT. An expander is a function of the
+;;; form and the environment, a macro's and a compiler macro's alike (#76).
+;;; Every expansion the compiler or the library makes goes through here, so
+;;; this is where `*macroexpand-hook*` will be called from when there is one.
+(defun %expand (expander form environment)
+  (funcall expander form environment))
 
 ;;; ------------------------------------------------------------------------
 ;;; Compiler macros (#65)
@@ -1071,19 +1141,24 @@
 (defun %apply-compiler-macro (form env)
   (let ((expander (if (%notinline-p (car form) env) nil (%compiler-macro-for form env))))
     (if expander
-        (%expand expander form env %local-macros)
+        (%expand expander form env)
         form)))
 
-(defun %environment-symbol-macro (environment name)
-  (if environment (%symbol-macro name (second environment)) (%global-symbol-macro name)))
+;;; What a program may ask of an environment it was handed.
 
+;;; What NAME stands for in ENVIRONMENT as a symbol macro, `(name . form)`,
+;;; or nil.
+(defun %environment-symbol-macro (environment name)
+  (%symbol-macro name environment))
+
+;;; The expander of the local macro NAME in ENVIRONMENT, or nil.
 (defun %environment-macro (environment name)
-  (if environment (%find-macro name (third environment)) nil))
+  (%local-macro name environment))
 
 ;;; Whether NAME is a local function in ENVIRONMENT, which then shadows a
 ;;; global macro of that name.
 (defun %environment-function-p (environment name)
-  (if environment (%lookup name (second environment) 0 ':function) nil))
+  (%lookup name environment 0 ':function))
 
 ;;; `(%destructuring-lambda lambda-list body...)` (#54): a function whose
 ;;; parameters are a *macro* lambda list — destructuring, `&body`, a dotted
@@ -1111,7 +1186,7 @@
   (%compile (second form) env nil)
   (%compile (third form) env nil)
   (%emit (list 'DBIND-SYMBOL))
-  (%with-open ':record (lambda () (%compile-body (cdr (cddr form)) env nil)))
+  (%compile-body (cdr (cddr form)) (%open-record env) nil)
   (%emit (list 'UNMARK)))
 
 ;;; `(tagbody tag-or-form...)` and `(go tag)`
@@ -1151,14 +1226,18 @@
       nil
       (cons (gensym) (%labels-for (cdr tags)))))
 
-(defun %compile-tagbody-items (items tags labels env)
+;;; LABELS are the labels of the tags still to come, in order: the tags were
+;;; collected from these same items, so each tag met takes the first. (It
+;;; was a search for the tag and an `nth` for its label, per tag, which is
+;;; quadratic in a generated tagbody of many tags: #111.)
+(defun %compile-tagbody-items (items labels env)
   (cond ((endp items) nil)
         ((consp (car items))
          (%compile (car items) env nil)
          (%emit (list 'POP))
-         (%compile-tagbody-items (cdr items) tags labels env))
-        (t (%emit-label (nth (%position (car items) tags 0) labels))
-           (%compile-tagbody-items (cdr items) tags labels env))))
+         (%compile-tagbody-items (cdr items) labels env))
+        (t (%emit-label (car labels))
+           (%compile-tagbody-items (cdr items) (cdr labels) env))))
 
 (defun %emit-jumps (labels)
   (if (endp labels)
@@ -1178,9 +1257,11 @@
               (done (gensym))
               (scope (%scope ':tag tags)))
           (%emit (list 'TAG (%constant-index (apply #'vector tags)) table))
-          (%with-open (list ':tagbody scope tags labels)
-                      (lambda ()
-                        (%compile-tagbody-items (cdr form) tags labels (cons scope env))))
+          ;; `TAG` pushes a scope and a record, and ENV gets an entry for
+          ;; each, as for `block`; the record's carries the labels.
+          (%compile-tagbody-items (cdr form)
+                                  labels
+                                  (cons (list ':tagbody tags labels) (cons scope env)))
           (%emit (list 'NIL))
           (%emit (list 'UNMARK))
           (%emit (list 'UNBIND 1))
@@ -1204,27 +1285,19 @@
     (if (null place)
         (error 'program-error
                (%string-append "go names a tag that is not here: " (%name-text (second form))))
-        (let ((entry (%innermost-tagbody (%tag-scope (second form) env))))
-          (if entry
-              (%emit (list 'JMP-TAG
-                           (nth (%position (second form) (third entry) 0)
-                                (nth 3 entry))))
+        (let ((label (%local-go-label (second form) (%innermost-open env))))
+          (if label
+              (%emit (list 'JMP-TAG label))
               (%emit (list 'GO (car place) (cdr place))))))))
 
-;;; The scope a tag lives in: the innermost `:tag` scope that names it, which
-;;; is the one `%lookup` found.
-(defun %tag-scope (tag env)
-  (cond ((null env) nil)
-        ((and (eq (car (car env)) ':tag) (%position tag (cdr (car env)) 0)) (car env))
-        (t (%tag-scope tag (cdr env)))))
-
-;;; The open entry for the tagbody whose scope is SCOPE — but only if it is
-;;; the innermost thing open, which is exactly when `JMP-TAG` is safe.
-(defun %innermost-tagbody (scope)
-  (let ((innermost (car %open)))
-    (if (and (consp innermost) (eq (second innermost) scope))
-        innermost
-        nil)))
+;;; The label TAG stands for if OPEN, the innermost thing open, is a tagbody
+;;; that has it — which is exactly when `JMP-TAG` is safe — and nil if not.
+;;; An inner tagbody without the tag is in the way like any other record.
+(defun %local-go-label (tag open)
+  (if (eq (car open) ':tagbody)
+      (let ((index (%position tag (second open) 0)))
+        (if index (nth index (third open)) nil))
+      nil))
 
 ;;; `(eval-when (situations...) body...)`: the body if the situations include
 ;;; `execute`, otherwise `nil`. The interpreter's rule exactly, including the
@@ -1270,7 +1343,7 @@
         (done (gensym))
         (condition (gensym)))
     (%emit (list 'HANDLER (%constant-index (cddr form)) handler))
-    (%with-open ':record (lambda () (%compile (second form) env nil)))
+    (%compile (second form) (%open-record env) nil)
     (%emit (list 'UNMARK))
     (%emit (list 'JMP done))
     (%emit-label handler)
@@ -1520,8 +1593,8 @@
           ;; named after the operator, which compiled, verified, and failed
           ;; only when run — `handler-case` hid that way for a week.
           ;; A local macro shadows a global one, so it is asked first.
-          ((and (symbolp head) (%local-macro head))
-           (%compile (%expand (%local-macro head) form env %local-macros) env tail))
+          ((and (symbolp head) (%local-macro head env))
+           (%compile (%expand (%local-macro head env) form env) env tail))
           ((%special-operator-p head)
            (error (%string-append "the compiler cannot compile the special operator "
                                   (symbol-name head))))
@@ -1537,7 +1610,7 @@
           ;; Otherwise a call — unless a compiler macro rewrites it (#65).
           (t (let ((expander (if (symbolp head) (%macro-function head) nil)))
                (if expander
-                   (%compile (%expand expander form env %local-macros) env tail)
+                   (%compile (%expand expander form env) env tail)
                    (let ((rewritten (%apply-compiler-macro form env)))
                      (if (eq rewritten form)
                          (%compile-call form env tail)
@@ -1570,7 +1643,9 @@
 
 ;;; Compile FORM into a function of no arguments.
 ;;;
-;;; The entry point. The compiler keeps its work in five global variables, and
+;;; The entry point. The compiler keeps its work in four global variables —
+;;; the code so far, and the constants, their count and their table; the lexical environment
+;;; is an argument, and needs none of this (#111) — and
 ;;; one compilation can begin while another is half done: a macro's expander
 ;;; runs in the middle of compiling the form that uses it, and if the expander
 ;;; calls `eval`, that compiles too. Resetting the globals from nothing, as
@@ -1627,25 +1702,18 @@
 
 (defun %compile-form (form)
   (let ((outer-code %code)
-        (outer-open %open)
-        (outer-macros %local-macros)
-        (outer-scopes %expansion-scopes)
         (outer-constants %constants)
-        (outer-count %constant-count))
+        (outer-count %constant-count)
+        (outer-table %constant-table))
     (unwind-protect
          (progn
            (setq %code nil)
-           (setq %open nil)
-           (setq %local-macros nil)
            (setq %pending-name nil)
-           (setq %expansion-scopes nil)
            (%reset-constants)
            (%compile form nil t)
            (%emit (list 'RET))
            (%assemble (reverse %code) (%constants-vector) nil 'compiled-form))
       (setq %code outer-code)
-      (setq %open outer-open)
-      (setq %local-macros outer-macros)
-      (setq %expansion-scopes outer-scopes)
       (setq %constants outer-constants)
-      (setq %constant-count outer-count))))
+      (setq %constant-count outer-count)
+      (setq %constant-table outer-table))))

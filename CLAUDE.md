@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1333 :REPLACED 1071)` (asserted in `differential.rs`; any new library
+`(:FORMS 1331 :REPLACED 1071)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -87,7 +87,7 @@ taking an environment. `symbol-macrolet` is in the compiler: a
 `(:symbol-macro . alist)` scope in `env` that `%lookup` steps over without
 counting. **Macros get `&environment`**: since step AC (#76) an expander is
 a function of the form and the environment, as in CL, and `%expand` passes
-`(:environment scopes local-macros)` (nil for the null environment). **The
+the compiler's environment itself (nil for the null environment). **The
 compiler expands macros itself and never calls `macroexpand-1`** — keep it
 that way, so the library can redefine `macroexpand-1`. **Step J, sequences
 (#54, chapter 45), is in three sub-steps, a commit each.** **J1 is done**:
@@ -340,7 +340,7 @@ library's `last`). Rust 8. ansi-test: 8,065; plain failures 34.
 `flet`, `labels`, `macrolet`, and in front of a lambda-list rewrite's
 `let*` (a special parameter is bound before defaults to its right run);
 integer `go` tags by `=`; nested patterns in a macro's `&optional`/`&key`;
-a local function hides an outer `macrolet` macro (`%shadowing-entries`);
+a local function hides an outer `macrolet` macro (its scope is met first);
 `notinline` stops a compiler macro (a compile-only `:notinline` scope that
 `%lookup` steps over); `throw` checks for its catch first (`has_catch`),
 so a missing one is a catchable `control-error`; `lambda` and `defmacro`
@@ -380,6 +380,33 @@ functions that hash a long second list; plus `disassemble`, `provide`,
 other 5,417 all explained by deferred features or by SBCL agreeing; no
 plain failure, escape, timeout or tier-1 gap; the fixpoint holds.
 `ANSI_TEST_GROUPS=a,b` runs a few groups as the full run reaches them.
+**The compiler's lexical environment is one list** (#111, 25 Nov 2026):
+`env`, an argument, innermost entry first, each `(kind . contents)`; nil is
+the null environment, and the same list is a macro's `&environment`. Four
+kinds are run-time scopes that `%lookup` counts (`:variable`, `:function`,
+`:block`, `:tag`); seven exist only while compiling and are stepped over
+(`:macro`, `:symbol-macro`, `:special`, `:notinline`, and what is open:
+`:record`, `:tagbody`, `:lambda`). There is no `%open` and no
+`%local-macros`; a new binding form conses an entry and passes it down, and
+a form that leaves a record on the stack compiles its body in
+`(%open-record env)`. **Every entry must be a cons** (everything reads its
+`car`), and a new kind that the machine builds a scope for must be added to
+`%run-time-scope-p` or every depth past it is off by one. The library reads
+an environment only through `%environment-macro`, `%environment-symbol-macro`
+and `%environment-function-p`. A `macrolet` expander is compiled in the
+compile-time entries of its environment (`%expander-environment`). The
+compiler's globals are `%code`, `%constants`, `%constant-count`,
+`%constant-table` (an `eq` table from constant to index), `%pending-name`
+and `%toplevel-form`. **Decided for phase 3, not built** (`docs/design.md`):
+those globals become per-process special variables bound in `compile-form`
+(needs #34's per-process bindings and specials in tier 0); a debug setting
+keeps a function's original arguments in its frame, as SBCL's does, so the
+debugger can retry a frame. **The collector** (#86): `Storage::note_store`
+is the store barrier, empty, called from `set_car`, `set_cdr`, `set_slot` —
+a new way to store a reference into an existing object must call it; a
+generational collector is built when one pause is measured over 16 ms.
+A lambda list with a keyword twice or out of order is a `program-error`
+(`lambda_list::enter`).
 **Next: phase 3, conditions and processes** (`docs/design.md`). Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

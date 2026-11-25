@@ -94,7 +94,7 @@ pub const UNSUPPLIED: &str = "UNSUPPLIED MARKER";
 /// and stays one here: an ordinary function receives *values*, and a value has
 /// no shape the lambda list could take apart. A macro receives *forms*, which
 /// are lists, and taking them apart is the whole point.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     /// `lambda`, `defun`, `flet`, `labels`.
     Ordinary,
@@ -105,14 +105,39 @@ pub enum Kind {
     Destructuring,
 }
 
-/// Which part of the lambda list we are reading.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Which part of the lambda list we are reading. In the order the parts
+/// must come in (CLHS 3.4.1), which [`enter`] holds a lambda list to.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Section {
     Required,
     Optional,
     Rest,
     Key,
+    /// After `&allow-other-keys`: no parameter may follow, only `&aux`.
+    AfterKeys,
     Aux,
+}
+
+/// Move from one part of a lambda list to the part a lambda-list keyword
+/// opens, or refuse.
+///
+/// The parts come in one order and each at most once, so a keyword may only
+/// move *forwards*: `(&optional a &optional b)` and `(&key a &optional b)`
+/// are both a keyword that does not. Until #110 either was accepted, and
+/// meant whatever the loop below happened to make of it — the second
+/// `&optional` simply carried on the first. `&allow-other-keys` belongs to
+/// `&key` and to nothing else. SBCL refuses the same lists, as a
+/// `program-error`, which `BadSyntax` is.
+fn enter(from: Section, to: Section) -> Result<Section, EvalError> {
+    if to == Section::AfterKeys && from != Section::Key {
+        return Err(bad("&allow-other-keys comes after &key's parameters, once"));
+    }
+    if from >= to {
+        return Err(bad(
+            "has a lambda-list keyword twice or out of order; the order is &optional, &rest, &key, &aux",
+        ));
+    }
+    Ok(to)
 }
 
 /// One `&optional`, `&key` or `&aux` entry, after its shorthand is unpacked.
@@ -169,24 +194,25 @@ pub fn rewrite<'h>(
 
         if mc.is_symbol(item) {
             if mc.symbol_is(item, "&OPTIONAL") {
-                section = Section::Optional;
+                section = enter(section, Section::Optional)?;
                 continue;
             }
             if mc.symbol_is(item, "&REST") || mc.symbol_is(item, "&BODY") {
-                section = Section::Rest;
+                section = enter(section, Section::Rest)?;
                 continue;
             }
             if mc.symbol_is(item, "&KEY") {
-                section = Section::Key;
+                section = enter(section, Section::Key)?;
                 saw_key = true;
                 continue;
             }
             if mc.symbol_is(item, "&ALLOW-OTHER-KEYS") {
+                section = enter(section, Section::AfterKeys)?;
                 allow_other_keys = true;
                 continue;
             }
             if mc.symbol_is(item, "&AUX") {
-                section = Section::Aux;
+                section = enter(section, Section::Aux)?;
                 continue;
             }
         }
@@ -209,6 +235,7 @@ pub fn rewrite<'h>(
             }
             Section::Optional => optional.push(parse_entry(mc, item, false, false)?),
             Section::Key => keys.push(parse_entry(mc, item, true, false)?),
+            Section::AfterKeys => return Err(bad("only &aux may follow &allow-other-keys")),
             Section::Aux => aux.push(parse_entry(mc, item, false, false)?),
         }
     }
@@ -506,8 +533,9 @@ fn destructure<'h>(
 
         if mc.is_symbol(entry) && mc.symbol_name(entry).starts_with('&') {
             if mc.symbol_is(entry, "&OPTIONAL") {
-                section = Section::Optional;
+                section = enter(section, Section::Optional)?;
             } else if mc.symbol_is(entry, "&REST") || mc.symbol_is(entry, "&BODY") {
+                section = enter(section, Section::Rest)?;
                 if !item.is_cons() {
                     return Err(bad("&rest wants a name after it"));
                 }
@@ -515,15 +543,15 @@ fn destructure<'h>(
                 item = mc.cdr(item);
                 bind_here(mc, name, cursor, bindings)?;
                 tail_taken = true;
-                section = Section::Rest;
             } else if mc.symbol_is(entry, "&KEY") {
+                section = enter(section, Section::Key)?;
                 tail_taken = true;
                 saw_key = true;
-                section = Section::Key;
             } else if mc.symbol_is(entry, "&ALLOW-OTHER-KEYS") {
+                section = enter(section, Section::AfterKeys)?;
                 allow_other_keys = true;
             } else if mc.symbol_is(entry, "&AUX") {
-                section = Section::Aux;
+                section = enter(section, Section::Aux)?;
             } else {
                 return Err(bad("a lambda-list keyword this pattern cannot have here"));
             }
@@ -563,6 +591,7 @@ fn destructure<'h>(
             }
             Section::Rest => return Err(bad("&rest takes one name")),
             Section::Key => keys.push(parse_entry(mc, entry, true, true)?),
+            Section::AfterKeys => return Err(bad("only &aux may follow &allow-other-keys")),
             Section::Aux => aux.push(parse_entry(mc, entry, false, false)?),
         }
     }
@@ -835,7 +864,9 @@ pub fn names<'h>(mc: &Mutation<'h>, params: Value<'h>) -> Result<Vec<Value<'h>>,
     }
     let mut out = Vec::new();
     let mut cursor = params;
-    let mut section = 0u8; // 0 required/optional, 2 rest, 3 key
+    // A required and an optional parameter are both one name, so nothing
+    // here tells them apart: `Required` stands for either.
+    let mut section = Section::Required;
     while cursor.is_cons() {
         let item = mc.car(cursor);
         cursor = mc.cdr(cursor);
@@ -844,25 +875,25 @@ pub fn names<'h>(mc: &Mutation<'h>, params: Value<'h>) -> Result<Vec<Value<'h>>,
                 continue;
             }
             if mc.symbol_is(item, "&REST") || mc.symbol_is(item, "&BODY") {
-                section = 2;
+                section = Section::Rest;
                 continue;
             }
             if mc.symbol_is(item, "&KEY") {
-                section = 3;
+                section = Section::Key;
                 continue;
             }
             if mc.symbol_is(item, "&ALLOW-OTHER-KEYS") {
                 continue;
             }
             out.push(item);
-            if section == 2 {
+            if section == Section::Rest {
                 // `&rest` takes exactly one name and then the list is over as
                 // far as positional binding goes.
-                section = 0;
+                section = Section::Required;
             }
             continue;
         }
-        if section == 3 && item.is_cons() {
+        if section == Section::Key && item.is_cons() {
             // `(keyword variable)`, and it is the *variable* that is bound.
             let after = mc.cdr(item);
             if !after.is_cons() {
@@ -898,10 +929,10 @@ pub fn bind<'h>(
     let mut arg = arguments;
     let mut required = 0usize;
     let mut supplied = 0usize;
-    let mut section = 0u8; // 0 required, 1 optional, 2 rest, 3 key
-                           // `&rest` swallows everything left, so leftover arguments stop being
-                           // an error once one has been bound. `&key` still scans the same tail,
-                           // which is what CLHS says the two do together.
+    let mut section = Section::Required;
+    // `&rest` swallows everything left, so leftover arguments stop being
+    // an error once one has been bound. `&key` still scans the same tail,
+    // which is what CLHS says the two do together.
     let mut has_rest = false;
     // `(&key)` names no keys and still takes keyword arguments (#76).
     let mut saw_key = false;
@@ -918,7 +949,7 @@ pub fn bind<'h>(
 
         if mc.is_symbol(name) {
             if mc.symbol_is(name, "&OPTIONAL") {
-                section = 1;
+                section = Section::Optional;
                 continue;
             }
             if mc.symbol_is(name, "&REST") || mc.symbol_is(name, "&BODY") {
@@ -932,11 +963,11 @@ pub fn bind<'h>(
                 names.push(rest_name);
                 values.push(arg);
                 has_rest = true;
-                section = 2;
+                section = Section::Rest;
                 continue;
             }
             if mc.symbol_is(name, "&KEY") {
-                section = 3;
+                section = Section::Key;
                 saw_key = true;
                 continue;
             }
@@ -946,7 +977,7 @@ pub fn bind<'h>(
             }
         }
 
-        if section == 3 {
+        if section == Section::Key {
             // `(keyword variable)`, which is what the rewrite emits.
             if !name.is_cons() {
                 return Err(EvalError::BadSyntax {
@@ -970,7 +1001,7 @@ pub fn bind<'h>(
             });
         }
 
-        if section == 0 {
+        if section == Section::Required {
             required += 1;
         }
         if arg.is_cons() {
@@ -978,7 +1009,7 @@ pub fn bind<'h>(
             values.push(mc.car(arg));
             arg = mc.cdr(arg);
             supplied += 1;
-        } else if section == 1 {
+        } else if section == Section::Optional {
             names.push(name);
             values.push(marker);
         } else {

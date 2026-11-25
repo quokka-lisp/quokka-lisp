@@ -114,15 +114,11 @@
 ;;; one: a function of the form and the environment. A local `macrolet`
 ;;; macro in ENVIRONMENT hides a global one of the same name (#53). A macro
 ;;; object is called the same way since #76, but it is not itself a function
-;;; (`functionp` says no), and it must run with ENV recorded where `setf`
-;;; expanders inside it look (`%expand`), so it is handed back wrapped.
+;;; (`functionp` says no), so it is handed back wrapped in one.
 (defun macro-function (symbol &optional environment)
   (let ((expander (or (%environment-macro environment symbol) (%macro-function symbol))))
     (if expander
-        (lambda (form env)
-          (%expand expander form
-                   (if env (second env) nil)
-                   (if env (third env) nil)))
+        (lambda (form env) (%expand expander form env))
         nil)))
 
 ;;; `(setf (macro-function symbol) function)` — FUNCTION, a function of the

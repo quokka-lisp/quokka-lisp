@@ -104,6 +104,19 @@ pub struct Vm<'a, 'h> {
     halted: bool,
 }
 
+/// Whether the machine has stopped and why, and how full the heap is. Its
+/// stack, its program counter and everything else it is doing are in the
+/// heap's registers, where a debugger written in Lisp will read them.
+impl std::fmt::Debug for Vm<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Vm")
+            .field("halted", &self.halted)
+            .field("error", &self.error)
+            .field("heap", &self.mc)
+            .finish()
+    }
+}
+
 impl<'a, 'h> Vm<'a, 'h> {
     /// Prepare to run `function` in `env`, discarding whatever was in
     /// progress.
