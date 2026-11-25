@@ -62,7 +62,14 @@ cd "$(dirname "$0")/.."
 # walk all twelve string comparisons share, as a primitive — in Lisp it
 # cost some 500 steps for two eleven-letter names, and sorting symbols by
 # name ran out of steps. 53 lines.
-LIMIT=16017
+#
+# Raised to 16,095 by the review's first fixes (#90, #91, #92, 25 Nov 2026):
+# no Lisp input may stop the process. The Rust printer's depth and size
+# limits (`printer.rs`); `Mutation::fits` and `primitives::size`, asked before
+# any allocation whose size a program chose; `Mutation::list_elements`, a walk
+# with Brent's cycle detection, for every Rust loop that follows cdrs. 78
+# lines, all of them bounds — Rust by nature, since they guard Rust loops.
+LIMIT=16095
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

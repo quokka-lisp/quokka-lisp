@@ -1300,6 +1300,9 @@ pub mod assemble {
         mc: &Mutation<'h>,
         instructions: Value<'h>,
     ) -> Result<Vec<Item<'h>>, EvalError> {
+        if mc.list_elements(instructions).is_none() {
+            return Err(bad("wants a list of instructions that ends"));
+        }
         let mut out = Vec::new();
         let mut cursor = instructions;
         while cursor.is_cons() {

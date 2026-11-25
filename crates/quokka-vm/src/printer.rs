@@ -7,11 +7,13 @@
 //!
 //! # What it does not do yet
 //!
-//! - **Cycles.** A list whose tail points back at itself prints forever.
+//! - **Cycles.** A structure that points back at itself would print forever.
 //!   Common Lisp's answer is `*print-circle*`, which labels shared structure as
-//!   `#1=(a . #1#)`; `docs/design.md` defers it. Until then [`MAX_LENGTH`]
-//!   stops the printer rather than the process, which is a crude stand-in and
-//!   is honest about it.
+//!   `#1=(a . #1#)`, and the Lisp printer has it (#64). This one has three
+//!   blunt limits instead — [`MAX_LENGTH`], [`MAX_DEPTH`], [`MAX_CHARS`] — so
+//!   that it stops the printing rather than the process (#90). They are
+//!   `*print-length*` and `*print-level*` with fixed values, and `#` for a
+//!   level too deep is CLHS 22.1.3.5's notation.
 //! - **`princ` versus `prin1`.** Common Lisp distinguishes printing *for a
 //!   program to read back* (strings quoted, characters as `#\a`) from printing
 //!   *for a person* (contents only). Only the first exists here, because that is
@@ -27,21 +29,49 @@ use core::fmt::Write;
 /// A blunt guard against a circular list, until `*print-circle*` exists.
 pub const MAX_LENGTH: usize = 10_000;
 
+/// How deep to follow cars and elements before printing `#`.
+///
+/// The printer recurses on nesting, in Rust, and rule 4 allows no Rust
+/// recursion whose depth data decides: a list that is its own car, or merely
+/// 200,000 levels deep, overflowed the stack — about a megabyte on wasm32.
+pub const MAX_DEPTH: usize = 64;
+
+/// How many bytes to print before giving up with `...`.
+///
+/// Length and depth together still allow 10,000^64 elements, and a shared
+/// structure — `(x x)` forty times over — is small in the heap and 2^40 long
+/// in print.
+pub const MAX_CHARS: usize = 1 << 20;
+
 /// Print a value the way the reader would want it back.
 pub fn print<'h>(mc: &Mutation<'h>, v: Value<'h>) -> String {
     let mut out = String::new();
-    write_value(&mut out, mc, v);
+    write_value(&mut out, mc, v, 0);
     out
 }
 
-fn write_value<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
+/// Has the output reached [`MAX_CHARS`]? Says so, once, when it has.
+fn full(out: &mut String) -> bool {
+    if out.len() >= MAX_CHARS && !out.ends_with("...") {
+        out.push_str("...");
+    }
+    out.len() >= MAX_CHARS
+}
+
+fn write_value<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>, depth: usize) {
+    // Only what has parts can nest: a cons or a vector.
+    let nests = v.is_cons() || v.is_object() && mc.header(v).object_type == ObjectType::Vector;
+    if depth > MAX_DEPTH && nests {
+        out.push('#');
+        return;
+    }
     match v.kind() {
         Kind::Fixnum => {
             let _ = write!(out, "{}", v.as_fixnum().expect("fixnum"));
         }
         Kind::Immediate => write_immediate(out, v),
-        Kind::Cons => write_list(out, mc, v),
-        Kind::Object => write_object(out, mc, v),
+        Kind::Cons => write_list(out, mc, v, depth),
+        Kind::Object => write_object(out, mc, v, depth),
         // A forwarding pointer in a live heap is a collector bug; say so rather
         // than printing something plausible.
         Kind::Forwarding => out.push_str("#<forwarded>"),
@@ -79,16 +109,16 @@ fn write_immediate(out: &mut String, v: Value<'_>) {
     }
 }
 
-fn write_list<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
+fn write_list<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>, depth: usize) {
     out.push('(');
     let mut cursor = v;
     let mut printed = 0;
     loop {
-        write_value(out, mc, mc.car(cursor));
+        write_value(out, mc, mc.car(cursor), depth + 1);
         cursor = mc.cdr(cursor);
         printed += 1;
 
-        if cursor.is_nil() {
+        if cursor.is_nil() || full(out) {
             break;
         }
         if printed >= MAX_LENGTH {
@@ -99,7 +129,7 @@ fn write_list<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
             // An improper list: (a . b). The dot is why cons cells are pairs
             // rather than list nodes — a list is just the common case.
             out.push_str(" . ");
-            write_value(out, mc, cursor);
+            write_value(out, mc, cursor, depth + 1);
             break;
         }
         out.push(' ');
@@ -107,7 +137,7 @@ fn write_list<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
     out.push(')');
 }
 
-fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
+fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>, depth: usize) {
     let header = mc.header(v);
     match header.object_type {
         ObjectType::Symbol => {
@@ -156,9 +186,9 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
         // Rust's shortest round-trip digits; the Lisp printer lays them out
         // as SBCL does, and is the one a world uses.
         ObjectType::Ratio => {
-            write_value(out, mc, mc.slot(v, crate::ratio::NUMERATOR));
+            write_value(out, mc, mc.slot(v, crate::ratio::NUMERATOR), depth + 1);
             out.push('/');
-            write_value(out, mc, mc.slot(v, crate::ratio::DENOMINATOR));
+            write_value(out, mc, mc.slot(v, crate::ratio::DENOMINATOR), depth + 1);
         }
         ObjectType::DoubleFloat => {
             let _ = write!(out, "{:?}", crate::float::get(mc, v));
@@ -175,7 +205,10 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>) {
                     out.push_str("...");
                     break;
                 }
-                write_value(out, mc, mc.slot(v, i));
+                write_value(out, mc, mc.slot(v, i), depth + 1);
+                if full(out) {
+                    break;
+                }
             }
             out.push(')');
         }

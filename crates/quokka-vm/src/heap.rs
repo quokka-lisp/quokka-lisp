@@ -755,6 +755,44 @@ impl<'h> Mutation<'h> {
         self.storage.words[at + 1] = new.bits();
     }
 
+    /// The elements of a list and its tail (`nil` if proper), or `None` if
+    /// the list is circular (#92).
+    ///
+    /// Any Rust loop that follows cdrs runs inside one step, where the budget
+    /// cannot stop it — so it must stop itself. This is Brent's cycle
+    /// detection (1980): a checkpoint that jumps ahead to the cursor at every
+    /// power of two, and a cursor that meets it only if the list loops. One
+    /// comparison a cell and no memory, where Floyd's hare reads every cell
+    /// twice.
+    pub fn list_elements(&self, list: Value<'h>) -> Option<(Vec<Value<'h>>, Value<'h>)> {
+        let (mut out, mut cursor, mut checkpoint) = (Vec::new(), list, list);
+        let (mut since, mut power) = (0usize, 1usize);
+        while cursor.is_cons() {
+            out.push(self.car(cursor));
+            cursor = self.cdr(cursor);
+            if cursor == checkpoint {
+                return None;
+            }
+            since += 1;
+            if since == power {
+                (checkpoint, since, power) = (cursor, 0, power.saturating_mul(2));
+            }
+        }
+        Some((out, cursor))
+    }
+
+    /// Would an object of `slots` slots fit under the hard limit (#91)?
+    ///
+    /// For a size that comes from Lisp: [`alloc`](Self::alloc) never refuses,
+    /// so whoever takes a count from a program asks this first.
+    pub fn fits(&self, slots: usize) -> bool {
+        let used = self.storage.words.len() - self.storage.dynamic_start;
+        slots <= MAX_OBJECT_SLOTS
+            && slots
+                .checked_add(HEADER_WORDS + used)
+                .is_some_and(|words| words <= self.storage.hard_limit)
+    }
+
     /// Allocate a heap object with `slots` slots, all initialised to `nil`.
     ///
     /// Slots are initialised rather than left as whatever was there, because

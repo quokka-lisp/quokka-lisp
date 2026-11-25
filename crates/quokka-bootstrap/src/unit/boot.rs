@@ -1947,3 +1947,67 @@ fn after_a_build_every_system_symbol_has_a_package() {
     );
     assert!(unadopted.is_empty(), "never adopted: {unadopted:?}");
 }
+
+/// **No input may stop the process** (#90, #91, #92). Each of these forms is
+/// ordinary Common Lisp, and each once ended the program that ran it: the
+/// first three overflowed the Rust stack in the printer that writes the error
+/// message, the next two panicked or asked the operating system for 800 GB,
+/// and the last three walked a circular list in one step, where the step
+/// budget cannot interrupt.
+///
+/// What they give now matters less than that they give something.
+#[test]
+fn hostile_forms_end_in_an_error_and_not_the_process() {
+    let mut heap = compiled_world();
+    let said = in_compiled_world(
+        &mut heap,
+        "(let ((x (list 1))) (setf (car x) x) (funcall x)) \
+         (let ((v (vector 1))) (setf (aref v 0) v) (funcall v)) \
+         (let ((x nil)) (dotimes (i 200000) (setq x (list x))) (funcall x)) \
+         (make-array most-positive-fixnum) \
+         (make-string 100000000000) \
+         (let ((x (list 1 2))) (setf (cddr x) x) (apply #'list x)) \
+         (let ((x (list 1 2))) (setf (cddr x) x) (values-list x)) \
+         (let ((x (list 1 2))) (setf (cddr x) x) (append x (list 3))) \
+         (+ 1 2)",
+    );
+    assert_eq!(said.len(), 9);
+    for (i, line) in said[..8].iter().enumerate() {
+        assert!(line.starts_with("; "), "form {i} gave {line}");
+    }
+    // Nesting past the printer's depth is written as `#`, as `*print-level*`
+    // writes it.
+    assert!(said[0].contains("(#)"), "{}", said[0]);
+    assert!(said[3].contains("out of heap"), "{}", said[3]);
+    assert!(said[5].contains("circular"), "{}", said[5]);
+    // And the world is still there.
+    assert_eq!(said[8], "3");
+}
+
+/// The other half: the bounds refuse nothing a program may fairly ask for.
+#[test]
+fn the_bounds_leave_ordinary_programs_alone() {
+    let mut heap = compiled_world();
+    assert_eq!(
+        in_compiled_world(
+            &mut heap,
+            "(apply #'+ 1 2 (list 3 4)) \
+             (length (apply #'list (make-list 100000))) \
+             (append (list 1 2) (list 3) 4) \
+             (multiple-value-list (values-list (list 1 2 3))) \
+             (length (make-array 100000)) \
+             (length (make-array 1000 :element-type 'bit)) \
+             (handler-case (let ((x (list 1))) (setf (cdr x) x) (apply #'list x)) \
+               (type-error () 'caught))"
+        ),
+        [
+            "10",
+            "100000",
+            "(1 2 3 . 4)",
+            "(1 2 3)",
+            "100000",
+            "1000",
+            "CAUGHT"
+        ]
+    );
+}

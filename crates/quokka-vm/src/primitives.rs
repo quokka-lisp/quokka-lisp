@@ -802,12 +802,7 @@ pub fn call_slice<'h>(
             // append cheap enough to use in a macro expansion.
             let mut out = args[args.len() - 1];
             for list in args[..args.len() - 1].iter().rev() {
-                let mut items = Vec::new();
-                let mut cursor = *list;
-                while cursor.is_cons() {
-                    items.push(mc.car(cursor));
-                    cursor = mc.cdr(cursor);
-                }
+                let (items, cursor) = mc.list_elements(*list).ok_or(circular("APPEND"))?;
                 if !cursor.is_nil() {
                     return Err(EvalError::WrongType {
                         name: "APPEND",
@@ -876,14 +871,9 @@ pub fn call_slice<'h>(
                     wanted: "a character to fill with",
                 });
             };
-            if n < 0 {
-                return Err(EvalError::WrongType {
-                    name: "MAKE-STRING",
-                    wanted: "a length of zero or more",
-                });
-            }
-            let s = mc.alloc(ObjectType::String, n as usize);
-            for i in 0..n as usize {
+            let n = size(mc, "MAKE-STRING", n, 0)?;
+            let s = mc.alloc(ObjectType::String, n);
+            for i in 0..n {
                 mc.set_raw_slot(s, i, fill as u64);
             }
             Ok(s)
@@ -970,7 +960,7 @@ pub fn call_slice<'h>(
         // Rule 9: n slots is n words, as `%MAKE-VECTOR`.
         Prim::MakeStructure => match args[1].as_fixnum() {
             Some(n) if n >= 0 => {
-                let s = mc.alloc(ObjectType::Instance, n as usize + 1);
+                let s = mc.alloc(ObjectType::Instance, size(mc, name, n, 1)?);
                 mc.set_slot(s, 0, args[0]);
                 Ok(s)
             }
@@ -1009,14 +999,9 @@ pub fn call_slice<'h>(
                     wanted: "a fixnum size",
                 });
             };
-            if n < 0 {
-                return Err(EvalError::WrongType {
-                    name: "MAKE-ARRAY",
-                    wanted: "a size that is not negative",
-                });
-            }
-            let v = mc.alloc(ObjectType::Vector, n as usize);
-            for i in 0..n as usize {
+            let n = size(mc, "MAKE-ARRAY", n, 0)?;
+            let v = mc.alloc(ObjectType::Vector, n);
+            for i in 0..n {
                 mc.set_slot(v, i, args[1]);
             }
             Ok(v)
@@ -1115,14 +1100,8 @@ pub fn call_slice<'h>(
         }
         Prim::Printed => Ok(mc.alloc_string(&crate::printer::print(mc, args[0]))),
         Prim::MakeBignum => {
-            let limbs = fixnum(name, args[1])?;
-            if limbs < 0 || limbs as usize >= crate::heap::MAX_OBJECT_SLOTS {
-                return Err(EvalError::WrongType {
-                    name,
-                    wanted: "a limb count the heap can hold",
-                });
-            }
-            Ok(crate::bignum::make(mc, !args[0].is_nil(), limbs as usize))
+            let limbs = size(mc, name, fixnum(name, args[1])?, 1)? - 1;
+            Ok(crate::bignum::make(mc, !args[0].is_nil(), limbs))
         }
         Prim::BignumLength
         | Prim::BignumNegativeP
@@ -1532,6 +1511,38 @@ fn truth<'h>(b: bool) -> Value<'h> {
     }
 }
 
+/// A list that loops where a primitive wanted one that ends (#92).
+pub(crate) fn circular(name: &'static str) -> EvalError {
+    EvalError::WrongType {
+        name,
+        wanted: "a list that ends, and this one is circular",
+    }
+}
+
+/// A count a program supplied, plus `extra` slots, as a size the heap can
+/// hold — checked *before* anything is allocated (#91, rule 9).
+///
+/// `try_from` and not `as`: on wasm32 a cast would quietly keep the low 32
+/// bits of a fixnum, and `(make-array 4294967301)` would make five slots.
+pub(crate) fn size(
+    mc: &Mutation<'_>,
+    name: &'static str,
+    n: i64,
+    extra: usize,
+) -> Result<usize, EvalError> {
+    if n < 0 {
+        return Err(EvalError::WrongType {
+            name,
+            wanted: "a size that is not negative",
+        });
+    }
+    usize::try_from(n)
+        .ok()
+        .and_then(|n| n.checked_add(extra))
+        .filter(|&slots| mc.fits(slots))
+        .ok_or(EvalError::HeapExhausted)
+}
+
 fn fixnum(name: &'static str, v: Value<'_>) -> Result<i64, EvalError> {
     v.as_fixnum().ok_or(EvalError::WrongType {
         name,
@@ -1618,13 +1629,10 @@ fn list_part<'h>(
 }
 
 fn to_vec<'h>(mc: &Mutation<'h>, list: Value<'h>) -> Vec<Value<'h>> {
-    let mut out = Vec::new();
-    let mut cursor = list;
-    while cursor.is_cons() {
-        out.push(mc.car(cursor));
-        cursor = mc.cdr(cursor);
-    }
-    out
+    // The evaluator built this list itself, so it ends.
+    mc.list_elements(list)
+        .map(|(items, _)| items)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

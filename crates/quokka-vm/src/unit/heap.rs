@@ -645,3 +645,59 @@ fn the_covariant_spelling_would_allow_shortening() {
     let long: Covariant<'static> = Covariant(PhantomData);
     let _short = shorten(long);
 }
+
+/// `list_elements` on the three shapes a chain of conses can have. The
+/// circular ones are the point: a loop back to the head, and a loop that
+/// starts part-way along (a "rho", which is the case a naive comparison with
+/// the head misses).
+#[test]
+fn list_elements_ends_on_every_shape_of_list() {
+    let mut heap = Heap::new();
+    heap.mutate(|mc| {
+        let n = |i: i64| Value::fixnum(i).unwrap();
+        // A function, not a closure: the brand `'h` has to be named so the
+        // tail and the result share it.
+        fn build<'h>(mc: &mut Mutation<'h>, len: i64, tail: Value<'h>) -> Value<'h> {
+            (0..len).rev().fold(tail, |rest, i| {
+                let item = Value::fixnum(i).unwrap();
+                mc.cons(item, rest)
+            })
+        }
+
+        assert_eq!(mc.list_elements(Value::NIL), Some((vec![], Value::NIL)));
+        let proper = build(mc, 3, Value::NIL);
+        assert_eq!(
+            mc.list_elements(proper),
+            Some((vec![n(0), n(1), n(2)], Value::NIL))
+        );
+        let dotted = build(mc, 2, n(9));
+        assert_eq!(mc.list_elements(dotted), Some((vec![n(0), n(1)], n(9))));
+
+        // Every loop length against every lead-in, so each of Brent's
+        // power-of-two checkpoints is crossed somewhere.
+        for lead in 0..12 {
+            for cycle in 1..12 {
+                let last = mc.cons(n(-1), Value::NIL);
+                let ring = build(mc, cycle - 1, last);
+                mc.set_cdr(last, ring);
+                let list = build(mc, lead, ring);
+                assert_eq!(mc.list_elements(list), None, "lead {lead}, cycle {cycle}");
+            }
+        }
+    });
+}
+
+/// `fits` is asked before an allocation whose size a program chose (#91):
+/// it knows the header field's width and the hard limit, and its arithmetic
+/// cannot wrap.
+#[test]
+fn fits_refuses_what_the_heap_cannot_hold() {
+    let mut heap = Heap::with_soft_limit(16);
+    heap.mutate(|mc| {
+        assert!(mc.fits(0));
+        assert!(mc.fits(100));
+        assert!(!mc.fits(16 * HARD_LIMIT_MULTIPLE));
+        assert!(!mc.fits(MAX_OBJECT_SLOTS));
+        assert!(!mc.fits(usize::MAX));
+    });
+}

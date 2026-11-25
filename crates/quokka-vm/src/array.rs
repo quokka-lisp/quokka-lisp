@@ -141,13 +141,12 @@ pub fn dimensions<'h>(mc: &Mutation<'h>, v: Value<'h>) -> Option<Vec<usize>> {
     if !is_header(mc, v) {
         return None;
     }
-    let mut dims = Vec::new();
-    let mut list = mc.slot(v, DIMENSIONS);
-    while list.is_cons() {
-        dims.push(mc.car(list).as_fixnum().filter(|&d| d >= 0)? as usize);
-        list = mc.cdr(list);
-    }
-    Some(dims)
+    // Lisp can store any list here, a circular one included (#92).
+    let (items, _) = mc.list_elements(mc.slot(v, DIMENSIONS))?;
+    items
+        .iter()
+        .map(|d| d.as_fixnum().and_then(|d| usize::try_from(d).ok()))
+        .collect()
 }
 
 /// Follow an array to the simple array holding its elements.
@@ -390,16 +389,15 @@ pub fn header_slot<'h>(
 
 /// `(%make-bit-vector n)`: N zero bits.
 pub fn make_bits<'h>(mc: &mut Mutation<'h>, n: Value<'h>) -> Result<Value<'h>, EvalError> {
-    let n = match n.as_fixnum() {
-        Some(n) if n >= 0 => n as usize,
-        _ => {
-            return Err(EvalError::WrongType {
-                name: "MAKE-ARRAY",
-                wanted: "a non-negative fixnum size",
-            })
-        }
+    let Some(bits) = n.as_fixnum() else {
+        return Err(EvalError::WrongType {
+            name: "MAKE-ARRAY",
+            wanted: "a non-negative fixnum size",
+        });
     };
-    let words = n.div_ceil(64);
+    // Sized in words, so the check is on the words (#91).
+    let words = crate::primitives::size(mc, "MAKE-ARRAY", bits.saturating_add(63) / 64, 1)? - 1;
+    let n = bits as usize;
     let v = mc.alloc(ObjectType::BitVector, 1 + words);
     mc.set_raw_slot(v, 0, n as u64);
     for w in 0..words {

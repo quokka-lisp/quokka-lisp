@@ -147,6 +147,9 @@ pub fn rewrite<'h>(
     body: Value<'h>,
     kind: Kind,
 ) -> Result<(Value<'h>, Value<'h>), EvalError> {
+    if mc.list_elements(params).is_none() {
+        return Err(bad("wants a list that ends"));
+    }
     if kind != Kind::Ordinary {
         return rewrite_destructuring(mc, params, body, kind);
     }

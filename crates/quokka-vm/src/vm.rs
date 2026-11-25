@@ -646,11 +646,10 @@ impl<'a, 'h> Vm<'a, 'h> {
                 }));
             };
             let mut spread = fixed.to_vec();
-            let mut cursor = *last;
-            while cursor.is_cons() {
-                spread.push(self.mc.car(cursor));
-                cursor = self.mc.cdr(cursor);
-            }
+            let Some((mut elements, _)) = self.mc.list_elements(*last) else {
+                return Some(self.fail(primitives::circular("APPLY")));
+            };
+            spread.append(&mut elements);
             return Some(self.call_value(callee, &spread, tail));
         }
         let asks_host = if index == primitives::index(primitives::Prim::ReadSource) {
@@ -712,12 +711,9 @@ impl<'a, 'h> Vm<'a, 'h> {
                         got: args.len(),
                     }));
                 }
-                let mut out = Vec::new();
-                let mut cursor = args[0];
-                while cursor.is_cons() {
-                    out.push(self.mc.car(cursor));
-                    cursor = self.mc.cdr(cursor);
-                }
+                let Some((out, cursor)) = self.mc.list_elements(args[0]) else {
+                    return Some(self.fail(primitives::circular("VALUES-LIST")));
+                };
                 if !cursor.is_nil() {
                     return Some(self.fail(EvalError::WrongType {
                         name: "VALUES-LIST",
@@ -1599,11 +1595,10 @@ impl Steppable for Vm<'_, '_> {
                 let callee = self.pop();
                 let mut args = Vec::new();
                 for list in lists {
-                    let mut cursor = list;
-                    while cursor.is_cons() {
-                        args.push(self.mc.car(cursor));
-                        cursor = self.mc.cdr(cursor);
-                    }
+                    let Some((mut elements, _)) = self.mc.list_elements(list) else {
+                        return self.fail(primitives::circular("MULTIPLE-VALUE-CALL"));
+                    };
+                    args.append(&mut elements);
                 }
                 // Through `call_value`, not straight to the primitive table,
                 // so that the primitives the machine must do itself are

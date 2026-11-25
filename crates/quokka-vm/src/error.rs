@@ -105,10 +105,10 @@ impl core::fmt::Display for EvalError {
             EvalError::Arithmetic { detail, .. } => write!(f, "{detail}"),
             EvalError::HeapExhausted => write!(
                 f,
-                "out of heap: this one mutation allocated more than the heap \
-                 holds, and nothing can be collected until it ends — either \
-                 the computation does not finish, or it needs driving a slice \
-                 at a time"
+                "out of heap: one object too large for the heap, or one \
+                 mutation that allocated more than it holds — nothing can be \
+                 collected until a mutation ends, so either the computation \
+                 does not finish or it needs driving a slice at a time"
             ),
             EvalError::BudgetExhausted => write!(
                 f,
