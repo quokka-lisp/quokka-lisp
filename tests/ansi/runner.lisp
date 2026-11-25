@@ -43,6 +43,19 @@
 (defvar *compile-tests* nil)
 (defvar *catch-errors* t)
 
+;;; The lines of the tests a step ran through the DEFTEST macro. Here, before
+;;; `%step` binds it: a variable is special only in code compiled after its
+;;; DEFVAR, and `load` compiles a file form by form. When this DEFVAR stood
+;;; below `%step`, that binding was lexical, DEFTEST pushed onto the global
+;;; one, and every test a macro of the suite's defined — some 1,900 — was
+;;; run and never reported (#122).
+(defvar *produced* nil)
+
+;;; The suite's macros that define tests: one whose definition mentions
+;;; DEFTEST, or another such macro. A form headed by one is a test, counted
+;;; even when it cannot be expanded (`%lost-test`).
+(defvar *test-macros* (make-hash-table :test 'eq))
+
 ;;; ------------------------------------------------------------------------
 ;;; What Quokka has, and what the suite has defined
 
@@ -293,13 +306,30 @@
 ;;; which of several kinds of syntax made the reader give up, so a probe for
 ;;; syntax the reader has blames it for a neighbour's failure (#72).
 (defun %syntax-reason (text)
+  (let ((found (%deferred-syntax text)))
+    (if found (format nil "~{~A~^ ~}" found) "reader[other]")))
+
+(defun %deferred-syntax (text)
   (let ((found nil))
     (dolist (probe '(("#c(" . "#C") ("#C(" . "#C") ("#p\"" . "#P") ("#P\"" . "#P")))
       (if (and (search (car probe) text) (not (member (cdr probe) found :test #'string=)))
           (push (cdr probe) found)))
-    (if found
-        (format nil "~{reader[~A]~^ ~}" (sort found #'string<))
-        "reader[other]")))
+    (mapcar (lambda (name) (format nil "reader[~A]" name)) (sort found #'string<))))
+
+;;; The same syntax in a string the test hands to the reader itself:
+;;; `(read-from-string "#C(1 0)")` is read by Quokka without trouble and
+;;; fails only when it runs (#122). Asked of a test that has failed.
+(defun %string-syntax-needs (form)
+  (let ((left *walk-limit*)
+        (reasons nil))
+    (labels ((walk (x)
+               (setq left (- left 1))
+               (cond ((< left 0) nil)
+                     ((stringp x)
+                      (dolist (r (%deferred-syntax x)) (pushnew r reasons :test #'string=)))
+                     ((consp x) (walk (car x)) (walk (cdr x))))))
+      (walk form))
+    (sort reasons #'string<)))
 
 ;;; An unreadable DEFUN, DEFMACRO, DEFVAR or DEFPARAMETER still defines a
 ;;; name, which tests call; mark it broken with the reader's reason.
@@ -493,6 +523,7 @@
                 ;; would skip tests that pass, such as one using a helper that
                 ;; needs LOOP only in a branch the test does not take.
                 (let ((needs (or (%needs test) (%message-needs values)
+                                 (%string-syntax-needs test)
                                  (let ((reason (gethash (symbol-name name) *follows-sbcl*)))
                                    (if reason (list (format nil "sbcl[~A]" reason)) nil)))))
                   (if needs
@@ -516,12 +547,41 @@
                     (and symbol (gethash symbol *deferred*) (list (%reason-for symbol))))))))))
 
 ;;; A test made by a macro of the suite's (DEF-MACRO-TEST and the like)
-;;; arrives inside another form, not at the top level. DEFTEST runs it there
-;;; and keeps its line for the step to report.
-(defvar *produced* nil)
+;;; arrives inside another form, not at the top level, and DEFTEST is then
+;;; a macro being expanded. It does what rt.lsp's does: it only records the
+;;; test, which runs with the file's others once the file has been read. The
+;;; rest of the form (DEFSTRUCT-WITH-TESTS also defines the structure) takes
+;;; effect at once, as later definitions in the file may need it. Should a
+;;; test expand into another while the tests are running, that one runs
+;;; there and its line is kept in `*produced*` for the step to report.
 
 (defmacro deftest (name &rest body)
-  `(progn (push (%run-test '(deftest ,name ,@body)) *produced*) ',name))
+  `(progn (%note-test '(deftest ,name ,@body)) ',name))
+
+(defun %note-test (form)
+  (if *pending-ready*
+      (push (%run-test form) *produced*)
+      (push form *pending-tests*)))
+
+(defun %mentions-test-macro (x)
+  (cond ((symbolp x) (or (eq x 'deftest) (gethash x *test-macros*)))
+        ((consp x) (or (%mentions-test-macro (car x)) (%mentions-test-macro (cdr x))))
+        (t nil)))
+
+;;; The name of the test FORM would have defined, if FORM is headed by one
+;;; of the suite's test-defining macros and names its test where DEFTEST
+;;; does. A form like that which signals before reaching a DEFTEST — the
+;;; macro never loaded, or its expander uses something Quokka lacks, as
+;;; DEF-MACRO-TEST calls ASSERT while expanding — is still a test of the
+;;; suite's, and is reported under its name, explained as a failing test is.
+;;; Before #122 it was a line in the load log and counted nowhere.
+(defun %lost-test (form)
+  (and (consp form)
+       (symbolp (car form))
+       (gethash (car form) *test-macros*)
+       (consp (cdr form))
+       (symbolp (second form))
+       (second form)))
 
 (defun %describe (values)
   (or (ignore-errors (prin1-to-string values)) "#<unprintable>"))
@@ -575,21 +635,32 @@
     ;; Named, so that a load that runs out of steps says what it was loading.
     (setq *current* (format nil "load~A" (or names "-")))
     (setq *current-load* (cons names form))
+    (if (and (consp form) (eq (car form) 'defmacro) (symbolp (second form))
+             (%mentions-test-macro (cddr form)))
+        (setf (gethash (second form) *test-macros*) t))
     (cond ((and names (%common-lisp-p (car names)))
            (format nil "LOAD ~A not redefined: it is COMMON-LISP's" (car names)))
           ((and names (gethash (car names) *provided*))
            (format nil "LOAD ~A provided by the runner" (car names)))
           (t
-           (let ((failure (handler-case (progn (eval form) nil)
-                            (error (condition) (%condition-text condition)))))
-             (if failure
+           (let* ((noted *pending-tests*)
+                  (failure (handler-case (progn (eval form) nil)
+                             (error (condition) (%condition-text condition))))
+                  (lost (and failure (eq noted *pending-tests*) (%lost-test form))))
+             (cond
+               (lost
+                (let ((needs (%needs form)))
+                  (if needs
+                      (format nil "NEEDS ~A ~{~A~^ ~}" lost needs)
+                      (format nil "FAIL ~A expansion: ~A" lost (%one-line failure)))))
+               (failure
                  (let ((needs (or (%needs form)
                                   (list (format nil "load-error[~A]" (or (car names) "-"))))))
                    (%break names needs)
                    (format nil "LOAD ~A failed ~A: needs ~{~A~^ ~}"
-                           (or names "-") (%one-line failure) needs))
-                 (progn (%remember names form)
-                        (format nil "LOAD ~A ok" (or names "-")))))))))
+                           (or names "-") (%one-line failure) needs)))
+               (t (%remember names form)
+                  (format nil "LOAD ~A ok" (or names "-")))))))))
 
 ;;; A definition that loaded, kept so that its needs can be found later.
 (defun %remember (names form)

@@ -37,3 +37,10 @@
 => (1 2 T)
 => 3
 => ("-0.0" "0.0" T)
+=> ((NIL 2) (NIL 3) (NIL 9) (NIL 6) (NIL 4) (NIL 6))
+=> (:READER-ERROR :READER-ERROR :READER-ERROR)
+=> (#\( #\()
+=> :READER-ERROR
+=> :READER-ERROR
+=> :READER-ERROR
+=> #(1 2)

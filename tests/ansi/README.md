@@ -2,7 +2,7 @@
 
 ansi-test is the Common Lisp conformance suite Paul Dietz wrote for GCL, now
 maintained at <https://gitlab.common-lisp.net/ansi-test/ansi-test> (MIT
-licence). Quokka measures tier 1 against fourteen of its groups (#60). The
+licence). Quokka measures tier 1 against fifteen of its groups (#60, #67). The
 latest numbers are in [`docs/ansi-test.md`](../../docs/ansi-test.md).
 
 ```bash
@@ -56,7 +56,11 @@ ANSI_TEST_GROUPS=symbols,packages \
 ```
 
 The runner runs a file's tests after reading the whole file, as `rt.lsp`
-runs tests after loading. A failure or a timeout is explained by the
+runs tests after loading. That includes the tests the suite defines through
+its own macros (`def-syntax-test`, `def-print-test`, …): the runner's
+`deftest` macro records such a test for the end of the file, and a form
+whose macro cannot expand is still reported, under the name it gives, as
+needing whatever stopped it (#122). A failure or a timeout is explained by the
 deferred operators the test uses; a failure SBCL shares, listed with
 `%follows-sbcl` in `deferred.lisp`, is explained as `sbcl[...]`.
 

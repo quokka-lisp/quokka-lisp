@@ -52,6 +52,12 @@
                 (setq i next)
                 (let ((d (%format-directive-char directive)))
                   (cond
+                    ;; `~<` opens justification or a logical block, which
+                    ;; basic format has neither of. Said here, while
+                    ;; parsing: left to the run, the `~;` or `~>` inside
+                    ;; was met first and blamed for closing nothing (#122).
+                    ((char= d #\<)
+                     (error "format: a directive basic format does not have" d))
                     ;; A closing directive ends this list of items.
                     ((member d '(#\; #\] #\} #\)))
                      (flush)

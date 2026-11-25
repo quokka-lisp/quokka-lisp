@@ -9,22 +9,22 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1477 | 0 | 0 | 0 | 0 | 161 | 1638 |
-| sequences | 2549 | 0 | 0 | 0 | 0 | 609 | 3158 |
-| strings | 363 | 0 | 0 | 0 | 0 | 138 | 501 |
-| arrays | 629 | 0 | 0 | 0 | 0 | 604 | 1233 |
+| cons | 1557 | 0 | 0 | 0 | 0 | 165 | 1722 |
+| sequences | 2678 | 0 | 0 | 0 | 0 | 609 | 3287 |
+| strings | 371 | 0 | 0 | 0 | 0 | 138 | 509 |
+| arrays | 638 | 0 | 0 | 0 | 0 | 652 | 1290 |
 | characters | 133 | 0 | 0 | 0 | 0 | 126 | 259 |
 | symbols | 126 | 0 | 0 | 0 | 0 | 1019 | 1145 |
-| packages | 272 | 0 | 0 | 0 | 0 | 68 | 340 |
-| numbers | 570 | 0 | 0 | 0 | 0 | 868 | 1438 |
-| reader | 116 | 0 | 0 | 0 | 0 | 49 | 165 |
-| printer | 223 | 0 | 0 | 0 | 0 | 599 | 822 |
-| data-and-control-flow | 1165 | 0 | 0 | 0 | 0 | 255 | 1420 |
+| packages | 391 | 0 | 0 | 0 | 0 | 109 | 500 |
+| numbers | 570 | 0 | 0 | 0 | 0 | 874 | 1444 |
+| reader | 410 | 0 | 0 | 0 | 0 | 165 | 575 |
+| printer | 419 | 0 | 0 | 0 | 0 | 1450 | 1869 |
+| data-and-control-flow | 1165 | 0 | 0 | 0 | 0 | 263 | 1428 |
 | eval-and-compile | 276 | 0 | 0 | 0 | 0 | 42 | 318 |
-| iteration | 95 | 0 | 0 | 0 | 0 | 743 | 838 |
+| iteration | 95 | 0 | 0 | 0 | 0 | 748 | 843 |
 | hash-tables | 81 | 0 | 0 | 0 | 0 | 86 | 167 |
-| structures | 60 | 0 | 0 | 0 | 0 | 55 | 115 |
-| **all** | **8135** | **0** | **0** | **0** | **0** | **5422** | **13557** |
+| structures | 60 | 0 | 0 | 0 | 0 | 56 | 116 |
+| **all** | **8970** | **0** | **0** | **0** | **0** | **6502** | **15472** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -35,62 +35,63 @@ A test can need several things.
 
 | needs | tests |
 | --- | ---: |
-| `LOOP[tier-2:loop]` | 4205 |
-| `TYPEP[phase-3:types]` | 1156 |
-| `ASSERT[tier-2:conditions]` | 647 |
-| `RANDOM[tier-2:random]` | 531 |
-| `FIND-CLASS[tier-2:clos]` | 519 |
-| `reader[#C]` | 470 |
-| `DEFGENERIC[tier-2:clos]` | 399 |
-| `MAKE-RANDOM-STATE[tier-2:random]` | 381 |
-| `MAKE-CONDITION[tier-2:conditions]` | 379 |
-| `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 369 |
-| `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 369 |
-| `FIND-METHOD[tier-2:clos]` | 365 |
+| `LOOP[tier-2:loop]` | 4305 |
+| `ASSERT[tier-2:conditions]` | 1390 |
+| `TYPEP[phase-3:types]` | 1196 |
+| `RANDOM[tier-2:random]` | 565 |
+| `FIND-CLASS[tier-2:clos]` | 524 |
+| `reader[#C]` | 475 |
+| `DEFGENERIC[tier-2:clos]` | 403 |
+| `MAKE-RANDOM-STATE[tier-2:random]` | 385 |
+| `MAKE-CONDITION[tier-2:conditions]` | 383 |
+| `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 373 |
+| `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 373 |
+| `FIND-METHOD[tier-2:clos]` | 369 |
 | `HANDLER-BIND[tier-2:conditions]` | 285 |
 | `TYPE-ERROR-DATUM[tier-2:conditions]` | 275 |
 | `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 275 |
 | `MUFFLE-WARNING[tier-2:conditions]` | 270 |
-| `SUBTYPEP[phase-3:types]` | 205 |
-| `COMPLEX[deferred:complex-numbers]` | 188 |
+| `SUBTYPEP[phase-3:types]` | 211 |
+| `COMPLEX[deferred:complex-numbers]` | 196 |
+| `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 141 |
+| `format-directive[tier-2:format]` | 126 |
 | `ETYPECASE[phase-3:types]` | 84 |
 | `REALPART[deferred:complex-numbers]` | 83 |
-| `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 64 |
+| `PPRINT-NEWLINE[tier-2:pretty-printer]` | 73 |
 | `note[NIL-VECTORS-ARE-STRINGS]` | 57 |
 | `DOCUMENTATION[tier-2:clos]` | 48 |
+| `WITH-OPEN-STREAM[tier-2:streams]` | 40 |
+| `PPRINT-TABULAR[tier-2:pretty-printer]` | 39 |
 | `PPRINT-INDENT[tier-2:pretty-printer]` | 38 |
 | `TYPECASE[phase-3:types]` | 38 |
-| `WITH-OPEN-STREAM[tier-2:streams]` | 38 |
 | `IMAGPART[deferred:complex-numbers]` | 35 |
+| `LOOP-FINISH[tier-2:loop]` | 35 |
 | `COPY-PPRINT-DISPATCH[tier-2:pretty-printer]` | 34 |
-| `PPRINT-NEWLINE[tier-2:pretty-printer]` | 34 |
+| `PPRINT-FILL[tier-2:pretty-printer]` | 31 |
 | `COMPLEXP[deferred:complex-numbers]` | 29 |
 | `CTYPECASE[phase-3:types]` | 29 |
 | `PATHNAME[tier-2:pathnames-and-files]` | 29 |
+| `PPRINT-LINEAR[tier-2:pretty-printer]` | 29 |
+| `PPRINT-TAB[tier-2:pretty-printer]` | 29 |
 | `TYPE-OF[phase-3:types]` | 29 |
-| `LOOP-FINISH[tier-2:loop]` | 28 |
 | `SET-PPRINT-DISPATCH[tier-2:pretty-printer]` | 26 |
-| `MAKE-TWO-WAY-STREAM[tier-2:streams]` | 23 |
+| `MAKE-TWO-WAY-STREAM[tier-2:streams]` | 25 |
+| `CLASS-OF[tier-2:clos]` | 24 |
 | `PPRINT-POP[tier-2:pretty-printer]` | 23 |
-| `CLASS-OF[tier-2:clos]` | 22 |
 | `BREAK[tier-2:conditions]` | 21 |
 | `PHASE[deferred:complex-numbers]` | 21 |
-| `PPRINT-FILL[tier-2:pretty-printer]` | 20 |
+| `UPGRADED-COMPLEX-PART-TYPE[phase-3:types]` | 20 |
 | `COMPUTE-RESTARTS[tier-2:conditions]` | 19 |
-| `PPRINT-TABULAR[tier-2:pretty-printer]` | 19 |
 | `RANDOM-STATE-P[tier-2:random]` | 19 |
 | `ABORT[tier-2:conditions]` | 18 |
 | `PPRINT-EXIT-IF-LIST-EXHAUSTED[tier-2:pretty-printer]` | 18 |
-| `PPRINT-LINEAR[tier-2:pretty-printer]` | 18 |
 | `RESTART-NAME[tier-2:conditions]` | 18 |
 | `MAKE-BROADCAST-STREAM[tier-2:streams]` | 16 |
 | `PACKAGE-ERROR-PACKAGE[tier-2:conditions]` | 15 |
-| `PPRINT-TAB[tier-2:pretty-printer]` | 15 |
 | `ARITHMETIC-ERROR-OPERANDS[tier-2:conditions]` | 14 |
 | `ARITHMETIC-ERROR-OPERATION[tier-2:conditions]` | 14 |
 | `CIS[deferred:complex-numbers]` | 14 |
 | `DEFCLASS[tier-2:clos]` | 14 |
-| `UPGRADED-COMPLEX-PART-TYPE[phase-3:types]` | 14 |
 | `CHECK-TYPE[phase-3:types]` | 13 |
 | `CONJUGATE[deferred:complex-numbers]` | 13 |
 | `DEFMETHOD[tier-2:clos]` | 13 |
@@ -244,5 +245,4 @@ A test can need several things.
 | `UPDATE-INSTANCE-FOR-REDEFINED-CLASS[tier-2:clos]` | 8 |
 | `note[NO-FLOATING-POINT-UNDERFLOW-BY-DEFAULT]` | 8 |
 | `reader[#P]` | 7 |
-| `format-directive[tier-2:format]` | 4 |
 | `sbcl[same-as-sbcl]` | 1 |

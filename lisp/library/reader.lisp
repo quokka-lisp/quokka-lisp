@@ -718,8 +718,9 @@
 
 ;;; A ratio (#59): a sign, digits, a slash and digits, in `*read-base*` as
 ;;; an integer's are (CLHS 2.3.2.1), made canonical by `/`, so `2/4` reads
-;;; as 1/2 and `4/2` as 2. Nil if TEXT is not one. A denominator of 0 is an
-;;; error, a `division-by-zero` as in SBCL.
+;;; as 1/2 and `4/2` as 2. Nil if TEXT is not one. A denominator of 0 is a
+;;; fault in the text being read, a `reader-error`, as a float out of range
+;;; is; it was the `division-by-zero` that `/` signals (#122).
 (defun %token-ratio (text)
   (let* ((end (length text))
          (start (%skip-sign text 0 end))
@@ -729,6 +730,7 @@
              (eq (%skip-digits text (+ slash 1) end *read-base*) end))
         (let ((numerator (%digits-value text start slash 0 *read-base*))
               (denominator (%digits-value text (+ slash 1) end 0 *read-base*)))
+          (if (eql denominator 0) (error 'reader-error "a ratio with a denominator of 0" text))
           (/ (if (eq (aref text 0) #\-) (- numerator) numerator) denominator))
         nil)))
 
@@ -960,7 +962,13 @@
     (if weight
         (%read-dispatch-argument stream char (+ (* (if argument argument 0) 10) weight))
         (let ((function (gethash (char-upcase sub-char) (%dispatch-table char *readtable*))))
-          (cond ((and *read-suppress* (not (member sub-char '(#\( #\| #\+ #\- #\\))))
+          (cond ((or (eql sub-char #\<) (eql sub-char #\)) (%whitespacep sub-char))
+                 ;; `#<` is how an object with no readable form prints, and
+                 ;; `#` before whitespace or `)` is nothing at all: CLHS
+                 ;; 2.4.8 makes each an error, and `*read-suppress*` does
+                 ;; not excuse it, there being no object to skip (#122).
+                 (error 'reader-error "nothing can be read after # and that character" sub-char))
+                ((and *read-suppress* (not (member sub-char '(#\( #\| #\+ #\- #\\ #\*))))
                  ;; Suppressed, every other `#x` reads as nothing but the
                  ;; object after it (`#*101`, `#C(1 2)`, `#P"..."`), except
                  ;; `#1#`, which has none (CLHS 2.4.8).
@@ -970,12 +978,15 @@
                 (t (error 'reader-error "no dispatch function for that character after #" sub-char)))))))
 
 ;;; `#\x` — a character. `#\a` is one character; `#\Space` is a name, which
-;;; is what more letters after the first mean, looked up by `name-char`.
+;;; is what more characters after the first mean, looked up by `name-char`.
+;;; The first character is taken whatever it is (`#\(`), and then the token
+;;; goes on to the next terminator, as SBCL's does: `#\:x` is the name `:X`,
+;;; which names nothing. It used to stop after a first character that was
+;;; not a letter or digit, and so read `#\:x` as `#\:` and a symbol (#122).
 (defun %read-sharp-backslash (stream sub-char argument)
   (let ((first (read-char stream)))
-    (if (and (alphanumericp first)
-             (let ((next (peek-char nil stream nil nil)))
-               (and next (not (%terminatorp next)))))
+    (if (let ((next (peek-char nil stream nil nil)))
+          (and next (not (%terminatorp next))))
         (let ((name (%read-name stream (list (char-upcase first)) 1)))
           (cond (*read-suppress* nil)
                 ((name-char name))
@@ -1059,10 +1070,14 @@
 ;;; `#(...)` — a vector of the elements. With a length, `#4(a b)` is four
 ;;; elements, the last one repeated to fill them, as `#5*101` is five bits
 ;;; (CLHS 2.4.8.3); more elements than the length is an error. The length
-;;; used to be read and ignored (#114).
+;;; used to be read and ignored (#114). Under `*read-suppress*` the text is
+;;; only skipped, so nothing about it is checked; otherwise a consing dot is
+;;; an error, a vector having no tail (#122).
 (defun %read-sharp-paren (stream sub-char argument)
   (let ((items (%read-list-items stream nil)))
-    (cond ((null argument) (apply #'vector items))
+    (cond (*read-suppress* nil)
+          ((cdr (last items)) (error 'reader-error "a dot in a vector"))
+          ((null argument) (apply #'vector items))
           ((> (length items) argument)
            (error 'reader-error "more elements than the length given" argument))
           ((and (null items) (> argument 0))
@@ -1072,8 +1087,18 @@
                out)))))
 
 ;;; `#*1011` — a bit vector (#67). With a length, `#5*101` is five bits, the
-;;; last digit repeated to fill them (CLHS 2.4.8.4).
+;;; last digit repeated to fill them (CLHS 2.4.8.4). Under
+;;; `*read-suppress*` the token is skipped and nothing about it checked:
+;;; `#*` alone is an empty bit vector and has no object after it to read,
+;;; which is why the dispatcher hands it here (#122).
 (defun %read-sharp-star (stream sub-char argument)
+  (if *read-suppress*
+      (do ((char (peek-char nil stream nil nil) (peek-char nil stream nil nil)))
+          ((or (null char) (%terminatorp char)) nil)
+        (read-char stream))
+      (%read-bit-vector stream argument)))
+
+(defun %read-bit-vector (stream argument)
   (let ((bits nil))
     (do ((char (peek-char nil stream nil nil) (peek-char nil stream nil nil)))
         ((not (and char (member char '(#\0 #\1)))))

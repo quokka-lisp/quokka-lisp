@@ -130,3 +130,29 @@ char-code-limit
 ;; Negation flips the sign of a zero.
 (let ((*read-default-float-format* 'double-float))
   (list (prin1-to-string (- 0.0d0)) (prin1-to-string (- -0.0d0)) (eql -0.0d0 (- 0.0d0))))
+
+;; What is only skipped is not checked (#122): under *read-suppress* a bit
+;; vector with too few bits, a vector with too many elements and a character
+;; name that names nothing all read as nil, to the end of their token.
+(let ((*read-suppress* t))
+  (list (multiple-value-list (read-from-string "#*"))
+        (multiple-value-list (read-from-string "#2*"))
+        (multiple-value-list (read-from-string "#1(a b c)"))
+        (multiple-value-list (read-from-string "#100()"))
+        (multiple-value-list (read-from-string "#\\:x"))
+        (multiple-value-list (read-from-string "#\\::::"))))
+
+;; But `#<`, and `#` before whitespace or `)`, are errors even then.
+(let ((*read-suppress* t))
+  (list (handler-case (read-from-string "#<") (reader-error () :reader-error))
+        (handler-case (read-from-string "# ") (reader-error () :reader-error))
+        (handler-case (read-from-string "#)") (reader-error () :reader-error))))
+
+;; A character's token runs to the next terminator, whatever it starts with.
+(list (read-from-string "#\\(") (car (read-from-string "(#\\()")))
+(handler-case (read-from-string "#\\:x") (reader-error () :reader-error))
+
+;; Faults in the text are reader errors: a zero denominator, a dotted vector.
+(handler-case (read-from-string "1/0") (reader-error () :reader-error))
+(handler-case (read-from-string "#(1 . 2)") (reader-error () :reader-error))
+(read-from-string "#(1 . (2))")

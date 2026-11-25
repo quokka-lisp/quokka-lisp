@@ -77,7 +77,7 @@ an unknown place) and expands exactly as before, and `get-setf-expansion`
 builds a known place's five values from that same function — never give the
 library's `setf` its own path for a place the prelude knows. `&environment` is
 accepted and bound to nil; no `(setf foo)` functions. A rebuild now reports
-`(:FORMS 1331 :REPLACED 1071)` (asserted in `differential.rs`; any new library
+`(:FORMS 1332 :REPLACED 1072)` (asserted in `differential.rs`; any new library
 form changes it). **Step I is done** (#53, chapter 44): all 25 special operators.
 `lisp/library/operators.lisp` has `progv` (a macro over `%progv`, which
 binds one name per level with the compiler form `%dynamic-bind` → the new
@@ -376,8 +376,8 @@ timeouts were slowness — `%string-mismatch` (a primitive; every string
 comparison has a fast path to it), a merge sort that relinks conses, set
 functions that hash a long second list; plus `disassemble`, `provide`,
 `require`. Rust 53, `LIMIT` 16,017. **Phase 2's gate is met (25 Nov
-2026)**: ansi-test's 15 tier-1 groups, 13,557 tests — 8,135 pass, the
-other 5,422 all explained by deferred features or by SBCL agreeing; no
+2026)**: ansi-test's 15 tier-1 groups, 15,472 tests — 8,970 pass, the
+other 6,502 all explained by deferred features or by SBCL agreeing; no
 plain failure, escape, timeout or tier-1 gap; the fixpoint holds.
 **A test that expects an error from a form using an operator Quokka lacks
 is never counted as a pass** (`%caught-needs` in `tests/ansi/runner.lisp`):
@@ -386,6 +386,19 @@ fourteen `(signals-error (loop ...) program-error)` tests "passed" in a
 Quokka with no `loop`, and the ratchet would have demanded the accident go
 on happening; the same rule took six `pprint` tests out of the baseline
 (8,141 → 8,135).
+**The gate was first measured over too few tests** (#122, 26 Nov 2026):
+the runner bound `*produced*` before its `defvar`, lexically, so the 1,915
+tests the suite defines through its own macros (`def-syntax-test`,
+`def-print-test`, …) ran and were never reported. Counted, they brought 20
+real reader faults — `*read-suppress*` validating what it only skips
+(`#*`, `#n(`, `#\`), `#<` and `1/0` not `reader-error`s, `#(1 . 2)`
+accepted — fixed in `reader.lisp`; `format` now names `~<` as a directive
+it lacks while parsing. The runner's `deftest` macro records a test and
+runs it after the file is read, as `rt.lsp` does, and a test whose macro
+cannot expand is reported under its own name (`%lost-test`). **In a file
+that `load` reads, a `defvar` goes above the first function that binds
+the variable.** `#\` reads a token to the next terminator whatever its
+first character, as SBCL does: write `#\( #\)` with a space between.
 `ANSI_TEST_GROUPS=a,b` runs a few groups as the full run reaches them.
 **The compiler's lexical environment is one list** (#111, 25 Nov 2026):
 `env`, an argument, innermost entry first, each `(kind . contents)`; nil is
