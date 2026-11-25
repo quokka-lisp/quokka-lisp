@@ -209,3 +209,7 @@
 (handler-case (make-sequence '(or (vector bit) (vector t)) 3 :initial-element 0) (error () :error))
 (handler-case (eval '(map '(or (vector t 5) (vector t 10)) #'identity '(1 2 3 4 5 6))) (error () :error))
 (map '(or (vector t 5) (vector t 10)) #'identity '(1 2 3 4 5 6 7 8 9 10))
+;; coerce returns an object that is already of the type itself.
+(let ((s (make-string 3 :initial-element #\a))) (eq s (coerce s '(vector character))))
+(let ((v (vector 1 2))) (eq v (coerce v '(vector t 2))))
+(let ((v (vector 1 2))) (eq v (coerce v '(simple-array t (*)))))

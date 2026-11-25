@@ -161,11 +161,12 @@
 ;;;   :pairs     list of (car-ctype . cdr-ctype)
 ;;;   :arrays    list of (element-type simple pattern exceptions)
 ;;;   :tree      list of (roots . exceptions), names in a hierarchy
+;;;   :parts     the complex numbers' part types, a subset of (:rational :float)
 ;;;   :whole     t: every object of the kind
 
 (defvar %kinds
   '((:integer . :integers) (:ratio . :reals) (:float . :reals) (:negative-zero . :whole)
-    (:complex . :whole)
+    (:complex . :parts)
     (:character . :codes) (:symbol . :symbols) (:keyword . :symbols) (:cons . :pairs)
     (:array . :arrays) (:structure . :tree) (:condition . :tree)
     (:compiled-function . :whole) (:function . :whole) (:hash-table . :whole)
@@ -301,6 +302,7 @@
     (:pairs (list (cons :any :any)))
     (:arrays (%all-arrays))
     (:tree (list (list nil)))
+    (:parts (list :rational :float))
     (t t)))
 
 (defun %restriction-and (kind a b)
@@ -311,6 +313,7 @@
     (:pairs (%pairs-and a b))
     (:arrays (%arrays-and a b))
     (:tree (%tree-and kind a b))
+    (:parts (intersection a b))
     (t (and a b))))
 
 (defun %restriction-or (kind a b)
@@ -319,6 +322,7 @@
     (:reals (%intervals-or a b nil))
     (:symbols (%symbols-not (%symbols-and (%symbols-not a) (%symbols-not b))))
     ((:pairs :arrays :tree) (append a b))
+    (:parts (union a b))
     (t (or a b))))
 
 (defun %restriction-not (kind a)
@@ -330,15 +334,26 @@
     (:pairs (%pairs-not a))
     (:arrays (%arrays-not a))
     (:tree (%tree-not kind a))
+    (:parts (set-difference (list :rational :float) a))
     (t (not a))))
 
+;;; A ratio is never an integer, so a ratio interval that is a single
+;;; integer, as `(rational 1 1)` leaves, holds nothing. Any longer interval
+;;; holds ratios.
 (defun %restriction-empty-p (kind a)
   (case (%shape kind)
-    ((:integers :reals :codes) (values (null a) t))
+    ((:integers :codes) (values (null a) t))
+    (:reals (values (if (eq kind :ratio)
+                        (every (lambda (iv) (and (%iv-low iv) (eql (%iv-low iv) (%iv-high iv))
+                                                 (integerp (%iv-low iv))))
+                               a)
+                        (null a))
+                    t))
     (:symbols (values (and (eq (car a) :in) (null (cdr a))) t))
     (:pairs (%pairs-empty-p a))
     (:arrays (values (every #'%array-term-empty-p a) t))
     (:tree (%tree-empty-p kind a))
+    (:parts (values (null a) t))
     (t (values (not a) t))))
 
 (defun %restriction-contains-p (kind restriction object)
@@ -802,10 +817,12 @@
        (error "malformed type specifier" specifier))
      (%unknown-set specifier))
     ((cons)
+     ;; `*` here means any object, as `t` does.
      (let ((arguments (%type-arguments specifier 2)))
        (%kind-ctype :cons
-                    (list (cons (%parse-type (first arguments))
-                                (%parse-type (second arguments)))))))
+                    (list (cons (if (eq (first arguments) '*) :any (%parse-type (first arguments)))
+                                (if (eq (second arguments) '*) :any
+                                    (%parse-type (second arguments))))))))
     ((integer) (%parse-range '(:integer) specifier))
     ((rational) (%parse-range '(:integer :ratio) specifier))
     ((real) (%parse-range '(:integer :ratio :float) specifier))
@@ -835,7 +852,16 @@
                      pattern
                      (member head '(simple-vector simple-string simple-base-string
                                     simple-bit-vector)))))
-    ((complex) (%type-arguments specifier 1) (%kinds-ctype '(:complex)))
+    ;; A complex number's parts are upgraded as SBCL upgrades them, to
+    ;; rational or float (CLHS `upgraded-complex-part-type`).
+    ((complex)
+     (let ((part (first (%type-arguments specifier 1))))
+       (%kind-ctype :complex
+                    (cond ((eq part '*) (list :rational :float))
+                          ((subtypep part 'rational) (list :rational))
+                          ((subtypep part 'float) (list :float))
+                          ((subtypep part 'real) (list :rational :float))
+                          (t (error "malformed type specifier" specifier))))))
     ;; A function type says what a function accepts and returns, which no
     ;; one can check by looking: it is some set of functions, unknown.
     ((function)

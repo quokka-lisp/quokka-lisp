@@ -490,7 +490,7 @@
                  (t (%coerce-error object result-type))))
           ((and (member head %sequence-type-heads)
                 (or (listp object) (vectorp object)))
-           (if (and (atom type) (typep object type))
+           (if (typep object type)
                object
                (%of-type type (%range-list object 0 nil))))
           ((typep object type) object)

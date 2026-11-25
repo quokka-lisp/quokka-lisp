@@ -161,3 +161,20 @@
 (multiple-value-list (subtypep t '(or (not (real 0 10)) (not (real -100 -50)))))
 (multiple-value-list (subtypep t '(or (not spoint3) (not spoint))))
 (multiple-value-list (subtypep t '(or (not (eql a)) (not (or (member b c d) (eql e))))))
+;; * in a cons type means any object.
+(multiple-value-list (subtypep '(cons integer) 'cons))
+(multiple-value-list (subtypep '(cons * integer) '(cons t integer)))
+(multiple-value-list (subtypep 'cons '(cons * *)))
+;; A range of rationals that holds only an integer holds no ratio.
+(multiple-value-list (subtypep '(rational 1 1) 'integer))
+(multiple-value-list (subtypep '(rational 1 1) '(integer 1 1)))
+(multiple-value-list (subtypep '(and ratio (rational 2 2)) nil))
+(multiple-value-list (subtypep '(and (rational 0 1) (rational 1 2)) 'integer))
+;; A complex type's part type is not ignored.
+(multiple-value-list (subtypep '(complex integer) 'number))
+(multiple-value-list (subtypep '(complex integer) 'complex))
+(multiple-value-list (subtypep 'complex '(complex *)))
+(multiple-value-list (subtypep '(complex integer) '(complex rational)))
+(multiple-value-list (subtypep '(complex rational) '(complex integer)))
+(multiple-value-list (subtypep '(complex integer) '(complex float)))
+(multiple-value-list (subtypep '(complex real) '(or (complex rational) (complex float))))
