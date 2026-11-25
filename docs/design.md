@@ -15,7 +15,7 @@ Quokka is one live Lisp world — VM, language, editor, UI and tools in a single
 **Principles**
 
 1. **One world.** Editor, debugger, UI and your code are objects in the same image. No separate editor process talking over a socket.
-2. **Comprehensible.** The whole system should be readable by one person. We set a size budget early and track it (proposal: the Rust core stays under 15k lines).
+2. **Comprehensible.** The whole system should be readable by one person. That comes from keeping it small and its concerns separate — Rust only below the primitive table, each crate one thing — not from a line count: an early proposal to hold the Rust core under 15k lines was dropped on 25 Nov 2026 ([#89](https://github.com/quokka-lisp/quokka-lisp/issues/89)) as an artificial figure that took attention from building the system well.
 3. **Text is executable.** Any S-expression on screen can be evaluated where it stands. There is no separate shell.
 4. **Output remembers its object.** Everything printed stays linked to the live object it represents, so you can point at it, inspect it and act on it.
 5. **Errors are conversations.** An error stops and asks; it never throws away state. You fix the code and resume.
@@ -124,7 +124,7 @@ That sentence was in this document from the start and was implemented nowhere, w
 
 **Processes.** Lightweight green threads scheduled by the VM, like Genera's processes, on one OS thread to start with. A blocked request becomes a *parked* process: the scheduler runs another instead of ending the slice, and each process holds its own request. The questions phase 3 must answer, and which ones the code must not foreclose before then, are in #34.
 
-**Primitives.** A single table of Rust primitives (arithmetic, allocation, I/O, graphics calls) is the only door from Lisp into the host. Its size is part of the comprehensibility budget.
+**Primitives.** A single table of Rust primitives (arithmetic, allocation, I/O, graphics calls) is the only door from Lisp into the host. Its size is part of what a reader must take in, so each entry should have to justify itself.
 
 ## Language layer
 

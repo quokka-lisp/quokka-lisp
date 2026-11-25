@@ -160,12 +160,9 @@ cannot reach.
 Fifty-one Common Lisp files produce byte-identical output on Quokka and SBCL:
 seventeen on Quokka interpreted, compiled and under WebAssembly, thirty-four more
 of tier 1 compiled only, and all fifty-one again in a world that has rebuilt
-itself. The Rust core is 16,017 lines of the 16,017-line budget, raised from
-15,000 when arrays moved into tier 1 (#67), from 15,500 when structures
-became objects of their own (#73), from 15,537 when a macro's expander
-began to take the whole form, as in Common Lisp (#76), and in smaller steps
-since for arrays of element type nil (#77), the last tier-1 gaps (#79, #80),
-ratios (#59) and string comparison (#82).
+itself. The machine is about 12,500 lines of Rust, and the interpreter and
+reader that build the first world about 3,700; everything above the
+primitive table is Lisp.
 
 ### What does not exist yet
 

@@ -43,8 +43,8 @@ code_checks() {
   cargo build --workspace
   cargo test --workspace
 
-  say "line budget"
-  ./scripts/check-budget.sh
+  say "test placement"
+  ./scripts/check-test-placement.sh
 
   say "differential test coverage"
   ./scripts/check-differential.sh

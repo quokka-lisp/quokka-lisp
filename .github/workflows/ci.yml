@@ -43,16 +43,16 @@ jobs:
 
   # The checks that are scripts rather than cargo's. `check.sh` has always
   # run them; CI ran only the differential one, inside the oracle job, so a
-  # library file missing from boot.rs, a `#[test]` outside the two test
-  # directories, or a core past its line budget passed here while the docs
-  # said each "fails the build" (#116).
+  # library file missing from boot.rs, or a `#[test]` outside the two test
+  # directories, passed here while the docs said each "fails the build"
+  # (#116).
   checks:
-    name: Scripts (budget, test placement, file lists)
+    name: Scripts (test placement, file lists)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: ./scripts/check-budget.sh
+      - run: ./scripts/check-test-placement.sh
       - run: ./scripts/check-compiler.sh
       - run: ./scripts/check-differential.sh
 

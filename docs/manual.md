@@ -283,7 +283,7 @@ running in a second terminal. It runs, in order:
 1. the book's structure;
 2. formatting and clippy;
 3. the native build and every test;
-4. the Rust line budget;
+4. that every test is in a test directory;
 5. the differential test coverage, and the SBCL oracle;
 6. rustdoc;
 7. GC torture;
@@ -377,7 +377,7 @@ sbcl --script scripts/oracle.lisp tests/lisp/reader.lisp
 | GC torture: collect at every mutation boundary, verify the heap | `cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture` |
 | the tests under WebAssembly | `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
 | the browser build | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
-| the Rust line budget (15,713, tests not counted) | `./scripts/check-budget.sh` |
+| that every test is in a test directory (and each crate's size) | `./scripts/check-test-placement.sh` |
 
 The slowest tests are the rebuild and fixpoint tests, about 40 seconds
 together. They rebuild the system twice, and share the two rebuilt worlds.
@@ -485,9 +485,9 @@ Rule 1 says Lisp first, so check whether it can be Lisp. If it can't:
    and its implementation.
 2. Add its name to the pinned list in `src/unit/primitives.rs`.
 
-It costs Rust budget (none is left of 15,713, which is a guide rather than a
-ceiling: raise `LIMIT` in `scripts/check-budget.sh` in the same commit, with
-the reason), and the issue for the step should say how much.
+A primitive is Rust that could not be Lisp, so the issue for the step should
+say why this one could not, and how it stays bounded (rule 9). The fuzz test
+covers it without being told.
 
 ### A book chapter
 
