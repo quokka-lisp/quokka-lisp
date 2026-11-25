@@ -8,13 +8,14 @@ usage() {
   cat <<'EOF'
 usage: check.sh [all|code|book]
 
-  all    everything CI runs (the default)
+  all    everything CI runs and the two heavy runs it leaves to this script (the default)
   code   the Rust and Lisp checks: fmt, clippy, tests, budget, wasm
   book   the book and prose checks only; needs no toolchain, takes a moment
 
 Prose is written and reviewed far more often than the VM changes under it,
-and the code half takes about two and a half minutes, so the two halves can
-be run apart. CI still runs both.
+and the code half takes about five minutes, so the two halves can be run
+apart. CI runs the book half and the quick part of the code half; the two
+heavy runs, GC torture and the tests under wasmtime, are this script's.
 EOF
 }
 
@@ -55,25 +56,64 @@ code_checks() {
   say "rustdoc"
   RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-  say "GC torture (collect at every mutation, then verify)"
-  cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture
-
   say "wasm32-unknown-unknown (browser build)"
   cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
 
-  say "wasm32-wasip1 (tests)"
+  # The two heavy runs, side by side. Each runs the whole suite again —
+  # GC torture collecting and verifying the heap after every slice, the
+  # other on WebAssembly — and one after the other they were five and a
+  # half of this script's seven minutes, with cores idle throughout: the
+  # rebuild tests in each are a chain that no number of cores shortens.
+  #
+  # Both are *built* first, one after the other, because two cargos building
+  # into one target directory only take turns at its lock. Then each runs
+  # with its output in a file of its own, and both are shown under their
+  # headings when both are done — two runs writing to one terminal at once
+  # would be unreadable, and a failure in either must still be found.
+  wasi=()
   if command -v wasmtime >/dev/null 2>&1; then
     # An image built here, natively, for the wasm32 tests to load: a browser
     # runs a world that some 64-bit machine built (#84).
     cargo run --quiet --release -p quokka -- build target/native-world.qi
+    wasi=(cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1)
+    "${wasi[@]}" --no-run
+  fi
+  torture=(cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture)
+  "${torture[@]}" --no-run
+
+  logs=target/check
+  mkdir -p "$logs"
+  "${torture[@]}" > "$logs/torture.log" 2>&1 &
+  torture_pid=$!
+  wasi_pid=""
+  if [ "${#wasi[@]}" -gt 0 ]; then
     # Through a runner that deals the tests out to a wasmtime per core: WASI
-    # has no threads, and in one process this step was six minutes.
+    # has no threads, and in one process this run alone was six minutes.
     QUOKKA_ROOT="$PWD" QUOKKA_FOREIGN_IMAGE="$PWD/target/native-world.qi" QUOKKA_FOREIGN_IMAGE_REQUIRED=1 \
     CARGO_TARGET_WASM32_WASIP1_RUNNER="$PWD/scripts/wasi-test-runner.sh" \
-      cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
+      "${wasi[@]}" > "$logs/wasi.log" 2>&1 &
+    wasi_pid=$!
+  fi
+
+  # `wait` gives each run's own exit status, and under `set -e` the first
+  # failure would end the script before the second was looked at — so both
+  # are collected, both logs shown, and then the script fails if either did.
+  failed=0
+  wait "$torture_pid" || failed=1
+  say "GC torture (collect at every mutation, then verify)"
+  cat "$logs/torture.log"
+
+  say "wasm32-wasip1 (tests)"
+  if [ -n "$wasi_pid" ]; then
+    wait "$wasi_pid" || failed=1
+    cat "$logs/wasi.log"
   else
     echo "wasmtime not installed — building only. Install: brew install wasmtime"
     cargo build -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
+  fi
+  if [ "$failed" -ne 0 ]; then
+    echo "check.sh: GC torture or the wasm32-wasip1 tests failed; see above" >&2
+    exit 1
   fi
 }
 

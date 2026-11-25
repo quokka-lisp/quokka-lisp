@@ -645,8 +645,9 @@ REPL flag, a file list or a test name, change the manual in the same commit.
 `./scripts/check.sh` runs everything CI runs **and the two heavy runs CI
 leaves to it**: the whole suite under GC torture and again under wasmtime.
 Use it before every commit — it is the only thing that honours rule 2 now.
-It takes about seven minutes with wasmtime installed, so run it in the
-background. The tests under wasmtime go through `scripts/wasi-test-runner.sh`,
+It takes about five minutes with wasmtime installed, so run it in the
+background. GC torture and the tests under wasmtime run side by side, each
+into a log under `target/check/` that is shown when both are done. The tests under wasmtime go through `scripts/wasi-test-runner.sh`,
 which deals them out to a wasmtime per core: WASI has no threads, and in one
 process that step alone was six minutes.
 
@@ -706,7 +707,7 @@ image on wasm32, #84), `wasm-pack` (bundles the dev console) and
 ## Working agreements
 
 - Do not silently change a design decision. If the code needs something the design does not cover, or contradicts it, stop and raise it, and propose an update to `docs/design.md`.
-- **Run `./scripts/check.sh` to green before every commit, and commit a coherent piece of work, not each step of it** (Carsten, 25 Nov 2026). CI no longer runs GC torture or the tests under wasmtime on a push, so the local check is the only gate for those; and each commit costs a seven-minute check and a CI run, so a day of fifteen small commits is a day of waiting. Keep a commit to one phase. Each phase ends at a demonstrable gate (see the roadmap in `docs/design.md`); don't start work belonging to a later phase without asking.
+- **Run `./scripts/check.sh` to green before every commit, and commit a coherent piece of work, not each step of it** (Carsten, 25 Nov 2026). CI no longer runs GC torture or the tests under wasmtime on a push, so the local check is the only gate for those; and each commit costs a five-minute check and a CI run, so a day of fifteen small commits is a day of waiting. Keep a commit to one phase. Each phase ends at a demonstrable gate (see the roadmap in `docs/design.md`); don't start work belonging to a later phase without asking.
 - **Edit source with the Edit tool or a plain string replacement, never a regular expression.** On 21 Nov two `python3 -` scripts that located a block with `re.search(..., re.S)` and nested lazy repeats such as `(?:.*?\n)*?` hit catastrophic backtracking. Each ran at 100% of a core for over a day, orphaned after their command timed out, holding day-old copies of `vm.rs`, `boot.rs` and `main.rs` that they would have written back over later work had the search ever finished. If an exact string does not match, stop and read the file rather than widening the pattern.
 - **A commit message never credits Claude.** No `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" line, in commits or pull requests. GitHub reads the trailer as a contributor; 19 commits carried one between 22 and 25 Nov 2026 and `main` was rewritten to remove them. A `commit-msg` hook in `.git/hooks` refuses such a message, but hooks are not cloned, so the rule is here too.
 - **A command moved to the background is not finished.** When one times out and is backgrounded, confirm its processes have exited (or kill them) before moving on, and especially before running anything else that writes the same files.
