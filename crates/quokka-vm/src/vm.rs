@@ -1670,30 +1670,23 @@ pub fn run_sliced(
     slice: u64,
     host: &mut dyn crate::host::Host,
 ) -> Result<(), EvalError> {
-    use crate::slice::{run_slice, Status};
-    let refused = heap.mutate(|mc| {
-        let function = mc.register(Register::Value);
-        if let Err(e) = code::verify::function(mc, function) {
-            return Some(EvalError::Malformed(format!("{e:?}")));
-        }
-        Vm::start(mc, function, Value::NIL);
-        None
-    });
-    if let Some(e) = refused {
-        return Err(e);
-    }
+    begin(heap)?;
+    drive(heap, budget, slice, host)
+}
+
+/// Run the computation in the registers to its end, a slice at a time,
+/// answering its requests from `host` as they come.
+fn drive(
+    heap: &mut crate::heap::Heap,
+    budget: u64,
+    slice: u64,
+    host: &mut dyn crate::host::Host,
+) -> Result<(), EvalError> {
+    use crate::slice::Status;
     let mut spent = 0u64;
     while spent < budget {
         spent += slice;
-        let (status, error) = heap.mutate(|mc| {
-            let mut vm = Vm::resume(mc);
-            let status = run_slice(&mut vm, slice);
-            (status, vm.error.take())
-        });
-        if let Some(e) = error {
-            return Err(e);
-        }
-        match status {
+        match one_slice(heap, slice)? {
             Status::Done { .. } => return Ok(()),
             Status::Yielded => {}
             Status::Blocked { .. } => {
@@ -1732,6 +1725,49 @@ pub fn call_global(
     slice: u64,
     host: &mut dyn crate::host::Host,
 ) -> Result<(), EvalError> {
+    begin_global(heap, name)?;
+    drive(heap, budget, slice, host)
+}
+
+/// Verify the function in the `Value` register and make it the computation.
+fn begin(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
+    heap.mutate(|mc| {
+        let function = mc.register(Register::Value);
+        if let Err(e) = code::verify::function(mc, function) {
+            return Err(EvalError::Malformed(format!("{e:?}")));
+        }
+        Vm::start(mc, function, Value::NIL);
+        Ok(())
+    })
+}
+
+/// Run the computation in the registers for at most `steps` steps: one
+/// mutation, so the heap may collect when it returns.
+///
+/// With [`begin_global`] this is the whole of what a host needs to drive the
+/// machine *itself* — which a browser must, because it has to give the page
+/// back to the event loop between slices, and may only answer a
+/// [`Status::Blocked`](crate::slice::Status::Blocked) when a Promise
+/// resolves (#84). [`call_global`] is the same two calls in a loop, for a
+/// host that can simply wait.
+pub fn one_slice(
+    heap: &mut crate::heap::Heap,
+    steps: u64,
+) -> Result<crate::slice::Status, EvalError> {
+    let (status, error) = heap.mutate(|mc| {
+        let mut vm = Vm::resume(mc);
+        let status = crate::slice::run_slice(&mut vm, steps);
+        (status, vm.error.take())
+    });
+    match error {
+        Some(e) => Err(e),
+        None => Ok(status),
+    }
+}
+
+/// Begin a call of the global function `name` on the value in the `Value`
+/// register, leaving it ready for [`one_slice`].
+pub fn begin_global(heap: &mut crate::heap::Heap, name: &str) -> Result<(), EvalError> {
     heap.mutate(|mc| {
         let argument = mc.register(Register::Value);
         let symbol = mc.intern(name);
@@ -1747,7 +1783,51 @@ pub fn call_global(
         let trampoline = code::make_function(mc, &bytes, constants, Value::NIL, 2, label);
         mc.set_register(Register::Value, trampoline);
     });
-    run_sliced(heap, budget, slice, host)
+    begin(heap)
+}
+
+/// After a failure no handler caught: let go of the dead computation and,
+/// if it filled the heap, make room again (#85).
+pub fn recover(heap: &mut crate::heap::Heap) {
+    heap.mutate(|mc| Vm::abandon(mc));
+    if heap.is_exhausted() {
+        heap.collect();
+        heap.clear_exhausted();
+    }
+}
+
+/// What `%host-step` left in the `Value` register: a form's outcome, or
+/// `None` when the input has run out.
+pub fn step_outcome(heap: &mut crate::heap::Heap) -> Option<Outcome> {
+    heap.mutate(|mc| {
+        let result = mc.register(Register::Value);
+        let kind = mc.car(result);
+        if mc.symbol_is(kind, "EOF") {
+            return None;
+        }
+        let text = mc.string_to_rust(mc.car(mc.cdr(result)));
+        Some(if mc.symbol_is(kind, "VALUE") {
+            Outcome::Value(text)
+        } else {
+            Outcome::Error(text)
+        })
+    })
+}
+
+/// Hand `source` to the world's read-eval-print loop: `%host-source`, ready
+/// for [`one_slice`]. Then [`begin_step`] for each form.
+pub fn begin_source(heap: &mut crate::heap::Heap, source: &str) -> Result<(), EvalError> {
+    heap.mutate(|mc| {
+        let text = mc.alloc_string(source);
+        mc.set_register(Register::Value, text);
+    });
+    begin_global(heap, "%HOST-SOURCE")
+}
+
+/// Begin reading, evaluating and printing the next form: `%host-step`.
+pub fn begin_step(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
+    heap.mutate(|mc| mc.set_register(Register::Value, Value::NIL));
+    begin_global(heap, "%HOST-STEP")
 }
 
 /// What one form came to when a host ran it through [`eval_source`].
@@ -1785,33 +1865,15 @@ pub fn eval_source(
             // The form that filled the heap has failed and been reported.
             // Nothing cleared the flag, so every later step failed at once
             // and this loop span for ever without reading another form (#85).
-            // Drop the dead computation; the end of that mutation collects.
-            heap.mutate(|mc| Vm::abandon(mc));
-            heap.collect();
-            heap.clear_exhausted();
+            recover(heap);
         }
         heap.mutate(|mc| mc.set_register(Register::Value, Value::NIL));
         let outcome = match call_global(heap, "%HOST-STEP", budget, slice, host) {
             Err(e) => Outcome::Failed(e),
-            Ok(()) => {
-                let step = heap.mutate(|mc| {
-                    let result = mc.register(Register::Value);
-                    let kind = mc.car(result);
-                    if mc.symbol_is(kind, "EOF") {
-                        return None;
-                    }
-                    let text = mc.string_to_rust(mc.car(mc.cdr(result)));
-                    Some(if mc.symbol_is(kind, "VALUE") {
-                        Outcome::Value(text)
-                    } else {
-                        Outcome::Error(text)
-                    })
-                });
-                match step {
-                    Some(outcome) => outcome,
-                    None => return Ok(()),
-                }
-            }
+            Ok(()) => match step_outcome(heap) {
+                Some(outcome) => outcome,
+                None => return Ok(()),
+            },
         };
         if !each(outcome) {
             return Ok(());

@@ -222,3 +222,65 @@ fn an_image_from_another_version_is_refused() {
         })
     ));
 }
+
+/// **An image built on one target runs on another** (#84). The design has a
+/// browser load a world that CI built — a 64-bit program's image, read by a
+/// 32-bit one — and until this test nothing had ever tried it: the wasm32
+/// legs built their own images, on wasm32, and so only ever proved that a
+/// target can read what it wrote itself.
+///
+/// The image is not in the repository (images are build artefacts), so the
+/// leg that runs this under wasmtime builds one natively first and passes
+/// its path in `QUOKKA_FOREIGN_IMAGE`. Without the variable there is nothing
+/// to test and the test says so — unless `QUOKKA_FOREIGN_IMAGE_REQUIRED` is
+/// set, as CI and `check.sh` set it, so that the leg cannot pass on nothing.
+#[test]
+fn an_image_built_elsewhere_runs_here() {
+    use quokka_vm::vm::{eval_source, Outcome};
+    let Ok(path) = std::env::var("QUOKKA_FOREIGN_IMAGE") else {
+        assert!(
+            std::env::var("QUOKKA_FOREIGN_IMAGE_REQUIRED").is_err(),
+            "QUOKKA_FOREIGN_IMAGE_REQUIRED is set, but no image was given"
+        );
+        eprintln!("skipped: set QUOKKA_FOREIGN_IMAGE to an image built on another target");
+        return;
+    };
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut heap = load(&bytes, 1 << 20).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut said = Vec::new();
+    let mut host = quokka_vm::host::NullHost::default();
+    eval_source(
+        &mut heap,
+        "(defun fib (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))) (fib 20) \
+         (expt 2 100) (format nil \"~A/~S\" 'a \"b\") (/ 1.0 3) \
+         (let ((table (make-hash-table :test 'equal))) \
+           (setf (gethash \"k\" table) 1) (gethash \"k\" table)) \
+         (handler-case (car 5) (type-error () 'caught))",
+        50_000_000,
+        2_000,
+        &mut host,
+        |outcome| {
+            said.push(match outcome {
+                Outcome::Value(text) => text,
+                other => format!("{other:?}"),
+            });
+            true
+        },
+    )
+    .expect("the world reads its input");
+    assert_eq!(
+        said,
+        [
+            "FIB",
+            "6765",
+            "1267650600228229401496703205376",
+            "\"A/\\\"b\\\"\"",
+            "0.3333333333333333",
+            "1",
+            "CAUGHT"
+        ]
+    );
+    // And the collector can copy a heap that another target laid out.
+    heap.collect();
+    heap.verify().expect("consistent after a collection");
+}

@@ -63,7 +63,10 @@ code_checks() {
 
   say "wasm32-wasip1 (tests)"
   if command -v wasmtime >/dev/null 2>&1; then
-    CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" \
+    # An image built here, natively, for the wasm32 tests to load: a browser
+    # runs a world that some 64-bit machine built (#84).
+    cargo run --quiet --release -p quokka -- build target/native-world.qi
+    CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD --env QUOKKA_FOREIGN_IMAGE=$PWD/target/native-world.qi --env QUOKKA_FOREIGN_IMAGE_REQUIRED=1" \
       cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
   else
     echo "wasmtime not installed — building only. Install: brew install wasmtime"

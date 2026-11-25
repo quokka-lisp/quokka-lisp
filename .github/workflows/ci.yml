@@ -79,9 +79,14 @@ jobs:
       # directory — so the repository is preopened too, under its own path.
       # Without it, `read_dir` of tests/lisp failed and the job had been red
       # since 22 Nov.
+      # A browser loads a world that a 64-bit machine built (#84), so the
+      # 32-bit tests are handed one: built natively here, and required, so
+      # that `an_image_built_elsewhere_runs_here` cannot pass on nothing.
+      - name: Build a world natively
+        run: cargo run --release -p quokka -- build target/native-world.qi
       - name: VM, bootstrap and differential tests under wasmtime
         run: |
-          CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$GITHUB_WORKSPACE" \
+          CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$GITHUB_WORKSPACE --env QUOKKA_FOREIGN_IMAGE=$GITHUB_WORKSPACE/target/native-world.qi --env QUOKKA_FOREIGN_IMAGE_REQUIRED=1" \
             cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
 
   # SBCL is the differential-test oracle, never a build dependency. This job

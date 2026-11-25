@@ -240,7 +240,7 @@ and how to add a test, a library file, a primitive or a chapter.
 crates/quokka-vm         the machine: tagged words, heap, GC, bytecode VM, images — no host dependencies
 crates/quokka-bootstrap  the cold build: the Rust reader and the interpreter that make the first world
 crates/quokka            the `quokka` program: runs a world, builds and rebuilds one
-crates/quokka-wasm       WASM bindings and a browser dev console
+crates/quokka-wasm       the browser host (loads a world, runs it in slices) and a dev console
 lisp/prelude.lisp        the core library, interpreted at boot
 lisp/compiler/           the compiler, in Common Lisp (tier 0 only)
 lisp/library/            tier 1, in Lisp: packages, reader, printer, eval, the rebuild

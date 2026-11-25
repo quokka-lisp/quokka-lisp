@@ -76,7 +76,17 @@ cd "$(dirname "$0")/.."
 # and the recovery in `eval_source` (`heap.rs`, `vm.rs`); the Rust reader
 # counting every kind of nesting and expanding a backquote in a loop
 # (`reader.rs`). 85 lines, most of them the comments that say why.
-LIMIT=16180
+#
+# Raised to 16,365 by the browser host (#84, 25 Nov 2026): `quokka-wasm`
+# loads a world and runs it in slices, where it booted the interpreter and
+# ran each line in one mutation — a host that submits, pumps, answers
+# requests, interrupts and saves (`quokka-wasm/src/lib.rs`, 112 lines to
+# 250, half of them the module's explanation of what a browser host has to
+# be); and the machine's driver split into pieces a host can call one slice
+# at a time (`begin_global`, `one_slice`, `step_outcome`, `recover` in
+# `vm.rs`). 185 lines. A host is Rust by rule 1; this is the first one that
+# yields, which every later browser host is built on.
+LIMIT=16365
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

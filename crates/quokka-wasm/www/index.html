@@ -36,40 +36,104 @@
       #transcript { white-space: pre-wrap; border-bottom: 1px solid var(--rule); padding-bottom: 12px; min-height: 40vh; }
       form { display: flex; gap: 8px; align-items: baseline; padding-top: 12px; }
       input { flex: 1; font: inherit; color: inherit; background: transparent; border: 0; outline: none; }
+      button { font: inherit; color: var(--accent); background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 0 8px; }
+      button:disabled { color: var(--dim); }
     </style>
   </head>
   <body>
     <main>
-      <h1><img src="favicon-32x32.png" alt="" />Quokka dev console — phase 0</h1>
+      <h1><img src="favicon-32x32.png" alt="" />Quokka dev console</h1>
       <div id="transcript"></div>
       <form id="form">
         <label for="input">quokka&gt;</label>
         <input id="input" autocomplete="off" autofocus />
+        <button type="button" id="stop" disabled>Stop</button>
+        <button type="button" id="save">Save world</button>
       </form>
     </main>
     <script type="module">
-      // Built with: wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
+      // The page is a host, in the sense of crates/quokka-vm/src/host.rs: it
+      // owns the clock and the screen, and the world owns neither. Three
+      // things happen here and nowhere else — fetching the image, deciding
+      // how long a slice may run, and putting text on the screen.
       import init, { Quokka } from "./pkg/quokka_wasm.js";
 
       const transcript = document.getElementById("transcript");
       const form = document.getElementById("form");
       const input = document.getElementById("input");
+      const stop = document.getElementById("stop");
+      const save = document.getElementById("save");
 
+      // A text node, never innerHTML: what a program prints is text.
       const print = (text) => {
+        if (!text) return;
         transcript.append(document.createTextNode(text));
         window.scrollTo(0, document.body.scrollHeight);
       };
 
       await init();
-      const vm = new Quokka();
-      print(vm.banner() + "\n");
+
+      // A world is an image someone built: `quokka build www/world.qi`.
+      // The page does not carry the interpreter that builds one.
+      let vm;
+      try {
+        const response = await fetch("./world.qi");
+        if (!response.ok) throw new Error(`world.qi: ${response.status}`);
+        vm = new Quokka(new Uint8Array(await response.arrayBuffer()));
+        print(vm.banner() + "\n");
+      } catch (error) {
+        print(`; no world: ${error}\n; build one with: cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi\n`);
+        input.disabled = true;
+        save.disabled = true;
+        throw error;
+      }
+
+      // How long a slice may hold the page: about half a frame at 60 Hz.
+      const TARGET_MS = 8;
+      // The budget is in steps, not milliseconds, so that what a program
+      // computes cannot depend on the machine's speed (docs/design.md,
+      // "Slices"). The page gets a deadline's responsiveness anyway, by
+      // sizing the next slice from how long the last one took.
+      let steps = 20000;
+
+      const pump = () => {
+        const before = performance.now();
+        const more = vm.run(steps);
+        const took = performance.now() - before;
+        print(vm.take_output());
+        if (more) {
+          const scale = Math.min(2, Math.max(0.5, TARGET_MS / Math.max(took, 0.1)));
+          steps = Math.min(5_000_000, Math.max(1000, Math.round(steps * scale)));
+          // A timer, so the browser paints and takes input between slices.
+          setTimeout(pump, 0);
+        } else {
+          stop.disabled = true;
+          input.disabled = false;
+          input.focus();
+        }
+      };
 
       form.addEventListener("submit", (event) => {
         event.preventDefault();
+        if (vm.busy()) return;
         const line = input.value;
         input.value = "";
         print("quokka> " + line + "\n");
-        print(vm.eval(line));
+        vm.submit(line);
+        input.disabled = true;
+        stop.disabled = false;
+        pump();
+      });
+
+      // The line may never end; the page is never stuck waiting for it.
+      stop.addEventListener("click", () => vm.interrupt());
+
+      // The whole world as a file — load it again by serving it as world.qi.
+      save.addEventListener("click", () => {
+        const url = URL.createObjectURL(new Blob([vm.save()], { type: "application/octet-stream" }));
+        const link = Object.assign(document.createElement("a"), { href: url, download: "world.qi" });
+        link.click();
+        URL.revokeObjectURL(url);
       });
     </script>
   </body>

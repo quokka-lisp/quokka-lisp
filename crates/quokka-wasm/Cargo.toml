@@ -1,6 +1,6 @@
 [package]
 name = "quokka-wasm"
-description = "Quokka WASM bindings and browser dev console."
+description = "Quokka in the browser: loads a world and runs it in slices, and the dev console page."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,9 +11,14 @@ authors.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# The machine only. The browser loads a world someone built; it does not
+# carry the interpreter that builds one (#84, #29).
 [dependencies]
 quokka-vm.workspace = true
-quokka-bootstrap.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.100"
+
+# Tests build a world to load, which is the cold build's job.
+[dev-dependencies]
+quokka-bootstrap.workspace = true

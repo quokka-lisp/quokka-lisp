@@ -130,8 +130,26 @@ boot> (find-package :cl)
 ```
 
 `quokka bootstrap --show-code` prints every form you type as bytecode before
-running it. The browser dev console (`crates/quokka-wasm/www`) also runs the
-interpreter, until the browser loads a world (#29).
+running it.
+
+### In the browser
+
+The browser runs a world too (#84), and carries no interpreter: the page
+fetches an image and the machine runs it. From the repository root:
+
+```bash
+cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi
+wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
+python3 -m http.server -d crates/quokka-wasm/www 8080
+```
+
+and open `http://localhost:8080`. A line runs in slices of about eight
+milliseconds, so the page stays live while it does; **Stop** gives up a line
+that will not end, and **Save world** downloads the world as an image —
+serve it as `world.qi` to carry on from it. The page's script is the host:
+it sizes each slice from how long the last one took, and collects what the
+world wrote with `take_output`. `crates/quokka-wasm/src/lib.rs` says why it
+is shaped that way.
 
 ---
 
