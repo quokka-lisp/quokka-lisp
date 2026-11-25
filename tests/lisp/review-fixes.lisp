@@ -162,6 +162,12 @@ unbound-variable-zz
 (macrolet ((m (&rest a &key b) (list 'quote (list a b)))) (m :b 1))
 (destructuring-bind (a &optional (b 2) &rest c &key d &aux (e (list a b))) '(1 3 :d 4) (list a b c d e))
 
+;;; `&body` is a macro's keyword, not a function's (#110).
+(funcall (lambda (a &body b) (list a b)) 1 2)
+(flet ((f (&body b) b)) (f 1))
+(macrolet ((m (a &body b) (list 'quote (list a b)))) (m 1 2 3))
+(destructuring-bind (a &body b) '(1 2 3) (list a b))
+
 ;;; One lexical environment in the compiler (#111): which of a local macro
 ;;; and a local function is nearer, what an expander may see, what a macro
 ;;; is told, and a `go` past each kind of thing that can be open.

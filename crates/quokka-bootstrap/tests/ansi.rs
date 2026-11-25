@@ -220,6 +220,16 @@ fn run_file(
                 } else {
                     ("NEEDS".to_string(), needs)
                 };
+                // A *definition* that ran out of steps and is explained is
+                // not a test: it goes to the load log, as one that signalled
+                // does. It used to be counted, under the name `load-…`, and
+                // the total fell by one when such a form began to fail
+                // quickly instead (13,558 to 13,557, #122). One that is not
+                // explained stays a result, so that it stops the run.
+                if status == "NEEDS" && name.starts_with("load") {
+                    log.push_str(&format!("{file}: LOAD {name} timed out: needs {detail}\n"));
+                    continue;
+                }
                 results.push(TestResult {
                     group: group.to_string(),
                     status,

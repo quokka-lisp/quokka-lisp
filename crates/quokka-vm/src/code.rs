@@ -1327,8 +1327,15 @@ pub mod assemble {
         // Built with a generous `max-stack` so the verification can only fail
         // for a real reason, then rebuilt with the depth it reports. The
         // compiler never has to work out how deep its own output gets.
+        //
+        // This function alone (`one`), not the functions among its
+        // constants: each of those is a `Function` object, and the only ways
+        // to make one are this assembler and the image loader, which both
+        // verify, and nothing can change one afterwards. Checking them again
+        // here checked a lambda once for every lambda around it, quadratic
+        // in the nesting, inside one step (rule 9, #102).
         let draft = make_function(mc, &bytes, constants, params, MAX_DEPTH, name);
-        let needs = match verify::function(mc, draft) {
+        let needs = match verify::one(mc, draft) {
             Ok(n) => n,
             // With the verifier's reason: thrown away, as it used to be, a
             // refused function said only "bad ASSEMBLE" (#97).

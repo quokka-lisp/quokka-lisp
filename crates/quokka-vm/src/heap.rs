@@ -254,6 +254,28 @@ pub mod symbol_cache {
     pub const SLOTS: usize = 16;
 }
 
+/// How many buckets the obarray's index starts with
+/// ([`Mutation::find_system_symbol`]).
+const INDEX_BUCKETS: usize = 1024;
+
+/// A hash of a symbol's name, for the obarray's index: FNV-1a over the
+/// characters (Fowler, Noll and Vo), as `hash.rs` uses.
+fn name_hash(chars: impl Iterator<Item = char>) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for c in chars {
+        h ^= c as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// Which of COUNT buckets a hash belongs in. The high half is folded in
+/// first: a multiplication only carries upwards, so the low bits alone
+/// depend on little more than the last character.
+fn bucket_of(hash: u64, count: usize) -> usize {
+    ((hash ^ (hash >> 32)) % count as u64) as usize
+}
+
 /// Default soft limit: 1 MiB of heap before a collection is wanted.
 pub const DEFAULT_SOFT_LIMIT_WORDS: usize = 128 * 1024;
 
@@ -589,6 +611,12 @@ struct Storage {
     /// image does not keep it — `collect_for_image` drops it first, and a
     /// loaded world fills it again as it goes.
     symbol_cache: u64,
+    /// The index of the obarray ([`Mutation::find_system_symbol`]): a hash
+    /// from a name to the system symbols with that name, so that interning
+    /// does not walk the whole table. A vector, or `nil` until the first
+    /// lookup. A root and a cache exactly as `symbol_cache` is: everything
+    /// in it is in the obarray, which an image does keep.
+    symbol_index: u64,
     /// The bytecode VM's program counter, stack pointer and frame pointer.
     ///
     /// Numbers rather than `Value`s, so the collector leaves them alone — the
@@ -1007,9 +1035,11 @@ impl<'h> Mutation<'h> {
     /// stops working and every lookup becomes a string comparison. That is what
     /// interning means, and the table it uses is the **obarray**.
     ///
-    /// The obarray here is a list, so this is O(n) in the number of symbols.
-    /// A hash table belongs here eventually; a list is correct, obvious, and
-    /// replaceable without anything outside noticing.
+    /// The obarray is a list, and was searched as one until #102: every
+    /// keyword the reader met and every new symbol walked all of it. The
+    /// list is still the table — what an image keeps and what the library
+    /// adopts into packages — and [`Self::find_system_symbol`] now looks in
+    /// a hash index beside it.
     ///
     /// `nil` and `t` need no special case: they are ordinary symbols living in
     /// the static area, interned at bootstrap like any other.
@@ -1041,6 +1071,7 @@ impl<'h> Mutation<'h> {
         self.set_slot(symbol, symbol::HOME, wanted);
         let entry = self.cons(symbol, Value::from_bits(self.storage.obarray));
         self.storage.obarray = entry.bits();
+        self.index_symbol(symbol);
         symbol
     }
 
@@ -1054,12 +1085,16 @@ impl<'h> Mutation<'h> {
     /// Keywords keep the small integer, because Rust has to recognise them
     /// without knowing what a package object is.
     ///
-    /// Linear in the table, as interning has always been; the table holds the
-    /// system's own names, a few thousand at most (rule 9).
-    pub fn find_system_symbol(&self, name: &str, keyword: bool) -> Option<Value<'h>> {
+    /// Found through the index: the bucket NAME hashes to holds the few
+    /// symbols whose names share that hash, newest first, which is the order
+    /// the list had — a symbol that lost its home (`unintern`) stays in the
+    /// table beside the one made to replace it, and the newer must win.
+    pub fn find_system_symbol(&mut self, name: &str, keyword: bool) -> Option<Value<'h>> {
         let keyword_home = Value::fixnum(home::KEYWORD).expect("small");
         let unadopted = Value::fixnum(home::CURRENT).expect("small");
-        let mut cursor = Value::from_bits(self.storage.obarray);
+        let index = self.symbol_index();
+        let buckets = self.header(index).slots - 1;
+        let mut cursor = self.slot(index, 1 + bucket_of(name_hash(name.chars()), buckets));
         while !cursor.is_nil() {
             let symbol = self.car(cursor);
             let home = self.slot(symbol, symbol::HOME);
@@ -1074,6 +1109,70 @@ impl<'h> Mutation<'h> {
             cursor = self.cdr(cursor);
         }
         None
+    }
+
+    /// The obarray's index, built from the list if this world has none yet:
+    /// a fresh heap, or one just loaded from an image.
+    ///
+    /// A vector: the number of symbols in slot 0, then the buckets, each a
+    /// list of symbols. This is *separate chaining*, the same shape as
+    /// `hash.rs`'s tables; it is not one of those because they are keyed by
+    /// a Lisp object and this is asked with a Rust `&str`, before any string
+    /// object exists.
+    ///
+    /// Rule 9: building it reads every symbol once, in one step, when a
+    /// world starts — what a single failed lookup used to cost every time.
+    /// Growing it does the same, at each doubling, as a hash table does.
+    fn symbol_index(&mut self) -> Value<'h> {
+        let known = Value::from_bits(self.storage.symbol_index);
+        if !known.is_nil() {
+            return known;
+        }
+        let (symbols, _) = self
+            .list_elements(Value::from_bits(self.storage.obarray))
+            .expect("the obarray is a list that ends");
+        self.build_symbol_index(&symbols)
+    }
+
+    /// An index of SYMBOLS, which are newest first, with twice the buckets
+    /// they need: room to grow into before the next doubling.
+    fn build_symbol_index(&mut self, symbols: &[Value<'h>]) -> Value<'h> {
+        let mut buckets = INDEX_BUCKETS;
+        while buckets < symbols.len() * 2 {
+            buckets *= 2;
+        }
+        let index = self.alloc_vector(1 + buckets);
+        self.storage.symbol_index = index.bits();
+        self.set_slot(index, 0, Value::fixnum(0).expect("small"));
+        // Oldest first, since each goes on the front of its bucket.
+        for &symbol in symbols.iter().rev() {
+            self.index_symbol(symbol);
+        }
+        Value::from_bits(self.storage.symbol_index)
+    }
+
+    /// Add SYMBOL, just put on the obarray, to the index, doubling the index
+    /// when it holds more symbols than buckets.
+    fn index_symbol(&mut self, symbol: Value<'h>) {
+        let index = self.symbol_index();
+        let buckets = self.header(index).slots - 1;
+        let count = self.slot(index, 0).as_fixnum().expect("a count") as usize;
+        if count >= buckets {
+            // Full: build a bigger one from the list, which already holds
+            // SYMBOL, so the new index does too.
+            let (symbols, _) = self
+                .list_elements(Value::from_bits(self.storage.obarray))
+                .expect("the obarray is a list that ends");
+            self.build_symbol_index(&symbols);
+            return;
+        }
+        let name = self.slot(symbol, symbol::NAME);
+        let hash = name_hash((0..self.string_length(name)).map(|i| self.string_char(name, i)));
+        let at = 1 + bucket_of(hash, buckets);
+        let chain = self.slot(index, at);
+        let chain = self.cons(symbol, chain);
+        self.set_slot(index, at, chain);
+        self.set_slot(index, 0, Value::fixnum(count as i64 + 1).expect("small"));
     }
 
     /// Every symbol in the system table, as the list it is kept in. For the
@@ -1351,6 +1450,7 @@ impl Heap {
                 operands: Value::NIL.bits(),
                 request: Value::NIL.bits(),
                 symbol_cache: Value::NIL.bits(),
+                symbol_index: Value::NIL.bits(),
                 pc: 0,
                 sp: 0,
                 fp: 0,
@@ -1634,6 +1734,7 @@ impl Heap {
         // The symbol cache is not part of the world, and what it happens to
         // hold must not make two images of the same world differ.
         self.storage.symbol_cache = Value::NIL.bits();
+        self.storage.symbol_index = Value::NIL.bits();
         self.collect_with_padding(0);
     }
 
@@ -1670,6 +1771,7 @@ impl Heap {
         self.storage.operands = forward(from, &mut to, static_end, self.storage.operands);
         self.storage.request = forward(from, &mut to, static_end, self.storage.request);
         self.storage.symbol_cache = forward(from, &mut to, static_end, self.storage.symbol_cache);
+        self.storage.symbol_index = forward(from, &mut to, static_end, self.storage.symbol_index);
 
         // The queue. `scan` trails the end of `to`, which grows as references
         // are forwarded ahead of it. When they meet, everything reachable has

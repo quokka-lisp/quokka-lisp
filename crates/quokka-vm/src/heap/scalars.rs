@@ -163,6 +163,7 @@ impl Heap {
                 operands: s.operands,
                 request: s.request,
                 symbol_cache: Value::NIL.bits(),
+                symbol_index: Value::NIL.bits(),
                 pc: s.pc as usize,
                 sp: s.sp as usize,
                 fp: s.fp as usize,

@@ -199,6 +199,17 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// Growing allocates, which is why it happens once per call — against
     /// `max-stack`, which the compiler worked out — rather than once per push.
     /// A JVM class file carries the same field for the same reason.
+    ///
+    /// Rule 9: growing copies the whole stack inside one step. It doubles,
+    /// so the copies add up to less than the pushes that caused them
+    /// (*amortised* constant time, as a growing vector's), but one of them is
+    /// as long as the stack is deep. That is left as it is, on purpose
+    /// (#102): the stack is an object in the heap, and the collector already
+    /// copies it, with everything else alive, in one pause. A copy here can
+    /// never be longer than that pause, so the bound that decides when the
+    /// collector must become incremental (#86: a pause measured over 16 ms)
+    /// covers this too. A stack in segments would bound it separately, and
+    /// would make every frame reference two numbers instead of one.
     fn ensure(&mut self, extra: usize) {
         let wanted = self.mc.sp() + extra;
         if wanted <= self.capacity() {

@@ -197,7 +197,16 @@ pub fn rewrite<'h>(
                 section = enter(section, Section::Optional)?;
                 continue;
             }
-            if mc.symbol_is(item, "&REST") || mc.symbol_is(item, "&BODY") {
+            // `&body` is `&rest` for a macro, where it also tells an editor
+            // how to indent; an ordinary lambda list has no such keyword
+            // (CLHS 3.4.1), and SBCL refuses it. It was taken as `&rest`
+            // (#110). Macro and destructuring lists went the other way above.
+            if mc.symbol_is(item, "&BODY") {
+                return Err(bad(
+                    "has &body, which belongs to a macro's lambda list; a function's has &rest",
+                ));
+            }
+            if mc.symbol_is(item, "&REST") {
                 section = enter(section, Section::Rest)?;
                 continue;
             }

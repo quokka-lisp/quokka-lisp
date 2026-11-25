@@ -426,7 +426,14 @@ is the store barrier, empty, called from `set_car`, `set_cdr`, `set_slot` —
 a new way to store a reference into an existing object must call it; a
 generational collector is built when one pause is measured over 16 ms.
 A lambda list with a keyword twice or out of order is a `program-error`
-(`lambda_list::enter`).
+(`lambda_list::enter`), and so is `&body` in a function's lambda list.
+**The symbol table has an index** (#102): the obarray is still the list an
+image keeps, and `Mutation::find_system_symbol` looks in a hash of names
+beside it (`symbol_index`, a root and a cache like the symbol cache, dropped
+by `collect_for_image` and rebuilt on first use). Anything that puts a symbol
+on the obarray must go through `intern_in`, or the index will not know it.
+`%assemble` verifies the function it makes and not the functions among its
+constants, which were verified when they were made.
 **Next: phase 3, conditions and processes** (`docs/design.md`). Phase 2's scope is
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

@@ -106,6 +106,10 @@ fn booting_costs_a_known_amount_of_heap() {
     // types' lattice and `multiple-value-bind`'s declarations (#80, #81).
     // 12,160 with `handler-case`'s `:no-error` clause (#106): the macro's
     // second expansion and the two functions that find the clause.
+    // 13,924 with the obarray's index (#102): a vector of 1,024 buckets
+    // and a cons for each symbol, which a collection keeps because the
+    // index is a root. Not the prelude's cost, and an image does not
+    // carry it; it is what finding a symbol without walking them all costs.
     //
     // The point is not the number but that raising it is a deliberate
     // act with a failing test attached — the same job as
@@ -113,7 +117,7 @@ fn booting_costs_a_known_amount_of_heap() {
     // what was added; this one is.
     let words = heap.used_words();
     assert!(
-        words < 12_500,
+        words < 14_300,
         "the prelude now costs {words} live words after a collection"
     );
 }
