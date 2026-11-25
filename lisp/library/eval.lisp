@@ -19,8 +19,79 @@
 ;;; compiled, and so compiles inside a compilation; `compile-form` saves and
 ;;; restores the outer one's work around it (#47). Two *processes* compiling
 ;;; at once is a different matter, and phase 3's (#34).
+;;;
+;;; **Top-level forms** (#104, CLHS 3.2.3.1). Compiling a whole form before
+;;; running any of it is wrong for one kind of form: a `progn` whose early
+;;; parts define what its later parts use.
+;;;
+;;;     (progn (defmacro m () 1) (m))
+;;;
+;;; compiled whole, `(m)` is a call to a function, because no macro M exists
+;;; until the code runs. CLHS says the parts of a top-level `progn` are
+;;; top-level forms themselves, and SBCL's `eval` treats them so: each is
+;;; evaluated before the next is looked at. It matters because a defining
+;;; macro expands into exactly this — `(progn (defstruct ...) ...)`.
+;;;
+;;; So `eval` expands the form's macros until its head is no macro, and
+;;; then: the forms of a `progn` are evaluated in turn; so are those of an
+;;; `eval-when` that names `:execute`; and so are those of a `locally`,
+;;; `macrolet` or `symbol-macrolet`, each wrapped in the same declarations
+;;; and definitions — `(macrolet defs a b)` is `(macrolet defs a)` and then
+;;; `(macrolet defs b)`. Anything else is compiled whole, as before.
+;;;
+;;; One limit, deliberate: inside a `macrolet`, a single body form is taken
+;;; apart only if it is written as a `progn`, not if a local macro would
+;;; expand into one. Seeing that needs the macrolet's environment, which
+;;; only the compiler builds.
 (defun eval (form)
-  (funcall (compile-form form)))
+  (let ((form (macroexpand form)))
+    (cond ((not (consp form)) (funcall (compile-form form)))
+          ((eq (car form) 'progn) (%eval-each (cdr form) nil))
+          ((eq (car form) 'eval-when)
+           (if (or (member :execute (cadr form)) (member 'eval (cadr form)))
+               (%eval-each (cddr form) nil)
+               nil))
+          ((or (eq (car form) 'locally) (eq (car form) 'macrolet)
+               (eq (car form) 'symbol-macrolet))
+           (%eval-binder form))
+          (t (funcall (compile-form form))))))
+
+;;; Evaluate FORMS in turn, each inside PREFIX if there is one — the head of
+;;; a `locally` or `macrolet` and what it declares or defines. The values are
+;;; the last form's.
+(defun %eval-each (forms prefix)
+  (if (null forms)
+      nil
+      (let ((rest forms))
+        (tagbody
+         next
+           (if (cdr rest)
+               (progn (eval (%eval-wrap (car rest) prefix))
+                      (setq rest (cdr rest))
+                      (go next))))
+        (eval (%eval-wrap (car rest) prefix)))))
+
+(defun %eval-wrap (form prefix)
+  (if prefix (append prefix (list form)) form))
+
+;;; A top-level `locally`, `macrolet` or `symbol-macrolet`. Its body is
+;;; split when there is something to split: several forms, or one `progn`.
+;;; Otherwise it is compiled whole — which is also what ends the recursion,
+;;; since each piece is a binder around a single form.
+(defun %eval-binder (form)
+  (let* ((locally (eq (car form) 'locally))
+         (body (if locally (cdr form) (cddr form)))
+         (prefix (if locally (list 'locally) (list (car form) (cadr form)))))
+    (tagbody
+     next
+       (if (and (consp body) (consp (car body)) (eq (car (car body)) 'declare))
+           (progn (setq prefix (append prefix (list (car body))))
+                  (setq body (cdr body))
+                  (go next))))
+    (cond ((and body (cdr body)) (%eval-each body prefix))
+          ((and body (consp (car body)) (eq (car (car body)) 'progn))
+           (%eval-each (cdr (car body)) prefix))
+          (t (funcall (compile-form form))))))
 
 ;;; ------------------------------------------------------------------------
 ;;; compile (step R, #65)

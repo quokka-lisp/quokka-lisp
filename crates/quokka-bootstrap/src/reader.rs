@@ -13,9 +13,8 @@
 //! # What it handles
 //!
 //! Tier 0 (see `docs/design.md`): lists, dotted pairs, symbols, fixnums,
-//! strings, characters, `quote`, and both comment forms. Not yet: `#(`
-//! vectors and backquote, which need no new machinery and are better written
-//! once there is an evaluator to exercise them.
+//! strings, characters, `quote`, backquote, `#'`, `#(` vectors and both
+//! comment forms.
 //!
 //! # Depth, and why there is a limit
 //!
@@ -29,7 +28,10 @@
 //! against eight for a native thread, so the browser dies first and on input
 //! that was fine on the development machine.
 //!
-//! So depth is counted and [`MAX_DEPTH`] is an error, not a crash. The
+//! So depth is counted and [`MAX_DEPTH`] is an error, not a crash — counted
+//! in `read_form`, the one function every nesting passes through, because a
+//! quote nests as surely as a parenthesis does: until #101 only `(` was
+//! counted, and sixty thousand quote marks were a dead process. The
 //! alternative — an explicit stack, as the evaluator must use — is better and
 //! is not worth building here, because this reader is temporary: tier 1 moves
 //! the reader into Lisp and this code is deleted.
@@ -204,6 +206,9 @@ impl<'t> Reader<'t> {
         mc: &mut Mutation<'h>,
         depth: usize,
     ) -> Result<Value<'h>, ReadError> {
+        if depth > MAX_DEPTH {
+            return Err(ReadError::TooDeep { at: self.at });
+        }
         self.skip_blanks()?;
         let at = self.at;
         let Some(ch) = self.peek() else {
@@ -268,7 +273,7 @@ impl<'t> Reader<'t> {
             }
             '#' => {
                 self.at += 1;
-                self.read_hash(mc, at)
+                self.read_hash(mc, at, depth)
             }
             _ => self.read_atom(mc),
         }
@@ -364,6 +369,7 @@ impl<'t> Reader<'t> {
         &mut self,
         mc: &mut Mutation<'h>,
         start: usize,
+        depth: usize,
     ) -> Result<Value<'h>, ReadError> {
         match self.peek() {
             Some('\\') => {
@@ -374,7 +380,7 @@ impl<'t> Reader<'t> {
             // `(quote x)`. The reader does not know what either means.
             Some('\'') => {
                 self.at += 1;
-                let named = self.read_form(mc, 1)?;
+                let named = self.read_form(mc, depth + 1)?;
                 let function = mc.intern("FUNCTION");
                 let tail = mc.cons(named, Value::NIL);
                 Ok(mc.cons(function, tail))
@@ -382,14 +388,14 @@ impl<'t> Reader<'t> {
             Some('|') => {
                 self.at += 1;
                 self.skip_block_comment()?;
-                self.read_form(mc, 0)
+                self.read_form(mc, depth + 1)
             }
             // `#(1 2 3)` is a vector literal. Read it as a list and copy the
             // elements across, which is the shortest honest route and costs
             // one list that is immediately garbage.
             Some('(') => {
                 self.at += 1;
-                let items = self.read_list(mc, 1)?;
+                let items = self.read_list(mc, depth + 1)?;
                 let mut count = 0usize;
                 let mut cursor = items;
                 while cursor.is_cons() {
@@ -514,33 +520,43 @@ impl<'t> Reader<'t> {
     /// is wrong for `` `(a `(b ,,c)) `` and right for everything anyone writes
     /// in anger. Noted rather than hidden.
     fn quasiquote<'h>(&mut self, mc: &mut Mutation<'h>, form: Value<'h>) -> Value<'h> {
-        if !form.is_cons() {
+        // Along the list by a loop, into an element by recursion. An
+        // element's nesting was bounded by `MAX_DEPTH` when it was read; a
+        // list's *length* is bounded by nothing, and recursing on the cdr
+        // made a long template a stack overflow (#101). The expansion is the
+        // same, built back to front.
+        let mut items = Vec::new();
+        let mut cursor = form;
+        while cursor.is_cons() && !mc.symbol_is(mc.car(cursor), "UNQUOTE MARKER") {
+            items.push(mc.car(cursor));
+            cursor = mc.cdr(cursor);
+        }
+        let mut out = if cursor.is_cons() {
+            // `,x` — or `(a . ,x)`, whose tail is the same marker.
+            mc.car(mc.cdr(cursor))
+        } else {
             // An atom stands for itself, which means quoting it.
             let quote = mc.intern("QUOTE");
-            let tail = mc.cons(form, Value::NIL);
-            return mc.cons(quote, tail);
+            let tail = mc.cons(cursor, Value::NIL);
+            mc.cons(quote, tail)
+        };
+        for head in items.into_iter().rev() {
+            let tail = mc.cons(out, Value::NIL);
+            out = if head.is_cons() && mc.symbol_is(mc.car(head), "SPLICE MARKER") {
+                // ,@x contributes its *elements*, so the list is appended
+                // rather than consed on.
+                let spliced = mc.car(mc.cdr(head));
+                let append = mc.intern("APPEND");
+                let args = mc.cons(spliced, tail);
+                mc.cons(append, args)
+            } else {
+                let first = self.quasiquote(mc, head);
+                let cons = mc.intern("CONS");
+                let args = mc.cons(first, tail);
+                mc.cons(cons, args)
+            };
         }
-
-        let head = mc.car(form);
-        if mc.symbol_is(head, "UNQUOTE MARKER") {
-            return mc.car(mc.cdr(form));
-        }
-
-        let rest = self.quasiquote(mc, mc.cdr(form));
-        if head.is_cons() && mc.symbol_is(mc.car(head), "SPLICE MARKER") {
-            // ,@x contributes its *elements*, so the list is appended rather
-            // than consed on.
-            let spliced = mc.car(mc.cdr(head));
-            let append = mc.intern("APPEND");
-            let tail = mc.cons(rest, Value::NIL);
-            let args = mc.cons(spliced, tail);
-            return mc.cons(append, args);
-        }
-        let first = self.quasiquote(mc, head);
-        let cons = mc.intern("CONS");
-        let tail = mc.cons(rest, Value::NIL);
-        let args = mc.cons(first, tail);
-        mc.cons(cons, args)
+        out
     }
 
     // ---- whitespace and comments -----------------------------------------

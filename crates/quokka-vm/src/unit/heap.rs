@@ -318,7 +318,13 @@ fn the_heap_asks_to_be_collected_once_past_its_soft_limit() {
         }
         mc.set_root(list);
     });
-    assert!(heap.wants_collection(), "10 words is over the limit of 8");
+    // Past the limit, so the end of that mutation collected. All ten words
+    // are alive, and until #85 this test asserted that the heap therefore
+    // *still* wanted collecting — which was the fault: it would have asked
+    // again after every mutation, for ever. Now the line has moved to twice
+    // what survived.
+    assert!(heap.collections() >= 1, "10 words is over the limit of 8");
+    assert!(!heap.wants_collection(), "what survived is not garbage");
 }
 
 /// Allocation inside a mutation must never fail for want of space, because
@@ -699,5 +705,66 @@ fn fits_refuses_what_the_heap_cannot_hold() {
         assert!(!mc.fits(16 * HARD_LIMIT_MULTIPLE));
         assert!(!mc.fits(MAX_OBJECT_SLOTS));
         assert!(!mc.fits(usize::MAX));
+    });
+}
+
+/// The growth policy (#85). With more alive than the soft limit, a heap that
+/// asked "am I past the soft limit?" was past it for ever, and collected at
+/// the end of every mutation. Now the line moves to twice what survived.
+#[test]
+fn the_collection_trigger_follows_what_is_alive() {
+    let mut heap = Heap::with_soft_limit(1_000);
+    // Keep 5,000 conses alive: ten times the soft limit.
+    heap.mutate(|mc| {
+        let mut list = Value::NIL;
+        for i in 0..5_000 {
+            let item = Value::fixnum(i).unwrap();
+            list = mc.cons(item, list);
+        }
+        mc.set_root(list);
+    });
+    let after_growth = heap.collections();
+    assert!(after_growth >= 1, "the first mutation's end collects");
+    assert!(
+        !heap.wants_collection(),
+        "what is alive is not a reason to collect"
+    );
+
+    // A hundred small mutations: under the old rule, a hundred collections.
+    for _ in 0..100 {
+        heap.mutate(|mc| {
+            mc.cons(Value::NIL, Value::NIL);
+        });
+        assert!(!heap.wants_collection());
+    }
+    // Counting collections means nothing under torture, which collects at
+    // every boundary whatever the heap asks for.
+    if !TORTURE {
+        assert_eq!(heap.collections(), after_growth);
+    }
+
+    // And when the live data goes away, the line comes back down: 600 conses
+    // are past a soft limit of 1,000 words again.
+    heap.mutate(|mc| mc.set_root(Value::NIL));
+    heap.collect();
+    let before = heap.collections();
+    heap.mutate(|mc| {
+        for _ in 0..600 {
+            mc.cons(Value::NIL, Value::NIL);
+        }
+    });
+    assert_eq!(heap.collections(), before + 1);
+}
+
+/// A cons counts toward the hard limit like any other allocation (#85). It
+/// is not made through `Storage::alloc`, and was not counted.
+#[test]
+fn consing_alone_reaches_the_hard_limit() {
+    let mut heap = Heap::with_soft_limit(16);
+    heap.mutate(|mc| {
+        for _ in 0..16 * HARD_LIMIT_MULTIPLE {
+            mc.cons(Value::NIL, Value::NIL);
+        }
+        assert!(mc.is_exhausted());
     });
 }

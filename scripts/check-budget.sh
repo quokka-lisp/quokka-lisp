@@ -69,7 +69,14 @@ cd "$(dirname "$0")/.."
 # any allocation whose size a program chose; `Mutation::list_elements`, a walk
 # with Brent's cycle detection, for every Rust loop that follows cdrs. 78
 # lines, all of them bounds — Rust by nature, since they guard Rust loops.
-LIMIT=16095
+#
+# Raised to 16,180 by the review's heap and reader fixes (#85, #101, 25 Nov
+# 2026): the collection trigger that follows what is alive, conses counted
+# toward the hard limit, both semispaces shrunk after a spike, `Vm::abandon`
+# and the recovery in `eval_source` (`heap.rs`, `vm.rs`); the Rust reader
+# counting every kind of nesting and expanding a backquote in a loop
+# (`reader.rs`). 85 lines, most of them the comments that say why.
+LIMIT=16180
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

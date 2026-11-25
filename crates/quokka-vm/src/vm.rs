@@ -149,6 +149,17 @@ impl<'a, 'h> Vm<'a, 'h> {
         }
     }
 
+    /// Give up the computation in the registers, and let go of all it held.
+    ///
+    /// For a host whose computation failed in a way no handler could catch.
+    /// [`Vm::start`] does as much when the next one begins — but a heap that
+    /// ran out needs the dead computation's stack gone *before* anything
+    /// else is tried, since that stack is what holds the heap full (#85).
+    pub fn abandon(mc: &'a mut Mutation<'h>) {
+        let empty = code::make_function(mc, &[], Value::NIL, Value::NIL, 0, Value::NIL);
+        Vm::start(mc, empty, Value::NIL);
+    }
+
     /// Continue a computation already in the registers.
     pub fn resume(mc: &'a mut Mutation<'h>) -> Vm<'a, 'h> {
         Vm {
@@ -1770,6 +1781,15 @@ pub fn eval_source(
     });
     call_global(heap, "%HOST-SOURCE", budget, slice, host)?;
     loop {
+        if heap.is_exhausted() {
+            // The form that filled the heap has failed and been reported.
+            // Nothing cleared the flag, so every later step failed at once
+            // and this loop span for ever without reading another form (#85).
+            // Drop the dead computation; the end of that mutation collects.
+            heap.mutate(|mc| Vm::abandon(mc));
+            heap.collect();
+            heap.clear_exhausted();
+        }
         heap.mutate(|mc| mc.set_register(Register::Value, Value::NIL));
         let outcome = match call_global(heap, "%HOST-STEP", budget, slice, host) {
             Err(e) => Outcome::Failed(e),

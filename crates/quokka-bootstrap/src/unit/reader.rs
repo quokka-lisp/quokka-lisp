@@ -315,3 +315,45 @@ fn a_read_structure_survives_collection() {
     );
     heap.verify().unwrap();
 }
+
+/// Every way of nesting counts toward the limit, not only `(` (#101). Each of
+/// these was a stack overflow — a dead process, and in the browser a dead
+/// tab — because quote, `#'` and `#(` recursed without being counted.
+#[test]
+fn every_kind_of_nesting_is_counted() {
+    for opener in ["'", "`", "#'", "#(", "'#(", "(quote "] {
+        let deep = opener.repeat(100_000) + "x";
+        assert!(
+            matches!(fails(&deep), ReadError::TooDeep { .. }),
+            "{opener} repeated"
+        );
+    }
+    // Inside the limit they still read.
+    assert!(round_trip(&("'".repeat(MAX_DEPTH - 1) + "x")).is_ok());
+}
+
+/// A backquote template may be as long as it likes: expanding it walks the
+/// list in a loop and recurses only into elements, whose depth the reader
+/// has already bounded (#101). A million elements once overflowed the stack.
+#[test]
+fn a_long_backquote_template_expands() {
+    let long = format!("`({})", "a ".repeat(300_000));
+    assert!(round_trip(&long).is_ok());
+}
+
+/// The loop builds exactly what the recursion built — which the fixpoint
+/// depends on, since the Lisp reader must expand as this one does.
+#[test]
+fn backquote_expansions_are_unchanged() {
+    reads_as(
+        "`(a ,b ,@c)",
+        "(CONS (QUOTE A) (CONS B (APPEND C (QUOTE NIL))))",
+    );
+    reads_as("`(a . ,b)", "(CONS (QUOTE A) B)");
+    reads_as("`,x", "X");
+    reads_as("`x", "(QUOTE X)");
+    reads_as(
+        "`((a ,b) c)",
+        "(CONS (CONS (QUOTE A) (CONS B (QUOTE NIL))) (CONS (QUOTE C) (QUOTE NIL)))",
+    );
+}

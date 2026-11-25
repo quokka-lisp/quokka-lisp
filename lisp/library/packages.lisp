@@ -537,6 +537,37 @@
 ;;; counter, and a longer name is a longer string; a rebuild therefore
 ;;; counts from zero (`%rebuild-world`), or two rebuilds would differ in
 ;;; size for no reason but their numbering.
+;;; INTEGER's decimal digits, for a name. Two loops over the number — count
+;;; the digits, then fill a string from its end — and nothing allocated but
+;;; the string. It was `(coerce (mapcar #'digit-char (%integer-digits ...))
+;;; 'string)`, which is the same thing said in one line and cost some 6,800
+;;; steps: a list of digits, a list of characters, and `coerce` finding out
+;;; what a string is. Every label the compiler makes and every temporary a
+;;; `setf` expansion needs is a `gensym`, so that was a quarter of a rebuild
+;;; (#105). `%quotient` and `rem` are primitives; a bignum falls back to the
+;;; generic ones, as anywhere.
+(defun %decimal-string (integer)
+  (let ((length 1)
+        (rest (%quotient integer 10)))
+    (tagbody
+     count
+       (if (> rest 0)
+           (progn (setq length (+ length 1))
+                  (setq rest (%quotient rest 10))
+                  (go count))))
+    (let ((string (%make-string length #\0))
+          (rest integer)
+          (at length))
+      (tagbody
+       fill
+         (setq at (- at 1))
+         (%set-aref string at (code-char (+ 48 (rem rest 10))))
+         (setq rest (%quotient rest 10))
+         (if (> at 0) (go fill)))
+      string)))
+
+;;; Before `gensym`, which it serves: the forms below this point are compiled
+;;; with the new `gensym`, and their macros call it.
 (defun gensym (&optional (x "G"))
   (if (not (and (integerp *gensym-counter*) (>= *gensym-counter* 0)))
       (error 'type-error "*gensym-counter* wants a non-negative integer" *gensym-counter*))
@@ -546,9 +577,6 @@
                     ((and (integerp x) (>= x 0)) (%string-append "G" (%decimal-string x)))
                     (t (error 'type-error "gensym wants a string or a non-negative integer" x)))))
     (make-symbol name)))
-
-(defun %decimal-string (integer)
-  (coerce (mapcar #'digit-char (%integer-digits integer 10 nil)) 'string))
 
 ;;; `(gentemp [prefix [package]])` — a new symbol interned in PACKAGE, named
 ;;; PREFIX and a counter, the counter advanced past any name already taken.

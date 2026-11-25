@@ -664,6 +664,10 @@ struct Storage {
     /// Above this, the heap would like to be collected. Not a hard limit —
     /// see [`Heap::wants_collection`].
     soft_limit: usize,
+    /// Above this many words a collection is wanted: the soft limit, or twice
+    /// what the last collection left alive if that is more. See
+    /// [`Heap::wants_collection`].
+    trigger: usize,
     /// Above this, allocation stops being possible. See [`Heap::is_exhausted`].
     hard_limit: usize,
     /// Set when an allocation passed `hard_limit`. The evaluator checks it and
@@ -695,16 +699,22 @@ impl Storage {
         // Measured against the collected part: the static area is permanent,
         // so counting it toward a limit that only collection can relieve would
         // make a small limit unreachable from the start.
-        if at + words - self.dynamic_start > self.hard_limit {
-            // The allocation still happens. Refusing it would mean every
-            // allocator returning a Result, and every caller handling a case
-            // that cannot be recovered from locally. Instead the flag is set
-            // and the evaluator halts at its next step, so the overshoot is
-            // one step's worth of words — a handful.
-            self.exhausted = true;
-        }
+        // The allocation still happens. Refusing it would mean every
+        // allocator returning a Result, and every caller handling a case
+        // that cannot be recovered from locally. Instead the flag is set
+        // and the evaluator halts at its next step, so the overshoot is one
+        // step's worth of words — a handful, *provided* whoever takes a size
+        // from a program asked `Mutation::fits` first (#91).
+        self.note_growth(words);
         self.words.resize(at + words, 0);
         at
+    }
+
+    /// Set the flag if `words` more would pass the hard limit.
+    fn note_growth(&mut self, words: usize) {
+        if self.words.len() + words - self.dynamic_start > self.hard_limit {
+            self.exhausted = true;
+        }
     }
 }
 
@@ -721,6 +731,9 @@ pub struct Mutation<'h> {
 impl<'h> Mutation<'h> {
     /// Allocate a cons cell.
     pub fn cons(&mut self, car: Value<'h>, cdr: Value<'h>) -> Value<'h> {
+        // A cons is not allocated through `Storage::alloc`, and until #85 was
+        // not counted either: a program that only consed never met the limit.
+        self.storage.note_growth(CONS_WORDS);
         let index = self.storage.words.len();
         self.storage.words.push(car.bits());
         self.storage.words.push(cdr.bits());
@@ -1349,6 +1362,7 @@ impl Heap {
                 mp: usize::MAX,
                 mode: 0,
                 soft_limit: words,
+                trigger: words,
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
                 collections: 0,
@@ -1452,8 +1466,27 @@ impl Heap {
     ///
     /// In the browser the ceiling is real: wasm32 linear memory stops at 4 GiB,
     /// and less in practice.
+    ///
+    /// # The line moves (#85)
+    ///
+    /// "Past the soft limit" was the whole test once, and it has a cliff. A
+    /// collection frees garbage; it cannot free what is alive. So a world
+    /// whose *live* data is larger than the limit is past it immediately after
+    /// collecting, and asks again at the end of the very next mutation — a
+    /// full copy of the heap per slice, each freeing almost nothing. Measured:
+    /// the same loop took 0.5 s with 3.5M words alive and 23.7 s with 4.5M,
+    /// either side of a 4M-word limit.
+    ///
+    /// The cure is the ordinary one for a copying collector (Jones, Hosking
+    /// and Moss, *The Garbage Collection Handbook*, 2012, on sizing the
+    /// heap): after each collection, ask again only when the heap has grown
+    /// to twice what survived. The work a collection does is proportional to
+    /// what is alive, and it now buys at least that much allocation before
+    /// the next one, so collecting costs a constant per word allocated
+    /// however large the world grows. The soft limit stays as the floor,
+    /// which is what a small world wants.
     pub fn wants_collection(&self) -> bool {
-        self.used_words() > self.storage.soft_limit
+        self.used_words() > self.storage.trigger
     }
 
     /// The soft limit this heap was built with.
@@ -1687,6 +1720,18 @@ impl Heap {
         self.storage.spare = abandoned;
         self.storage.collections += 1;
         self.storage.dynamic_start = static_end + pad;
+
+        // Where the next collection is wanted: see `wants_collection`.
+        let live = self.storage.words.len() - self.storage.dynamic_start;
+        self.storage.trigger = self.storage.soft_limit.max(live.saturating_mul(2));
+        // And give back what a spike left behind. Both spaces keep their
+        // allocation between collections, which is right while the heap is
+        // steady and wrong after one huge object: without this, a single
+        // `(make-array 200000000)` held 3 GB for the life of the process.
+        let keep = self.storage.words.len() + self.storage.trigger.saturating_mul(2);
+        self.storage.words.shrink_to(keep);
+        self.storage.spare.clear();
+        self.storage.spare.shrink_to(keep);
 
         if TORTURE {
             self.verify()
@@ -1965,6 +2010,7 @@ impl Heap {
     /// padding the saving process had. The padding exists to move objects
     /// about between collections; it is not part of the world.
     pub(crate) fn from_image(words: Vec<u64>, s: Scalars, soft_limit: usize) -> Heap {
+        let alive = words.len();
         Heap {
             storage: Storage {
                 words,
@@ -1987,6 +2033,9 @@ impl Heap {
                 mp: s.mp as usize,
                 mode: s.mode as u8,
                 soft_limit,
+                // An image is saved straight after a collection, so its
+                // words are what was alive.
+                trigger: soft_limit.max(alive.saturating_mul(2)),
                 hard_limit: soft_limit.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
                 collections: 0,
