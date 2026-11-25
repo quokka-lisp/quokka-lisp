@@ -119,6 +119,11 @@ jobs:
           cd "$RUNNER_TEMP/sbcl"
           # A tag can be moved; the commit cannot.
           test "$(git rev-parse HEAD)" = "$SBCL_COMMIT"
+          # A git checkout names itself after its branch ("2.6.10.HEAD.1-…").
+          # A release tarball carries its version in this file and no .git,
+          # so make the checkout into one: the same source, the release's name.
+          echo "\"$SBCL_VERSION\"" > version.lisp-expr
+          rm -rf .git
           sh make.sh --prefix="$HOME/sbcl"
           sh install.sh
       - run: echo "$HOME/sbcl/bin" >> "$GITHUB_PATH"
