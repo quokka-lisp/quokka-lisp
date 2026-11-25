@@ -288,10 +288,10 @@ this script on your machine, and to the "Run workflow" button on GitHub.
 ./scripts/check.sh
 ```
 
-Run this before every commit. With Rust already built it takes about six
-minutes when `wasmtime` is installed, most of it the suite on one thread
-under WebAssembly, so it is worth running in a second terminal. It runs, in
-order:
+Run this before every commit. With Rust already built it takes about seven
+minutes when `wasmtime` is installed — GC torture about three of them, the
+suite under WebAssembly about two and a half — so it is worth running in a
+second terminal. It runs, in order:
 1. the book's structure;
 2. formatting and clippy;
 3. the native build and every test;
