@@ -97,4 +97,5 @@ Adding a file means adding a line to `crates/quokka-bootstrap/tests/differential
 — `differential_cases!` for tier 0, `tier1_cases!` for tier 1;
 `scripts/check-differential.sh` fails if one is left out. A tier-1 baseline
 comes from SBCL: `sbcl --script scripts/oracle.lisp tests/lisp/NAME.lisp >
-tests/lisp/NAME.expected`.
+tests/lisp/NAME.expected` — from the SBCL that `scripts/sbcl.pin` names, which
+is the one CI checks the baselines with.

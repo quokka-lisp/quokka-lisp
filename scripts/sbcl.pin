@@ -1,0 +1,14 @@
+# The SBCL the differential baselines were made with (#117).
+#
+# tests/lisp/*.expected are SBCL's answers, frozen. CI builds exactly this
+# SBCL, so that a disagreement means Quokka and SBCL differ and never that
+# SBCL changed under the baselines — which it did: apt's 2.6.0 signals a
+# destructuring mismatch as something other than the program-error 2.6.10
+# signals, and the oracle job was red for that alone.
+#
+# To move to a newer SBCL: change both lines, regenerate every baseline with
+# it, and commit the three together. The commit is what the tag
+# sbcl-$SBCL_VERSION points at in https://github.com/sbcl/sbcl
+# (`git ls-remote https://github.com/sbcl/sbcl "refs/tags/sbcl-VERSION^{}"`).
+SBCL_VERSION=2.6.10
+SBCL_COMMIT=ee8952af37ab5a2a2408e7bddd966f2a903ffe9d

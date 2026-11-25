@@ -435,6 +435,14 @@ A failure SBCL shares is listed in `tests/ansi/deferred.lisp` with
 4. Read the baseline before committing it. A baseline is a claim about what is
    *right*. For tier 0, `./scripts/oracle.sh` then checks it against SBCL.
 
+**Which SBCL.** A baseline is one SBCL's answer, and versions differ: 2.6.0
+signals a `destructuring-bind` mismatch as something other than the
+`program-error` 2.6.10 signals. `scripts/sbcl.pin` names the version the
+baselines were made with. CI builds exactly that one and refuses any other;
+`oracle.sh` on your machine only says so when yours differs. Make a baseline
+with the pinned version. To move the pin, change the file, regenerate every
+baseline with the new SBCL, and commit them together.
+
 ### A file in the library
 
 The tier-1 library, `lisp/library/`, is loaded in a fixed order by **two**

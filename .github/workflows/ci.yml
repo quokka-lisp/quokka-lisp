@@ -96,8 +96,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y sbcl
-      - run: sbcl --version
+      # The oracle is pinned (#117): the baselines are one SBCL's answers, so
+      # CI runs that SBCL and no other. scripts/sbcl.pin names the version
+      # and the commit its tag points at. No distribution packages an exact
+      # version, so it is built from source — SBCL is written in Lisp and
+      # needs a Lisp to build it, which is all apt's older SBCL is used for —
+      # and the result is cached under the pin, so a build (about five
+      # minutes) happens once per pin.
+      - name: Read the pin
+        run: grep -E '^SBCL_(VERSION|COMMIT)=' scripts/sbcl.pin >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: sbcl
+        with:
+          path: ~/sbcl
+          key: sbcl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/sbcl.pin') }}
+      - name: Build the pinned SBCL
+        if: steps.sbcl.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y sbcl
+          git clone --quiet --depth 1 --branch "sbcl-$SBCL_VERSION" \
+            https://github.com/sbcl/sbcl "$RUNNER_TEMP/sbcl"
+          cd "$RUNNER_TEMP/sbcl"
+          # A tag can be moved; the commit cannot.
+          test "$(git rev-parse HEAD)" = "$SBCL_COMMIT"
+          sh make.sh --prefix="$HOME/sbcl"
+          sh install.sh
+      - run: echo "$HOME/sbcl/bin" >> "$GITHUB_PATH"
+      - name: The oracle is the pinned one
+        run: |
+          sbcl --version
+          test "$(sbcl --version)" = "SBCL $SBCL_VERSION"
       - name: Every test file is listed and has a baseline
         run: ./scripts/check-differential.sh
       - name: SBCL must agree with the baselines

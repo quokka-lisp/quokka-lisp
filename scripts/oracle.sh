@@ -15,6 +15,16 @@ if ! command -v sbcl >/dev/null 2>&1; then
   exit 0
 fi
 
+# The baselines are one SBCL's answers (scripts/sbcl.pin, #117). Another
+# version may honestly disagree with them, so say which one this is before
+# any disagreement is read as Quokka's fault. CI refuses any other; here it
+# is a note, because a developer's SBCL is whatever their package manager has.
+pinned=$(sed -n 's/^SBCL_VERSION=//p' scripts/sbcl.pin)
+if [ "$(sbcl --version)" != "SBCL $pinned" ]; then
+  echo "oracle: this is $(sbcl --version); the baselines were made with SBCL $pinned." >&2
+  echo "oracle: a disagreement below may be SBCL's, and a new baseline must come from $pinned." >&2
+fi
+
 # A test that binds a COMMON-LISP symbol will disagree for a reason that is the
 # test's fault. Catch it first, with a message that names the symbol.
 if ! sbcl --script scripts/check-cl-names.lisp; then
