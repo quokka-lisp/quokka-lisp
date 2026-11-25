@@ -109,10 +109,23 @@ quokka> (hello)
   can't be confused.
 - **`:save FILE`** saves the world as it is between two forms: your
   definitions, your packages, your data. It is a REPL command, handled
-  between forms, so a world is never saved halfway through a computation. A
-  line starting with `:` is a command; everything else is Lisp.
+  between forms, so a world is never saved halfway through a computation.
+  It is the only command: any other line is Lisp, `:a-keyword` included. The
+  file is replaced only when the new one is whole on the disk, and only if
+  what is there is a world.
+- **A form may span lines.** The prompt changes to `...` until the world's
+  reader has a whole form, so a `defun` can be pasted, and
+  `quokka world.qi < file.lisp` runs a file.
 - **`(load "path/to/file.lisp")`** loads a file into the world, with the path
   relative to the directory you started in.
+- **A world reads files under the directory you started it in, and nowhere
+  else.** Not through `..`, not by an absolute path, and not through a
+  symbolic link that leads out: a name is judged by where it leads. So a
+  world someone sent you cannot read your home directory. `--root DIR` gives
+  it another directory in place of the current one, and `--allow-read PATH`
+  adds a file or a directory; both go before the world's name:
+  `quokka --allow-read ~/lisp world.qi`. A file must also be a regular file
+  of at most 16 MB.
 - **A saved world keeps working across a rebuild.** `quokka rebuild mine.qi
   new.qi` replaces the system's own functions and leaves yours alone, since
   they are not in the system's source.

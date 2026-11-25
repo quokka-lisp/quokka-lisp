@@ -108,7 +108,12 @@ cd "$(dirname "$0")/.."
 # (`EvalError::WrongArgumentsTo`, the name copied out of the heap in
 # `vm.rs`), and a typed condition keeps the text it was signalled with, in
 # both evaluators. 58 lines. The rest of #110 to #112 is Lisp.
-LIMIT=17225
+#
+# Raised to 17,335 by #87 (Carsten's decision, 25 Nov 2026): a world reads
+# only under a directory its host granted. `permitted` and `grant` in the
+# native host, `main.rs` — resolving a name through every link before
+# judging it, and the two flags. 110 lines, half of them the explanation.
+LIMIT=17335
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 
