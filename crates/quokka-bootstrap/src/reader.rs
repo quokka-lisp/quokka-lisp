@@ -53,7 +53,7 @@
 //! anything with a form needs the heap anyway.
 
 use core::fmt;
-use quokka_vm::heap::Mutation;
+use quokka_vm::heap::{Mutation, ObjectType};
 use quokka_vm::value::Value;
 
 /// How deeply lists may nest before the reader refuses.
@@ -249,7 +249,8 @@ impl<'t> Reader<'t> {
             ',' if self.depth == 0 => Err(ReadError::CommaOutsideBackquote { at }),
             ',' => {
                 self.at += 1;
-                let splicing = self.peek() == Some('@');
+                // `,.` splices as `,@` does (#108).
+                let splicing = matches!(self.peek(), Some('@' | '.'));
                 if splicing {
                     self.at += 1;
                 }
@@ -525,6 +526,24 @@ impl<'t> Reader<'t> {
         // list's *length* is bounded by nothing, and recursing on the cdr
         // made a long template a stack overflow (#101). The expansion is the
         // same, built back to front.
+        // A vector's elements are a template too (#108): the list of them,
+        // expanded, handed to `vector`.
+        if form.is_object() && mc.header(form).object_type == ObjectType::Vector {
+            let mut elements = Value::NIL;
+            for i in (0..mc.header(form).slots).rev() {
+                let element = mc.slot(form, i);
+                elements = mc.cons(element, elements);
+            }
+            let list = self.quasiquote(mc, elements);
+            let vector = mc.intern("VECTOR");
+            let function = mc.intern("FUNCTION");
+            let named = mc.cons(vector, Value::NIL);
+            let named = mc.cons(function, named);
+            let tail = mc.cons(list, Value::NIL);
+            let tail = mc.cons(named, tail);
+            let apply = mc.intern("APPLY");
+            return mc.cons(apply, tail);
+        }
         let mut items = Vec::new();
         let mut cursor = form;
         while cursor.is_cons() && !mc.symbol_is(mc.car(cursor), "UNQUOTE MARKER") {
@@ -542,7 +561,21 @@ impl<'t> Reader<'t> {
         };
         for head in items.into_iter().rev() {
             let tail = mc.cons(out, Value::NIL);
-            out = if head.is_cons() && mc.symbol_is(mc.car(head), "SPLICE MARKER") {
+            let spliced_twice = head.is_cons() && mc.symbol_is(mc.car(head), "UNQUOTE MARKER") && {
+                let inner = mc.car(mc.cdr(head));
+                inner.is_cons() && mc.symbol_is(mc.car(inner), "SPLICE MARKER")
+            };
+            out = if spliced_twice {
+                // `,,@x`: several forms for the outer template to fill in,
+                // so a `list` of them, which takes however many there are.
+                let inner = mc.car(mc.cdr(head));
+                let list = mc.intern("LIST");
+                let listed = mc.cons(inner, Value::NIL);
+                let listed = mc.cons(list, listed);
+                let append = mc.intern("APPEND");
+                let args = mc.cons(listed, tail);
+                mc.cons(append, args)
+            } else if head.is_cons() && mc.symbol_is(mc.car(head), "SPLICE MARKER") {
                 // ,@x contributes its *elements*, so the list is appended
                 // rather than consed on.
                 let spliced = mc.car(mc.cdr(head));

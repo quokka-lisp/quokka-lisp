@@ -241,6 +241,25 @@
             (list :value (prin1-to-string (eval form)))))
     (error (condition) (list :error (%condition-text condition)))))
 
+;;; Does TEXT end outside every form? A terminal REPL asks before it
+;;; evaluates a line, and reads another line when the answer is no (#119).
+;;; Only this reader can say: a parenthesis in a string, a comment or `#\(`
+;;; closes nothing. `*read-suppress*` reads without interning or evaluating
+;;; `#.`, so asking changes nothing. Input that ends inside a form is the one
+;;; case that wants more text; any other fault is whole enough to evaluate,
+;;; and evaluating it is what reports the fault.
+(defun %source-complete-p (text)
+  (let ((in (make-string-input-stream text))
+        (*read-suppress* t))
+    (handler-case
+        (tagbody
+         again
+           (if (eq (read in nil %end-of-input) %end-of-input)
+               (return-from %source-complete-p t))
+           (go again))
+      (end-of-file () nil)
+      (error () t))))
+
 ;;; A condition's message as text, for a person to read.
 (defun %condition-text (condition)
   (let ((message (%condition-message condition)))
@@ -286,7 +305,11 @@
                 environment
                 (destructuring-bind (name lambda-list &body body) (cdr form)
                   `(progn
-                     (%set-symbol-function ',name (%make-macro (%macro-lambda ,lambda-list ,@body)))
+                     (%set-symbol-function
+                      ',name
+                      ;; In a block named after the macro, as the compiler's
+                      ;; own `defmacro` gives it (#109).
+                      (%make-macro (%macro-lambda ,lambda-list ,@(%block-body name body))))
                      ',name)))))
 
 ;;; ------------------------------------------------------------------------

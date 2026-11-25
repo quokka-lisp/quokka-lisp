@@ -1,0 +1,30 @@
+# What a dependency may be, checked by `cargo deny check` in CI (#117).
+#
+# Rule 8 of CLAUDE.md: Quokka is MIT, and takes no dependency or copied code
+# under an incompatible licence. There are two dependencies today — libm for
+# the transcendental functions, wasm-bindgen for the browser host — and what
+# they bring with them; this file is what keeps a third from arriving with a
+# copyleft licence unnoticed.
+
+[graph]
+all-features = true
+
+[licenses]
+# Permissive licences only. A crate offered under a choice ("MIT OR
+# Apache-2.0") passes if any one choice is here. Unicode-3.0 is the licence
+# of the Unicode data tables `unicode-ident` carries, and is permissive.
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+confidence-threshold = 0.9
+
+[sources]
+# crates.io and nowhere else: no git dependencies, no other registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[bans]
+multiple-versions = "warn"
+
+[advisories]
+# The RustSec database. A published advisory against something Quokka
+# depends on fails the build; that is the one way `main` may turn red
+# without a commit, and it is deliberate.

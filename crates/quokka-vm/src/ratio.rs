@@ -53,6 +53,9 @@ pub fn exact_double<'h>(mc: &Mutation<'h>, r: Value<'h>) -> Option<f64> {
             // A bignum is a power of two when its top limb is and every
             // other limb is zero.
             let limbs = crate::bignum::length(mc, d);
+            if limbs == 0 {
+                return None;
+            }
             let top = crate::bignum::limb(mc, d, limbs - 1);
             if top & (top - 1) != 0 || (0..limbs - 1).any(|i| crate::bignum::limb(mc, d, i) != 0) {
                 return None;

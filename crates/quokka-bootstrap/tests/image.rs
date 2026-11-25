@@ -284,3 +284,100 @@ fn an_image_built_elsewhere_runs_here() {
     heap.collect();
     heap.verify().expect("consistent after a collection");
 }
+
+/// Put a correct checksum back on an image this file has altered: FNV-1a
+/// over everything after the checksum word. Written out here, so it is also
+/// the check that an image's checksum is the *published* FNV-1a and can be
+/// verified by a program that is not Quokka — which until format 7 it could
+/// not, the prime having been mistyped (#98).
+fn reseal(bytes: &mut [u8]) {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in &bytes[32..] {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    bytes[24..32].copy_from_slice(&hash.to_le_bytes());
+}
+
+/// Overwrite word `index` of an image, counted from its first.
+fn poke(bytes: &mut [u8], index: usize, word: u64) {
+    bytes[index * 8..index * 8 + 8].copy_from_slice(&word.to_le_bytes());
+}
+
+#[test]
+fn the_checksum_is_the_published_fnv_1a() {
+    let mut heap = Heap::new();
+    boot::install(&mut heap).expect("boots");
+    let bytes = save(&mut heap);
+    let mut again = bytes.clone();
+    reseal(&mut again);
+    assert_eq!(bytes, again);
+}
+
+/// **No image may panic the machine** (#99). The checksum catches accident;
+/// these are images with a *correct* checksum and a heap that is not one —
+/// what a bug in a saving collector, or a person, could produce. Each used
+/// to load and then panic at the first `mutate`, the first `intern` or the
+/// first error. Each is now refused by `load`, with a reason.
+///
+/// The scalars are words 4 to 22 of an image, in the order `Scalars` lists
+/// them; the two words after say what machine the image needs.
+#[test]
+fn an_image_that_is_not_a_heap_is_refused_however_well_it_is_sealed() {
+    let mut heap = Heap::new();
+    boot::install(&mut heap).expect("boots");
+    let good = save(&mut heap);
+    assert!(load(&good, 1024).is_ok());
+
+    let altered = |index: usize, word: u64| {
+        let mut bytes = good.clone();
+        poke(&mut bytes, index, word);
+        reseal(&mut bytes);
+        load(&bytes, 1024).err()
+    };
+    let inconsistent = |index: usize, word: u64| {
+        let error = altered(index, word);
+        assert!(
+            matches!(error, Some(ImageError::Inconsistent(_))),
+            "word {index} = {word:#x} gave {error:?}"
+        );
+    };
+    // The static area ends a billion words in.
+    inconsistent(4 + 17, 1_000_000_000);
+    // The obarray is a *cons* at word 0, where the symbol `nil` is.
+    inconsistent(4 + 2, 0b001);
+    // A stack pointer, a frame pointer and a program counter from nowhere.
+    inconsistent(4 + 12, 1_000_000_000);
+    inconsistent(4 + 13, u64::MAX - 1);
+    inconsistent(4 + 11, 1 << 40);
+    // "No unwind record" as a 32-bit build used to write it: an index of
+    // four billion to a 64-bit loader. The one spelling now is all ones.
+    inconsistent(4 + 14, 0xFFFF_FFFF);
+    assert_eq!(altered(4 + 14, u64::MAX), None);
+    // A register that points into the middle of an object.
+    inconsistent(4 + 9, (3 << 3) | 0b011);
+
+    // Built against a machine with one more primitive than this one has.
+    let primitives = u64::from_le_bytes(good[(4 + 19) * 8..(4 + 20) * 8].try_into().unwrap());
+    assert!(matches!(
+        altered(4 + 19, primitives + 1),
+        Some(ImageError::NeedsNewerMachine { .. })
+    ));
+
+    // And a file cut in the middle of a word says so, not "too short".
+    assert!(matches!(
+        load(&good[..good.len() - 3], 1024),
+        Err(ImageError::NotWholeWords { .. })
+    ));
+}
+
+/// The other half: an image saved in the middle of a computation still
+/// loads, with all the new checks on its registers and its code.
+#[test]
+fn every_function_in_a_compiled_world_passes_the_verifier_on_load() {
+    let mut heap = Heap::new();
+    boot::build_image(&mut heap).expect("builds");
+    let bytes = save(&mut heap);
+    let loaded = load(&bytes, 1 << 22).expect("a built world loads");
+    assert!(loaded.verify().is_ok());
+}

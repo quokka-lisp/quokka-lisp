@@ -243,9 +243,23 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// [`crate::code::verify`] is that pass, and `run_now` runs it — so for
     /// anything that got that far this assertion cannot fire. It stays as a
     /// belt, because `Vm::start` deliberately does not verify.
+    ///
+    /// The belt is one comparison, in every build, against the *frame*: a
+    /// pop at `sp == fp` would take the caller's saved registers, which a
+    /// test of `sp > 0` never noticed, and in a release build even that test
+    /// was gone and `sp - 1` wrapped (#94). It stops the machine with a
+    /// fault; the instruction that popped finishes on a `nil` and nothing
+    /// runs after it.
     fn pop(&mut self) -> Value<'h> {
         let sp = self.mc.sp();
-        debug_assert!(sp > 0, "popped an empty operand stack");
+        if sp <= self.mc.fp() {
+            self.error.get_or_insert(EvalError::Fault {
+                operator: "a compiled function",
+                detail: "popped below its own frame",
+            });
+            self.halted = true;
+            return Value::NIL;
+        }
         let stack = self.mc.register(Register::Operands);
         let v = self.mc.slot(stack, sp - 1);
         self.mc.set_slot(stack, sp - 1, Value::NIL);
@@ -299,7 +313,7 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// when a variable was meant, or the reverse — into an error at the
     /// instruction that did it, rather than a wrong answer somewhere later.
     fn chain_disagrees() -> EvalError {
-        EvalError::BadSyntax {
+        EvalError::Fault {
             operator: "a compiled variable reference",
             detail: "names a scope that is not there: the compiler's depth count \
                      and the machine's chain disagree",
@@ -329,7 +343,7 @@ impl<'a, 'h> Vm<'a, 'h> {
     fn symbol(&mut self, k: i32) -> Result<Value<'h>, EvalError> {
         let s = self.constant(k)?;
         if !self.mc.is_symbol(s) {
-            return Err(EvalError::BadSyntax {
+            return Err(EvalError::Fault {
                 operator: "a global reference",
                 detail: "names a constant that is not a symbol",
             });
@@ -341,7 +355,7 @@ impl<'a, 'h> Vm<'a, 'h> {
     fn bind_scope(&mut self, k: i32, namespace: i64) -> Result<(), EvalError> {
         let table = self.constant(k)?;
         if !table.is_object() || self.mc.header(table).object_type != ObjectType::Vector {
-            return Err(EvalError::BadSyntax {
+            return Err(EvalError::Fault {
                 operator: "BIND",
                 detail: "names a constant that is not a vector of names",
             });
@@ -409,7 +423,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 // is still interpreted and compiled code simply cannot reach
                 // it, and in a built image reaching one means the bootstrap
                 // let an expander be compiled while its caller was not.
-                return self.fail(EvalError::BadSyntax {
+                return self.fail(EvalError::Fault {
                     operator: "CALL",
                     detail: "reached an interpreted closure — compiled code \
                              can only call compiled code, and the prelude is \
@@ -607,7 +621,12 @@ impl<'a, 'h> Vm<'a, 'h> {
         }
         let symbol = self.mc.cached_symbol(slot, name);
         let function = self.mc.slot(symbol, crate::heap::symbol::FUNCTION);
-        if function == Value::UNBOUND {
+        // A primitive is no fallback: it would fail as this one did and fall
+        // back again, each time one Rust frame deeper, until the stack ran
+        // out — `(setf (symbol-function 'quokka::%generic-+) #'+)` did it
+        // (#93). The library's fallbacks are Lisp, which is entered through
+        // a frame in the heap, under the step budget.
+        if function == Value::UNBOUND || function.as_primitive().is_some() {
             None
         } else {
             Some(function)
@@ -844,7 +863,7 @@ impl<'a, 'h> Vm<'a, 'h> {
     fn pop_mark(&mut self) -> Transition {
         let at = self.mc.mp();
         if at == usize::MAX {
-            return self.fail(EvalError::BadSyntax {
+            return self.fail(EvalError::Fault {
                 operator: "UNMARK",
                 detail: "there is no unwind record to drop",
             });
@@ -886,8 +905,10 @@ impl<'a, 'h> Vm<'a, 'h> {
             // BLOCK instruction made and bound in the environment.
             mark::BLOCK | mark::TAG => datum == target,
             // A catch is found by `eql` on the tag, which for everything a
-            // tag may usefully be is the same as identity.
-            mark::CATCH => datum == target,
+            // tag may usefully be is the same as identity. Only a *throw*
+            // looks for one, and a throw's target is its tag in a cons —
+            // see `Op::Throw` for why.
+            mark::CATCH => target.is_cons() && datum == self.mc.car(target),
             // A handler record stops *any* condition, and the compiled
             // clause dispatch it resumes into decides whether this one is
             // wanted — re-signalling if not, which searches further out
@@ -918,7 +939,11 @@ impl<'a, 'h> Vm<'a, 'h> {
                 let what = crate::condition::describe(self.mc, target);
                 return self.fail(EvalError::Signalled(what));
             }
-            let what = crate::printer::print(self.mc, target);
+            let what = if target.is_cons() {
+                crate::printer::print(self.mc, self.mc.car(target))
+            } else {
+                "that block or tag, which has already been left".to_string()
+            };
             return self.fail(EvalError::NoSuchExit(what));
         }
         let kind = self.mark_slot(at, mark::KIND).as_fixnum().unwrap_or(0);
@@ -1035,17 +1060,16 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// Until #36 this always halted, so an error raised inside a primitive —
     /// `(car 5)` — could not be caught by compiled code at all.
     ///
-    /// One distinction the interpreter does not need. In compiled code a
-    /// `BadSyntax` always means the **bytecode** is wrong: the compiler checked
-    /// the program's syntax before any of it ran, so what is left for the VM
-    /// to find is an opcode that is not one, a jump before the start, a
-    /// missing constant, a compiled caller meeting an interpreted closure.
-    /// Those are never the program's to catch, for the reason `Malformed` is
-    /// not — a `handler-case` would hide a compiler bug behind whatever the
-    /// program does about errors. Decided here by variant, in one place,
-    /// rather than at each of the eleven sites that raise one.
+    /// One distinction: a [`Fault`](EvalError::Fault) means the **bytecode**
+    /// or the machine is wrong — an opcode that is not one, a jump before
+    /// the start, a missing constant, a compiled caller meeting an
+    /// interpreted closure — and is never the program's to catch, for the
+    /// reason `Malformed` is not: a `handler-case` would hide a compiler bug
+    /// behind whatever the program does about errors. Decided here by
+    /// variant, in one place. `BadSyntax` is the program's own syntax, such
+    /// as a lambda list `(lambda (5) …)`, and is a `program-error` (#97).
     fn fail(&mut self, e: EvalError) -> Transition {
-        let the_programs = !matches!(e, EvalError::BadSyntax { .. });
+        let the_programs = !matches!(e, EvalError::Fault { .. } | EvalError::Malformed(_));
         if the_programs && self.has_handler() {
             if let Some(condition) = crate::condition::from_eval_error(self.mc, &e) {
                 return self.start_unwind(condition, Value::NIL);
@@ -1066,6 +1090,21 @@ impl<'a, 'h> Vm<'a, 'h> {
         let mut at = self.mc.mp();
         while at != usize::MAX {
             if self.mark_slot(at, mark::KIND).as_fixnum() == Some(mark::HANDLER) {
+                return true;
+            }
+            at = self.read_index(at, mark::PREV);
+        }
+        false
+    }
+
+    /// Is the block or tagbody that made MARKER still open? The same walk.
+    fn has_exit(&self, marker: Value<'h>) -> bool {
+        let mut at = self.mc.mp();
+        while at != usize::MAX {
+            let kind = self.mark_slot(at, mark::KIND).as_fixnum();
+            if matches!(kind, Some(mark::BLOCK | mark::TAG))
+                && self.mark_slot(at, mark::DATUM) == marker
+            {
                 return true;
             }
             at = self.read_index(at, mark::PREV);
@@ -1150,7 +1189,7 @@ impl<'a, 'h> Vm<'a, 'h> {
         let constants = self.mc.slot(f, function::CONSTANTS);
         let k = k as usize;
         if !constants.is_object() || k >= self.mc.header(constants).slots {
-            return Err(EvalError::BadSyntax {
+            return Err(EvalError::Fault {
                 operator: "a compiled function",
                 detail: "names a constant it does not have",
             });
@@ -1164,7 +1203,7 @@ impl<'a, 'h> Vm<'a, 'h> {
         // soon as it has emitted the instruction.
         let target = from as i64 + offset as i64;
         if target < 0 {
-            return self.fail(EvalError::BadSyntax {
+            return self.fail(EvalError::Fault {
                 operator: "a jump",
                 detail: "lands before the start of the code",
             });
@@ -1206,7 +1245,7 @@ impl Steppable for Vm<'_, '_> {
         let decoded = match code::decode_in_heap(self.mc, code, length, at) {
             Ok(d) => d,
             Err(CodeError::UnknownOpcode { .. }) => {
-                return self.fail(EvalError::BadSyntax {
+                return self.fail(EvalError::Fault {
                     operator: "bytecode",
                     detail: "is not an instruction",
                 })
@@ -1214,7 +1253,7 @@ impl Steppable for Vm<'_, '_> {
             Err(CodeError::Truncated { .. }) => {
                 // Running off the end means the function had no RET, which is
                 // a bug in whatever produced it rather than in the program.
-                return self.fail(EvalError::BadSyntax {
+                return self.fail(EvalError::Fault {
                     operator: "a compiled function",
                     detail: "ran past the end of its code without returning",
                 });
@@ -1342,7 +1381,7 @@ impl Steppable for Vm<'_, '_> {
                 if !code_object.is_object()
                     || self.mc.header(code_object).object_type != ObjectType::Function
                 {
-                    return self.fail(EvalError::BadSyntax {
+                    return self.fail(EvalError::Fault {
                         operator: "CLOSURE",
                         detail: "names a constant that is not a compiled function",
                     });
@@ -1406,7 +1445,7 @@ impl Steppable for Vm<'_, '_> {
                     Err(e) => return self.fail(e),
                 };
                 if !names.is_object() || self.mc.header(names).object_type != ObjectType::Vector {
-                    return self.fail(EvalError::BadSyntax {
+                    return self.fail(EvalError::Fault {
                         operator: "TAG",
                         detail: "names a constant that is not a vector of tags",
                     });
@@ -1431,10 +1470,21 @@ impl Steppable for Vm<'_, '_> {
                 } else {
                     env::TAG
                 };
-                let marker = match self.slot_of(decoded.a, decoded.b, namespace) {
-                    Ok((scope, at)) => self.mc.slot(scope, at),
+                let (marker, name) = match self.slot_of(decoded.a, decoded.b, namespace) {
+                    Ok((scope, at)) => (self.mc.slot(scope, at), self.mc.slot(scope, at - 1)),
                     Err(e) => return self.fail(e),
                 };
+                // The block or tagbody may have been left already — a closure
+                // that outlived it and then tried to return from it. That is
+                // a `control-error` signalled *here*, before anything
+                // unwinds, as `throw`'s is below: found only at the bottom of
+                // the stack, every handler that could have caught it was
+                // already gone, and the message could name only an internal
+                // marker (#97).
+                if !self.has_exit(marker) {
+                    let what = crate::printer::print(self.mc, name);
+                    return self.fail(EvalError::NoSuchExit(what));
+                }
                 // `return-from` carries a value. `go` carries **which tag**:
                 // its slot index in the tagbody's scope, which the landing
                 // turns into an entry of the jump table.
@@ -1462,7 +1512,18 @@ impl Steppable for Vm<'_, '_> {
                     let what = crate::printer::print(self.mc, tag);
                     return self.fail(EvalError::NoSuchExit(what));
                 }
-                return self.start_unwind(tag, v);
+                // One register says where an unwind is going, and three
+                // kinds of thing go: a `return-from` or `go` to a marker, a
+                // signalled condition, and a throw to a tag. A tag may be any
+                // object at all, a condition included, so a bare tag could
+                // not be told from a condition being signalled: a handler
+                // caught a `throw`, and a `catch` caught an error (#96). The
+                // throw therefore travels as its tag in a cons, which is
+                // neither a marker nor a condition, and each record matches
+                // only its own kind. Phase 3's restarts and `signal` will be
+                // further kinds, and need the same care.
+                let target = self.mc.cons(tag, Value::NIL);
+                return self.start_unwind(target, v);
             }
             Op::Handler => {
                 let clauses = match self.constant(decoded.a) {
@@ -1486,7 +1547,7 @@ impl Steppable for Vm<'_, '_> {
                 let symbol = match self.constant(decoded.a) {
                     Ok(s) if self.mc.is_symbol(s) => s,
                     Ok(_) => {
-                        return self.fail(EvalError::BadSyntax {
+                        return self.fail(EvalError::Fault {
                             operator: "DBIND",
                             detail: "names a constant that is not a symbol",
                         })
@@ -1517,7 +1578,7 @@ impl Steppable for Vm<'_, '_> {
                 let at = self.mc.mp();
                 if at == usize::MAX || self.mark_slot(at, mark::KIND).as_fixnum() != Some(mark::TAG)
                 {
-                    return self.fail(EvalError::BadSyntax {
+                    return self.fail(EvalError::Fault {
                         operator: "JMP-TAG",
                         detail: "the innermost record is not a tagbody's",
                     });
@@ -1536,7 +1597,7 @@ impl Steppable for Vm<'_, '_> {
                 if at == usize::MAX
                     || self.mark_slot(at, mark::KIND).as_fixnum() != Some(mark::PAUSED)
                 {
-                    return self.fail(EvalError::BadSyntax {
+                    return self.fail(EvalError::Fault {
                         operator: "UNPROTECT",
                         detail: "there is no paused unwind to resume",
                     });
@@ -1685,11 +1746,16 @@ fn drive(
     use crate::slice::Status;
     let mut spent = 0u64;
     while spent < budget {
-        spent += slice;
         match one_slice(heap, slice)? {
             Status::Done { .. } => return Ok(()),
-            Status::Yielded => {}
-            Status::Blocked { .. } => {
+            Status::Yielded => spent += slice,
+            // A slice that stopped to ask the host something is charged the
+            // steps it ran, not the slice it was offered: charged the whole
+            // slice, 2,500 console writes used up five million steps having
+            // taken a few thousand (#95). At least one, so that a program
+            // which only ever asks still reaches the budget.
+            Status::Blocked { steps } => {
+                spent += steps.max(1);
                 if !crate::host::serve(heap, host) {
                     return Err(EvalError::Blocked);
                 }
@@ -1828,6 +1894,26 @@ pub fn begin_source(heap: &mut crate::heap::Heap, source: &str) -> Result<(), Ev
 pub fn begin_step(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
     heap.mutate(|mc| mc.set_register(Register::Value, Value::NIL));
     begin_global(heap, "%HOST-STEP")
+}
+
+/// Is `source` whole — does it end outside every form? `%source-complete-p`
+/// in `lisp/library/eval.lisp` answers, with the world's own reader, so that
+/// a REPL knows whether to evaluate what it has or to read another line
+/// (#119). Counting parentheses in the host would be a second reader, wrong
+/// about strings, comments and `#\(`.
+pub fn source_complete(
+    heap: &mut crate::heap::Heap,
+    source: &str,
+    budget: u64,
+    slice: u64,
+    host: &mut dyn crate::host::Host,
+) -> Result<bool, EvalError> {
+    heap.mutate(|mc| {
+        let text = mc.alloc_string(source);
+        mc.set_register(Register::Value, text);
+    });
+    call_global(heap, "%SOURCE-COMPLETE-P", budget, slice, host)?;
+    Ok(heap.mutate(|mc| !mc.register(Register::Value).is_nil()))
 }
 
 /// What one form came to when a host ran it through [`eval_source`].

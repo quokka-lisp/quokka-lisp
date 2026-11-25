@@ -20,7 +20,21 @@ pub enum EvalError {
     NotAFunction(String),
     /// A `return-from`, `go` or `throw` with nowhere to go.
     NoSuchExit(String),
-    /// A special operator written wrongly.
+    /// The machine's own fault, or the bytecode's: an opcode that is not one,
+    /// a missing constant, a compiled caller meeting an interpreted closure.
+    /// Never the running program's mistake and never the program's to catch —
+    /// a `handler-case` would hide a compiler bug behind whatever the program
+    /// does about errors. Split from [`BadSyntax`](Self::BadSyntax) by #97:
+    /// one variant meant both, so a malformed lambda list, which is the
+    /// program's, stopped the machine as if it were the machine's.
+    Fault {
+        /// What was being done.
+        operator: &'static str,
+        /// What is wrong.
+        detail: &'static str,
+    },
+    /// A special operator or a lambda list written wrongly: the program's
+    /// syntax, a `program-error` in both evaluators.
     BadSyntax {
         /// Which operator.
         operator: &'static str,
@@ -39,8 +53,7 @@ pub enum EvalError {
     /// A call whose arguments do not fit the function's lambda list: an odd
     /// number of keyword arguments, or a keyword the function does not take.
     /// A fault in the *call*, so the program may catch it — CLHS calls it a
-    /// `program-error` — unlike `BadSyntax`, which in compiled code means the
-    /// bytecode itself is wrong (#62, part 1).
+    /// `program-error` (#62, part 1).
     BadCall(&'static str),
     /// A primitive given the wrong kind of thing.
     WrongType {
@@ -89,7 +102,9 @@ impl core::fmt::Display for EvalError {
             EvalError::NotAFunction(n) => write!(f, "{n} is not a function"),
             EvalError::Malformed(what) => write!(f, "this compiled function is malformed: {what}"),
             EvalError::NoSuchExit(n) => write!(f, "there is no exit named {n} here"),
-            EvalError::BadSyntax { operator, detail } => write!(f, "bad {operator}: {detail}"),
+            EvalError::BadSyntax { operator, detail } | EvalError::Fault { operator, detail } => {
+                write!(f, "bad {operator}: {detail}")
+            }
             EvalError::BadCall(detail) => write!(f, "bad call: {detail}"),
             EvalError::WrongArgumentCount { name, wanted, got } => {
                 write!(f, "{name} wants {wanted} argument(s), got {got}")

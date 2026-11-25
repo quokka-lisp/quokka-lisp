@@ -59,7 +59,11 @@ pub fn make<'h>(
     names: &[Value<'h>],
     values: &[Value<'h>],
 ) -> Value<'h> {
-    debug_assert_eq!(names.len(), values.len());
+    assert_eq!(
+        names.len(),
+        values.len(),
+        "a scope pairs each name with a value"
+    );
     let scope = mc.alloc(ObjectType::Environment, FIRST_PAIR + names.len() * 2);
     mc.set_slot(scope, PARENT, parent);
     mc.set_slot(scope, NAMESPACE, Value::fixnum(namespace).expect("small"));

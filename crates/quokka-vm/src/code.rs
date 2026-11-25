@@ -688,6 +688,9 @@ pub mod verify {
     /// Why a function was refused.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum Error {
+        /// Not a function object, or one whose code, length or constants are
+        /// not what a function's are.
+        NotAFunction,
         /// The instruction stream itself is malformed.
         Malformed(CodeError),
         /// A jump lands somewhere that is not the start of an instruction —
@@ -812,12 +815,51 @@ pub mod verify {
     /// Returns the deepest the operand stack gets, which is what `max-stack`
     /// should have said.
     pub fn function<'h>(mc: &Mutation<'h>, f: Value<'h>) -> Result<usize, Error> {
-        let bytes = code_bytes(mc, f);
+        let needs = one(mc, f)?;
+        // Nested functions are reached through CLOSURE, so verifying the
+        // outermost one is not enough: a closure made at run time would
+        // otherwise be the first thing nobody checked.
         let constants = mc.slot(f, super::function::CONSTANTS);
-        let count = if constants.is_object() {
-            mc.header(constants).slots
-        } else {
+        let count = if constants.is_nil() {
             0
+        } else {
+            mc.header(constants).slots
+        };
+        for i in 0..count {
+            let c = mc.slot(constants, i);
+            if c.is_object() && mc.header(c).object_type == ObjectType::Function {
+                self::function(mc, c)?;
+            }
+        }
+        Ok(needs)
+    }
+
+    /// Verify `f` alone, not the functions among its constants: for a caller
+    /// that is visiting every function anyway, as the image loader does.
+    ///
+    /// Begins with the object itself, since a function out of an image file
+    /// is not known to be one: the code is a code object as long as the
+    /// length says, and the constants are a vector or nothing.
+    pub fn one<'h>(mc: &Mutation<'h>, f: Value<'h>) -> Result<usize, Error> {
+        let is = |v: Value<'h>, t: ObjectType| v.is_object() && mc.header(v).object_type == t;
+        let code = if is(f, ObjectType::Function) {
+            mc.slot(f, super::function::CODE)
+        } else {
+            return Err(Error::NotAFunction);
+        };
+        let length = mc.slot(f, super::function::CODE_LENGTH).as_fixnum();
+        let constants = mc.slot(f, super::function::CONSTANTS);
+        let shaped = is(code, ObjectType::Code)
+            && length.is_some_and(|n| n >= 0 && n as usize <= mc.header(code).slots * 8)
+            && (constants.is_nil() || is(constants, ObjectType::Vector));
+        if !shaped {
+            return Err(Error::NotAFunction);
+        }
+        let bytes = code_bytes(mc, f);
+        let count = if constants.is_nil() {
+            0
+        } else {
+            mc.header(constants).slots
         };
         let declared = mc
             .slot(f, super::function::MAX_STACK)
@@ -830,15 +872,6 @@ pub mod verify {
             return Err(Error::TooDeep { needs, declared });
         }
 
-        // Nested functions are reached through CLOSURE, so verifying the
-        // outermost one is not enough: a closure made at run time would
-        // otherwise be the first thing nobody checked.
-        for i in 0..count {
-            let c = mc.slot(constants, i);
-            if c.is_object() && mc.header(c).object_type == ObjectType::Function {
-                self::function(mc, c)?;
-            }
-        }
         Ok(needs)
     }
 
@@ -940,9 +973,19 @@ pub mod verify {
                 // popped what it pops — the catch tag, for `CATCH`.
                 1 => records_after.push((depth - effect.pops, d.op)),
                 -1 => {
-                    records_after
+                    let (base, _) = records_after
                         .pop()
                         .ok_or(Error::MarksNotBalanced { at, open: -1 })?;
+                    // `UNMARK` drops to its record's base whatever lies
+                    // above it, so anything but the record and one value
+                    // there makes this walk's depth and the machine's part
+                    // company — and two `POP`s then ate a frame (#94).
+                    if d.op == Op::Unmark && depth != base + RECORD + 1 {
+                        return Err(Error::MarksNotBalanced {
+                            at,
+                            open: records.len() as i32,
+                        });
+                    }
                 }
                 _ => {}
             }
@@ -1236,7 +1279,7 @@ pub mod assemble {
                     Operand::Number(n) => Ok(*n),
                     Operand::Label(l) => {
                         let Some((_, target)) = labels.iter().find(|(name, _)| name == l) else {
-                            return Err(EvalError::BadSyntax {
+                            return Err(EvalError::Fault {
                                 operator: "ASSEMBLE",
                                 detail: "names a label that is not there",
                             });
@@ -1250,7 +1293,7 @@ pub mod assemble {
             };
             let (a, b) = (resolve(a)?, resolve(b)?);
             if !fits(*op, a, b) {
-                return Err(EvalError::BadSyntax {
+                return Err(EvalError::Fault {
                     operator: "ASSEMBLE",
                     detail: "has an operand too large for the field the opcode gives it",
                 });
@@ -1258,19 +1301,38 @@ pub mod assemble {
             encode(&mut bytes, *op, a, b);
         }
 
+        // What the function will trust for as long as it lives is checked
+        // and made its own here (#94). The constants are *copied*: the
+        // verifier is about to vouch for this vector, and Lisp still holds
+        // the one it passed and could change it afterwards. Only the vector —
+        // its elements are the program's literals, which `eval` and `compile`
+        // must keep the very objects the source had (CLHS 3.2.4). And the
+        // parameters are read once by the code that will bind them at every
+        // call, so that a malformed list is refused now and not found then.
+        let constants = if constants.is_nil() {
+            constants
+        } else if constants.is_object() && mc.header(constants).object_type == ObjectType::Vector {
+            let count = mc.header(constants).slots;
+            let copy = mc.alloc(ObjectType::Vector, count);
+            for i in 0..count {
+                let c = mc.slot(constants, i);
+                mc.set_slot(copy, i, c);
+            }
+            copy
+        } else {
+            return Err(bad("wants a vector of constants, or nil"));
+        };
+        crate::lambda_list::names(mc, params)?;
+
         // Built with a generous `max-stack` so the verification can only fail
         // for a real reason, then rebuilt with the depth it reports. The
         // compiler never has to work out how deep its own output gets.
         let draft = make_function(mc, &bytes, constants, params, MAX_DEPTH, name);
         let needs = match verify::function(mc, draft) {
             Ok(n) => n,
-            Err(e) => {
-                let _ = e;
-                return Err(EvalError::BadSyntax {
-                    operator: "ASSEMBLE",
-                    detail: "produced a function the verifier refused",
-                });
-            }
+            // With the verifier's reason: thrown away, as it used to be, a
+            // refused function said only "bad ASSEMBLE" (#97).
+            Err(e) => return Err(EvalError::Malformed(format!("{e:?}"))),
         };
         Ok(make_function(mc, &bytes, constants, params, needs, name))
     }
@@ -1290,7 +1352,7 @@ pub mod assemble {
     }
 
     fn bad(detail: &'static str) -> EvalError {
-        EvalError::BadSyntax {
+        EvalError::Fault {
             operator: "ASSEMBLE",
             detail,
         }

@@ -96,9 +96,31 @@
       // sizing the next slice from how long the last one took.
       let steps = 20000;
 
+      // The world as it was before the line now running: a snapshot, taken
+      // while the machine is idle. If the machine itself fails — a trap,
+      // which is a bug in Quokka and ends this instance for good — the
+      // snapshot is what is left to save, so a failure costs one line and
+      // not the session (#88).
+      let snapshot = vm.save();
+      let failed = false;
+      const fail = (error) => {
+        failed = true;
+        console.error(error);
+        print("\n; Quokka's machine failed, which is a bug in Quokka and not in your program.\n" +
+              "; The browser's console has the details. This world cannot go on, but\n" +
+              "; Save world gives you the world as it was before that line.\n");
+        input.disabled = true;
+        stop.disabled = true;
+      };
+
       const pump = () => {
         const before = performance.now();
-        const more = vm.run(steps);
+        let more;
+        try {
+          more = vm.run(steps);
+        } catch (error) {
+          return fail(error);
+        }
         const took = performance.now() - before;
         print(vm.take_output());
         if (more) {
@@ -107,6 +129,7 @@
           // A timer, so the browser paints and takes input between slices.
           setTimeout(pump, 0);
         } else {
+          snapshot = vm.save();
           stop.disabled = true;
           input.disabled = false;
           input.focus();
@@ -130,7 +153,10 @@
 
       // The whole world as a file — load it again by serving it as world.qi.
       save.addEventListener("click", () => {
-        const url = URL.createObjectURL(new Blob([vm.save()], { type: "application/octet-stream" }));
+        // After a failure the snapshot is all there is. Otherwise the world
+        // as it stands, in the middle of a computation included.
+        const bytes = failed ? snapshot : vm.save();
+        const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
         const link = Object.assign(document.createElement("a"), { href: url, download: "world.qi" });
         link.click();
         URL.revokeObjectURL(url);

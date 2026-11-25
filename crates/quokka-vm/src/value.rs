@@ -232,7 +232,7 @@ impl<'h> Value<'h> {
     /// out of storage. Not every `u64` is a meaningful value — an immediate with
     /// an unassigned subtag, for instance — so an image loader should check what
     /// it reads rather than trusting the file.
-    pub const fn from_bits(bits: u64) -> Value<'h> {
+    pub(crate) const fn from_bits(bits: u64) -> Value<'h> {
         Value(bits, PhantomData)
     }
 

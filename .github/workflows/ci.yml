@@ -6,6 +6,23 @@ on:
   pull_request:
   workflow_dispatch:
 
+# What a workflow is trusted with and what it runs are both written down
+# (#117). The token can read the repository and nothing else. Every action is
+# named by the commit it is, with its tag beside it for a person: a tag can
+# be moved by whoever holds the action's repository, a commit cannot. Cargo
+# builds what Cargo.lock says (`--locked`), with the compiler
+# rust-toolchain.toml names, against the SBCL scripts/sbcl.pin names and the
+# wasmtime named below — so that `main` turns red when a commit breaks it and
+# for no other reason. To move any of them is a commit like any other.
+permissions:
+  contents: read
+
+# A newer push to a pull request makes the older run pointless; on main every
+# commit keeps its own result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -15,55 +32,119 @@ jobs:
   native:
     name: Native (build, test, fmt, clippy)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo build --workspace
-      - run: cargo test --workspace
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo build --locked --workspace
+      - run: cargo test --locked --workspace
+
+  # The checks that are scripts rather than cargo's. `check.sh` has always
+  # run them; CI ran only the differential one, inside the oracle job, so a
+  # library file missing from boot.rs, a `#[test]` outside the two test
+  # directories, or a core past its line budget passed here while the docs
+  # said each "fails the build" (#116).
+  checks:
+    name: Scripts (budget, test placement, file lists)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: ./scripts/check-budget.sh
+      - run: ./scripts/check-compiler.sh
+      - run: ./scripts/check-differential.sh
+
+  # Cargo.toml says which Rust is the oldest that builds Quokka. A claim
+  # nothing builds is a guess, so this builds it: the machine, the cold
+  # build and the program, with exactly that compiler (#116). The browser
+  # crate is left out — its one dependency sets its own floor.
+  msrv:
+    name: Oldest supported Rust (rust-version in Cargo.toml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$msrv" --profile minimal
+          cargo "+$msrv" check --locked -p quokka-vm -p quokka-bootstrap -p quokka
+
+  # Rule 8: MIT, and nothing that is not compatible with it. deny.toml lists
+  # the licences a dependency may carry; this also refuses a dependency from
+  # anywhere but crates.io and reports published security advisories (#117).
+  licences:
+    name: Licences and advisories (cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: EmbarkStudios/cargo-deny-action@81891abc19297b21343b15ef67dc61e4aea74fda # v2
 
   book:
     name: Book structure
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: ./scripts/check-book.sh
 
   docs:
     name: Rustdoc (no broken links)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo doc --workspace --no-deps
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: cargo doc --locked --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
   gc-torture:
     name: GC torture (collect at every mutation, then verify)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: cargo test --locked -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture
 
   wasm-browser:
     name: wasm32-unknown-unknown (browser build)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # quokka is a native host and is deliberately excluded.
-      - run: cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
+      - run: cargo build --locked -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
+      # And then as the page gets it: bundled by wasm-pack, loaded by a
+      # JavaScript engine, given a world, and asked a question (#116). Until
+      # this step nothing in CI produced the bundle index.html imports, let
+      # alone called it. Node runs the same engine a Chromium browser does;
+      # what it has no part of is the page itself — the DOM, `fetch`, the
+      # timer between slices — which wants a headless browser and is not
+      # here yet.
+      - name: Bundle the dev console
+        run: |
+          cargo install wasm-pack --locked --version 0.15.1
+          wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
+      - name: A world answers in a JavaScript engine
+        run: |
+          cargo run --locked --release -p quokka -- build crates/quokka-wasm/www/world.qi
+          node scripts/smoke-wasm.mjs
 
   wasm-wasi:
     name: wasm32-wasip1 (tests under wasmtime)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - uses: bytecodealliance/actions/wasmtime/setup@v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "49.0.7"
       # One step, not two. `cargo test -p` builds and runs every test target
       # in the package, so this already runs tests/differential.rs — which a
       # second step naming `--test differential` then ran again, for twenty
@@ -83,19 +164,20 @@ jobs:
       # 32-bit tests are handed one: built natively here, and required, so
       # that `an_image_built_elsewhere_runs_here` cannot pass on nothing.
       - name: Build a world natively
-        run: cargo run --release -p quokka -- build target/native-world.qi
+        run: cargo run --locked --release -p quokka -- build target/native-world.qi
       - name: VM, bootstrap and differential tests under wasmtime
         run: |
           CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$GITHUB_WORKSPACE --env QUOKKA_FOREIGN_IMAGE=$GITHUB_WORKSPACE/target/native-world.qi --env QUOKKA_FOREIGN_IMAGE_REQUIRED=1" \
-            cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
+            cargo test --locked -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
 
   # SBCL is the differential-test oracle, never a build dependency. This job
   # is the only place it is installed, and nothing else needs it.
   sbcl-oracle:
     name: SBCL oracle (differential tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # The oracle is pinned (#117): the baselines are one SBCL's answers, so
       # CI runs that SBCL and no other. scripts/sbcl.pin names the version
       # and the commit its tag points at. No distribution packages an exact
@@ -105,7 +187,7 @@ jobs:
       # minutes) happens once per pin.
       - name: Read the pin
         run: grep -E '^SBCL_(VERSION|COMMIT)=' scripts/sbcl.pin >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: sbcl
         with:
           path: ~/sbcl
@@ -143,9 +225,10 @@ jobs:
   ansi-test:
     name: ansi-test (tier 1, ratchet)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Run the tier-1 groups
         run: ./scripts/ansi-test.sh
         env:

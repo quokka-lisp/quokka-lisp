@@ -215,6 +215,12 @@ enum Arity {
     AtLeast(usize),
 }
 
+/// Every primitive's name, in table order: for a host or a test that wants
+/// to try them all (the fuzz behind *no input may panic the machine*, #88).
+pub fn names() -> impl Iterator<Item = &'static str> {
+    TABLE.iter().map(|entry| entry.1)
+}
+
 /// The table. **Order is part of the image format** — append, never reorder.
 const TABLE: &[(Prim, &str, Arity)] = &[
     (Prim::Add, "+", Arity::AtLeast(0)),
@@ -826,11 +832,11 @@ pub fn call_slice<'h>(
             mc.set_slot(args[0], symbol::FUNCTION, args[1]);
             Ok(args[1])
         }
-        Prim::Values | Prim::ValuesList => Err(EvalError::BadSyntax {
+        Prim::Values | Prim::ValuesList => Err(EvalError::Fault {
             operator: "VALUES",
             detail: "is intercepted by the evaluator and should never be called here",
         }),
-        Prim::Error => Err(EvalError::BadSyntax {
+        Prim::Error => Err(EvalError::Fault {
             operator: "ERROR",
             detail: "is intercepted by the evaluator and should never be called here",
         }),
@@ -1037,7 +1043,19 @@ pub fn call_slice<'h>(
         }
         Prim::MakeBitVector => crate::array::make_bits(mc, args[0]),
         Prim::MakeNilVector => crate::array::make_nil_vector(mc, args[0]),
-        Prim::MakeRatio => Ok(crate::ratio::make(mc, args[0], args[1])),
+        Prim::MakeRatio => {
+            // Only `%ratio` should call this, with a ratio already in lowest
+            // terms — but what the slots hold is trusted by everything that
+            // reads a ratio, so their types are checked here (#100).
+            let integer = |v: Value<'h>| v.is_fixnum() || crate::bignum::is(mc, v);
+            if !integer(args[0]) || !integer(args[1]) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "two integers",
+                });
+            }
+            Ok(crate::ratio::make(mc, args[0], args[1]))
+        }
         Prim::StringMismatch => Ok(string_mismatch(mc, args)),
         Prim::Ratiop => Ok(boolean(crate::ratio::is(mc, args[0]))),
         Prim::RatioNumerator | Prim::RatioDenominator => {
@@ -1229,7 +1247,7 @@ pub fn call_slice<'h>(
             };
             float::make(mc, f(y, x))
         }
-        Prim::ReadSource | Prim::WriteConsole => Err(EvalError::BadSyntax {
+        Prim::ReadSource | Prim::WriteConsole => Err(EvalError::Fault {
             operator: name,
             detail: "asks the host for something, which only compiled code can do: \
                      the interpreter is the bootstrap evaluator and has no I/O",
@@ -1382,7 +1400,7 @@ pub fn call_slice<'h>(
         // that FUNCALL is not a function. The compiler found this the moment
         // there was nothing to fall through to, which is the whole argument
         // of #30 in one line of build output.
-        Prim::Apply | Prim::Funcall => Err(EvalError::BadSyntax {
+        Prim::Apply | Prim::Funcall => Err(EvalError::Fault {
             operator: "APPLY or FUNCALL",
             detail: "is intercepted by the evaluator and should never be called here",
         }),

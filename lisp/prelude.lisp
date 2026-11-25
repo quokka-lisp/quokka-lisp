@@ -616,6 +616,18 @@
 ;;; Conditions
 ;;; ------------------------------------------------------------------
 
+;; The `:no-error` clause among a `handler-case`'s clauses, and the clauses
+;; without it. Written out, because the prelude has no `assoc` or `remove`.
+(defun %no-error-clause (clauses)
+  (cond ((endp clauses) nil)
+        ((if (consp (car clauses)) (eq (car (car clauses)) :no-error) nil) (car clauses))
+        (t (%no-error-clause (cdr clauses)))))
+
+(defun %without-clause (clause clauses)
+  (cond ((endp clauses) nil)
+        ((eq (car clauses) clause) (cdr clauses))
+        (t (cons (car clauses) (%without-clause clause (cdr clauses))))))
+
 ;; `handler-case` is a **macro** in Common Lisp, over `handler-bind` and
 ;; `block`. Quokka has no `handler-bind`, so the machinery is the special
 ;; operator `%handler-case` — but the name people write stays a macro, which
@@ -629,8 +641,29 @@
 ;; anything else must name the condition's own type exactly. Common Lisp
 ;; matches by subtype through the class system, which is phase 3. Written
 ;; down in `docs/design.md` rather than discovered.
+;;
+;; **`:no-error`** (#106) names what to do with the form's values when it
+;; signals nothing, and is CLHS's own expansion: the form returns from an
+;; inner block to a function of its values, while a clause that runs returns
+;; from the outer one, past that function. Until it was written here the
+;; clause was taken for a condition type that never matched, so
+;; `(handler-case 5 (error () 1) (:no-error (x) (list x)))` gave 5, not (5),
+;; and said nothing. A `handler-case` without the clause expands exactly as
+;; it always did.
 (defmacro handler-case (form &rest clauses)
-  (cons '%handler-case (cons form clauses)))
+  (let ((no-error (%no-error-clause clauses)))
+    (if no-error
+        (let ((outer (gensym))
+              (normal (gensym)))
+          (list 'block outer
+                (list 'multiple-value-call
+                      (cons 'lambda (cdr no-error))
+                      (list 'block normal
+                            (list 'return-from outer
+                                  (cons '%handler-case
+                                        (cons (list 'return-from normal form)
+                                              (%without-clause no-error clauses))))))))
+        (cons '%handler-case (cons form clauses)))))
 
 ;; The standard condition types and their direct supertypes (CLHS 9, Figure
 ;; 9-1 and each type's page), so that a clause naming `stream-error` catches

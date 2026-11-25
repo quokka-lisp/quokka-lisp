@@ -302,8 +302,10 @@ pub fn length<'h>(mc: &Mutation<'h>, v: Value<'h>) -> Result<usize, EvalError> {
             wanted: "a vector, not an array of several dimensions",
         });
     }
+    // Never more than the array holds, and never negative: cast unchecked,
+    // a fill pointer of -1 was a length of 2^64 - 1 (#100).
     Ok(match mc.slot(v, FILL).as_fixnum() {
-        Some(fill) => fill as usize,
+        Some(fill) => usize::try_from(fill).unwrap_or(0).min(dims[0]),
         None => dims[0],
     })
 }
@@ -395,6 +397,15 @@ pub fn make_bits<'h>(mc: &mut Mutation<'h>, n: Value<'h>) -> Result<Value<'h>, E
             wanted: "a non-negative fixnum size",
         });
     };
+    // A negative size rounds up to no words at all and so passed the size
+    // check, leaving a bit vector that claimed 2^64 - 1 bits in none: the
+    // heap verifier found it, once it looked at counts (#99).
+    if bits < 0 {
+        return Err(EvalError::WrongType {
+            name: "MAKE-ARRAY",
+            wanted: "a non-negative fixnum size",
+        });
+    }
     // Sized in words, so the check is on the words (#91).
     let words = crate::primitives::size(mc, "MAKE-ARRAY", bits.saturating_add(63) / 64, 1)? - 1;
     let n = bits as usize;

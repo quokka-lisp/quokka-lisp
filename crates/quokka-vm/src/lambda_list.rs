@@ -130,7 +130,7 @@ struct Entry<'h> {
 
 fn bad(detail: &'static str) -> EvalError {
     EvalError::BadSyntax {
-        operator: "a lambda list",
+        operator: "lambda list",
         detail,
     }
 }
@@ -380,6 +380,7 @@ fn rewrite_destructuring<'h>(
     body: Value<'h>,
     kind: Kind,
 ) -> Result<(Value<'h>, Value<'h>), EvalError> {
+    check_pattern(mc, params)?;
     let whole = mc.gensym();
     let mut bindings = Vec::new();
     if kind == Kind::Destructuring {
@@ -664,6 +665,37 @@ fn keyword_of<'h>(mc: &mut Mutation<'h>, e: &Entry<'h>) -> Value<'h> {
     }
 }
 
+/// Refuse a pattern that [`destructure`] could not finish (#93).
+///
+/// `destructure` calls itself for each nested pattern, on the Rust stack,
+/// where no step budget reaches (rule 4); and a pattern is Lisp data, which
+/// may nest to any depth or lead back into itself. So the pattern is walked
+/// here first, with a list of work in place of recursion, and refused past
+/// a depth no written lambda list reaches or a size no finite one does.
+fn check_pattern<'h>(mc: &Mutation<'h>, pattern: Value<'h>) -> Result<(), EvalError> {
+    const MAX_DEPTH: usize = 256;
+    const MAX_CELLS: usize = 1 << 16;
+    let mut cells = 0usize;
+    let mut pending = vec![(pattern, 0usize)];
+    while let Some((mut at, depth)) = pending.pop() {
+        if depth > MAX_DEPTH {
+            return Err(bad("is nested too deeply"));
+        }
+        while at.is_cons() {
+            cells += 1;
+            if cells > MAX_CELLS {
+                return Err(bad("is too large, or leads back into itself"));
+            }
+            let element = mc.car(at);
+            if element.is_cons() {
+                pending.push((element, depth + 1));
+            }
+            at = mc.cdr(at);
+        }
+    }
+    Ok(())
+}
+
 /// Bind one pattern element — a name, or a nested pattern — to an expression.
 ///
 /// `nil` is the empty pattern `()`, not a variable (#75): it matches only an
@@ -798,6 +830,9 @@ fn list_of<'h>(mc: &mut Mutation<'h>, items: &[Value<'h>]) -> Value<'h> {
 /// variable. `the_names_match_what_bind_binds` checks the two against each
 /// other rather than trusting that they read alike.
 pub fn names<'h>(mc: &Mutation<'h>, params: Value<'h>) -> Result<Vec<Value<'h>>, EvalError> {
+    if mc.list_elements(params).is_none() {
+        return Err(bad("wants a list that ends"));
+    }
     let mut out = Vec::new();
     let mut cursor = params;
     let mut section = 0u8; // 0 required/optional, 2 rest, 3 key
@@ -889,7 +924,7 @@ pub fn bind<'h>(
             if mc.symbol_is(name, "&REST") || mc.symbol_is(name, "&BODY") {
                 let Some(rest_name) = (param.is_cons()).then(|| mc.car(param)) else {
                     return Err(EvalError::BadSyntax {
-                        operator: "a lambda list",
+                        operator: "lambda list",
                         detail: "&rest wants a name after it",
                     });
                 };
@@ -915,19 +950,22 @@ pub fn bind<'h>(
             // `(keyword variable)`, which is what the rewrite emits.
             if !name.is_cons() {
                 return Err(EvalError::BadSyntax {
-                    operator: "a lambda list",
+                    operator: "lambda list",
                     detail: "&key wants (keyword variable) pairs here",
                 });
             }
             let keyword = mc.car(name);
-            let variable = mc.car(mc.cdr(name));
-            keys.push((keyword, variable));
+            let after = mc.cdr(name);
+            if !after.is_cons() {
+                return Err(bad("&key wants (keyword variable) pairs here"));
+            }
+            keys.push((keyword, mc.car(after)));
             continue;
         }
 
         if !mc.is_symbol(name) {
             return Err(EvalError::BadSyntax {
-                operator: "a lambda list",
+                operator: "lambda list",
                 detail: "wants symbols for parameters",
             });
         }

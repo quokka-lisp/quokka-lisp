@@ -38,8 +38,9 @@ codegen-units = 1
 # a second and the test run drops about eightfold. There is no `unsafe` in the
 # workspace, so optimisation cannot change behaviour; and the assertions that
 # would otherwise be lost are turned back on explicitly below rather than left
-# to a default, since `debug_assert!` is load-bearing here — it is what says a
-# compiled program popped an empty stack.
+# to a default. (A compiled program popping an empty stack used to be found
+# only by a `debug_assert!`; since #94 that check is a comparison in every
+# build.)
 #
 # `cargo build` and the REPL keep the ordinary dev profile. Only tests pay.
 [profile.test]

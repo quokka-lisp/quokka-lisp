@@ -179,9 +179,13 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, test: Test) -> Result<u64, Eva
         return Ok(mix(OFFSET, key.bits()));
     }
     if mc.is_symbol(key) {
+        // Read where the name is, a character at a time: building a Rust
+        // `String` for every lookup was an allocation on the compiler's
+        // hottest path, its symbol tables (#98).
+        let name = mc.slot(key, crate::heap::symbol::NAME);
         let mut h = mix(OFFSET, 1);
-        for ch in mc.symbol_name(key).chars() {
-            h = mix(h, ch as u64);
+        for i in 0..mc.string_length(name) {
+            h = mix(h, mc.string_char(name, i) as u64);
         }
         // A keyword and an ordinary symbol share a name and are different
         // symbols (chapter 8), so the namespace has to go into the hash.
@@ -219,11 +223,39 @@ fn hash_of<'h>(mc: &Mutation<'h>, key: Value<'h>, test: Test) -> Result<u64, Eva
 // perfectly adequate for a table that is not under attack. Nothing here
 // needs a cryptographic or collision-resistant hash.
 const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-const PRIME: u64 = 0x1000_0000_01b3;
+// The prime is 2^40 + 0x1b3. Until #98 it was written 0x1000_0000_01b3,
+// which is 2^44 + 0x1b3: one digit out, still odd and so still a hash, but
+// not the function the comment names.
+const PRIME: u64 = 0x0000_0100_0000_01b3;
 fn mix(mut h: u64, byte: u64) -> u64 {
     h ^= byte;
     h = h.wrapping_mul(PRIME);
     h
+}
+
+/// Which of `count` buckets a hash belongs in: its index.
+///
+/// Not `hash % count` alone. `mix` is fed whole words where FNV expects
+/// bytes, and a multiplication only carries upwards, so the low bits of the
+/// result depend on nothing but the low bits of the last word mixed in. A
+/// bucket count is a power of two, which makes the remainder exactly those
+/// low bits — and a double such as 1.0 or 2.0 has forty zero bits at the
+/// bottom, a character eight constant ones, an address three. Every such key
+/// landed in a handful of buckets: 40,000 float keys took 13 seconds where
+/// fixnums took a quarter of one, each `gethash` walking one long chain
+/// inside a single step (rule 9).
+///
+/// So the hash is *finalised* first: MurmurHash3's `fmix64` (Appleby, 2008),
+/// two multiplications and three shifts that fold the high bits down until
+/// every input bit can change every output bit — the *avalanche* property.
+fn index_of(hash: u64, count: usize) -> usize {
+    let mut h = hash;
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    h ^= h >> 33;
+    (h % count as u64) as usize
 }
 
 /// How far into conses and vectors [`content`] looks: four levels, and the
@@ -466,7 +498,7 @@ pub fn bucket<'h>(
     refresh(mc, table)?;
     let hash = hash_of(mc, key, test_of(mc, table))?;
     let buckets = mc.slot(table, BUCKETS);
-    Ok(mc.slot(buckets, hash as usize % mc.header(buckets).slots))
+    Ok(mc.slot(buckets, index_of(hash, mc.header(buckets).slots)))
 }
 
 /// Add an entry for KEY, which the caller has found is not there.
@@ -482,7 +514,7 @@ pub fn insert<'h>(
     let hash = hash_of(mc, key, test)?;
     let buckets = mc.slot(table, BUCKETS);
     let bucket_count = mc.header(buckets).slots;
-    let index = hash as usize % bucket_count;
+    let index = index_of(hash, bucket_count);
 
     if by_address(mc, key, test) {
         mc.set_slot(table, STAMP, Value::from_bits(BY_ADDRESS));
@@ -522,6 +554,12 @@ pub fn delete_entry<'h>(
     entry: Value<'h>,
 ) -> Result<bool, EvalError> {
     check_table(mc, table, "%HASH-DELETE-ENTRY")?;
+    if !entry.is_cons() {
+        return Err(EvalError::WrongType {
+            name: "%HASH-DELETE-ENTRY",
+            wanted: "an entry that %HASH-BUCKET gave",
+        });
+    }
     let key = mc.car(entry);
     remove_where(mc, table, key, |_, e| e == entry)
 }
@@ -536,7 +574,7 @@ fn remove_where<'h>(
     refresh(mc, table)?;
     let hash = hash_of(mc, key, test_of(mc, table))?;
     let buckets = mc.slot(table, BUCKETS);
-    let index = hash as usize % mc.header(buckets).slots;
+    let index = index_of(hash, mc.header(buckets).slots);
 
     // Rebuilt rather than spliced: the chain is short by construction, and a
     // rebuild has no case where a pointer is left pointing at a removed cell.
@@ -626,7 +664,7 @@ fn rehash<'h>(mc: &mut Mutation<'h>, table: Value<'h>, new_count: usize) -> Resu
     let fresh = mc.alloc_vector(new_count);
     for entry in moving {
         let hash = hash_of(mc, mc.car(entry), test)?;
-        let index = hash as usize % new_count;
+        let index = index_of(hash, new_count);
         let chain = mc.slot(fresh, index);
         let chain = mc.cons(entry, chain);
         mc.set_slot(fresh, index, chain);

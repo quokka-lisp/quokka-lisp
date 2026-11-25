@@ -54,7 +54,8 @@
 //! #24. The one piece of that which could not wait is the sequence number in
 //! the header, because a field cannot be added to images that already exist.
 
-use crate::heap::{Heap, Scalars};
+use crate::heap::{Heap, Inconsistency, ObjectType, Scalars};
+use crate::value::Value;
 
 /// `"QUOKKA\0\0"` read as a little-endian `u64`.
 ///
@@ -83,10 +84,20 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 /// vector, and markers have a type of their own (#73). **Version 6**: an
 /// expander takes the form and the environment (#76); an older world's
 /// compiler would call the new rewrite's expanders the old way.
-pub const FORMAT_VERSION: u64 = 6;
+///
+/// **Version 7** (#98, #99): the checksum is FNV-1a with the prime spelt
+/// correctly; hash tables place their keys by a finalised hash, so a table
+/// in an older image has its entries in the wrong buckets; "no unwind
+/// record" is `u64::MAX` on every target; and the header says how many
+/// primitives and opcodes the image was built against.
+pub const FORMAT_VERSION: u64 = 7;
 
-/// Words before the heap's own: magic, version, length, checksum, scalars.
-pub const HEADER_WORDS: usize = 4 + Scalars::WORDS;
+/// Words before the heap's own: magic, version, length, checksum, scalars,
+/// and how much machine the image needs.
+pub const HEADER_WORDS: usize = 4 + Scalars::WORDS + MACHINE_WORDS;
+
+/// The primitive count and the opcode count.
+const MACHINE_WORDS: usize = 2;
 
 /// Why an image could not be loaded.
 ///
@@ -112,10 +123,24 @@ pub enum ImageError {
         /// The version this build writes.
         expected: u64,
     },
+    /// Not a whole number of 64-bit words, which every image is.
+    NotWholeWords {
+        /// How many bytes there were.
+        bytes: usize,
+    },
+    /// Built against a machine with more primitives or opcodes than this one.
+    NeedsNewerMachine {
+        /// How many primitives the image's code may name.
+        primitives: u64,
+        /// How many opcodes.
+        opcodes: u64,
+    },
+    /// A compiled function in the image that the bytecode verifier refused.
+    BadCode(String),
     /// The header's word count does not match the bytes that follow.
     WrongLength {
         /// What the header claimed.
-        claimed: usize,
+        claimed: u64,
         /// What was actually there.
         found: usize,
     },
@@ -137,6 +162,24 @@ impl core::fmt::Display for ImageError {
                 write!(f, "{bytes} bytes is too short to be an image")
             }
             ImageError::NotAnImage { .. } => write!(f, "not a Quokka image"),
+            ImageError::NotWholeWords { bytes } => write!(
+                f,
+                "{bytes} bytes is not a whole number of words: truncated, or not an image"
+            ),
+            ImageError::NeedsNewerMachine {
+                primitives,
+                opcodes,
+            } => write!(
+                f,
+                "the image was built for a newer Quokka ({primitives} primitives, \
+                 {opcodes} opcodes): run it with that one, or rebuild it from source"
+            ),
+            ImageError::BadCode(why) => {
+                write!(
+                    f,
+                    "the image holds a compiled function that is malformed: {why}"
+                )
+            }
             ImageError::WrongVersion { found, expected } => write!(
                 f,
                 "image format {found}, but this build reads {expected} — \
@@ -164,15 +207,35 @@ impl core::fmt::Display for ImageError {
 /// have to be, and an image you did not write is code you are about to run
 /// anyway — the design says as much under "Credentials stay out of the
 /// image". Fowler, Noll and Vo's function is four lines and has no table.
-fn checksum(words: &[u64]) -> u64 {
+///
+/// Over an iterator, so that neither saving nor loading has to copy the heap
+/// just to add it up: on wasm32 a second copy of the world is memory the
+/// page may not have (#99). The prime is 2^40 + 0x1b3; through format 6 it
+/// was mistyped as 2^44 + 0x1b3, which checked just as well and matched no
+/// other FNV-1a (#98).
+fn checksum(words: impl Iterator<Item = u64>) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for word in words {
         for byte in word.to_le_bytes() {
             hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x1000_0000_01b3);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
         }
     }
     hash
+}
+
+/// How much machine an image needs: how many primitives, how many opcodes.
+///
+/// Compiled code names a primitive and an opcode by number, and both tables
+/// only ever grow at the end — which until format 7 was a rule kept in a
+/// comment. An image from a build with more of either would load in an older
+/// one and call a number that is not there. Written into the header, the
+/// older build can say so instead (#99).
+fn machine() -> [u64; MACHINE_WORDS] {
+    [
+        crate::primitives::names().count() as u64,
+        crate::code::OPCODE_COUNT as u64,
+    ]
 }
 
 /// Write `heap` as an image.
@@ -192,29 +255,24 @@ pub fn save(heap: &mut Heap) -> Vec<u8> {
     heap.collect_for_image();
     heap.advance_sequence();
 
-    let scalars = heap.scalars();
+    let scalars = heap.scalars().to_words();
+    let machine = machine();
     let words = heap.words();
 
     // The checksum covers the scalars as well as the heap. A corrupted root
     // or program counter is as fatal as a corrupted cons cell and far harder
     // to see, since it is one word and looks like any other number.
-    let mut header = Vec::with_capacity(HEADER_WORDS);
-    header.push(MAGIC);
-    header.push(FORMAT_VERSION);
-    header.push(words.len() as u64);
-    let scalar_words = scalars.to_words();
-    let sum = {
-        let mut both = Vec::with_capacity(Scalars::WORDS + words.len());
-        both.extend_from_slice(&scalar_words);
-        both.extend_from_slice(words);
-        checksum(&both)
+    let body = || {
+        scalars
+            .iter()
+            .chain(machine.iter())
+            .chain(words.iter())
+            .copied()
     };
-    header.push(sum);
-    header.extend_from_slice(&scalar_words);
-    debug_assert_eq!(header.len(), HEADER_WORDS);
+    let header = [MAGIC, FORMAT_VERSION, words.len() as u64, checksum(body())];
 
     let mut bytes = Vec::with_capacity((HEADER_WORDS + words.len()) * 8);
-    for word in header.iter().chain(words.iter()) {
+    for word in header.into_iter().chain(body()) {
         bytes.extend_from_slice(&word.to_le_bytes());
     }
     bytes
@@ -232,18 +290,25 @@ pub fn save(heap: &mut Heap) -> Vec<u8> {
 ///
 /// # Why it verifies
 ///
-/// The last thing [`load`] does is run [`Heap::verify`], which walks the heap
-/// linearly and checks that every reference lands on an object boundary. The
-/// checksum proves the bytes are the bytes that were written; it says nothing
-/// about whether those bytes were a *sound* heap, which a collector bug could
-/// have made them not be.
+/// The checksum proves the bytes are the bytes that were written; it says
+/// nothing about whether those bytes were a *sound* heap, which a collector
+/// bug, or a person, could have made them not be. So after the checksum come
+/// three checks, each on what the next one trusts: the scalars are numbers
+/// that fit this heap; [`Heap::verify`] walks the heap and checks every
+/// object's type, size and references, and the registers; and every compiled
+/// function in it passes the bytecode verifier ([`crate::code::verify`]),
+/// which is the promise `Vm::start` makes for whatever it is given.
 ///
 /// Checking once at load rather than on every access is the same bargain the
-/// bytecode verifier makes (`crate::code::verify`, and chapter 25): pay a
-/// linear pass when the thing arrives, and then trust it completely while it
-/// runs. The JVM loads a class the same way, for the same reason.
+/// bytecode verifier makes (chapter 25): pay a linear pass when the thing
+/// arrives, and then trust it completely while it runs. The JVM loads a
+/// class the same way, for the same reason. **No image, however made, may
+/// panic the machine** — it is refused here, with a reason.
 pub fn load(bytes: &[u8], soft_limit: usize) -> Result<Heap, ImageError> {
-    if bytes.len() < HEADER_WORDS * 8 || bytes.len() % 8 != 0 {
+    if bytes.len() % 8 != 0 {
+        return Err(ImageError::NotWholeWords { bytes: bytes.len() });
+    }
+    if bytes.len() < HEADER_WORDS * 8 {
         return Err(ImageError::TooShort { bytes: bytes.len() });
     }
     let word_at = |i: usize| {
@@ -264,17 +329,16 @@ pub fn load(bytes: &[u8], soft_limit: usize) -> Result<Heap, ImageError> {
         });
     }
 
-    let claimed = word_at(2) as usize;
-    let found = bytes.len() / 8 - HEADER_WORDS;
-    if claimed != found {
+    // Compared as the file's own 64-bit number: cast to `usize` first, a
+    // length past 2^32 would have wrapped on wasm32 and might have matched.
+    let total = bytes.len() / 8;
+    let found = total - HEADER_WORDS;
+    let claimed = word_at(2);
+    if claimed != found as u64 {
         return Err(ImageError::WrongLength { claimed, found });
     }
 
-    let mut body = Vec::with_capacity(Scalars::WORDS + found);
-    for i in 0..Scalars::WORDS + found {
-        body.push(word_at(4 + i));
-    }
-    let sum = checksum(&body);
+    let sum = checksum((4..total).map(word_at));
     let stored = word_at(3);
     if sum != stored {
         return Err(ImageError::Corrupt {
@@ -283,13 +347,50 @@ pub fn load(bytes: &[u8], soft_limit: usize) -> Result<Heap, ImageError> {
         });
     }
 
-    let scalars = Scalars::from_words(&body[..Scalars::WORDS]);
-    let words = body[Scalars::WORDS..].to_vec();
-    let heap = Heap::from_image(words, scalars, soft_limit);
-    match heap.verify() {
-        Ok(()) => Ok(heap),
-        Err(e) => Err(ImageError::Inconsistent(e)),
+    let needs = [word_at(4 + Scalars::WORDS), word_at(5 + Scalars::WORDS)];
+    let has = machine();
+    if needs[0] > has[0] || needs[1] > has[1] {
+        return Err(ImageError::NeedsNewerMachine {
+            primitives: needs[0],
+            opcodes: needs[1],
+        });
     }
+
+    let scalar_words: Vec<u64> = (0..Scalars::WORDS).map(|i| word_at(4 + i)).collect();
+    let scalars = Scalars::from_words(&scalar_words);
+    // Each of these becomes a `usize` index. One that fits the heap fits a
+    // `usize` on any target, so checking it against the heap is checking the
+    // cast as well.
+    let fits = |n: u64| n <= found as u64;
+    for (which, ok) in [
+        ("static-area", fits(scalars.static_end)),
+        ("program-counter", fits(scalars.pc)),
+        ("stack-pointer", fits(scalars.sp)),
+        ("frame-pointer", fits(scalars.fp)),
+        ("mark-pointer", scalars.mp == u64::MAX || fits(scalars.mp)),
+        ("mode", scalars.mode <= u8::MAX as u64),
+    ] {
+        if !ok {
+            return Err(ImageError::Inconsistent(Inconsistency::BadRegister {
+                which,
+            }));
+        }
+    }
+
+    let words: Vec<u64> = (HEADER_WORDS..total).map(word_at).collect();
+    let mut heap = Heap::from_image(words, scalars, soft_limit);
+    heap.verify().map_err(ImageError::Inconsistent)?;
+
+    let functions = heap.objects_of(ObjectType::Function);
+    heap.mutate(|mc| {
+        for at in functions {
+            let function = Value::object(at).expect("an index the heap just gave");
+            crate::code::verify::one(mc, function)
+                .map_err(|e| ImageError::BadCode(format!("{e:?}")))?;
+        }
+        Ok(())
+    })?;
+    Ok(heap)
 }
 
 #[cfg(test)]

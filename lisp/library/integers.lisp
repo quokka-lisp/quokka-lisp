@@ -348,9 +348,13 @@
 
 ;;; Square and multiply: the bits of POWER, from the bottom, each squaring
 ;;; the base. A negative power is the reciprocal of the positive one, a
-;;; ratio for an integer base (#59). A float power is Rust's `pow` (step M).
+;;; ratio for an integer base (#59). A float power is Rust's `pow` (step M),
+;;; and so is a ratio one: `(expt 9 1/2)` is a root, 3.0. Ratios came after
+;;; this was written, and one fell through to the integer loop, where
+;;; `oddp` and `truncate` took it without complaint and the answer was the
+;;; base (#107).
 (defun expt (base power)
-  (cond ((floatp power) (%expt-float base power))
+  (cond ((or (floatp power) (%ratiop power)) (%expt-float base power))
         ((minusp power) (/ (expt base (- power))))
         (t (%expt-integer base power))))
 

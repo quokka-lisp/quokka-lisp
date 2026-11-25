@@ -499,6 +499,33 @@ pub enum Inconsistency {
         /// The object holding it.
         from: usize,
     },
+    /// A header word whose type byte names no object type. Decoded leniently
+    /// it was taken for a cons, by the verifier and the collector both (#99).
+    UnknownType {
+        /// Where the header is.
+        at: usize,
+    },
+    /// A reference whose tag disagrees with what it points at: a cons tag on
+    /// an object with a header, or the reverse. `car` of one reads a header
+    /// as a value.
+    WrongTag {
+        /// The object holding the reference, or `usize::MAX` for a root.
+        from: usize,
+        /// Where it points.
+        target: usize,
+    },
+    /// An object with fewer slots than the code that reads its type relies
+    /// on, or a count inside it that its words cannot hold.
+    TooSmall {
+        /// Where the object begins.
+        at: usize,
+    },
+    /// A register that does not fit the heap it came with: a stack pointer
+    /// past the stack, a program counter past the code.
+    BadRegister {
+        /// Which one.
+        which: &'static str,
+    },
 }
 
 impl fmt::Display for Inconsistency {
@@ -518,6 +545,18 @@ impl fmt::Display for Inconsistency {
             }
             Inconsistency::ForwardingPointerLeft { from } => {
                 write!(f, "object at {from} still holds a forwarding pointer")
+            }
+            Inconsistency::UnknownType { at } => {
+                write!(f, "object at {at} has a type this machine does not know")
+            }
+            Inconsistency::WrongTag { from, target } => {
+                write!(f, "object at {from} refers to {target} with the wrong tag")
+            }
+            Inconsistency::TooSmall { at } => {
+                write!(f, "object at {at} is too small for its type")
+            }
+            Inconsistency::BadRegister { which } => {
+                write!(f, "the {which} register does not fit the heap")
             }
         }
     }
@@ -832,7 +871,7 @@ impl<'h> Mutation<'h> {
     /// # Panics
     /// If `v` is not a heap object.
     pub fn header(&self, v: Value<'h>) -> Header {
-        let at = self.cell(v);
+        let at = self.index(v);
         Header::decode(self.storage.words[at]).expect("object has no valid header")
     }
 
@@ -1287,8 +1326,18 @@ impl<'h> Mutation<'h> {
         self.storage.exhausted
     }
 
-    fn cell(&self, v: Value<'h>) -> usize {
+    /// Where a heap object's header is.
+    fn index(&self, v: Value<'h>) -> usize {
         v.word_index().expect("not a reference into the heap")
+    }
+
+    /// Where a cons cell is. The tag is checked, not only that `v` points
+    /// into the heap: any reference has a word index, and `car` of a vector
+    /// read its header word as a value, which the collector then followed
+    /// (#100). One comparison, on the accessors everything else trusts.
+    fn cell(&self, v: Value<'h>) -> usize {
+        assert!(v.is_cons(), "not a cons");
+        v.word_index().expect("a cons has a word index")
     }
 
     /// Locate a slot, checking the bound and that the caller is using the right
@@ -1297,7 +1346,7 @@ impl<'h> Mutation<'h> {
     /// Mixing them up is how a collector ends up tracing the bytes of a string
     /// as if they were references, so it is a panic rather than a shrug.
     fn slot_at(&self, v: Value<'h>, index: usize, want_values: bool) -> usize {
-        let at = self.cell(v);
+        let at = self.index(v);
         let header = Header::decode(self.storage.words[at]).expect("object has no valid header");
         assert!(
             index < header.slots,
@@ -1756,9 +1805,26 @@ impl Heap {
     /// Torture mode runs this after every collection. It is linear in the size
     /// of the heap and allocates a bitmap, so it is not something to do in
     /// ordinary operation.
+    ///
+    /// It is also what stands between an image file and the machine (#99).
+    /// A checksum says the bytes are the bytes that were written; only this
+    /// says they were a heap. So it checks what the rest of the code takes
+    /// on trust: that every header names a type, that a reference's tag
+    /// matches what it points at, that an object has the slots its type's
+    /// readers index, and that the registers fit the stack and the code they
+    /// index. Anything less, and a damaged or crafted image loads and then
+    /// panics at its first `intern`.
     pub fn verify(&self) -> Result<(), Inconsistency> {
         let words = &self.storage.words;
-        let mut starts = vec![false; words.len()];
+        // What starts at each word: nothing, a cons, or an object.
+        const CONS: u8 = 1;
+        const OBJECT: u8 = 2;
+        let mut starts = vec![0u8; words.len()];
+        if self.storage.static_end > words.len() || self.storage.dynamic_start > words.len() {
+            return Err(Inconsistency::BadRegister {
+                which: "static-area",
+            });
+        }
 
         // Two regions: the static area from zero, then collected objects after
         // any torture padding.
@@ -1770,13 +1836,24 @@ impl Heap {
                     break;
                 }
             }
-            starts[at] = true;
             let size = match Header::decode(words[at]) {
-                Some(header) => HEADER_WORDS + header.slots,
-                None => CONS_WORDS,
+                Some(header) => {
+                    starts[at] = OBJECT;
+                    HEADER_WORDS.saturating_add(header.slots)
+                }
+                None if Value::from_bits(words[at]).is_header() => {
+                    return Err(Inconsistency::UnknownType { at });
+                }
+                None => {
+                    starts[at] = CONS;
+                    CONS_WORDS
+                }
             };
-            if at + size > words.len() {
+            if size > words.len() - at {
                 return Err(Inconsistency::ObjectOverrunsHeap { at, size });
+            }
+            if !self.big_enough(at) {
+                return Err(Inconsistency::TooSmall { at });
             }
             at += size;
         }
@@ -1792,19 +1869,26 @@ impl Heap {
             if target >= words.len() {
                 return Err(Inconsistency::ReferenceOutOfBounds { from, target });
             }
-            if !starts[target] {
+            if starts[target] == 0 {
                 return Err(Inconsistency::ReferenceIntoNowhere { from, target });
+            }
+            if value.is_cons() != (starts[target] == CONS) {
+                return Err(Inconsistency::WrongTag { from, target });
             }
             Ok(())
         };
 
-        check(self.storage.root, usize::MAX)?;
-        check(self.storage.obarray, usize::MAX)?;
-        check(self.storage.control, usize::MAX)?;
-        check(self.storage.env, usize::MAX)?;
-        check(self.storage.value, usize::MAX)?;
-        check(self.storage.stack, usize::MAX)?;
-        check(self.storage.unwind, usize::MAX)?;
+        // Every root, which until #99 was seven of the eleven: the collector
+        // could have failed to forward one of the other four and torture
+        // mode would not have noticed.
+        let s = &self.storage;
+        for root in [
+            s.root, s.obarray, s.control, s.env, s.value, s.stack, s.unwind, s.values, s.function,
+            s.operands, s.request,
+        ] {
+            check(root, usize::MAX)?;
+        }
+        self.registers_fit()?;
 
         let mut at = 0usize;
         while at < words.len() {
@@ -1963,6 +2047,101 @@ impl Heap {
         &self.storage.words
     }
 
+    /// Has the object at `at` the slots its type's readers rely on? They
+    /// index by constant — a symbol's function cell, a table's stamp, which
+    /// the collector writes without asking — so too few is a read or a write
+    /// outside the object.
+    fn big_enough(&self, at: usize) -> bool {
+        let words = &self.storage.words;
+        let Some(header) = Header::decode(words[at]) else {
+            return true;
+        };
+        // A count kept in the first raw word, and how many it may be at most.
+        let counted = |per_word: usize| {
+            header.slots >= 1
+                && words[at + HEADER_WORDS] <= ((header.slots - 1) as u64) * per_word as u64
+        };
+        match header.object_type {
+            ObjectType::Symbol => header.slots > symbol::HOME,
+            ObjectType::HashTable => header.slots >= crate::hash::SLOTS,
+            ObjectType::Function => header.slots >= crate::code::function::SLOTS,
+            ObjectType::ArrayHeader => header.slots >= crate::array::SLOTS,
+            ObjectType::Condition => header.slots >= crate::condition::SLOTS,
+            ObjectType::Closure | ObjectType::Macro => header.slots > crate::closure::ENV,
+            ObjectType::Environment => header.slots >= crate::env::FIRST_PAIR,
+            ObjectType::Ratio => header.slots == 2,
+            ObjectType::DoubleFloat | ObjectType::NilVector => header.slots >= 1,
+            ObjectType::PackedString => counted(8),
+            ObjectType::BitVector => counted(64),
+            _ => true,
+        }
+    }
+
+    /// Do the machine's registers fit what they index? The stack, frame and
+    /// mark pointers are positions in the operand stack, and the program
+    /// counter one in the running function's code.
+    fn registers_fit(&self) -> Result<(), Inconsistency> {
+        let s = &self.storage;
+        let object = |word: u64| -> Option<(usize, Header)> {
+            let v = Value::from_bits(word);
+            let at = v.is_object().then(|| v.word_index()).flatten()?;
+            Some((at, Header::decode(s.words[at])?))
+        };
+        let bad = |which| Err(Inconsistency::BadRegister { which });
+        // No stack at all is `nil`: a world in which nothing compiled has
+        // run yet. `Vm::start` makes one before anything is popped.
+        if Value::from_bits(s.operands).is_nil() {
+        } else if let Some((_, stack)) = object(s.operands) {
+            if stack.object_type != ObjectType::Vector {
+                return bad("operand-stack");
+            }
+            if s.sp > stack.slots || s.fp > s.sp {
+                return bad("stack-pointer");
+            }
+            if s.mp != usize::MAX && s.mp > stack.slots {
+                return bad("mark-pointer");
+            }
+        }
+        if let Some((at, function)) = object(s.function) {
+            if function.object_type == ObjectType::Function {
+                let length = Value::from_bits(
+                    s.words[at + HEADER_WORDS + crate::code::function::CODE_LENGTH],
+                )
+                .as_fixnum();
+                if !length.is_some_and(|n| n >= 0 && s.pc as u64 <= n as u64) {
+                    return bad("program-counter");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Where every object of type `wanted` begins. For a pass over all of
+    /// one kind — the image loader verifying every compiled function.
+    pub(crate) fn objects_of(&self, wanted: ObjectType) -> Vec<usize> {
+        let words = &self.storage.words;
+        let mut found = Vec::new();
+        let mut at = 0usize;
+        while at < words.len() {
+            if at == self.storage.static_end {
+                at = self.storage.dynamic_start;
+                if at >= words.len() {
+                    break;
+                }
+            }
+            at += match Header::decode(words[at]) {
+                Some(header) => {
+                    if header.object_type == wanted {
+                        found.push(at);
+                    }
+                    HEADER_WORDS + header.slots
+                }
+                None => CONS_WORDS,
+            };
+        }
+        found
+    }
+
     /// Everything about the heap that is *not* in its words.
     ///
     /// The boundary that keeps the image format in one module: `heap` knows
@@ -1988,7 +2167,15 @@ impl Heap {
             pc: s.pc as u64,
             sp: s.sp as u64,
             fp: s.fp as u64,
-            mp: s.mp as u64,
+            // "No record" is `usize::MAX`, which is a different number on a
+            // 32-bit machine. Written as it stood, a world saved in a browser
+            // said record 4,294,967,295 to a 64-bit loader (#99); so the
+            // image has one spelling for it, on every target.
+            mp: if s.mp == usize::MAX {
+                u64::MAX
+            } else {
+                s.mp as u64
+            },
             mode: s.mode as u64,
             gensym_counter: s.gensym_counter,
             static_end: s.static_end as u64,
@@ -2030,7 +2217,11 @@ impl Heap {
                 pc: s.pc as usize,
                 sp: s.sp as usize,
                 fp: s.fp as usize,
-                mp: s.mp as usize,
+                mp: if s.mp == u64::MAX {
+                    usize::MAX
+                } else {
+                    s.mp as usize
+                },
                 mode: s.mode as u8,
                 soft_limit,
                 // An image is saved straight after a collection, so its

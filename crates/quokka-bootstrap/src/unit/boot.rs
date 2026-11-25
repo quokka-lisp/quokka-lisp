@@ -104,6 +104,8 @@ fn booting_costs_a_known_amount_of_heap() {
     // 10,588 once the prelude learned setf functions and `%block-body`
     // (#78): about fifty lines of new functions. 11,623 with the condition
     // types' lattice and `multiple-value-bind`'s declarations (#80, #81).
+    // 12,160 with `handler-case`'s `:no-error` clause (#106): the macro's
+    // second expansion and the two functions that find the clause.
     //
     // The point is not the number but that raising it is a deliberate
     // act with a failing test attached — the same job as
@@ -111,7 +113,7 @@ fn booting_costs_a_known_amount_of_heap() {
     // what was added; this one is.
     let words = heap.used_words();
     assert!(
-        words < 12_000,
+        words < 12_500,
         "the prelude now costs {words} live words after a collection"
     );
 }
@@ -1666,7 +1668,11 @@ mod compiler {
                 Err(e) => format!("{e}"),
             }
         });
-        assert!(out.contains("verifier refused"), "{out}");
+        // And it says why, which until #97 it did not.
+        assert!(
+            out.contains("malformed") && out.contains("Underflow"),
+            "{out}"
+        );
     }
 }
 
@@ -2010,4 +2016,186 @@ fn the_bounds_leave_ordinary_programs_alone() {
             "CAUGHT"
         ]
     );
+}
+
+/// **No input may panic the machine** (#88): every primitive, called with
+/// every combination of a palette of arguments, gives a value or an error.
+///
+/// This is *fuzzing* in its plainest form — feed a program inputs nobody
+/// would write and see whether it falls over — and exhaustive rather than
+/// random, so a failure names itself and reproduces. The palette holds one of
+/// each kind of object and the numbers at the edges; a primitive that trusts
+/// an argument's type, sign or size meets the one that breaks it.
+///
+/// A panic is caught where the unwinding can be (not on wasm32, where the
+/// test simply stops) so that one run lists every primitive that failed.
+/// Each gets a fresh world: some of these calls unbind or redefine what the
+/// next would need. And the heap must verify afterwards — a primitive that
+/// returns having corrupted the heap is the worse fault.
+#[test]
+fn no_primitive_panics_on_any_argument() {
+    let mut failed = Vec::new();
+    for name in quokka_vm::primitives::names() {
+        let source = format!(
+            "(let* ((s (find-symbol \"{name}\" \"QUOKKA\"))
+                    (f (and s (fboundp s) (symbol-function s)))
+                    (vals (list nil t 0 1 -1 7 most-positive-fixnum most-negative-fixnum
+                                1.5d0 1/2 (expt 2 70) \"str\" #\\a (make-symbol \"S\") :key
+                                (list 1 2) (cons 1 2) (vector 1 2) (make-hash-table) #'car))
+                    (few (list nil 0 -1 \"s\" (list 1) most-positive-fixnum)))
+               (when f
+                 (handler-case (funcall f) (error () nil))
+                 (dolist (a vals) (handler-case (funcall f a) (error () nil)))
+                 (dolist (a vals)
+                   (dolist (b vals) (handler-case (funcall f a b) (error () nil))))
+                 (dolist (a few)
+                   (dolist (b few)
+                     (dolist (c few) (handler-case (funcall f a b c) (error () nil))))))
+               :done)"
+        );
+        let outcome = std::panic::catch_unwind(|| {
+            let mut heap = compiled_world();
+            let mut host = quokka_vm::host::NullHost::default();
+            let _ = quokka_vm::vm::eval_source(
+                &mut heap,
+                &source,
+                3_000_000,
+                200_000,
+                &mut host,
+                |_| true,
+            );
+            heap.verify().map_err(|e| e.to_string())
+        });
+        match outcome {
+            Ok(Ok(())) => {}
+            Ok(Err(why)) => failed.push(format!("{name}: left the heap inconsistent: {why}")),
+            Err(_) => failed.push(format!("{name}: panicked")),
+        }
+    }
+    assert!(failed.is_empty(), "{failed:#?}");
+}
+
+/// Run `source` through a world's own reader, `eval` and printer, as a host
+/// does, and give what each form printed.
+fn said_by_the_world(heap: &mut Heap, source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut host = quokka_vm::host::NullHost::default();
+    quokka_vm::vm::eval_source(heap, source, 10_000_000, 2_000, &mut host, |outcome| {
+        out.push(match outcome {
+            quokka_vm::vm::Outcome::Value(text) => text,
+            quokka_vm::vm::Outcome::Error(text) => format!("; {text}"),
+            quokka_vm::vm::Outcome::Failed(e) => format!("; failed: {e}"),
+        });
+        true
+    })
+    .expect("the world reads");
+    out
+}
+
+/// **An unwind knows what kind it is** (#96). A tag may be any object, a
+/// condition included, and with one register for "where this is going" a
+/// handler took a `throw` and a `catch` took an error. Both forms are from
+/// the review; SBCL gives 1 for the first and an unhandled error for the
+/// second.
+#[test]
+fn a_throw_is_not_a_signal_and_a_signal_is_not_a_throw() {
+    let mut heap = compiled_world();
+    let said = said_by_the_world(
+        &mut heap,
+        "(let ((c (handler-case (error \"x\") (error (e) e))))
+           (catch c (handler-case (throw c 1) (error (e) :wrong))))
+         (let ((c (handler-case (error \"x\") (error (e) e))))
+           (list (catch c (error c)) :survived))
+         (catch 'a (unwind-protect (throw 'a 1) (+ 1 1)))",
+    );
+    assert_eq!(said[0], "1");
+    assert!(said[1].starts_with("; "), "{}", said[1]);
+    assert_eq!(said[2], "1", "a throw still passes through a cleanup");
+}
+
+/// **The program's mistakes are the program's to catch** (#97): a malformed
+/// lambda list is a `program-error`, and leaving a block or tagbody that has
+/// already been left is a `control-error` signalled where it is tried, with
+/// the block's name. Both used to stop the machine as if it were at fault.
+#[test]
+fn a_programs_own_mistakes_are_conditions() {
+    let mut heap = compiled_world();
+    let said = said_by_the_world(
+        &mut heap,
+        "(handler-case (eval '(lambda (5) 1)) (program-error () :caught))
+         (handler-case (eval '(defmacro m (&whole) 1)) (program-error () :caught))
+         (handler-case (funcall (block b (lambda () (return-from b 1))))
+           (control-error () :control-error))
+         (let ((f nil))
+           (tagbody (setq f (lambda () (go out))) out)
+           (handler-case (funcall f) (control-error () :control-error)))
+         (funcall (block gone (lambda () (return-from gone 1))))",
+    );
+    assert_eq!(
+        said[..4],
+        [":CAUGHT", ":CAUGHT", ":CONTROL-ERROR", ":CONTROL-ERROR"]
+    );
+    assert!(said[4].contains("GONE"), "{}", said[4]);
+}
+
+/// **No Rust recursion whose depth Lisp decides** (#93), and **what the
+/// assembler vouches for cannot change afterwards** (#94). Each of these
+/// overflowed the stack, panicked, or ran code the verifier had passed on
+/// different constants; now each is an error and the world goes on.
+#[test]
+fn the_machine_refuses_what_it_cannot_do_safely() {
+    let mut heap = compiled_world();
+    let said = said_by_the_world(
+        &mut heap,
+        "(let ((x (list 1))) (setf (car x) x) (quokka::%rewrite-macro-lambda-list x nil))
+         (progn (setf (symbol-function 'quokka::%generic-+) #'+) (+ most-positive-fixnum 1))
+         (funcall (quokka::%assemble
+                   '((quokka::block 0 l) (quokka::nil) (quokka::nil) (quokka::nil)
+                     (quokka::unmark) (quokka::pop) (quokka::pop) (quokka::ret)
+                     (:label l) (quokka::ret))
+                   (vector 'b) nil 'x))
+         (let* ((k (vector (vector 'a)))
+                (f (quokka::%assemble
+                    '((quokka::nil) (quokka::bind 0) (quokka::nil) (quokka::ret)) k nil 'x)))
+           (setf (aref k 0) (make-array 100000))
+           (funcall f))
+         (quokka::%assemble '((quokka::nil) (quokka::ret)) \"constants\" nil 'x)
+         (quokka::%assemble '((quokka::nil) (quokka::ret)) (vector) '(&key (:a . 5)) 'x)
+         (quokka::%hash-delete-entry 5 (make-hash-table))
+         (+ 1 2)",
+    );
+    assert_eq!(said.len(), 8, "{said:?}");
+    for (i, line) in said[..7].iter().enumerate() {
+        // Form 3 is the one that now simply works: the function kept the
+        // constants it was verified with.
+        if i != 3 {
+            assert!(line.starts_with("; "), "form {i} gave {line}");
+        }
+    }
+    assert!(said[0].contains("nested too deeply"), "{}", said[0]);
+    assert!(said[2].contains("MarksNotBalanced"), "{}", said[2]);
+    assert_eq!(said[3], "NIL");
+    assert_eq!(said[7], "3", "and the world is still there");
+}
+
+/// **Keys spread over the buckets whatever their low bits are** (#98).
+/// 40,000 float keys took thirteen seconds where fixnums took a quarter of
+/// one, because a double such as 2.0 has forty zero bits at the bottom and
+/// the bucket was chosen by exactly those: every key in one chain, walked
+/// inside a single step, where no budget counts it. So the test looks at
+/// the chain itself, through the primitive the library searches with.
+#[test]
+fn float_and_character_keys_do_not_share_a_bucket() {
+    let mut heap = compiled_world();
+    let said = said_by_the_world(
+        &mut heap,
+        "(let ((h (make-hash-table)))
+           (dotimes (i 20000) (setf (gethash (float i) h) i))
+           (list (hash-table-count h) (gethash 1234.0 h)
+                 (< (length (quokka::%hash-bucket 1234.0 h)) 32)))
+         (let ((h (make-hash-table)))
+           (dotimes (i 200) (setf (gethash (code-char i) h) i))
+           (list (gethash #\\a h) (< (length (quokka::%hash-bucket #\\a h)) 32)))",
+    );
+    assert_eq!(said, ["(20000 1234 T)", "(97 T)"]);
 }

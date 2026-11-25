@@ -4,7 +4,7 @@
 //! and hands them to the VM through [`quokka_vm::host::Host`]. All language
 //! behaviour lives in `quokka-vm` and, above the primitive table, in Lisp.
 
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 
 use quokka_bootstrap::reader::Reader;
 use quokka_vm::heap::{Heap, Register};
@@ -22,7 +22,28 @@ impl Host for NativeHost {
         let _ = io::stdout().flush();
     }
 
+    /// A source file, for a world that asks by name.
+    ///
+    /// Only a regular file, and only one of a size a source file has (#87).
+    /// A world's request is answered between slices, where no step budget
+    /// applies: a FIFO would hold the host for ever, and a 100 MB file
+    /// became a string of 1.7 GB. *Which* files a world may read at all is
+    /// a design question still open in #87; these two bounds do not depend
+    /// on its answer.
     fn read_source(&mut self, name: &str) -> Result<String, HostError> {
+        match std::fs::metadata(name) {
+            Ok(file) if !file.is_file() => {
+                return Err(HostError::Denied(format!("{name}, which is not a file")))
+            }
+            Ok(file) if file.len() > SOURCE_LIMIT => {
+                return Err(HostError::Denied(format!(
+                    "{name}, which at {} bytes is too large to be source",
+                    file.len()
+                )))
+            }
+            // Missing or unreadable: the read below says which.
+            _ => {}
+        }
         std::fs::read_to_string(name).map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => HostError::NotFound(name.to_string()),
             io::ErrorKind::PermissionDenied => HostError::Denied(name.to_string()),
@@ -30,6 +51,10 @@ impl Host for NativeHost {
         })
     }
 }
+
+/// The largest file a world may read as source: sixteen megabytes, about
+/// forty times all of Quokka's own Lisp.
+const SOURCE_LIMIT: u64 = 16 << 20;
 
 /// What to type, printed when the arguments make no sense, or are missing.
 const USAGE: &str = "\
@@ -45,6 +70,7 @@ usage:
                                         the first world; not Quokka itself
   quokka bootstrap --run FILE           interpret FILE, in the differential format
   quokka bootstrap --compile-file FILE  compile FILE with the bootstrap compiler
+  quokka --version                      which Quokka this is
 ";
 
 /// Say what went wrong, then how to use the program, and stop.
@@ -64,6 +90,7 @@ fn main() {
              `quokka build world.qi`, then run `quokka world.qi`.",
         ),
         Some("help" | "--help" | "-h") => print!("{USAGE}"),
+        Some("--version" | "-V") => println!("quokka {VERSION} (phase {PHASE})"),
         Some("build") => build(&args[1..]),
         Some("rebuild") => rebuild(&args[1..]),
         Some("bootstrap") => bootstrap(&args[1..]),
@@ -165,9 +192,42 @@ fn rebuild(args: &[String]) {
 }
 
 /// Save a world to a file, and say so.
+///
+/// By **atomic replace** (#120): the bytes go to a new file beside the
+/// target, are forced to the disk, and only then take the target's name.
+/// A rename within one directory either happens or does not, so whatever
+/// interrupts a save — Ctrl-C, a full disk, the power — leaves the old world
+/// or the new one and never half of either. Written in place, as this used
+/// to be, an interrupted `:save` over the file the session came from
+/// destroyed the only copy. Until something records work between saves
+/// (#24), the save is all the durability there is.
+///
+/// And it replaces only a world. `:save` takes whatever name is typed, so a
+/// slip of the fingers used to overwrite any file at all.
 fn save_world(heap: &mut Heap, path: &str) -> Result<(), String> {
+    if let Ok(mut existing) = std::fs::File::open(path) {
+        let mut start = [0u8; 8];
+        let is_world = existing.read_exact(&mut start).is_ok()
+            && u64::from_le_bytes(start) == quokka_vm::image::MAGIC;
+        if !is_world {
+            return Err(format!(
+                "{path} exists and is not a world, so it is left alone; \
+                 save under another name, or remove it first"
+            ));
+        }
+    }
     let bytes = quokka_vm::image::save(heap);
-    std::fs::write(path, &bytes).map_err(|e| format!("cannot write {path}: {e}"))?;
+    let temporary = format!("{path}.saving");
+    let written = std::fs::File::create(&temporary).and_then(|mut file| {
+        file.write_all(&bytes)?;
+        // Without this the rename can reach the disk before the bytes do,
+        // and a crash then leaves the new name on an empty file.
+        file.sync_all()
+    });
+    if let Err(e) = written.and_then(|()| std::fs::rename(&temporary, path)) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(format!("cannot write {path}: {e}"));
+    }
     println!(
         "{path}: {} bytes, {} words, sequence {}",
         bytes.len(),
@@ -190,25 +250,44 @@ fn run_world(path: &str) {
         heap.used_words(),
         heap.sequence()
     ));
-    repl(&mut heap, "quokka> ", |heap, line| {
-        if let Some(command) = line.trim().strip_prefix(':') {
-            return world_command(heap, command);
-        }
-        image_print(heap, line, &mut NativeHost)
-    });
+    repl(
+        &mut heap,
+        "quokka> ",
+        |heap, text| {
+            // A command is whole on its line. Anything else is whole when
+            // the world's own reader says so; if the reader cannot be asked,
+            // evaluate what there is and let that report the trouble.
+            world_command(text).is_some()
+                || quokka_vm::vm::source_complete(heap, text, EVAL_BUDGET, 2_000, &mut NativeHost)
+                    .unwrap_or(true)
+        },
+        |heap, text| match world_command(text) {
+            Some(command) => run_command(heap, command),
+            None => image_print(heap, text, &mut NativeHost),
+        },
+    );
 }
 
-/// A REPL command, as opposed to a form: handled by the host between forms,
-/// so the world is never saved in the middle of a computation (#51).
-fn world_command(heap: &mut Heap, command: &str) -> String {
-    let mut words = command.split_whitespace();
-    match (words.next(), words.next(), words.next()) {
-        (Some("save"), Some(file), None) => match save_world(heap, file) {
+/// The arguments of a REPL command, if `text` is one. There is one command,
+/// `:save`, and only a line that begins with it is a command: every other
+/// `:word` is a keyword, a form like any other, whose value is itself. The
+/// REPL used to take any line beginning with a colon, so `:foo` answered
+/// "no command :foo" where Lisp answers `:FOO` (#119).
+fn world_command(text: &str) -> Option<&str> {
+    let rest = text.trim().strip_prefix(":save")?;
+    (rest.is_empty() || rest.starts_with(char::is_whitespace)).then_some(rest)
+}
+
+/// Run a REPL command: handled by the host between forms, so the world is
+/// never saved in the middle of a computation (#51).
+fn run_command(heap: &mut Heap, arguments: &str) -> String {
+    let mut words = arguments.split_whitespace();
+    match (words.next(), words.next()) {
+        (Some(file), None) => match save_world(heap, file) {
             Ok(()) => String::new(),
             Err(e) => format!("; {e}\n"),
         },
-        (Some("save"), _, _) => "; :save takes one file name\n".to_string(),
-        _ => format!("; no command :{command} — the only one is :save FILE\n"),
+        _ => "; :save takes one file name\n".to_string(),
     }
 }
 
@@ -291,47 +370,140 @@ fn bootstrap_repl(compiling: bool, showing: bool) {
             std::process::exit(1);
         }
     }
-    repl(&mut heap, "boot> ", |heap, line| {
-        if compiling {
-            compile_and_print(heap, line, showing, &mut NativeHost)
-        } else {
-            read_and_print(heap, line)
-        }
-    });
+    repl(
+        &mut heap,
+        "boot> ",
+        // The Rust reader says whether the text is whole: it is the reader
+        // this REPL evaluates with.
+        |heap, text| {
+            let chars = Reader::chars_of(text);
+            heap.mutate(|mc| {
+                let mut reader = Reader::new(&chars);
+                loop {
+                    match reader.read(mc) {
+                        Ok(Some(_)) => {}
+                        Err(quokka_bootstrap::reader::ReadError::UnexpectedEnd { .. }) => {
+                            return false
+                        }
+                        Ok(None) | Err(_) => return true,
+                    }
+                }
+            })
+        },
+        |heap, text| {
+            if compiling {
+                compile_and_print(heap, text, showing, &mut NativeHost)
+            } else {
+                read_and_print(heap, text)
+            }
+        },
+    );
 }
 
-/// Prompt, read a line, hand it to `evaluate`, print what it says; until the
-/// input ends.
-fn repl(heap: &mut Heap, prompt: &str, mut evaluate: impl FnMut(&mut Heap, &str) -> String) {
+/// The read-eval-print loop of a terminal: prompt, read lines until
+/// `complete` says they make whole forms, hand them to `evaluate`, print what
+/// it says; until the input ends.
+///
+/// Lines are gathered because a form is not a line (#119): a `defun` pasted
+/// from a file spans several, and `quokka world.qi < file.lisp` is how a
+/// file is run before there are file hosts. Evaluating line by line gave
+/// "a close parenthesis with no open one" for the second line of anything.
+fn repl(
+    heap: &mut Heap,
+    prompt: &str,
+    mut complete: impl FnMut(&mut Heap, &str) -> bool,
+    mut evaluate: impl FnMut(&mut Heap, &str) -> String,
+) {
     let mut host = NativeHost;
     let stdin = io::stdin();
+    let mut pending = String::new();
     loop {
-        host.write_stdout(prompt);
+        host.write_stdout(if pending.is_empty() { prompt } else { MORE });
         let mut line = String::new();
-        match stdin.lock().read_line(&mut line) {
-            Ok(0) => {
-                host.write_stdout("\n");
-                return;
-            }
-            Ok(_) => {
-                let output = evaluate(heap, &line);
-                host.write_stdout(&output);
-
-                // Between mutations is the only place collection may happen,
-                // so this is where the heap's request gets answered — and
-                // where a heap that hit its ceiling gets a chance to recover,
-                // since whatever was filling it is now unreachable.
-                if heap.wants_collection() || heap.is_exhausted() {
-                    heap.collect();
-                    heap.clear_exhausted();
-                }
-            }
+        let ended = match stdin.lock().read_line(&mut line) {
+            Ok(read) => read == 0,
+            // Bytes that are not UTF-8, or a terminal that went away. Not an
+            // ordinary end: a script that reads from this must see it fail.
             Err(e) => {
-                host.write_stdout(&format!("; input error: {e}\n"));
-                return;
+                eprintln!("quokka: reading the input: {e}");
+                std::process::exit(1);
+            }
+        };
+        pending.push_str(&line);
+        if pending.trim().is_empty() {
+            pending.clear();
+        } else if ended || contained(heap, true, |heap| complete(heap, &pending)) {
+            // At the end of the input an unfinished form is evaluated all
+            // the same: that is what says it was unfinished.
+            let text = std::mem::take(&mut pending);
+            let output = contained(heap, String::new(), |heap| evaluate(heap, &text));
+            host.write_stdout(&output);
+
+            // Between mutations is the only place collection may happen,
+            // so this is where the heap's request gets answered — and
+            // where a heap that hit its ceiling gets a chance to recover,
+            // since whatever was filling it is now unreachable.
+            if heap.wants_collection() || heap.is_exhausted() {
+                heap.collect();
+                heap.clear_exhausted();
             }
         }
+        if ended {
+            host.write_stdout("\n");
+            return;
+        }
     }
+}
+
+/// The prompt for the second and later lines of a form.
+const MORE: &str = "    ... ";
+
+/// Run `work` on the world, and if the machine panics in it, keep the world.
+///
+/// A panic in the VM is a bug in the VM: no input, Lisp or image, should be
+/// able to cause one. But bugs exist, the review behind #88 found several
+/// that plain Lisp could reach, and the world is the user's work — principle
+/// 5 of the design is that an error stops and asks and never throws state
+/// away. So the unwinding stops here (`catch_unwind`; the panic's own message
+/// has already gone to stderr) and the heap is checked.
+///
+/// A heap is plain data, and a panic *between* mutations leaves it exactly as
+/// it was. A panic *inside* one may have left an object half written, which
+/// is what [`Heap::verify`] is for: if it passes, the dead computation is
+/// dropped and the REPL goes on, and the user is told to save under a new
+/// name; if it does not, nothing is saved over anything and the process ends,
+/// because every later answer from that heap would be suspect.
+fn contained<T>(heap: &mut Heap, otherwise: T, work: impl FnOnce(&mut Heap) -> T) -> T {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    // `AssertUnwindSafe` is the promise that state seen after a panic is not
+    // trusted blindly, and the check below is how it is kept.
+    if let Ok(done) = catch_unwind(AssertUnwindSafe(|| work(&mut *heap))) {
+        return done;
+    }
+    let sound = catch_unwind(AssertUnwindSafe(|| {
+        heap.verify()?;
+        quokka_vm::vm::recover(heap);
+        heap.verify()
+    }));
+    match sound {
+        Ok(Ok(())) => eprintln!(
+            "quokka: that was a bug in Quokka's machine, not in your program — please \
+             report it, with the message above.\n\
+             quokka: the world passed its consistency check and is still here. \
+             Save it under a new name (:save FILE) before going on."
+        ),
+        Ok(Err(why)) => {
+            eprintln!("quokka: a bug in Quokka's machine left the world inconsistent ({why}).");
+            eprintln!("quokka: nothing was saved; the last saved world is untouched.");
+            std::process::exit(3);
+        }
+        Err(_) => {
+            eprintln!("quokka: a bug in Quokka's machine left the world unreadable.");
+            eprintln!("quokka: nothing was saved; the last saved world is untouched.");
+            std::process::exit(3);
+        }
+    }
+    otherwise
 }
 
 /// Read an image file into a heap, or say why not and stop.

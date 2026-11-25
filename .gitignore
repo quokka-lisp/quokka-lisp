@@ -7,10 +7,10 @@ Cargo.lock.bak
 .idea/
 .vscode/
 
-# Build output for the browser dev console
+# Build output for the browser dev console: `wasm-pack build
+# crates/quokka-wasm --target web --out-dir www/pkg`, as docs/manual.md says.
+crates/quokka-wasm/www/pkg/
 crates/quokka-wasm/pkg/
-crates/quokka-wasm/www/quokka_wasm*.js
-crates/quokka-wasm/www/quokka_wasm*.wasm
 
 # Saved images are build artefacts, not sources: the files are the truth and
 # an image is a live cache of them (docs/design.md, *Source of truth*). Every

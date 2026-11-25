@@ -70,8 +70,19 @@
 
 (defun 1+ (number) (+ number 1))
 (defun 1- (number) (- number 1))
-(defun evenp (integer) (zerop (mod integer 2)))
-(defun oddp (integer) (not (evenp integer)))
+;;; Of integers only (CLHS `evenp`): `(oddp 1.5)` was true, by way of `mod`
+;;; (#107). And by `rem`, a primitive, where `mod` went through `floor` and
+;;; `truncate` for a question about one bit (#112): the remainder's sign
+;;; does not matter to whether it is zero.
+(defun evenp (integer)
+  (if (integerp integer)
+      (zerop (rem integer 2))
+      (error 'type-error "EVENP wants an integer" integer)))
+
+(defun oddp (integer)
+  (if (integerp integer)
+      (not (zerop (rem integer 2)))
+      (error 'type-error "ODDP wants an integer" integer)))
 
 (defun max (number &rest more)
   (if (null more)

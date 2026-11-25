@@ -40,9 +40,12 @@ and `&allow-other-keys` — everything that can be bound without evaluating
 anything. Default forms became a `let*` in the body at macroexpansion time
 (chapter 18), which is why the callee's prologue has no forms to run.
 
-`max-stack` is checked once when a frame is pushed, so individual pushes need
-no bounds check. The JVM class file format carries the same field for the same
-reason.
+`max-stack` is what the verifier computes and the stack is sized from when a
+frame is pushed, as the JVM class file's field of the same name is. It is a
+size hint and not a safety property, though: every push still asks the stack
+whether there is room and grows it if not, and every pop is checked against
+the frame's base (#94). A function with a wrong `max-stack` runs slower; it
+cannot write outside its stack or read its caller's saved registers.
 
 A **closure** is the existing `ObjectType::Closure` with its `BODY` slot
 holding a `Function` instead of a list of forms. `funcall`, `apply` and the

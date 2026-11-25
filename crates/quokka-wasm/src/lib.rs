@@ -74,6 +74,26 @@ pub struct Quokka {
     doing: Doing,
 }
 
+/// Send a panic's message to the browser's console before the trap.
+///
+/// On wasm32 a panic cannot be caught: it becomes a trap, the call into the
+/// module throws a `RuntimeError`, and the instance is not to be used again.
+/// Without a hook the only trace is "unreachable executed" (#88). With one,
+/// the page's console says which line of the machine failed — and the page,
+/// which keeps a snapshot of the world from before the line it ran, offers
+/// that to save. A panic is a bug in the machine, never an answer to input.
+#[cfg(target_arch = "wasm32")]
+fn report_panics() {
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_namespace = console)]
+        fn error(message: &str);
+    }
+    std::panic::set_hook(Box::new(|info| {
+        error(&format!("Quokka's machine failed: {info}"))
+    }));
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Quokka {
     /// Load a world from the bytes of an image — `quokka build world.qi`.
@@ -83,6 +103,8 @@ impl Quokka {
     /// which way.
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new(image: &[u8]) -> Result<Quokka, String> {
+        #[cfg(target_arch = "wasm32")]
+        report_panics();
         let heap = image::load(image, SOFT_LIMIT_WORDS).map_err(|e| e.to_string())?;
         Ok(Quokka {
             heap,

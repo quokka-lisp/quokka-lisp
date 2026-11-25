@@ -9,7 +9,16 @@ use super::*;
 /// rather than an assumption.
 #[test]
 fn the_checksum_notices_a_difference() {
-    assert_ne!(checksum(&[1, 2, 3]), checksum(&[1, 2, 4]));
-    assert_ne!(checksum(&[1, 2, 3]), checksum(&[3, 2, 1]));
-    assert_eq!(checksum(&[1, 2, 3]), checksum(&[1, 2, 3]));
+    assert_ne!(
+        checksum([1, 2, 3].into_iter()),
+        checksum([1, 2, 4].into_iter())
+    );
+    assert_ne!(
+        checksum([1, 2, 3].into_iter()),
+        checksum([3, 2, 1].into_iter())
+    );
+    assert_eq!(
+        checksum([1, 2, 3].into_iter()),
+        checksum([1, 2, 3].into_iter())
+    );
 }

@@ -884,24 +884,43 @@
 
 (defun %read-comma (stream char)
   (if (eq %backquote-depth 0) (error "a comma outside a backquote"))
-  (let ((splicing (eq (peek-char nil stream nil nil) #\@)))
+  ;; `,.` splices as `,@` does and may destroy the list it splices; taking
+  ;; it for `,@` is allowed, and it used to be read as a symbol named `.X`.
+  (let ((splicing (member (peek-char nil stream nil nil) '(#\@ #\.))))
     (if splicing (read-char stream))
     (list (if splicing %splice-marker %unquote-marker) (%read-required stream))))
 
 ;;; Exactly `reader.rs::quasiquote`, rule for rule:
 ;;;
-;;;   `atom          =>  (quote atom)
-;;;   `,x            =>  x
-;;;   `(a . rest)    =>  (cons `a `rest)
-;;;   `(,@x . rest)  =>  (append x `rest)
+;;;   `atom           =>  (quote atom)
+;;;   `,x             =>  x
+;;;   `(a . rest)     =>  (cons `a `rest)
+;;;   `(,@x . rest)   =>  (append x `rest)
+;;;   `(,,@x . rest)  =>  (append (list ,@x) `rest)
+;;;   `#(a ...)       =>  (apply (function vector) `(a ...))
+;;;
+;;; The last two came with #108. A vector used to be an atom, quoted with
+;;; its commas still inside it as markers. And `,,@x`, in a backquote inside
+;;; a backquote, means *several* forms, each to be evaluated when the inner
+;;; template is: `(cons ,@x rest)` is a call of `cons` with too many
+;;; arguments, where `(list ,@x)` takes however many there are (CLHS 2.4.6).
+;;; A `,@` with no list to splice into — `,@x at the top, or after a dot —
+;;; has no meaning, and is an error where it was a marker in the result.
 (defun %quasiquote (form)
-  (cond ((not (consp form)) (list 'quote form))
+  (cond ((simple-vector-p form)
+         (list 'apply '(function vector) (%quasiquote (coerce form 'list))))
+        ((not (consp form)) (list 'quote form))
         ((eq (car form) %unquote-marker) (cadr form))
+        ((eq (car form) %splice-marker)
+         (error 'reader-error "`,@` wants a list around it to splice into" (cadr form)))
         (t (let ((rest (%quasiquote (cdr form)))
                  (head (car form)))
-             (if (and (consp head) (eq (car head) %splice-marker))
-                 (list 'append (cadr head) rest)
-                 (list 'cons (%quasiquote head) rest))))))
+             (cond ((and (consp head) (eq (car head) %splice-marker))
+                    (list 'append (cadr head) rest))
+                   ((and (consp head) (eq (car head) %unquote-marker)
+                         (consp (cadr head)) (eq (car (cadr head)) %splice-marker))
+                    (list 'append (list 'list (cadr head)) rest))
+                   (t (list 'cons (%quasiquote head) rest)))))))
 
 ;;; `#` — read an optional decimal argument, then the sub-character, and call
 ;;; the function the dispatch table has for it with both.

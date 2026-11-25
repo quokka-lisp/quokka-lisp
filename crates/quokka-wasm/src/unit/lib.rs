@@ -40,8 +40,12 @@ fn banner_names_the_phase() {
 #[test]
 fn what_is_not_an_image_is_refused_with_a_reason() {
     assert_eq!(
+        Quokka::new(b"not an image, no").unwrap_err(),
+        "16 bytes is too short to be an image"
+    );
+    assert_eq!(
         Quokka::new(b"not an image").unwrap_err(),
-        "12 bytes is too short to be an image"
+        "12 bytes is not a whole number of words: truncated, or not an image"
     );
 }
 

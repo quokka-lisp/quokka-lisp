@@ -86,7 +86,24 @@ cd "$(dirname "$0")/.."
 # at a time (`begin_global`, `one_slice`, `step_outcome`, `recover` in
 # `vm.rs`). 185 lines. A host is Rust by rule 1; this is the first one that
 # yields, which every later browser host is built on.
-LIMIT=16365
+#
+# Raised to 17,165 by the review's medium findings (#88, #93-#100, #119,
+# #120, 25 Nov 2026), the largest single raise and nearly all of it one
+# kind of code: what the machine checks before it trusts something.
+# `Heap::verify` now checks every root, every header's type, every
+# reference's tag and every object's size, and the registers (`heap.rs`,
+# ~200); `image::load` validates the scalars, records the primitive and
+# opcode counts and runs the bytecode verifier over every function
+# (`image.rs`, `code.rs`, ~150); the VM tells a throw from a signal, checks
+# an exit before unwinding to it, checks each pop against its frame, and
+# splits machine faults from program errors (`vm.rs`, `error.rs`, ~125);
+# the hash finaliser, the pattern-depth check and the backquote cases
+# (`hash.rs`, `lambda_list.rs`, `reader.rs`, ~110); and the native host
+# gathers lines into forms, saves by atomic replace and survives a panic
+# with the world intact (`main.rs`, ~190). About a third is the comments
+# that say why. #89 asks what the budget should count now that phases 3 to
+# 6 have none left; this raise is evidence for that question, not an answer.
+LIMIT=17165
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

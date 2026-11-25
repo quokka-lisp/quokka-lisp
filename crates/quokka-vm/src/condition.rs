@@ -123,6 +123,7 @@ pub fn from_eval_error<'h>(mc: &mut Mutation<'h>, e: &EvalError) -> Option<Value
         // `handler-case` quietly swallowing that would hide a compiler bug
         // behind whatever the program does about errors.
         EvalError::Malformed(_)
+        | EvalError::Fault { .. }
         | EvalError::HeapExhausted
         | EvalError::BudgetExhausted
         | EvalError::Blocked => return None,

@@ -767,9 +767,16 @@
 ;;; a dotted rest — by the same Rust the interpreter uses, so the two take a
 ;;; call apart identically. `%make-macro` gives it the macro type, which is
 ;;; what `macroexpand-1` looks for.
+;;;
+;;; The body is in a block named after the macro when it returns from one,
+;;; as a function's is (`%block-body`, and CLHS `defmacro`); so is a
+;;; `macrolet` expander's below. Both were missed when `defun`, `flet` and
+;;; `labels` got theirs (#109).
 (defun %compile-defmacro (form env)
   (let ((name (second form))
-        (rewritten (%rewrite-macro-lambda-list (third form) (cdr (cddr form)))))
+        (rewritten (%rewrite-macro-lambda-list
+                    (third form)
+                    (%block-body (second form) (cdr (cddr form))))))
     (%compile-callee '%set-symbol-function env)
     (%compile-value name)
     (%compile-callee '%make-macro env)
@@ -809,7 +816,9 @@
                               macros))))
 
 (defun %local-expander (definition)
-  (let ((rewritten (%rewrite-macro-lambda-list (second definition) (cddr definition))))
+  (let ((rewritten (%rewrite-macro-lambda-list
+                    (second definition)
+                    (%block-body (car definition) (cddr definition)))))
     (%make-macro (%assemble-lambda (first rewritten) (second rewritten) (third rewritten) nil))))
 
 ;;; The local macro named HEAD, innermost first, or nil.
@@ -1188,14 +1197,33 @@
 ;;; `condition` take everything, anything else must name the condition's own
 ;;; type — but decided at **compile time** where it can be: the clause's type
 ;;; is in the source, so a catch-all clause compiles to no test at all.
+;;;
+;;; A clause may name several types as `(or a b)`, which is the one compound
+;;; type specifier worth having before `typep` exists: the tests of each. Any
+;;; other compound specifier is refused here, when the clause is compiled.
+;;; It used to compile into a test that was never true, so the clause never
+;;; ran and the error it was written for went past it (#106).
 (defun %handler-test (condition type)
-  (if (or (eq type t) (eq type 'error) (eq type 'condition))
-      t
-      ;; A subtype is caught too: `stream-error` catches `end-of-file` (#81).
-      ;; The subtypes are listed now, from the prelude's table, so that the
-      ;; test is still `eq` on the type, which compiled code can do before
-      ;; the prelude is compiled (the bootstrap's own tests run it so).
-      (cons 'or (%condition-type-tests condition (%condition-subtypes type)))))
+  (cond ((or (eq type t) (eq type 'error) (eq type 'condition)) t)
+        ;; A subtype is caught too: `stream-error` catches `end-of-file` (#81).
+        ;; The subtypes are listed now, from the prelude's table, so that the
+        ;; test is still `eq` on the type, which compiled code can do before
+        ;; the prelude is compiled (the bootstrap's own tests run it so).
+        ((symbolp type)
+         (cons 'or (%condition-type-tests condition (%condition-subtypes type))))
+        ((and (consp type) (eq (car type) 'or))
+         (%handler-any-test condition (cdr type)))
+        (t (%malformed "handler-case"
+                       "a clause's type is a symbol or (or type...); other compound types need typep, which is phase 3"))))
+
+(defun %handler-any-test (condition types)
+  (if (endp types)
+      nil
+      (let ((first (%handler-test condition (car types)))
+            (rest (%handler-any-test condition (cdr types))))
+        (cond ((eq first t) t)
+              ((eq rest t) t)
+              (t (list 'or first rest))))))
 
 (defun %condition-type-tests (condition types)
   (if (endp types)
