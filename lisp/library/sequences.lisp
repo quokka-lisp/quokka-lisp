@@ -551,21 +551,30 @@
 
 ;;; Merge two sorted lists. On a tie the element from A comes first, which is
 ;;; what keeps the sort stable.
+;;; Merge sort on a list it may destroy — the fresh copy `%range-list`
+;;; makes — by relinking its conses: split at the middle, sort each half,
+;;; and merge by pointing a tail at whichever head comes first (#82). The
+;;; first version copied each half with `subseq` and built each merge
+;;; backwards and reversed it; sorting two thousand symbols ran out of
+;;; steps. Equal elements keep their order: `b` goes first only when it is
+;;; strictly before `a`.
 (defun %merge-lists (a b predicate key)
-  (let ((out nil))
-    (do () ((or (endp a) (endp b)) (revappend out (if (endp a) b a)))
+  (let* ((head (list nil))
+         (tail head))
+    (do () ((or (null a) (null b)) (rplacd tail (if (null a) b a)) (cdr head))
       (if (funcall predicate (%key key (car b)) (%key key (car a)))
-          (progn (push (car b) out) (setq b (cdr b)))
-          (progn (push (car a) out) (setq a (cdr a)))))))
+          (progn (rplacd tail b) (setq tail b) (setq b (cdr b)))
+          (progn (rplacd tail a) (setq tail a) (setq a (cdr a)))))))
 
 (defun %merge-sort (list predicate key)
-  (let ((n (length list)))
-    (if (< n 2)
-        list
-        (let ((half (floor n 2)))
-          (%merge-lists (%merge-sort (subseq list 0 half) predicate key)
-                        (%merge-sort (nthcdr half list) predicate key)
-                        predicate key)))))
+  (if (or (null list) (null (cdr list)))
+      list
+      (let* ((middle (nthcdr (- (%quotient (length list) 2) 1) list))
+             (second (cdr middle)))
+        (rplacd middle nil)
+        (%merge-lists (%merge-sort list predicate key)
+                      (%merge-sort second predicate key)
+                      predicate key))))
 
 ;;; A vector is sorted in place, as CL lets it be, and returned.
 (defun stable-sort (sequence predicate &key key)

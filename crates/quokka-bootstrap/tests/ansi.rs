@@ -299,11 +299,30 @@ fn ansi_test() {
         eprint!("{log}");
         return;
     }
+    // ANSI_TEST_GROUPS=cons,packages runs those groups only (#82), as the
+    // full run would reach them, and reports what did not pass; it checks
+    // nothing and writes nothing.
+    let only_groups = std::env::var("ANSI_TEST_GROUPS").ok();
     for group in GROUPS {
+        if only_groups
+            .as_ref()
+            .is_some_and(|g| !g.split(',').any(|x| x == *group))
+        {
+            continue;
+        }
         for file in group_files(&suite, group) {
             run_file(&mut heap, &mut host, group, &file, &mut results, &mut log);
         }
         eprintln!("ansi-test: {group} done");
+    }
+    if only_groups.is_some() {
+        for r in results
+            .iter()
+            .filter(|r| r.status != "PASS" && r.status != "NEEDS")
+        {
+            eprintln!("{} {} {} {}", r.group, r.status, r.name, r.detail);
+        }
+        return;
     }
 
     let mut out = String::new();

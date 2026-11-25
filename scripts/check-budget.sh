@@ -57,7 +57,12 @@ cd "$(dirname "$0")/.."
 # `equalp` table must hash it as), four primitives, the fallback taking a
 # ratio, hashing and comparing ratio keys by value, the Rust printer. 126
 # lines; the algorithms are Lisp (`lisp/library/ratios.lisp`).
-LIMIT=15964
+#
+# Raised to 16,017 by step AJ (#82, 25 Nov 2026): `%string-mismatch`, the
+# walk all twelve string comparisons share, as a primitive — in Lisp it
+# cost some 500 steps for two eleven-letter names, and sorting symbols by
+# name ran out of steps. 53 lines.
+LIMIT=16017
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 

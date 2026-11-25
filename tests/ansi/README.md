@@ -43,6 +43,20 @@ ANSI_TEST_ONLY=auxiliary/cons-aux.lsp,cons/sublis.lsp \
   cargo test --release -p quokka-bootstrap --test ansi -- --ignored --nocapture
 ```
 
+To run whole groups as the full run reaches them, which matters when a test
+depends on what earlier files made (the keywords the `packages` tests sort,
+for instance), and print what did not pass:
+
+```bash
+ANSI_TEST_GROUPS=symbols,packages \
+  cargo test --release -p quokka-bootstrap --test ansi -- --ignored --nocapture
+```
+
+The runner runs a file's tests after reading the whole file, as `rt.lsp`
+runs tests after loading. A failure or a timeout is explained by the
+deferred operators the test uses; a failure SBCL shares, listed with
+`%follows-sbcl` in `deferred.lisp`, is explained as `sbcl[...]`.
+
 The runner replaces ansi-test's own harness, `rt.lsp`, which needs `loop`,
 `handler-bind`, `typep` and `compile-file`. Moving to it once tier 2 allows is
 #61.

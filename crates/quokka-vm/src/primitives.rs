@@ -193,6 +193,7 @@ pub enum Prim {
     Ratiop = 138,
     RatioNumerator = 139,
     RatioDenominator = 140,
+    StringMismatch = 141,
 }
 
 impl Prim {
@@ -636,6 +637,7 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         "%RATIO-DENOMINATOR",
         Arity::Exactly(1),
     ),
+    (Prim::StringMismatch, "%STRING-MISMATCH", Arity::Exactly(7)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1051,6 +1053,7 @@ pub fn call_slice<'h>(
         Prim::MakeBitVector => crate::array::make_bits(mc, args[0]),
         Prim::MakeNilVector => crate::array::make_nil_vector(mc, args[0]),
         Prim::MakeRatio => Ok(crate::ratio::make(mc, args[0], args[1])),
+        Prim::StringMismatch => Ok(string_mismatch(mc, args)),
         Prim::Ratiop => Ok(boolean(crate::ratio::is(mc, args[0]))),
         Prim::RatioNumerator | Prim::RatioDenominator => {
             if !crate::ratio::is(mc, args[0]) {
@@ -1627,3 +1630,53 @@ fn to_vec<'h>(mc: &Mutation<'h>, list: Value<'h>) -> Vec<Value<'h>> {
 #[cfg(test)]
 #[path = "unit/primitives.rs"]
 mod tests;
+
+/// `(%string-mismatch a b start1 end1 start2 end2 fold)` (#82): where the two
+/// ranges of simple strings A and B first differ, and how — `4i` if they are
+/// equal, `4i + 1` if A's is less at index I of A, `4i + 2` if greater —
+/// comparing characters by code, or with FOLD by their lower-case codes, as
+/// `char-downcase` makes them. Nil for anything else, which the library's
+/// own walk handles. The library has checked the bounds.
+///
+/// All twelve string comparisons are this one walk, and sorting symbols by
+/// name makes it hot: in Lisp it cost some 500 steps for two eleven-letter
+/// names. It is linear in the strings' length, as `equal` on two strings
+/// already is in `hash.rs`.
+fn string_mismatch<'h>(mc: &Mutation<'h>, args: &[Value<'h>]) -> Value<'h> {
+    let simple = |v: Value<'h>| v.is_object() && mc.header(v).object_type.is_string();
+    let index = |v: Value<'h>| v.as_fixnum().and_then(|n| usize::try_from(n).ok());
+    let (a, b) = (args[0], args[1]);
+    let (Some(s1), Some(e1), Some(s2), Some(e2)) = (
+        index(args[2]),
+        index(args[3]),
+        index(args[4]),
+        index(args[5]),
+    ) else {
+        return Value::NIL;
+    };
+    if !simple(a) || !simple(b) || e1 > mc.string_length(a) || e2 > mc.string_length(b) {
+        return Value::NIL;
+    }
+    let fold = args[6] != Value::NIL;
+    let code = |c: char| if fold { case_partner(c, false) } else { c } as u32;
+    let (mut i, mut j) = (s1, s2);
+    let order = loop {
+        if i >= e1 {
+            break if j < e2 { 1 } else { 0 };
+        }
+        if j >= e2 {
+            break 2;
+        }
+        let (x, y) = (mc.string_char(a, i), mc.string_char(b, j));
+        if x != y {
+            match code(x).cmp(&code(y)) {
+                core::cmp::Ordering::Less => break 1,
+                core::cmp::Ordering::Greater => break 2,
+                core::cmp::Ordering::Equal => {}
+            }
+        }
+        i += 1;
+        j += 1;
+    };
+    Value::fixnum((i * 4 + order) as i64).unwrap_or(Value::NIL)
+}

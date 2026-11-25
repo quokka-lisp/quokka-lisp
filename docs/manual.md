@@ -217,7 +217,7 @@ quokka rebuild c2.qi c3.qi
 What to expect today:
 - C1 is 976,856 bytes; C2 and C3 are 978,464 each. A rebuild takes about
   seventeen seconds.
-- Every rebuild reports `(:FORMS 1282 :REPLACED 1028)`. It runs as one form
+- Every rebuild reports `(:FORMS 1287 :REPLACED 1032)`. It runs as one form
   with sixty times an ordinary form's step budget (300 million steps) and
   needs about 201 million; a rebuild that runs out says `BudgetExhausted`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. The
@@ -386,7 +386,15 @@ both with the change. Every result, with its detail, is in
 `target/ansi-test-results.txt`. A test reported as *needs X* uses something
 Quokka lacks; whether X is deferred or a gap in tier 1 is decided by
 `tests/ansi/deferred.lisp`. `tests/ansi/README.md` explains the files and how
-to run a few test files only.
+to run a few test files only. To run a few groups as the full run reaches
+them, and see what does not pass, without touching the baseline:
+
+```bash
+ANSI_TEST_GROUPS=cons,packages cargo test --release -p quokka-bootstrap --test ansi -- --ignored --nocapture
+```
+
+A failure SBCL shares is listed in `tests/ansi/deferred.lisp` with
+`%follows-sbcl`, after asking SBCL, and then counts as explained.
 
 ---
 

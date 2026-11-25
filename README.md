@@ -18,7 +18,7 @@ a whole system can be small enough to read.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 
-## Status: phase 2 under way — the system reads, prints, evaluates and rebuilds itself in Lisp
+## Status: phase 2 complete — the system reads, prints, evaluates and rebuilds itself in Lisp
 
 Phase 1 ended with a compiled world built by itself (below). Phase 2, *self-hosting*
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39)), has since moved the
@@ -28,7 +28,7 @@ world to rebuild itself from its own source:
 ```
 $ cargo run --release -p quokka -- build c1.qi
 $ cargo run --release -p quokka -- rebuild c1.qi c2.qi
-c2.qi: rebuilt, Value("(:FORMS 1229 :REPLACED 983)"); 360224 bytes
+c2.qi: rebuilt, Value("(:FORMS 1287 :REPLACED 1032)")
 $ cargo run --release -p quokka -- c2.qi
 quokka> (defpackage :geo (:use :cl) (:export :area))
 #<PACKAGE "GEO">
@@ -46,7 +46,11 @@ quokka> (list (geo:area 3) 'geo::area (eval (read-from-string "(+ 1 2)")))
 compiled function is the same in the first build and in two rebuilds, and the
 two rebuilt worlds are the same word for word, apart from gensym names. That
 stays a standing test ([#50](https://github.com/quokka-lisp/quokka-lisp/issues/50)).
-What remains of phase 2 is the rest of tier 1.
+**And tier 1 is complete and measured**
+([#82](https://github.com/quokka-lisp/quokka-lisp/issues/82)): of the 13,558
+tests in ansi-test's fifteen tier-1 groups, 8,141 pass, and every one of the
+rest is explained by a feature deferred to a later tier, such as `loop`, CLOS
+or `typep`. Phase 3, conditions and processes, is next.
 **How to build, run, rebuild and test it all is in the
 [developer manual](docs/manual.md).**
 
@@ -152,31 +156,28 @@ cannot reach.
 | **Host requests** | a program asks the outside world for something by leaving a request in the heap and blocking; the host answers between slices, at once or when a browser Promise resolves. An image saved while a request is waiting reloads still waiting. The first request is `%read-source` |
 | **REPL** | native terminal, and a browser dev console on the WASM build; `quokka WORLD.qi` runs a compiled world in its own Lisp and `:save` saves it, `quokka rebuild` rebuilds one, `quokka bootstrap --compile` uses the bootstrap compiler, `--show-code` prints the instructions first |
 
-431 tests, green on native, under wasmtime, and with the GC torture mode on.
-Forty-five Common Lisp files produce byte-identical output on Quokka and SBCL:
-seventeen on Quokka interpreted, compiled and under WebAssembly, twenty-eight more
-of tier 1 compiled only, and all forty-five again in a world that has rebuilt
-itself. The Rust core is 15,713 lines of the 15,713-line budget, raised from
+438 tests, green on native, under wasmtime, and with the GC torture mode on.
+Fifty-one Common Lisp files produce byte-identical output on Quokka and SBCL:
+seventeen on Quokka interpreted, compiled and under WebAssembly, thirty-four more
+of tier 1 compiled only, and all fifty-one again in a world that has rebuilt
+itself. The Rust core is 16,017 lines of the 16,017-line budget, raised from
 15,000 when arrays moved into tier 1 (#67), from 15,500 when structures
-became objects of their own (#73), and from 15,537 when a macro's expander
-began to take the whole form, as in Common Lisp (#76).
+became objects of their own (#73), from 15,537 when a macro's expander
+began to take the whole form, as in Common Lisp (#76), and in smaller steps
+since for arrays of element type nil (#77), the last tier-1 gaps (#79, #80),
+ratios (#59) and string comparison (#82).
 
 ### What does not exist yet
 
-**The rest of tier 1.** Phase 2's gate passes, and its scope is all of tier 1,
-whose parts all exist now and are measured against ansi-test, the Common Lisp
-conformance suite: 8,018 of 13,558 tests in the groups it runs pass
-([`docs/ansi-test.md`](docs/ansi-test.md) has the table and the gaps; #60).
-The phase ends when every test that does not pass is explained by a feature
-deferred to a later tier
-([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) has the plan).
+**Tier 2.** Tier 1 is complete and measured against ansi-test, the Common
+Lisp conformance suite: 8,141 of 13,558 tests in the groups it runs pass, and
+the rest wait for features of later tiers
+([`docs/ansi-test.md`](docs/ansi-test.md) has the table; #60, #82).
 The first world is still built by the interpreter, which is the cold build,
 and is then rebuilt by itself.
 
-No
-ratios ([#59](https://github.com/quokka-lisp/quokka-lisp/issues/59)), so `/` on
-two integers works only when they divide, and no single-floats or complex
-numbers.
+No single-floats or complex numbers (ratios arrived with
+[#59](https://github.com/quokka-lisp/quokka-lisp/issues/59)).
 No `loop`, no CLOS. No restarts
 or `define-condition`: `handler-case` is the exception-shaped half of the
 condition system, and the rest is phase 3. No renderer and no editor, which

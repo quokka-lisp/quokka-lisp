@@ -324,6 +324,7 @@ Each chapter answers one question.
 | 68 | [What the compiler skipped](part-6-self-hosting/68-compiler-gaps.md) | Where do declarations go once a body has been rewritten, and why must `throw` look before it leaps? |
 | 69 | [The last gaps](part-6-self-hosting/69-the-last-gaps.md) | How should a measurement count a test the oracle fails too, or one that cannot finish without a deferred feature? |
 | 70 | [Ratios](part-6-self-hosting/70-ratios.md) | Why is `(/ 1 3)` neither 0 nor 0.333, and how does one number keep one representation? |
+| 71 | [Phase 2 ends](part-6-self-hosting/71-phase-two-ends.md) | What does it mean that tier 1 is complete and measured, and what does it not mean? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from

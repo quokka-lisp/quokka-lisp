@@ -51,3 +51,9 @@
 (remove-duplicates "abracadabra")
 (remove-duplicates #(1 2 1 3) :start 1)
 (length (make-list 100000))
+
+;; Modules (step AJ, #82): provide records a name, and require of a module
+;; already provided does nothing.
+(progn (provide :quokka-test-module)
+       (not (null (member "QUOKKA-TEST-MODULE" *modules* :test #'string=))))
+(require :quokka-test-module)

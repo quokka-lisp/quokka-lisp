@@ -174,7 +174,8 @@ fn the_table_order_is_pinned() {
             "%MAKE-RATIO",
             "%RATIOP",
             "%RATIO-NUMERATOR",
-            "%RATIO-DENOMINATOR"
+            "%RATIO-DENOMINATOR",
+            "%STRING-MISMATCH"
         ]
     );
 }

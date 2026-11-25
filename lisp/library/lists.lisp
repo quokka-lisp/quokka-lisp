@@ -662,29 +662,43 @@
       ((endp tail) nil)
     (if (funcall same (%key key element) (%key key (car tail))) (return tail))))
 
+;;; A function that says whether an element is in LIST-2, under KEY and the
+;;; test. A long list with one of the four standard tests goes into a hash
+;;; table first, as SBCL's set functions do: comparing every pair made
+;;; `set-difference` of the 978 `COMMON-LISP` symbols run out of steps
+;;; (#82). A short one is searched.
+(defun %member-tester (list-2 key test test-not)
+  (let ((table-test (if test-not nil (%hash-table-test-for test))))
+    (if (and table-test (> (length list-2) 16))
+        (let ((table (make-hash-table :test table-test)))
+          (dolist (element list-2) (setf (gethash (%key key element) table) t))
+          (lambda (element) (nth-value 1 (gethash (%key key element) table))))
+        (let ((same (%test test test-not)))
+          (lambda (element) (%member-by element list-2 key same))))))
+
 (defun union (list-1 list-2 &key key test test-not)
-  (let ((same (%test test test-not))
+  (let ((in-2 (%member-tester list-2 key test test-not))
         (out list-2))
     (dolist (element list-1 out)
-      (if (not (%member-by element list-2 key same)) (push element out)))))
+      (if (not (funcall in-2 element)) (push element out)))))
 
 (defun nunion (list-1 list-2 &key key test test-not)
   (union list-1 list-2 :key key :test test :test-not test-not))
 
 (defun intersection (list-1 list-2 &key key test test-not)
-  (let ((same (%test test test-not))
+  (let ((in-2 (%member-tester list-2 key test test-not))
         (out nil))
     (dolist (element list-1 (reverse out))
-      (if (%member-by element list-2 key same) (push element out)))))
+      (if (funcall in-2 element) (push element out)))))
 
 (defun nintersection (list-1 list-2 &key key test test-not)
   (intersection list-1 list-2 :key key :test test :test-not test-not))
 
 (defun set-difference (list-1 list-2 &key key test test-not)
-  (let ((same (%test test test-not))
+  (let ((in-2 (%member-tester list-2 key test test-not))
         (out nil))
     (dolist (element list-1 (reverse out))
-      (if (not (%member-by element list-2 key same)) (push element out)))))
+      (if (not (funcall in-2 element)) (push element out)))))
 
 (defun nset-difference (list-1 list-2 &key key test test-not)
   (set-difference list-1 list-2 :key key :test test :test-not test-not))
@@ -697,9 +711,9 @@
             (set-difference list-2 list-1 :key key :test (lambda (b a) (funcall same a b))))))
 
 (defun subsetp (list-1 list-2 &key key test test-not)
-  (let ((same (%test test test-not)))
+  (let ((in-2 (%member-tester list-2 key test test-not)))
     (dolist (element list-1 t)
-      (if (not (%member-by element list-2 key same)) (return nil)))))
+      (if (not (funcall in-2 element)) (return nil)))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Step U (#68): the rest of the list functions on ansi-test's list

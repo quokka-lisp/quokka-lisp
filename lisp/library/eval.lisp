@@ -217,3 +217,45 @@
                   `(progn
                      (%set-symbol-function ',name (%make-macro (%macro-lambda ,lambda-list ,@body)))
                      ',name)))))
+
+;;; ------------------------------------------------------------------------
+;;; disassemble, and modules
+
+;;; `(disassemble fn)` — the bytecode of a function, written to standard
+;;; output (CLHS: the format is the implementation's). FN is a function, a
+;;; function name or a lambda expression, which is compiled first; a macro's
+;;; name shows its expander. The machine's own disassembler does the work,
+;;; as the bootstrap REPL's `--show-code` does (#82). A primitive is Rust,
+;;; with no bytecode to show.
+(defun disassemble (fn)
+  (let ((function (cond ((and (consp fn) (eq (car fn) 'lambda)) (compile nil fn))
+                        ((functionp fn) fn)
+                        ((and (symbolp fn) (macro-function fn)) (%macro-function fn))
+                        (t (fdefinition fn)))))
+    ;; `%disassemble` refuses anything that is not compiled code: here, a
+    ;; primitive.
+    (handler-case (write-string (%disassemble function))
+      (type-error () (format t "; ~S is a primitive, written in Rust~%" fn)))
+    nil))
+
+;;; `*modules*`, `provide` and `require` (CLHS 24.1.2, deprecated there but
+;;; present). A module is a name in `*modules*`. `require` loads the files it
+;;; is given, by the names the host knows them by, when the module is not
+;;; there yet; without files it cannot know where a module lives, and says
+;;; so, as SBCL does for a module it does not know.
+(defvar *modules* nil)
+
+(defun provide (module-name)
+  (let ((name (string module-name)))
+    (if (not (member name *modules* :test #'string=)) (push name *modules*))
+    t))
+
+(defun require (module-name &optional pathnames)
+  (let ((name (string module-name)))
+    (cond ((member name *modules* :test #'string=) nil)
+          (pathnames
+           (dolist (file (if (listp pathnames) pathnames (list pathnames)))
+             (load file))
+           t)
+          (t (error "require: no module by this name is known, and no files were given"
+                    module-name)))))

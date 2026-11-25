@@ -91,6 +91,7 @@
 - [What the compiler skipped](part-6-self-hosting/68-compiler-gaps.md)
 - [The last gaps](part-6-self-hosting/69-the-last-gaps.md)
 - [Ratios](part-6-self-hosting/70-ratios.md)
+- [Phase 2 ends](part-6-self-hosting/71-phase-two-ends.md)
 
 ---
 

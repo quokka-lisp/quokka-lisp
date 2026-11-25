@@ -91,30 +91,60 @@
 
 ;;; The index in A where A's range and B's first differ, and :less, :equal
 ;;; or :greater for how A compares there.
+;;;
+;;; Sorting symbols by name, as ansi-test's package tests do with several
+;;; thousand keywords, calls this tens of thousands of times, so two simple
+;;; strings are compared by the primitive `%string-mismatch` (#82). The walk
+;;; below is for the rest: strings with fill pointers, and the like.
 (defun %string-compare (a b start1 end1 start2 end2 key)
-  (let ((a (string a)) (b (string b)))
+  (let ((a (if (stringp a) a (string a)))
+        (b (if (stringp b) b (string b))))
     (multiple-value-bind (s1 e1) (%bounds a start1 end1)
       (multiple-value-bind (s2 e2) (%bounds b start2 end2)
+        (let ((found (%string-mismatch a b s1 e1 s2 e2 (eq key #'%char-code-folded))))
+          (if found
+              (return-from %string-compare
+                (values (%quotient found 4) (aref #(:equal :less :greater) (rem found 4))))))
         (do ((i s1 (+ i 1))
              (j s2 (+ j 1)))
-            ((or (>= i e1) (>= j e2))
-             (values i (cond ((and (>= i e1) (>= j e2)) :equal)
-                             ((>= i e1) :less)
-                             (t :greater))))
-          (let ((x (funcall key (char a i)))
-                (y (funcall key (char b j))))
-            (cond ((< x y) (return (values i :less)))
-                  ((> x y) (return (values i :greater))))))))))
+            (nil)
+          (cond ((not (< i e1)) (return (values i (if (< j e2) :less :equal))))
+                ((not (< j e2)) (return (values i :greater))))
+          (let ((x (aref a i))
+                (y (aref b j)))
+            (if (not (eq x y))
+                (let ((x (funcall key x))
+                      (y (funcall key y)))
+                  (cond ((< x y) (return (values i :less)))
+                        ((> x y) (return (values i :greater))))))))))))
 
 ;;; Define a comparison that answers with the position when the order is one
 ;;; of ORDERS, and nil otherwise — or t, for `string=` and `string-equal`.
+;;;
+;;; Two simple strings compared whole, the usual call, go straight to the
+;;; primitive and decode its answer here (#82): the general path below costs
+;;; hundreds of steps a call in keyword and value handling alone.
 (defmacro %define-string-comparison (name key orders &optional boolean)
-  `(defun ,name (string-1 string-2 &key (start1 0) end1 (start2 0) end2)
-     (multiple-value-bind (index order)
-         (%string-compare string-1 string-2 start1 end1 start2 end2 ,key)
-       (if (member order ',orders)
-           ,(if boolean t 'index)
-           nil))))
+  ;; Not `equal`, which needs `arrays.lisp`, loaded after this file.
+  (let ((fold (and (consp key) (eq (cadr key) '%char-code-folded)))
+        (codes (mapcar (lambda (order) (cond ((eq order :equal) 0) ((eq order :less) 1) (t 2)))
+                       orders)))
+    `(defun ,name (string-1 string-2 &key (start1 0) end1 (start2 0) end2)
+       (let ((found (if (and (eq start1 0) (eq start2 0) (null end1) (null end2)
+                             (eq (%array-kind string-1) 2) (eq (%array-kind string-2) 2))
+                        (%string-mismatch string-1 string-2 0 (length string-1)
+                                          0 (length string-2) ,fold)
+                        nil)))
+         (if found
+             (let ((order (rem found 4)))
+               (if (or ,@(mapcar (lambda (code) `(eq order ,code)) codes))
+                   ,(if boolean t '(%quotient found 4))
+                   nil))
+             (multiple-value-bind (index order)
+                 (%string-compare string-1 string-2 start1 end1 start2 end2 ,key)
+               (if (member order ',orders)
+                   ,(if boolean t 'index)
+                   nil)))))))
 
 (%define-string-comparison string= #'char-code (:equal) t)
 (%define-string-comparison string/= #'char-code (:less :greater))
