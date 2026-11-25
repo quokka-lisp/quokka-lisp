@@ -113,7 +113,13 @@ cd "$(dirname "$0")/.."
 # only under a directory its host granted. `permitted` and `grant` in the
 # native host, `main.rs` — resolving a name through every link before
 # judging it, and the two flags. 110 lines, half of them the explanation.
-LIMIT=17335
+#
+# Raised to 17,395 by the review's low findings (#113, #121, #102, 25 Nov
+# 2026): `set` and `makunbound` refuse a constant and fixnum division by
+# zero is a `division-by-zero` (`primitives.rs`); `rebuild` matches its
+# outcome and says where it must be run from, and one `die` for every fatal
+# message (`main.rs`). 54 lines.
+LIMIT=17395
 
 not_core=( -path '*/unit/*' -o -path '*/tests/*' )
 
@@ -140,5 +146,14 @@ fi
 if [ "$status" -eq 0 ]; then
   printf 'budget: %s of %s lines of core, %s lines of tests beside it\n' \
     "$core" "$LIMIT" "$tests"
+  # Where the lines are (#89). The limit is one number, but the crates are
+  # not one thing: the machine is what a reader of the *running* system must
+  # read; the bootstrap exists to build the first world and is in no world;
+  # the hosts are the edges. Printed so that the question in #89 — should
+  # the budget be the machine's alone? — is asked of real figures.
+  for crate in quokka-vm quokka-bootstrap quokka quokka-wasm; do
+    lines=$(find "crates/$crate" -name '*.rs' -not \( "${not_core[@]}" \) -print0 | xargs -0 cat | wc -l | tr -d ' ')
+    printf '        %6s  %s\n' "$lines" "$crate"
+  done
 fi
 exit $status

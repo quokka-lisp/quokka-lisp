@@ -77,6 +77,15 @@ pub const COMPILER: &[(&str, &str)] = &[(
 /// `scripts/check-compiler.sh` fails if a file in `lisp/library/` is missing
 /// from here.
 ///
+/// **A file may use only what an earlier file defined, where it is used
+/// while loading.** A function body may call anything, since by the time it
+/// runs the whole library is there. A *macro* is different: `(push x y)` in
+/// a file loaded before `setf.lisp` compiles as a call to a function named
+/// `push`, silently. So a file must not use a macro, or a `setf` place, that
+/// a later file defines — call the setter instead. And a function the
+/// compiler itself calls (`member`, `last`) is live the moment it is
+/// redefined: what its new definition calls must already exist.
+///
 /// **`packages.lisp` must stay last** while the Rust reader reads the library:
 /// its final form adopts every symbol in the system table into a package
 /// (#43), and only symbols that exist then are adopted.

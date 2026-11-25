@@ -214,10 +214,20 @@
 ;;; rebound for the duration, as CLHS says, so an `in-package` in a file stays
 ;;; in that file. CLHS's keyword arguments — `:verbose`, `:print`,
 ;;; `:if-does-not-exist` — are not here yet.
+;;;
+;;; `*load-pathname*` and `*load-truename*` are bound to the name of the
+;;; file being loaded, so that a file can find what lies beside it. A
+;;; string, not a pathname: pathnames are tier 2. Nil outside a `load`, and
+;;; when loading from a stream.
+(defvar *load-pathname* nil)
+(defvar *load-truename* nil)
+
 (defun load (source)
   (let ((stream (if (stringp source)
                     (make-string-input-stream (%read-source source))
                     source))
+        (*load-pathname* (if (stringp source) source nil))
+        (*load-truename* (if (stringp source) source nil))
         (*package* *package*)
         (*readtable* *readtable*))
     (%load-forms stream)

@@ -162,3 +162,7 @@ pub fn hash<'h>(mc: &Mutation<'h>, b: Value<'h>, start: u64, mix: fn(u64, u64) -
         .iter()
         .fold(mix(start, negative as u64), |h, &l| mix(h, l))
 }
+
+#[cfg(test)]
+#[path = "unit/bignum.rs"]
+mod tests;

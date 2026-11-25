@@ -544,8 +544,11 @@ impl<'a, 'h> Vm<'a, 'h> {
             }
             // `&optional`, `&rest`, `&key` — anything with a lambda-list
             // keyword needs the general binder.
-            let text = self.mc.symbol_name(name);
-            if text.starts_with('&') {
+            // Its first character, read where the name is: copying the name
+            // into a Rust `String` to look at one character was an
+            // allocation for every parameter of every call (#102).
+            let text = self.mc.slot(name, crate::heap::symbol::NAME);
+            if self.mc.string_length(text) > 0 && self.mc.string_char(text, 0) == '&' {
                 return None;
             }
             names.push(name);

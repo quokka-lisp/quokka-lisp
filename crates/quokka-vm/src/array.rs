@@ -432,3 +432,7 @@ pub fn make_nil_vector<'h>(mc: &mut Mutation<'h>, n: Value<'h>) -> Result<Value<
     mc.set_raw_slot(v, 0, n);
     Ok(v)
 }
+
+#[cfg(test)]
+#[path = "unit/array.rs"]
+mod tests;

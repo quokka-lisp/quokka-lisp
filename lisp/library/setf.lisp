@@ -363,10 +363,13 @@
 (defsetf elt %set-elt)
 (defsetf symbol-value set)
 
+;;; By `nthcdr`, which refuses a negative index where counting down to zero
+;;; never ended (#113); and a list too short has no cell to store in.
 (defun %set-nth (n list new)
-  (if (= n 0)
-      (progn (rplaca list new) new)
-      (%set-nth (- n 1) (cdr list) new)))
+  (let ((cell (nthcdr n list)))
+    (if (consp cell)
+        (progn (rplaca cell new) new)
+        (error 'type-error "the list has no element at that index" n))))
 
 (defun %set-elt (sequence index new)
   (cond ((listp sequence) (%set-nth index sequence new))

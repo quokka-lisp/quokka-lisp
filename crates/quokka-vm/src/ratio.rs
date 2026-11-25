@@ -65,3 +65,7 @@ pub fn exact_double<'h>(mc: &Mutation<'h>, r: Value<'h>) -> Option<f64> {
     };
     Some(libm::ldexp(n as f64, -exponent))
 }
+
+#[cfg(test)]
+#[path = "unit/ratio.rs"]
+mod tests;

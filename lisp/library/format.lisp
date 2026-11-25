@@ -479,7 +479,17 @@
                   (room (- w sign-length)))
              (if (<= (length shortest) room)
                  shortest
-                 (%fixed-body x nil (max 0 (- room point 1)) k sign-length))))))
+                 ;; Below one, the zero before the point can go (the caller
+                 ;; drops it), so the room is for the point and digits, and
+                 ;; one digit at least: (format nil "~1F" 0.5) is ".5". It
+                 ;; was "1.", rounded to no digits to make room for a zero
+                 ;; that was not going to be printed (#114).
+                 (%fixed-body x nil
+                              (if (and (> (length shortest) 1)
+                                       (string= (subseq shortest 0 2) "0."))
+                                  (max 1 (- room 1))
+                                  (max 0 (- room point 1)))
+                              k sign-length))))))
 
 ;;; ~w,d,e,k,overflowchar,padchar,exptcharE — a mantissa and a power of
 ;;; ten. K digits before the point (default 1); with D, D-K+1 after it, or

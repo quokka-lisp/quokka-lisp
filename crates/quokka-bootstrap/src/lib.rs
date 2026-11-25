@@ -16,9 +16,6 @@
 //! does not depend on this crate, so the VM cannot reach the interpreter even
 //! by accident.
 
-#![deny(rust_2018_idioms)]
-#![warn(missing_docs)]
-
 pub mod boot;
 pub mod eval;
 pub mod reader;

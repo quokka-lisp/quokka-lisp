@@ -250,10 +250,14 @@ fn record(group: &str, file: &str, line: &str, results: &mut Vec<TestResult>, lo
 fn ansi_test() {
     let root = repo_root();
     let suite = root.join("target/ansi-test");
-    if !suite.join("rt.lsp").exists() {
-        eprintln!("ansi-test: target/ansi-test is missing; run scripts/ansi-test.sh");
-        return;
-    }
+    // Asked for by name (`--ignored`), so the suite not being there is a
+    // failure and not a pass: it used to return quietly, green on nothing
+    // (#103). `scripts/ansi-test.sh` fetches the suite and then runs this;
+    // without a network it says it skipped and never gets here.
+    assert!(
+        suite.join("rt.lsp").exists(),
+        "target/ansi-test is missing: run scripts/ansi-test.sh, which fetches it"
+    );
     let mut heap = quokka_vm::heap::Heap::new();
     quokka_bootstrap::boot::build_image(&mut heap).unwrap_or_else(|e| panic!("{e}"));
     let image = quokka_vm::image::save(&mut heap);

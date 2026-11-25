@@ -32,8 +32,9 @@
 ;;; indices, each in two directions. A list has no way back, so backwards
 ;;; over a list first gathers the range, `(index . element)`, in reverse.
 ;;;
-;;; The options are a plist read with `getf`, because a macro lambda list
-;;; cannot have `&key` inside a nested pattern yet (`lambda_list.rs`).
+;;; The options are a plist read with `getf`. A macro lambda list could
+;;; take them as `&key` inside the nested pattern since steps AC and AG;
+;;; this was written before and is left as it works.
 (defmacro %do-sequence ((element sequence &rest options) &body body)
   (let ((start (getf options :start 0)) (end (getf options :end))
         (from-end (getf options :from-end))

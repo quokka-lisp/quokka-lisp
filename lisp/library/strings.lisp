@@ -58,7 +58,7 @@
   (cond ((stringp designator) designator)
         ((symbolp designator) (symbol-name designator))
         ((characterp designator) (make-string 1 :initial-element designator))
-        (t (error "not a string designator" designator))))
+        (t (error 'type-error "not a string designator" designator))))
 
 ;;; `make-string` accepts `:element-type` and ignores it: every string holds
 ;;; characters.

@@ -281,8 +281,9 @@
   (destructuring-bind (object stream &key type identity) spec
     (%print-unreadable-expansion object stream type identity body)))
 
-;;; Quokka's macro lambda lists take no `&key` inside a nested pattern, so
-;;; the macro destructures its first argument itself.
+;;; The macro destructures its first argument itself: when it was written a
+;;; macro lambda list took no `&key` inside a nested pattern. Since steps AC
+;;; and AG it does.
 (defun %print-unreadable-expansion (object stream type identity body)
   (let ((out (gensym "OUT")))
     `(let ((,out (%output-stream ,stream)))
@@ -721,7 +722,42 @@
         (%token-integer name 10)
         (%ratio-or-float-p name)
         (and (not (eq *print-base* 10)) (%digits-in-base-p name *print-base*))
+        (%potential-number-p name end *print-base*)
         (%special-char-in-p name 0 end (%current-case)))))
+
+;;; Is NAME a *potential number* (CLHS 2.3.1.1)? Text with the shape of a
+;;; number that is not one today: `+1A`, `1_`, `^2`, `1E5X`, `1/A`. The
+;;; standard reserves such tokens — a later standard, or an implementation,
+;;; may make them numbers — so a symbol named like one is written in bars,
+;;; as SBCL writes it. In a base above ten the letters that are digits count
+;;; as digits, which is what `A/B` in base 16 turns on (#114). The rules:
+;;; only digits, signs, `/`, `.`, `^`, `_` and lone letters; at least one
+;;; digit; a digit, sign, point or extension character first; no sign last.
+(defun %potential-number-p (name end base)
+  (and (> end 0)
+       (let ((first (aref name 0)))
+         (or (digit-char-p first base) (member first '(#\+ #\- #\. #\^ #\_))))
+       (not (member (aref name (- end 1)) '(#\+ #\-)))
+       (%potential-body-p name 0 end base nil)))
+
+(defun %potential-body-p (name at end base digit-seen)
+  (if (< at end)
+      (let ((char (aref name at)))
+        (cond ((digit-char-p char base) (%potential-body-p name (+ at 1) end base t))
+              ((member char '(#\+ #\- #\/ #\. #\^ #\_))
+               (%potential-body-p name (+ at 1) end base digit-seen))
+              ((and (alpha-char-p char)
+                    (not (%marker-at-p name (- at 1) end base))
+                    (not (%marker-at-p name (+ at 1) end base)))
+               (%potential-body-p name (+ at 1) end base digit-seen))
+              (t nil)))
+      digit-seen))
+
+;;; Is the character at AT a letter that is not a digit in BASE?
+(defun %marker-at-p (name at end base)
+  (and (>= at 0) (< at end)
+       (alpha-char-p (aref name at))
+       (not (digit-char-p (aref name at) base))))
 
 (defun %digits-in-base-p (name base)
   (let* ((end (length name))

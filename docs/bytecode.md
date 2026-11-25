@@ -31,7 +31,9 @@ Function  (traced)
   1  constants   -> Vector: symbols, lists, strings, nested Functions
   2  params      -> the simple lambda list, as the binder wants it
   3  max-stack   fixnum: deepest the operand stack gets, in words
-  4  name        symbol, for the debugger and the disassembler
+  4  name        symbol, for the debugger and the disassembler: the
+                 function's own since #110, `lambda` for an anonymous one
+  5  code-length fixnum: how many of the code object's bytes are code
 ```
 
 `params` is the lambda list **after** `lambda_list::rewrite` has run, so it
@@ -196,7 +198,7 @@ are Quokka's own and a program is told not to call them at all. When packages
 arrive in phase 2 and they become `quokka-internal::` symbols, the reason
 becomes the same one.
 
-The table holds **50** primitives today, against `PRIM`'s ceiling of 256.
+The table holds **142** primitives today, against `PRIM`'s ceiling of 256.
 
 `TCALL` is an instruction rather than an optimisation. The compiler knows at
 compile time which calls are in tail position, so it is a property of the

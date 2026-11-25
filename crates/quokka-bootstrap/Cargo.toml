@@ -17,3 +17,6 @@ quokka-vm.workspace = true
 default = []
 # Collect at every mutation boundary, in the VM this crate drives.
 gc-torture = ["quokka-vm/gc-torture"]
+
+[lints]
+workspace = true

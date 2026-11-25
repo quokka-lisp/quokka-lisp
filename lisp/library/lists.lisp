@@ -208,8 +208,9 @@
 ;;; Every loop is a `block nil` around a `tagbody`, which is what `return`
 ;;; leaves and what a `go` inside the body may jump within: the body of each
 ;;; is an implicit `tagbody`, so it may hold tags of its own. The variables
-;;; are bound once and assigned on each step, which CLHS allows; a closure
-;;; that captures one sees its last value.
+;;; are bound once and assigned on each step, which CLHS allows; so a closure
+;;; made in the body shares the one binding with every other, and after the
+;;; loop sees what the loop left there — for `dolist`, nil.
 
 (defmacro return (&optional value)
   `(return-from nil ,value))
@@ -355,6 +356,12 @@
 
 (defun atom (object) (not (consp object)))
 
+;;; The three- and four-letter `c[ad]r`s this file itself uses, and their
+;;; `setf` places, defined here so that the functions below can call them.
+;;; `%define-cxr`, near the end of the file, defines every one again from
+;;; its name; these are not dead, only early. `fourth` to `tenth` have their
+;;; places from here alone.
+
 (defun caaar (x) (car (car (car x))))
 (defun caadr (x) (car (car (cdr x))))
 (defun cadar (x) (car (cdr (car x))))
@@ -431,6 +438,11 @@
   (do ((i 0 (+ i 1))
        (tail list (cdr tail)))
       ((or (= i n) (null tail)) tail)))
+
+;;; The prelude's `nth` counts down to zero and so never stops for a
+;;; negative index: `(nth -1 list)` ran until the step budget did (#113).
+;;; `nthcdr` checks its count.
+(defun nth (n list) (car (nthcdr n list)))
 
 ;;; The length, or nil for a circular list — found by a pointer that moves
 ;;; twice as fast as the other (Floyd's cycle-finding, "tortoise and hare").

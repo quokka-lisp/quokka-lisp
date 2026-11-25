@@ -15,6 +15,21 @@ license = "MIT"
 repository = "https://github.com/quokka-lisp/quokka-lisp"
 authors = ["The Quokka authors"]
 
+# Lints for every crate, in one place (#118): each crate's Cargo.toml says
+# `lints.workspace = true`. Two crates had these as attributes and two had
+# none.
+#
+# `unsafe_code` is *forbidden*, which no attribute below can override. The
+# comment further down gives "there is no `unsafe` in the workspace" as the
+# reason tests may run optimised; this is what keeps it true. If `unsafe` is
+# ever needed — mapping an image into memory is the likely first case — it
+# arrives by changing this line to `deny` and allowing it at the one place,
+# with the reason rule 7 asks for.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
 [workspace.dependencies]
 quokka-vm = { path = "crates/quokka-vm" }
 quokka-bootstrap = { path = "crates/quokka-bootstrap" }

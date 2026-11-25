@@ -232,7 +232,7 @@
 (defun %divide2 (a b)
   (multiple-value-bind (an am) (%magnitude a)
     (multiple-value-bind (bn bm) (%magnitude b)
-      (if (= (length bm) 0) (error "division by zero" a))
+      (if (= (length bm) 0) (error 'division-by-zero "division by zero" a))
       (multiple-value-bind (q r) (%mag-divide am bm)
         (values (%make-integer (not (eq an bn)) q)
                 (%make-integer an r))))))

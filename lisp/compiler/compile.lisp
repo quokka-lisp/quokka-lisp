@@ -1299,10 +1299,11 @@
 
 ;;; Does a clause for TYPE want CONDITION?
 ;;;
-;;; The same flat matching as `condition::matches` in Rust — `t`, `error` and
-;;; `condition` take everything, anything else must name the condition's own
-;;; type — but decided at **compile time** where it can be: the clause's type
-;;; is in the source, so a catch-all clause compiles to no test at all.
+;;; `t`, `error` and `condition` take everything; any other type takes
+;;; itself and its subtypes (#81) — which is more than `condition::matches`
+;;; does for the interpreter, whose matching is still flat. Decided at
+;;; **compile time** where it can be: the clause's type is in the source,
+;;; so a catch-all clause compiles to no test at all.
 ;;;
 ;;; A clause may name several types as `(or a b)`, which is the one compound
 ;;; type specifier worth having before `typep` exists: the tests of each. Any

@@ -162,9 +162,9 @@
         (t (error "not an input stream"))))
 
 ;;; Running out of input is an `end-of-file` condition (#70), so that a
-;;; program can tell it from a syntax error. In CLHS it is also a
-;;; `stream-error`; until conditions have a hierarchy (tier 2), a handler
-;;; must name `end-of-file` itself to catch it.
+;;; program can tell it from a syntax error. It is also a `stream-error`,
+;;; and since the condition types have their lattice (#81) a handler for
+;;; that catches it.
 (defun %end-of-file (eof-error-p eof-value)
   (if eof-error-p (error 'end-of-file "end of file") eof-value))
 
@@ -637,8 +637,12 @@
           ((and (not escaped) (not colons) (%ratio-or-float-p text) (not (%ratio-token-p text)))
            (%read-float text))
           ((and (not escaped) (%all-dots-p text 0 (length text)))
-           (error "a token of only dots"))
+           (error 'reader-error "a token of only dots"))
           ((null colons) (values (intern text *package*)))
+          ;; A colon and nothing else names no symbol. `:||` does: the
+          ;; keyword whose name is empty, which is why ESCAPED is asked.
+          ((and (not escaped) (eq (length text) 1))
+           (error 'reader-error "a package marker with no symbol after it"))
           (t (%read-qualified text colons)))))
 
 ;;; `:name` is a keyword, and so is `::name`, as SBCL reads it; `pkg:name`
@@ -651,24 +655,29 @@
           ((and (null (cddr colons)) (eq (car colons) 1) (eq (cadr colons) 0))
            (values (intern (%substring text 2 end) "KEYWORD")))
           ((null (cdr colons))
-           (%external-symbol (%reader-package text (car colons))
-                             (%substring text (+ (car colons) 1) end)))
+           (let ((package (%reader-package text (car colons)))
+                 (name (%substring text (+ (car colons) 1) end)))
+             ;; Every keyword is external, one not yet made included:
+             ;; `keyword:new` is `:new` (#114).
+             (if (eq package (find-package "KEYWORD"))
+                 (values (intern name package))
+                 (%external-symbol package name))))
           ((and (null (cddr colons))
                 (eq (car colons) (+ (cadr colons) 1))
                 (> (cadr colons) 0))
            (values (intern (%substring text (+ (car colons) 1) end)
                            (%reader-package text (cadr colons)))))
-          (t (error "too many package markers in a symbol")))))
+          (t (error 'reader-error "too many package markers in a symbol")))))
 
 (defun %reader-package (text colon)
   (let ((package (find-package (%substring text 0 colon))))
-    (if package package (error "no package by that name"))))
+    (if package package (error 'reader-error "no package by that name"))))
 
 (defun %external-symbol (package name)
   (multiple-value-bind (symbol status) (find-symbol name package)
     (if (eq status :external)
         symbol
-        (error "that symbol is not external in its package"))))
+        (error 'reader-error "that symbol is not external in its package"))))
 
 ;;; An integer: a sign, digits in `*read-base*`, and an optional trailing
 ;;; point, which makes the digits decimal whatever the base — `12.` is twelve
@@ -810,7 +819,7 @@
     (cond ((null char) (error 'end-of-file "end of file inside a list"))
           ((eq char #\)) (reverse items))
           ((and (eq char #\.) (%dot-alone-p stream))
-           (if (null items) (error "a dot with nothing before it"))
+           (if (null items) (error 'reader-error "a dot with nothing before it"))
            (%revappend items (%read-dotted-tail stream)))
           (t (let ((found (%read-maybe-nothing stream char)))
                (%read-list-items stream (if found (cons (car found) items) items)))))))
@@ -830,7 +839,7 @@
   (let ((char (%skip-whitespace stream)))
     (cond ((null char) (error 'end-of-file "end of file inside a list"))
           ((eq char #\)) nil)
-          ((%read-maybe-nothing stream char) (error "more than one object after a dot"))
+          ((%read-maybe-nothing stream char) (error 'reader-error "more than one object after a dot"))
           (t (%expect-close stream)))))
 
 (defun %revappend (items tail)
@@ -850,7 +859,7 @@
                (%read-delimited stream close (if found (cons (car found) items) items)))))))
 
 (defun %read-close (stream char)
-  (error "a close parenthesis with no open one"))
+  (error 'reader-error "a close parenthesis with no open one"))
 
 ;;; `'x` — `(quote x)`.
 (defun %read-quote (stream char)
@@ -898,7 +907,7 @@
     (%quasiquote (%read-required stream))))
 
 (defun %read-comma (stream char)
-  (if (eq %backquote-depth 0) (error "a comma outside a backquote"))
+  (if (eq %backquote-depth 0) (error 'reader-error "a comma outside a backquote"))
   ;; `,.` splices as `,@` does and may destroy the list it splices; taking
   ;; it for `,@` is allowed, and it used to be read as a symbol named `.X`.
   (let ((splicing (member (peek-char nil stream nil nil) '(#\@ #\.))))
@@ -967,7 +976,7 @@
         (let ((name (%read-name stream (list (char-upcase first)) 1)))
           (cond (*read-suppress* nil)
                 ((name-char name))
-                (t (error "no character by that name" name))))
+                (t (error 'reader-error "no character by that name" name))))
         first)))
 
 ;;; `#+feature form` reads FORM if the feature expression is true, and as
@@ -988,7 +997,7 @@
         ((and (consp test) (eq (car test) :and)) (every #'%feature-true-p (cdr test)))
         ((and (consp test) (eq (car test) :or)) (some #'%feature-true-p (cdr test)))
         ((and (consp test) (eq (car test) :not)) (not (%feature-true-p (cadr test))))
-        (t (error "not a feature expression" test))))
+        (t (error 'reader-error "not a feature expression" test))))
 
 ;;; `#.form` — FORM evaluated as the reader reads it (CLHS 2.4.8.6), unless
 ;;; `*read-eval*` forbids it, which is how a program reads untrusted text.
@@ -996,7 +1005,7 @@
   (let ((form (%read-required stream)))
     (cond (*read-suppress* nil)
           (*read-eval* (eval form))
-          (t (error "#. is not allowed while *read-eval* is false")))))
+          (t (error 'reader-error "#. is not allowed while *read-eval* is false")))))
 
 (defun %read-name (stream chars count)
   (let ((char (read-char stream nil nil)))
@@ -1020,27 +1029,44 @@
                      ((char-equal sub-char #\B) 2)
                      ((char-equal sub-char #\O) 8)
                      ((and argument (<= 2 argument 36)) argument)
-                     (t (error "#R wants a radix from 2 to 36" argument))))
+                     (t (error 'reader-error "#R wants a radix from 2 to 36" argument))))
         (chars nil))
     (do ((next (peek-char nil stream nil nil) (peek-char nil stream nil nil)))
         ((or (null next) (%terminatorp next)))
       (push (read-char stream) chars))
-    (%integer-in-radix (coerce (reverse chars) 'string) radix)))
+    ;; A rational, CLHS says, so `#xFF/10` is 255/16 (#114).
+    (let* ((text (coerce (reverse chars) 'string))
+           (slash (position #\/ text)))
+      (if slash
+          (/ (%integer-in-radix (subseq text 0 slash) radix)
+             (%integer-in-radix (subseq text (+ slash 1)) radix))
+          (%integer-in-radix text radix)))))
 
 (defun %integer-in-radix (text radix)
   (let* ((negative (and (> (length text) 0) (eq (char text 0) #\-)))
          (start (if (and (> (length text) 0) (member (char text 0) '(#\- #\+))) 1 0))
          (value 0))
-    (if (>= start (length text)) (error "no digits after the radix" text))
+    (if (>= start (length text)) (error 'reader-error "no digits after the radix" text))
     (do ((i start (+ i 1))) ((>= i (length text)))
       (let ((weight (digit-char-p (char text i) radix)))
-        (if (null weight) (error "not a digit in this radix" text radix))
+        (if (null weight) (error 'reader-error "not a digit in this radix" text radix))
         (setq value (+ (* value radix) weight))))
     (if negative (- value) value)))
 
-;;; `#(...)` — a vector of the elements.
+;;; `#(...)` — a vector of the elements. With a length, `#4(a b)` is four
+;;; elements, the last one repeated to fill them, as `#5*101` is five bits
+;;; (CLHS 2.4.8.3); more elements than the length is an error. The length
+;;; used to be read and ignored (#114).
 (defun %read-sharp-paren (stream sub-char argument)
-  (apply #'vector (%read-list-items stream nil)))
+  (let ((items (%read-list-items stream nil)))
+    (cond ((null argument) (apply #'vector items))
+          ((> (length items) argument)
+           (error 'reader-error "more elements than the length given" argument))
+          ((and (null items) (> argument 0))
+           (error 'reader-error "a length but no element to fill it with" argument))
+          (t (let ((out (make-array argument :initial-element (car (last items)))))
+               (replace out items)
+               out)))))
 
 ;;; `#*1011` — a bit vector (#67). With a length, `#5*101` is five bits, the
 ;;; last digit repeated to fill them (CLHS 2.4.8.4).
@@ -1052,10 +1078,10 @@
     (setq bits (nreverse bits))
     (let ((next (peek-char nil stream nil nil)))
       (if (and next (not (%terminatorp next)))
-          (error "a bit vector holds only 0 and 1")))
+          (error 'reader-error "a bit vector holds only 0 and 1")))
     (cond ((null argument) (coerce bits 'bit-vector))
-          ((> (length bits) argument) (error "more bits than the length given"))
-          ((and (null bits) (> argument 0)) (error "a length but no bits to fill it with"))
+          ((> (length bits) argument) (error 'reader-error "more bits than the length given"))
+          ((and (null bits) (> argument 0)) (error 'reader-error "a length but no bits to fill it with"))
           (t (let ((vector (make-array argument :element-type 'bit
                                                 :initial-element (if bits (car (last bits)) 0))))
                (dotimes (i (length bits) vector)
@@ -1065,7 +1091,7 @@
 ;;; as it has dimensions; each dimension is the length at that depth.
 (defun %read-sharp-a (stream sub-char argument)
   (let ((contents (%read-required stream)))
-    (if (null argument) (error "#A wants a rank: #2A"))
+    (if (null argument) (error 'reader-error "#A wants a rank: #2A"))
     (let ((dimensions nil) (level contents))
       (dotimes (i argument)
         (push (length level) dimensions)
@@ -1147,7 +1173,7 @@
 ;;; `#:name` — a symbol in no package, new every time it is read.
 (defun %read-sharp-colon (stream sub-char argument)
   (multiple-value-bind (text escaped colons) (%start-token stream (read-char stream))
-    (if colons (error "a package marker in an uninterned symbol") (make-symbol text))))
+    (if colons (error 'reader-error "a package marker in an uninterned symbol") (make-symbol text))))
 
 ;;; `#| ... |#` — a comment, which nests, and reads as nothing.
 (defun %read-block-comment (stream sub-char argument)

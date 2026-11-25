@@ -321,3 +321,7 @@ pub fn parse<'h>(mc: &mut Mutation<'h>, text: &str) -> Result<Value<'h>, EvalErr
 pub fn digits(x: f64) -> String {
     format!("{:e}", x.abs())
 }
+
+#[cfg(test)]
+#[path = "unit/float.rs"]
+mod tests;

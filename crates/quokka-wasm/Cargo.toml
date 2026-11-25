@@ -22,3 +22,6 @@ wasm-bindgen = "0.2.100"
 # Tests build a world to load, which is the cold build's job.
 [dev-dependencies]
 quokka-bootstrap.workspace = true
+
+[lints]
+workspace = true

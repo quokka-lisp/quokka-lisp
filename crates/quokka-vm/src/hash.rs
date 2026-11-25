@@ -672,3 +672,7 @@ fn rehash<'h>(mc: &mut Mutation<'h>, table: Value<'h>, new_count: usize) -> Resu
     mc.set_slot(table, BUCKETS, fresh);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "unit/hash.rs"]
+mod tests;

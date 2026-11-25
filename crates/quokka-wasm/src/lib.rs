@@ -33,9 +33,6 @@
 //! line in one mutation: no world, no tier 1, no collection during a form,
 //! and a page that could not repaint until the form ended.
 
-#![forbid(unsafe_code)]
-#![warn(missing_docs)]
-
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{self, HostError, Request};
 use quokka_vm::slice::Status;

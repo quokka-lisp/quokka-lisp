@@ -20,3 +20,6 @@ libm = "0.2"
 default = []
 # CLAUDE.md / design.md: collect on every allocation. Run this in CI.
 gc-torture = []
+
+[lints]
+workspace = true

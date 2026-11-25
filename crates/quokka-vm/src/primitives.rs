@@ -12,9 +12,14 @@
 //! # Rule 9: primitives are bounded
 //!
 //! A step budget only bounds time if one step is short, and nothing can
-//! interrupt a primitive once control is inside it. Every one of these is O(1)
-//! on its arguments. The first that is not — sorting, bignum multiplication,
-//! hashing a long string — needs a plan for being resumable before it is added.
+//! interrupt a primitive once control is inside it. Most of these are O(1) on
+//! their arguments. The ones that are not are bounded another way, each
+//! saying how where it is defined: a size is checked against the heap before
+//! anything is allocated (`size`); a walk along a list stops on a cycle
+//! (`Mutation::list_elements`); a hash looks at a fixed number of elements.
+//! A few are still linear in one step — `%assemble`, a stale table's rehash —
+//! and say so. A new primitive whose cost grows with its argument needs one
+//! of these answers before it is added.
 //!
 //! # Indices are part of the image format
 //!
@@ -796,10 +801,10 @@ pub fn call_slice<'h>(
         Prim::Cons => Ok(mc.cons(args[0], args[1])),
         Prim::Car => list_part(mc, name, args[0], true),
         Prim::Cdr => list_part(mc, name, args[0], false),
-        Prim::Eq => Ok(truth(args[0] == args[1])),
-        Prim::Null => Ok(truth(args[0].is_nil())),
-        Prim::Consp => Ok(truth(args[0].is_cons())),
-        Prim::Symbolp => Ok(truth(mc.is_symbol(args[0]))),
+        Prim::Eq => Ok(boolean(args[0] == args[1])),
+        Prim::Null => Ok(boolean(args[0].is_nil())),
+        Prim::Consp => Ok(boolean(args[0].is_cons())),
+        Prim::Symbolp => Ok(boolean(mc.is_symbol(args[0]))),
         Prim::Append => {
             if args.is_empty() {
                 return Ok(Value::NIL);
@@ -1073,10 +1078,10 @@ pub fn call_slice<'h>(
             Ok(mc.slot(args[0], slot))
         }
         Prim::ArrayKind => Ok(Value::fixnum(crate::array::kind_code(mc, args[0])).expect("small")),
-        Prim::Integerp => Ok(truth(
+        Prim::Integerp => Ok(boolean(
             args[0].as_fixnum().is_some() || crate::bignum::is(mc, args[0]),
         )),
-        Prim::SpecialOperatorP => Ok(truth(
+        Prim::SpecialOperatorP => Ok(boolean(
             mc.is_symbol(args[0])
                 && mc
                     .slot(args[0], crate::heap::symbol::SPECIAL)
@@ -1101,10 +1106,13 @@ pub fn call_slice<'h>(
         ),
         Prim::Quotient | Prim::Rem => {
             let (n, d) = (fixnum(name, args[0])?, fixnum(name, args[1])?);
+            // A `division-by-zero`, as `/` signals: it was a type error, so
+            // `(mod 5 0)` got past a handler for the condition CL names
+            // (#113).
             if d == 0 {
-                return Err(EvalError::WrongType {
-                    name,
-                    wanted: "a divisor other than zero",
+                return Err(EvalError::Arithmetic {
+                    condition: "DIVISION-BY-ZERO",
+                    detail: "division by zero",
                 });
             }
             // Rust's `/` and `%` truncate towards zero, which is exactly CL's
@@ -1145,7 +1153,7 @@ pub fn call_slice<'h>(
             };
             match prim {
                 Prim::BignumLength => make(Some(bignum::length(mc, b) as i64)),
-                Prim::BignumNegativeP => Ok(truth(bignum::negative(mc, b))),
+                Prim::BignumNegativeP => Ok(boolean(bignum::negative(mc, b))),
                 Prim::BignumLimb => make(Some(bignum::limb(mc, b, index(args[1])?) as i64)),
                 Prim::SetBignumLimb => {
                     let at = index(args[1])?;
@@ -1163,7 +1171,7 @@ pub fn call_slice<'h>(
                 _ => Ok(bignum::normalize(mc, b)),
             }
         }
-        Prim::Bignump => Ok(truth(crate::bignum::is(mc, args[0]))),
+        Prim::Bignump => Ok(boolean(crate::bignum::is(mc, args[0]))),
         Prim::FixnumToBignum => Ok(crate::bignum::from_i64(mc, fixnum(name, args[0])?)),
         Prim::IntegerCompare => match crate::bignum::compare(mc, args[0], args[1]) {
             Some(order) => make(Some(order as i64)),
@@ -1180,9 +1188,9 @@ pub fn call_slice<'h>(
                 _ => a ^ b,
             }))
         }
-        Prim::Floatp => Ok(truth(float::is(mc, args[0]))),
+        Prim::Floatp => Ok(boolean(float::is(mc, args[0]))),
         Prim::Float => float::float(mc, args[0]),
-        Prim::DoubleEql => Ok(truth(
+        Prim::DoubleEql => Ok(boolean(
             float::is(mc, args[0])
                 && float::is(mc, args[1])
                 && mc.raw_slot(args[0], 0) == mc.raw_slot(args[1], 0),
@@ -1278,7 +1286,7 @@ pub fn call_slice<'h>(
             };
             Ok(match prim {
                 Prim::CharCode => Value::fixnum(ch as i64).expect("a code fits a fixnum"),
-                Prim::AlphaCharP => truth(ch.is_alphabetic()),
+                Prim::AlphaCharP => boolean(ch.is_alphabetic()),
                 Prim::CharUpcase => Value::character(case_partner(ch, true)),
                 _ => Value::character(case_partner(ch, false)),
             })
@@ -1326,9 +1334,22 @@ pub fn call_slice<'h>(
                     wanted: "a symbol",
                 });
             }
+            // `nil`, `t` and a keyword are constants: `(set nil 5)` used to
+            // succeed, and after it nothing in the world meant what it said
+            // (#113). The compiler refuses to bind or assign one by name;
+            // this is the same rule for a name computed at run time.
+            if matches!(prim, Prim::Set | Prim::Makunbound)
+                && (args[0].is_nil() || args[0] == Value::T || mc.is_keyword(args[0]))
+            {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted:
+                        "a symbol that is not a constant: nil, t and keywords keep their values",
+                });
+            }
             let value = mc.slot(args[0], symbol::VALUE);
             match prim {
-                Prim::Boundp => Ok(truth(value != Value::UNBOUND)),
+                Prim::Boundp => Ok(boolean(value != Value::UNBOUND)),
                 Prim::SymbolValue if value == Value::UNBOUND => {
                     let what = mc.string_to_rust(mc.slot(args[0], symbol::NAME));
                     Err(EvalError::UnboundVariable(what))
@@ -1450,7 +1471,7 @@ pub fn call_slice<'h>(
                     Ok(args[1])
                 }
                 // A function, a macro or a special operator (CLHS `fboundp`).
-                Prim::Fboundp => Ok(truth(
+                Prim::Fboundp => Ok(boolean(
                     mc.slot(args[0], symbol::FUNCTION) != Value::UNBOUND
                         || mc.slot(args[0], symbol::SPECIAL).as_fixnum().is_some(),
                 )),
@@ -1462,7 +1483,7 @@ pub fn call_slice<'h>(
         }
         // A closure, a compiled function or a primitive; not a macro, and not
         // a symbol, though a symbol can designate a function (#62).
-        Prim::Functionp => Ok(truth(
+        Prim::Functionp => Ok(boolean(
             args[0].as_primitive().is_some()
                 || (args[0].is_object()
                     && matches!(
@@ -1519,14 +1540,6 @@ pub(crate) fn case_partner(ch: char, up: bool) -> char {
 
 fn is_structure<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
     v.is_object() && mc.header(v).object_type == ObjectType::Instance
-}
-
-fn truth<'h>(b: bool) -> Value<'h> {
-    if b {
-        Value::T
-    } else {
-        Value::NIL
-    }
 }
 
 /// A list that loops where a primitive wanted one that ends (#92).

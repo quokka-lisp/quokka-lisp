@@ -1,8 +1,10 @@
 //! Quokka core VM.
 //!
-//! This crate is everything below the primitive table: tagged words, the heap,
-//! the garbage collector, image save and load, the reader, the bootstrap
-//! interpreter and (later) bytecode execution.
+//! This crate is the machine, everything below the primitive table: tagged
+//! words, the heap, the garbage collector, image save and load, the bytecode
+//! VM and its verifier, and the protocol a host answers. The reader and the
+//! interpreter that build the first world are `quokka-bootstrap`, which this
+//! crate cannot reach (#29).
 //!
 //! It has **no host dependencies**. No `std::fs`, no threads, no wall clock, no
 //! networking. Everything the VM needs from the outside world arrives through
@@ -16,9 +18,6 @@
 //! and why it is shaped the way it is.
 //!
 //! See `docs/design.md` for the design and `CLAUDE.md` for the rules.
-
-#![deny(rust_2018_idioms)]
-#![warn(missing_docs)]
 
 pub mod array;
 pub mod bignum;

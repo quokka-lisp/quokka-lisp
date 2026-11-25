@@ -24,6 +24,21 @@
 ;;;; 3. **Common Lisp semantics** (rule 6). These are CL's macros, not
 ;;;;    lookalikes. `tests/lisp/prelude.lisp` checks them against SBCL.
 
+;;;; **What the library replaces.** The prelude is what the interpreter and
+;;;; the compiler need, and no more. Seventeen of its definitions are small
+;;;; versions that `lisp/library/` defines again in full once the world is
+;;;; compiled, so a reader who finds one here should look there for what a
+;;;; program actually calls:
+;;;;
+;;;;     member  endp  elt  nth  reverse  copy-seq  svref
+;;;;     make-array  make-string  make-hash-table  char=
+;;;;     macroexpand  macroexpand-1  setf  defstruct
+;;;;     %symbol-concat  %destructuring-too-short  %destructuring-too-long
+;;;;
+;;;; Every `%` name in `lisp/` shares one package with the compiler, so a
+;;;; second definition that is not on this list is a mistake: search before
+;;;; adding one.
+
 ;;; ------------------------------------------------------------------
 ;;; Declarations
 ;;; ------------------------------------------------------------------
@@ -310,11 +325,10 @@
                                 (walk (+ i 1))))))
             (walk 0))))))
 
-;; `(reverse "abc")` gives a vector of characters rather than a string, which
-;; Common Lisp would not: it returns a sequence of the same type. The allocator
-;; it was waiting for now exists — `%make-string`, just below — so this is a
-;; small fix rather than a missing feature. Said rather than hidden;
-;; `tests/lisp/vectors.lisp` does not ask.
+;; This `reverse` gives a general vector for a string, which Common Lisp
+;; would not: it returns a sequence of the same type. The library's
+;; `reverse` (`sequences.lisp`) keeps the kind and replaces this one; the
+;; compiler only reverses lists.
 
 ;; A source literal is a constant string and refuses `%set-aref` (issue #26),
 ;; because sharing an object is only sound when nothing can write to it. So a
@@ -348,8 +362,9 @@
 (defun elt (sequence index)
   (if (listp sequence) (nth index sequence) (aref sequence index)))
 
-;; `svref` is `aref` restricted to simple vectors. Quokka has only simple
-;; vectors, so for now it is the same function under a second name.
+;; `svref` is `aref` restricted to simple vectors. Tier 0 has only simple
+;; vectors, so here it is the same function under a second name; the
+;; library's (`arrays.lisp`) checks, now that other arrays exist.
 (defun svref (vector index) (aref vector index))
 
 ;; CLHS `make-array` takes a list of dimensions, an element type, a fill
@@ -385,11 +400,12 @@
 (defun nth (n list)
   (if (= n 0) (car list) (nth (- n 1) (cdr list))))
 
-;; CLHS says `member` compares with `eql` unless told otherwise. Quokka has no
-;; `eql` yet, and `eq` is the same thing for every type that currently exists:
+;; CLHS says `member` compares with `eql` unless told otherwise. This one
+;; compares with `eq`, which is the same thing for everything tier 0 has:
 ;; fixnums are immediate values, so two equal fixnums are the identical word.
-;; That stops being true the moment bignums or floats arrive (#16, #17), and
-;; this line will have to change then.
+;; Bignums and floats (#16, #17) made that untrue, and the library's `member`
+;; (`lists.lisp`) is CL's, with `eql` and the keywords. The compiler's own
+;; calls, on symbols, get the same answer from either.
 (defun member (item list)
   (cond ((endp list) nil)
         ((eq item (car list)) list)
@@ -462,8 +478,9 @@
   ;;
   ;; The test must be the *symbol* `eq`, `eql` or `equal`. Common Lisp also
   ;; accepts the function — `:test #'equal` — and comparing function objects
-  ;; is how an implementation would tell which one it got. Quokka has no
-  ;; `equal` function to take `#'` of, so the question does not arise yet.
+  ;; is how an implementation would tell which one it got. Tier 0 has no
+  ;; `equal` function to take `#'` of; the library's `make-hash-table`
+  ;; (`hash-tables.lisp`) takes the function, and `equalp`.
   (%make-hash-table test))
 
 ;; A marker meaning "no entry", made once at boot. A gensym, so no program

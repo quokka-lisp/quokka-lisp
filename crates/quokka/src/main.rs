@@ -179,6 +179,19 @@ A world may read files under the current directory and nowhere else:
   --allow-read PATH   a further file or directory it may read; may be repeated
 ";
 
+/// Say what went wrong and stop, with the status of a failure. One spelling
+/// for every such message: it was "cannot read …" in four places and
+/// "quokka: …" in the rest (#121).
+fn die(message: &str) -> ! {
+    eprintln!("quokka: {message}");
+    std::process::exit(1);
+}
+
+/// The text of a file named on the command line, or stop.
+fn source_of(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| die(&format!("cannot read {path}: {e}")))
+}
+
 /// Say what went wrong, then how to use the program, and stop.
 fn usage_error(message: &str) -> ! {
     eprintln!("quokka: {message}\n\n{USAGE}");
@@ -227,10 +240,7 @@ fn build(args: &[String]) {
     // how a world comes to hold work rather than just a boot. Read by the
     // world's own reader and compiled by its own compiler (#47).
     for path in sources {
-        let source = std::fs::read_to_string(path).unwrap_or_else(|e| {
-            eprintln!("cannot read {path}: {e}");
-            std::process::exit(1);
-        });
+        let source = source_of(path);
         let mut failed = None;
         let ran = quokka_vm::vm::eval_source(
             &mut heap,
@@ -272,7 +282,9 @@ fn rebuild(args: &[String]) {
         usage_error("rebuild needs the world to start from and a file to save the result in");
     };
     let mut heap = load_image(from);
-    let mut said = String::new();
+    // What the one form came to. Matched as an `Outcome`, where this used to
+    // format it for debugging and test whether the text began "Value" (#121).
+    let mut outcome = None;
     let ran = quokka_vm::vm::eval_source(
         &mut heap,
         "(quokka::%rebuild-world)",
@@ -281,16 +293,31 @@ fn rebuild(args: &[String]) {
         EVAL_BUDGET * 60,
         2_000,
         &mut NativeHost,
-        |outcome| {
-            said = format!("{outcome:?}");
-            true
+        |came| {
+            outcome = Some(came);
+            false
         },
     );
-    if ran.is_err() || !said.starts_with("Value") {
-        eprintln!("quokka: the rebuild failed: {said} {ran:?}");
-        std::process::exit(1);
+    let failure = match (ran, outcome) {
+        (Ok(()), Some(Outcome::Value(report))) => {
+            println!("rebuilt: {report}");
+            None
+        }
+        (Ok(()), Some(Outcome::Error(message))) => Some(message),
+        (Ok(()), Some(Outcome::Failed(e))) | (Err(e), _) => Some(e.to_string()),
+        (Ok(()), None) => Some("the world read no form to rebuild with".to_string()),
+    };
+    if let Some(why) = failure {
+        // The usual reason: the source is found by name, beneath the
+        // directory the program was started in.
+        let hint = if why.contains("not found") || why.contains("denied") {
+            "\nquokka: a rebuild reads lisp/ beneath the current directory: \
+             run it from the repository's root, or name that with --root"
+        } else {
+            ""
+        };
+        die(&format!("the rebuild failed: {why}{hint}"));
     }
-    println!("rebuilt: {said}");
     save_world(&mut heap, to).unwrap_or_else(|e| {
         eprintln!("quokka: {e}");
         std::process::exit(1);
@@ -405,10 +432,7 @@ fn bootstrap(args: &[String]) {
         // Interpret a file and print the differential format, which is how
         // tier-0 baselines are produced.
         [flag, file] if flag == "--run" => {
-            let source = std::fs::read_to_string(file).unwrap_or_else(|e| {
-                eprintln!("cannot read {file}: {e}");
-                std::process::exit(1);
-            });
+            let source = source_of(file);
             print!("{}", quokka_bootstrap::run_forms(&source, EVAL_BUDGET));
         }
         // Compile every form of a file and report what happened, installing
@@ -425,10 +449,7 @@ fn bootstrap(args: &[String]) {
 }
 
 fn compile_file(file: &str) {
-    let source = std::fs::read_to_string(file).unwrap_or_else(|e| {
-        eprintln!("cannot read {file}: {e}");
-        std::process::exit(1);
-    });
+    let source = source_of(file);
     let mut heap = Heap::new();
     let prepared = quokka_bootstrap::boot::install(&mut heap)
         .and_then(|()| quokka_bootstrap::boot::install_compiler(&mut heap));
@@ -614,10 +635,7 @@ fn contained<T>(heap: &mut Heap, otherwise: T, work: impl FnOnce(&mut Heap) -> T
 
 /// Read an image file into a heap, or say why not and stop.
 fn load_image(path: &str) -> Heap {
-    let bytes = std::fs::read(path).unwrap_or_else(|e| {
-        eprintln!("cannot read {path}: {e}");
-        std::process::exit(1);
-    });
+    let bytes = std::fs::read(path).unwrap_or_else(|e| die(&format!("cannot read {path}: {e}")));
     quokka_vm::image::load(&bytes, DEFAULT_IMAGE_LIMIT).unwrap_or_else(|e| {
         eprintln!("quokka: {path}: {e}");
         std::process::exit(1);
