@@ -13,7 +13,8 @@
 (%deferred "tier-2:clos"
   :defclass :defgeneric :defmethod :make-instance :make-instances-obsolete :slot-value
   :slot-boundp :slot-makunbound :slot-exists-p :slot-missing :slot-unbound :class-of
-  :find-class :class-name :call-next-method :next-method-p :change-class
+  :find-class :class-name :call-next-method :next-method-p :call-method :make-method
+  :change-class
   :reinitialize-instance :shared-initialize :initialize-instance :allocate-instance
   :update-instance-for-different-class :update-instance-for-redefined-class :with-slots
   :with-accessors :add-method :remove-method :find-method :compute-applicable-methods

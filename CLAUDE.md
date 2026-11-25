@@ -376,9 +376,16 @@ timeouts were slowness — `%string-mismatch` (a primitive; every string
 comparison has a fast path to it), a merge sort that relinks conses, set
 functions that hash a long second list; plus `disassemble`, `provide`,
 `require`. Rust 53, `LIMIT` 16,017. **Phase 2's gate is met (25 Nov
-2026)**: ansi-test's 15 tier-1 groups, 13,558 tests — 8,141 pass, the
-other 5,417 all explained by deferred features or by SBCL agreeing; no
+2026)**: ansi-test's 15 tier-1 groups, 13,557 tests — 8,135 pass, the
+other 5,422 all explained by deferred features or by SBCL agreeing; no
 plain failure, escape, timeout or tier-1 gap; the fixpoint holds.
+**A test that expects an error from a form using an operator Quokka lacks
+is never counted as a pass** (`%caught-needs` in `tests/ansi/runner.lisp`):
+on 25 Nov 2026, once every compile error was a `program-error` (#103),
+fourteen `(signals-error (loop ...) program-error)` tests "passed" in a
+Quokka with no `loop`, and the ratchet would have demanded the accident go
+on happening; the same rule took six `pprint` tests out of the baseline
+(8,141 → 8,135).
 `ANSI_TEST_GROUPS=a,b` runs a few groups as the full run reaches them.
 **The compiler's lexical environment is one list** (#111, 25 Nov 2026):
 `env`, an argument, innermost entry first, each `(kind . contents)`; nil is

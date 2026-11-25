@@ -47,8 +47,8 @@ compiled function is the same in the first build and in two rebuilds, and the
 two rebuilt worlds are the same word for word, apart from gensym names. That
 stays a standing test ([#50](https://github.com/quokka-lisp/quokka-lisp/issues/50)).
 **And tier 1 is complete and measured**
-([#82](https://github.com/quokka-lisp/quokka-lisp/issues/82)): of the 13,558
-tests in ansi-test's fifteen tier-1 groups, 8,141 pass, and every one of the
+([#82](https://github.com/quokka-lisp/quokka-lisp/issues/82)): of the 13,557
+tests in ansi-test's fifteen tier-1 groups, 8,135 pass, and every one of the
 rest is explained by a feature deferred to a later tier, such as `loop`, CLOS
 or `typep`. Phase 3, conditions and processes, is next.
 **How to build, run, rebuild and test it all is in the
@@ -167,7 +167,7 @@ primitive table is Lisp.
 ### What does not exist yet
 
 **Tier 2.** Tier 1 is complete and measured against ansi-test, the Common
-Lisp conformance suite: 8,141 of 13,558 tests in the groups it runs pass, and
+Lisp conformance suite: 8,135 of 13,557 tests in the groups it runs pass, and
 the rest wait for features of later tiers
 ([`docs/ansi-test.md`](docs/ansi-test.md) has the table; #60, #82).
 The first world is still built by the interpreter, which is the cold build,

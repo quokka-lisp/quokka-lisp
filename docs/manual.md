@@ -429,7 +429,10 @@ That rewrites the baseline and the summary in `docs/ansi-test.md`; commit
 both with the change. Every result, with its detail, is in
 `target/ansi-test-results.txt`. A test reported as *needs X* uses something
 Quokka lacks; whether X is deferred or a gap in tier 1 is decided by
-`tests/ansi/deferred.lisp`. `tests/ansi/README.md` explains the files and how
+`tests/ansi/deferred.lisp`. That holds even when its assertion is satisfied: a
+test that expects an error from a form using a missing operator gets its
+error from the operator being missing, so it is *needs X* and never a pass.
+`tests/ansi/README.md` explains the files and how
 to run a few test files only. To run a few groups as the full run reaches
 them, and see what does not pass, without touching the baseline:
 

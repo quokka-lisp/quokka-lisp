@@ -112,16 +112,21 @@
 ;;; would be walked for ever, so the walk stops after *walk-limit* nodes.
 ;;; (An `eq` table of the conses met could do it exactly since #64; a limit
 ;;; has been enough.)
+;;;
+;;; With HELPERS nil the suite's helpers are not looked into: only what FORM
+;;; itself says counts, and a helper that never loaded. `%caught-needs` asks
+;;; that way, and says why.
 (defvar *walk-limit* 20000)
 
-(defun %needs (form)
+(defun %needs (form &optional (helpers t))
   (let ((left *walk-limit*)
         (reasons nil))
     (labels ((walk (x)
                (setq left (- left 1))
                (cond ((< left 0) nil)
                      ((symbolp x)
-                      (dolist (r (%symbol-need x)) (pushnew r reasons :test #'string=)))
+                      (dolist (r (%symbol-need x helpers))
+                        (pushnew r reasons :test #'string=)))
                      ((consp x) (walk (car x)) (walk (cdr x)))
                      ((and (vectorp x) (not (stringp x)))
                       (dotimes (i (length x)) (walk (aref x i)))))))
@@ -136,12 +141,12 @@
 (defvar *definitions* (make-hash-table :test 'eq))
 (defvar *helper-needs* (make-hash-table :test 'eq))
 
-(defun %symbol-need (symbol)
+(defun %symbol-need (symbol helpers)
   (cond ((null symbol) nil)
         ((gethash symbol *broken*))
         ((and (gethash symbol *cl-operators*) (not (%operator-p symbol)))
          (list (%reason-for symbol)))
-        ((gethash symbol *definitions*) (%helper-need symbol))
+        ((and helpers (gethash symbol *definitions*)) (%helper-need symbol))
         (t nil)))
 
 (defun %helper-need (symbol)
@@ -157,6 +162,47 @@
     (if deferred
         (format nil "~A[~A]" (symbol-name symbol) deferred)
         (format nil "~A[tier-1]" (symbol-name symbol)))))
+
+;;; A pass that proves nothing (#103). A test that expects an error is
+;;; satisfied by any error of the right type, and an operator Quokka lacks
+;;; supplies one: `(signals-error (loop for x in '(1) ...) program-error)`
+;;; holds in a Quokka with no LOOP at all, because the form does not compile
+;;; and every compile error is a PROGRAM-ERROR. Fourteen LOOP tests "passed"
+;;; that way on 25 Nov 2026, and the ratchet would have required the accident
+;;; to go on happening. So a test whose values were the expected ones is
+;;; still reported as needing an operator when the operator stands inside a
+;;; form that catches errors: these are the reasons, nil if there are none.
+;;;
+;;; Only inside such a form. Anywhere else a pass is evidence that the
+;;; operator was never reached: calling something undefined signals, nothing
+;;; caught it, and the test would have failed. COUNT-IF-LIST.3 is
+;;; `(count-if #'(lambda (x) (break)) nil)`, expecting 0: BREAK is the
+;;; tripwire that proves the function is not called on an empty list, and
+;;; Quokka passes it honestly. And helpers are not looked into, as they are
+;;; for a failure: MACRO-FUNCTION.5 maps over `*cl-function-symbols*`, whose
+;;; definition names every operator as data. `%needs` over-reports on
+;;; purpose, which is right for explaining a failure and wrong for taking a
+;;; pass away.
+;;;
+;;; The catching forms are the ones a test can write: the runner's own
+;;; helpers, HANDLER-CASE and IGNORE-ERRORS. A helper of the suite's that
+;;; catches errors inside its own definition is not seen.
+(defvar *catchers*
+  '(cl-test::signals-error cl-test::signals-error-always cl-test::classify-error
+    cl-test::classify-error* cl-test::catch-type-error handler-case ignore-errors))
+
+(defun %caught-needs (form)
+  (let ((left *walk-limit*)
+        (reasons nil))
+    (labels ((walk (x)
+               (setq left (- left 1))
+               (cond ((< left 0) nil)
+                     ((not (consp x)) nil)
+                     ((member (car x) *catchers*)
+                      (dolist (r (%needs x nil)) (pushnew r reasons :test #'string=)))
+                     (t (walk (car x)) (walk (cdr x))))))
+      (walk form))
+    (sort reasons #'string<)))
 
 ;;; ------------------------------------------------------------------------
 ;;; Comparing values, as rt.lsp's EQUALP-WITH-CASE does: like EQUALP, but
@@ -436,7 +482,12 @@
                           (error (condition) (list :signalled (%condition-text condition))))))
             (if (and (not (and (consp values) (eq (car values) :signalled)))
                      (%same values expected))
-                (format nil "PASS ~A" name)
+                ;; The expected values are a pass unless an operator Quokka
+                ;; lacks could have supplied the error the test expects.
+                (let ((accident (%caught-needs test)))
+                  (if accident
+                      (format nil "NEEDS ~A ~{~A~^ ~}" name accident)
+                      (format nil "PASS ~A" name)))
                 ;; Every test runs; what it needs is asked only once it has
                 ;; failed, to explain the failure (decision 4). Asking first
                 ;; would skip tests that pass, such as one using a helper that

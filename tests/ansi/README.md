@@ -24,7 +24,10 @@ about five minutes.
 
 A test's result is one of:
 
-- **pass**: its values were the expected ones.
+- **pass**: its values were the expected ones — unless the test expects an
+  error from a form that uses an operator Quokka lacks, which is *needs*: the
+  missing operator supplies an error whatever the test meant to provoke
+  (`%caught-needs` in `runner.lisp` has the story).
 - **fail**: Quokka had everything the test uses and got a different answer, or
   signalled.
 - **escaped**: an error no Lisp handler could catch reached the driver, which
