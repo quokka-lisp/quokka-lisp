@@ -277,15 +277,21 @@ What to expect today:
 
 ## 4. Running the tests
 
-### Everything CI runs
+### Everything, before a commit
+
+CI checks every push for compliance: the native tests, SBCL, ansi-test, both
+WebAssembly builds and the page in a browser. The two compute-heavy runs —
+the whole suite under GC torture, and again under wasmtime — are left to
+this script on your machine, and to the "Run workflow" button on GitHub.
 
 ```bash
 ./scripts/check.sh
 ```
 
-Run this before every commit. With Rust already built it takes about two and a
-half minutes (152 seconds on the machine this was written on), so it is worth
-running in a second terminal. It runs, in order:
+Run this before every commit. With Rust already built it takes about six
+minutes when `wasmtime` is installed, most of it the suite on one thread
+under WebAssembly, so it is worth running in a second terminal. It runs, in
+order:
 1. the book's structure;
 2. formatting and clippy;
 3. the native build and every test;

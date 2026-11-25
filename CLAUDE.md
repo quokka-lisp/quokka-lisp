@@ -578,7 +578,7 @@ build it as a site, but mdBook is not required for anything and is not in CI.
 ## Rules that must not be broken
 
 1. **Rust below the primitive table, Lisp above it.** Rust provides only the VM: tagged words, heap, GC, image save/load, the bootstrap interpreter, bytecode execution, and host glue. Anything a user could want to change belongs in Lisp. If you are about to add a feature in Rust, check whether it belongs above the line.
-2. **WASM on every commit.** Every change must build and pass tests for both native and `wasm32`. The core VM crate has no host dependencies: no `std::fs`, no threads, no wall clock, no networking. Host services are reached through a host interface implemented separately for native and WASM.
+2. **WASM on every commit.** Every change must build and pass tests for both native and `wasm32`. `./scripts/check.sh` is what holds this, on your machine, before the commit: it runs the suite under wasmtime and under GC torture. CI does not run those two on a push (Carsten, 25 Nov 2026: the compute-heavy runs are local; CI checks compliance) — it builds both wasm targets, runs a world in Node and in a headless browser, and keeps the two heavy jobs for the "Run workflow" button. The core VM crate has no host dependencies: no `std::fs`, no threads, no wall clock, no networking. Host services are reached through a host interface implemented separately for native and WASM.
 3. **Heap references are offsets, never raw pointers.** Store references relative to the heap base so images relocate and the same code runs on 64-bit native and wasm32. Follow the tagged-word scheme in `docs/design.md` (low 3 bits: `xx0` fixnum, `001` cons, `011` heap object, `101` immediate, `111` GC forwarding).
 4. **The VM must be able to yield.** The interpreter runs in slices and returns control to its caller (the browser event loop). No unbounded blocking loops in the core. Execution state therefore lives in our heap as explicit frames, never on the Rust call stack — no recursive `eval`. The caller decides when a slice ends by passing a step budget to `run_slice`; the VM has no clock and no yield callback. Slicing must stay semantically invisible: collect on allocation rather than on slice boundaries, and never expose the remaining budget to Lisp. See `crates/quokka-vm/src/slice.rs`.
 5. **The tier 0 rule.** Lisp sources for the compiler and core library use only tier 0 of the CL subset: no `loop`, no CLOS, only basic `format`, no `progv`, `load-time-value` or `symbol-macrolet`. The phase 0 interpreter only needs to support tier 0.
@@ -632,7 +632,7 @@ lisp/                    Lisp sources: the prelude and compiler (tier 0), the li
 tests/lisp/              differential test files
 docs/design.md        the design
 book/                 The Road to Quokka, written alongside the system
-scripts/check.sh      everything CI runs, in one command
+scripts/check.sh      everything CI runs and the two heavy runs it does not, in one command
 .github/workflows/    CI: native, GC torture, both wasm targets, rustdoc, SBCL oracle
 ```
 
@@ -642,10 +642,11 @@ scripts/check.sh      everything CI runs, in one command
 building, rebuilding, testing, adding things. When a step changes a command, a
 REPL flag, a file list or a test name, change the manual in the same commit.
 
-`./scripts/check.sh` runs everything CI runs. Use it before every commit — it is
-the cheapest way to honour rule 2. It takes about 2½ minutes now (152 s) — the rebuild
-tests rebuild the system twice, and GC torture runs everything again — so run
-it in the background.
+`./scripts/check.sh` runs everything CI runs **and the two heavy runs CI
+leaves to it**: the whole suite under GC torture and again under wasmtime.
+Use it before every commit — it is the only thing that honours rule 2 now.
+It takes about six minutes with wasmtime installed, so run it in the
+background.
 
 **Tests run optimised** (`[profile.test]` in the workspace `Cargo.toml`), because
 the time goes into *running* them rather than compiling them: this is an
@@ -664,7 +665,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 
 | What | Command |
 | --- | --- |
-| Everything CI runs | `./scripts/check.sh` |
+| Everything, before a commit | `./scripts/check.sh` — what CI runs, plus GC torture and the tests under wasmtime, which CI runs only on request |
 | Build (native) | `cargo build --workspace` |
 | Test (native) | `cargo test --workspace` |
 | Run a world | `cargo run --release -p quokka -- world.qi` — **this is Quokka**: every form read, evaluated and printed by the world's own Lisp (#47); `:save FILE` saves the world between forms (#51); `quokka` with no world refuses |

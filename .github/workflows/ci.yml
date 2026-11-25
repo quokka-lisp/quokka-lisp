@@ -101,8 +101,21 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  # **The two heavy jobs run on request, not on every push** (Carsten, 25 Nov
+  # 2026). GC torture and the tests under wasmtime each run the whole suite
+  # again, slowly — one collects and verifies the heap after every slice, the
+  # other has one thread — and between them were twelve to eighteen minutes
+  # of a run whose other jobs finish in under five. Neither asks "is this
+  # still Common Lisp?", which is what CI is for here; they ask whether the
+  # machine is sound, and `./scripts/check.sh` asks that on the developer's
+  # machine before every commit. They stay here for the "Run workflow"
+  # button, so that they can be run on these machines when wanted.
+  #
+  # What every push still does on wasm32: both targets are built, and a world
+  # runs in a JavaScript engine and in a headless browser (wasm-browser).
   gc-torture:
     name: GC torture (collect at every mutation, then verify)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -119,6 +132,10 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # quokka is a native host and is deliberately excluded.
       - run: cargo build --locked -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
+      # The other wasm target's tests are built, though run only on request
+      # (see gc-torture): a change that does not compile for WASI is caught
+      # here for the price of a build.
+      - run: cargo test --locked --no-run -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1
       # And then as the page gets it: bundled by wasm-pack, loaded by a
       # JavaScript engine, given a world, and asked a question (#116). Until
       # this step nothing in CI produced the bundle index.html imports, let
@@ -143,6 +160,7 @@ jobs:
 
   wasm-wasi:
     name: wasm32-wasip1 (tests under wasmtime)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

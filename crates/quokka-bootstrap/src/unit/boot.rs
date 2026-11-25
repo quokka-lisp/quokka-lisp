@@ -2032,7 +2032,12 @@ fn the_bounds_leave_ordinary_programs_alone() {
 /// Each gets a fresh world: some of these calls unbind or redefine what the
 /// next would need. And the heap must verify afterwards — a primitive that
 /// returns having corrupted the heap is the worse fault.
+///
+/// Not run on wasm32: the primitives are the same Rust there, a panic
+/// cannot be caught there, and with one thread it was a quarter of that
+/// job's time in CI.
 #[test]
+#[cfg_attr(target_arch = "wasm32", ignore)]
 fn no_primitive_panics_on_any_argument() {
     let mut failed = Vec::new();
     for name in quokka_vm::primitives::names() {

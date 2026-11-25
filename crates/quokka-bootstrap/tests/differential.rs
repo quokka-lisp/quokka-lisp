@@ -37,6 +37,22 @@
 /// Steps one file may take. Generous: the slowest case is `(down 10000)`.
 const BUDGET: u64 = 5_000_000;
 
+/// How many steps a slice runs before the heap may collect.
+///
+/// Two thousand, as a host would give — except under GC torture, which
+/// collects *and verifies the whole heap* after every slice. A rebuild is
+/// some two hundred million steps, so at two thousand a slice torture did a
+/// hundred thousand full collections of a 150,000-word heap in each rebuild
+/// test, and those tests were ten of the job's fourteen minutes in CI.
+/// Fifty thousand a slice is still four thousand collections a rebuild, at
+/// points just as arbitrary; what torture is for, a collector that loses or
+/// misplaces something, does not need more.
+const SLICE: u64 = if quokka_vm::heap::TORTURE {
+    50_000
+} else {
+    2_000
+};
+
 macro_rules! differential_cases {
     ($($name:ident => $stem:literal),* $(,)?) => {
         $(
@@ -379,7 +395,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
         "(quokka::%rebuild-world)",
         // As `quokka rebuild` gives it (`crates/quokka/src/main.rs`, #75).
         BUDGET * 60,
-        2_000,
+        SLICE,
         &mut host,
         |outcome| {
             said.push(outcome);
@@ -764,7 +780,7 @@ fn the_fixpoint_notices_a_change() {
         &mut heap,
         "(defun abs (n) (if (minusp n) (- 0 n) n))",
         BUDGET,
-        2_000,
+        SLICE,
         &mut host,
         |_| true,
     )
@@ -819,7 +835,7 @@ fn run_compiled_in(image: &[u8], source: &str) -> String {
     // before each result, which is the order SBCL writes them in.
     let output = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
     let mut host = SharedHost(output.clone(), Vec::new());
-    let ran = eval_source(&mut heap, source, BUDGET, 2_000, &mut host, |outcome| {
+    let ran = eval_source(&mut heap, source, BUDGET, SLICE, &mut host, |outcome| {
         out.push_str(&std::mem::take(&mut *output.borrow_mut()));
         match outcome {
             Outcome::Value(text) => {
@@ -875,7 +891,7 @@ fn load_reads_a_file_through_the_host() {
     let mut results = Vec::new();
     let source =
         r#"(load "virtual.lisp") (from-file) (package-name *package*) (load "missing.lisp")"#;
-    eval_source(&mut heap, source, BUDGET, 2_000, &mut host, |outcome| {
+    eval_source(&mut heap, source, BUDGET, SLICE, &mut host, |outcome| {
         results.push(outcome);
         true
     })
@@ -925,12 +941,12 @@ fn run_compiled_rust_read(source: &str, printer: Printer) -> String {
             }
             Some(true) => {}
         }
-        let ran = call_global(&mut heap, "COMPILE-FORM", BUDGET, 2_000, &mut host)
-            .and_then(|()| run_sliced(&mut heap, BUDGET, 2_000, &mut host));
+        let ran = call_global(&mut heap, "COMPILE-FORM", BUDGET, SLICE, &mut host)
+            .and_then(|()| run_sliced(&mut heap, BUDGET, SLICE, &mut host));
         // The form's value is in the Value register; the Lisp printer leaves
         // its text there instead. A printer that fails is a bug, not a result.
         if ran.is_ok() && printer == Printer::Lisp {
-            call_global(&mut heap, "PRIN1-TO-STRING", BUDGET, 2_000, &mut host)
+            call_global(&mut heap, "PRIN1-TO-STRING", BUDGET, SLICE, &mut host)
                 .unwrap_or_else(|e| panic!("the Lisp printer failed: {e}"));
         }
         out.push_str(&std::mem::take(&mut host.output));
