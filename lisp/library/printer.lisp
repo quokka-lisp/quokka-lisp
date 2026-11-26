@@ -329,9 +329,12 @@
         (error 'print-not-readable "this object cannot be printed readably" object))
     (write-string "#<" out)
     (when type
-      ;; The whole type, however deep the object itself is.
-      (let ((*print-level* nil) (*print-length* nil))
-        (prin1 (type-of object) out))
+      ;; The whole type, however deep the object itself is, and with a
+      ;; package prefix only when escaping, as `prin1` and not `princ`
+      ;; writes it: SBCL's `(write (type-of object) :circle nil :level nil
+      ;; :length nil)`.
+      (let ((*print-level* nil) (*print-length* nil) (*print-circle* nil))
+        (%print-top (type-of object) out))
       (write-char #\Space out))
     (if body (funcall body))
     (if (and identity (or body (not type))) (write-char #\Space out))
@@ -372,12 +375,20 @@
 ;;; so a `prin1-to-string` called while printing starts afresh — unless it
 ;;; is called by a `print-object` method the printer is running: then it
 ;;; continues that printout, at that depth and with that table, or, in the
-;;; first pass, only notes what it would print.
+;;; first pass, only notes what it would print. A method that prints with
+;;; `*print-circle*` false (`(write x :circle nil)`) prints with no labels
+;;; and notes nothing, and one that turns it on in a printout without it
+;;; starts a table of its own, as in SBCL.
 (defun %print-top (object out)
-  (cond (%noting (%note-shared object %circle-table))
+  (cond ((and %noting *print-circle*) (%note-shared object %circle-table))
         (%print-nesting
          (let ((level %print-nesting) (%print-nesting nil))
-           (%print-object object out level)))
+           (cond ((not *print-circle*)
+                  (let ((%circle-table nil) (%noting nil))
+                    (%print-object object out level)))
+                 (%circle-table (%print-object object out level))
+                 (t (let ((%circle-table (%find-shared object)) (%circle-label 0))
+                      (%print-object object out level))))))
         (t (let ((%circle-table (if *print-circle* (%find-shared object) nil))
                  (%circle-label 0))
              (%print-object object out 0)))))

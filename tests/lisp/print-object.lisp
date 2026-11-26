@@ -183,3 +183,32 @@
 (prin1-to-string (make-later :a 1 :b 2))
 (progn (defmethod print-object ((o early) s) (write-string "EARLY" s)) :ok)
 (prin1-to-string (make-later :a 1 :b 2))
+
+;; print-unreadable-object writes the type as princ or prin1 would.
+(progn (defpackage :print-object-other (:use :cl)) :ok)
+(class-name (defclass print-object-other::thing () ()))
+(progn (defmethod print-object ((o print-object-other::thing) s)
+         (print-unreadable-object (o s :type t) (write-string "x" s)))
+       :ok)
+(shown (princ-to-string (make-instance 'print-object-other::thing)))
+(shown (prin1-to-string (make-instance 'print-object-other::thing)))
+(shown (format nil "~A" (make-instance 'print-object-other::thing)))
+
+;; A method that prints with :circle nil leaves the outer labels alone.
+(class-name (defclass circle-off () ((v :initarg :v))))
+(progn (defmethod print-object ((o circle-off) s)
+         (write-string "<" s) (write (slot-value o 'v) :stream s :circle nil) (write-string ">" s))
+       :ok)
+(let* ((*print-circle* t) (x (list 1))) (prin1-to-string (list x (make-instance 'circle-off :v x))))
+(let* ((*print-circle* t) (x (list 1))) (prin1-to-string (list (make-instance 'circle-off :v x) x)))
+
+;; A defstruct printer named by a symbol is called by name when printing,
+;; so it may be defined later, and redefined.
+(defstruct (named-printer (:print-function print-named-printer)) a)
+(defun print-named-printer (o s d) d (format s "NP~A" (named-printer-a o)))
+(prin1-to-string (make-named-printer :a 1))
+(defstruct (named-printer2 (:print-object print-named-printer2)) a)
+(defun print-named-printer2 (o s) (format s "NP2-~A" (named-printer2-a o)))
+(prin1-to-string (make-named-printer2 :a 1))
+(defun print-named-printer2 (o s) (format s "NEW-~A" (named-printer2-a o)))
+(prin1-to-string (make-named-printer2 :a 1))

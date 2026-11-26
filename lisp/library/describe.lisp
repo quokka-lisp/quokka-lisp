@@ -31,6 +31,9 @@
 ;;; instance, a structure, a condition or a list, and otherwise the class.
 (defun %describe-kind (object)
   (cond ((listp object) (if object 'list 'null))
+        ;; The library's own structures, a package or a stream, are of
+        ;; built-in classes as far as a program can tell.
+        ((%unreadable-structure-p object) (class-name (class-of object)))
         ((typep object 'standard-object) 'standard-object)
         ((typep object 'structure-object) 'structure-object)
         ((typep object 'condition) 'condition)
@@ -146,3 +149,10 @@
   (%describe-header object stream)
   (format stream "~%Test: ~S~%Count: ~D~%"
           (hash-table-test object) (hash-table-count object)))
+
+(defmethod describe-object ((object package) stream)
+  (%describe-header object stream)
+  (format stream "~%Nicknames: ~{~A~^, ~}~%Use-list: ~{~A~^, ~}~%Used-by-list: ~{~A~^, ~}~%"
+          (package-nicknames object)
+          (mapcar #'package-name (package-use-list object))
+          (mapcar #'package-name (package-used-by-list object))))

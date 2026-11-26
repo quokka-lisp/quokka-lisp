@@ -193,7 +193,9 @@ decide everything: a structure's own printer beats a method on what it
 includes, a method on a structure that includes it beats both, and a
 `call-next-method` from a program's method reaches the `defstruct`
 printer. Like SBCL's, the method stays when the structure is later
-redefined without the option.
+redefined without the option, and a printer given by name,
+`(:print-function print-pos3)`, is called by that name each time, so the
+function may be defined after the `defstruct` and changed later.
 
 ## Spaces in `#<...>`
 

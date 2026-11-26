@@ -410,7 +410,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1732 :REPLACED 1387)".into())],
+        [Outcome::Value("(:FORMS 1733 :REPLACED 1387)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -594,6 +594,28 @@ fn describe_calls_describe_object() {
          => \"(1 2)\n  [list]\n\"\n\
          => \"\\\"abc\\\"\n  [simple-string]\n\nElement-type: CHARACTER\nLength: 3\n\"\n\
          => (T T T T)\n=> *DV*\n=> T\n"
+    );
+}
+
+/// The library's own structures are described by their class, as SBCL
+/// describes them, not as `[structure-object]`; a package by its names and
+/// the packages it uses and is used by (#124).
+#[test]
+fn describe_names_the_library_structures() {
+    let out = run_compiled(
+        "(progn (defpackage :described (:use :cl) (:nicknames :dsc)) :ok) \
+         (with-output-to-string (s) (describe (find-package :described) s)) \
+         (let ((text (with-output-to-string (s) (describe *readtable* s)))) \
+           (not (null (search \"[readtable]\" text)))) \
+         (let ((text (with-output-to-string (s) (describe (make-string-output-stream) s)))) \
+           (not (null (search \"[string-stream]\" text))))",
+    );
+    assert_eq!(
+        out,
+        "=> :OK\n\
+         => \"#<PACKAGE \\\"DESCRIBED\\\">\n  [package]\n\nNicknames: DSC\n\
+         Use-list: COMMON-LISP\nUsed-by-list: \n\"\n\
+         => T\n=> T\n"
     );
 }
 

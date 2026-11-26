@@ -233,9 +233,14 @@
   (let ((option (find-if (lambda (o) (and (consp o) (member (car o) '(:print-function :print-object))
                                           (cdr o)))
                          options)))
+    ;; A printer named by a symbol is called by that name when printing, as
+    ;; SBCL calls it, so it may be defined after the `defstruct`, and
+    ;; redefined; `(lambda ...)` is a function now.
     (if option
         `(cons ,(if (eq (car option) :print-object) :object :function)
-               (function ,(cadr option)))
+               ,(if (symbolp (cadr option))
+                    `(quote ,(cadr option))
+                    `(function ,(cadr option))))
         nil)))
 
 ;;; The name of SLOT's accessor in DESCRIPTION.
