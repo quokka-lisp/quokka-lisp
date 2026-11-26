@@ -96,11 +96,9 @@ A test can need several things.
 | `TIME[tier-2:environment]` | 12 |
 | `TRACE[tier-2:environment]` | 12 |
 | `UNTRACE[tier-2:environment]` | 12 |
-| `WITH-ACCESSORS[tier-2:clos]` | 12 |
 | `WITH-COMPILATION-UNIT[deferred:compile-file]` | 12 |
 | `WITH-CONDITION-RESTARTS[tier-2:conditions]` | 12 |
 | `WITH-SIMPLE-RESTART[tier-2:conditions]` | 12 |
-| `WITH-SLOTS[tier-2:clos]` | 12 |
 | `STORE-VALUE[tier-2:conditions]` | 11 |
 | `COMPILE-FILE-PATHNAME[deferred:compile-file]` | 10 |
 | `COMPILE-FILE[deferred:compile-file]` | 10 |
@@ -116,8 +114,6 @@ A test can need several things.
 | `CLOSE[tier-2:streams]` | 9 |
 | `CONCATENATED-STREAM-STREAMS[tier-2:streams]` | 9 |
 | `DECODE-UNIVERSAL-TIME[tier-2:environment]` | 9 |
-| `DESCRIBE-OBJECT[tier-2:clos]` | 9 |
-| `DESCRIBE[tier-2:clos]` | 9 |
 | `DIRECTORY-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
 | `DIRECTORY[tier-2:pathnames-and-files]` | 9 |
 | `DRIBBLE[tier-2:environment]` | 9 |
@@ -175,7 +171,6 @@ A test can need several things.
 | `PATHNAME-VERSION[tier-2:pathnames-and-files]` | 9 |
 | `PATHNAMEP[tier-2:pathnames-and-files]` | 9 |
 | `PRINT-NOT-READABLE-OBJECT[tier-2:conditions]` | 9 |
-| `PRINT-OBJECT[tier-2:clos]` | 9 |
 | `PROBE-FILE[tier-2:pathnames-and-files]` | 9 |
 | `READ-BYTE[tier-2:streams]` | 9 |
 | `READ-CHAR-NO-HANG[tier-2:streams]` | 9 |

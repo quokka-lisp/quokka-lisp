@@ -496,8 +496,30 @@ generic functions. This file runs while the library loads, before
 describes an instance by its class name (a depth-bounded walk of a generic
 function took 20 GB). Rebuild `(:FORMS 1695 :REPLACED 1374)`; ansi-test
 **10,034**. Rust 0.
-**Next: CLOS sub-step 4** — `print-object`, `describe-object`,
-`with-slots`, `with-accessors`. Phase 2's scope was
+**Sub-step 4, printing, is done** (chapter 75): `print-object` is a
+generic function defined at the end of `printer.lisp`; **the printer sends
+only instances, structures and conditions to it** (`%printed-by-method-p`),
+everything else straight to `%print-built-in`, the printer's own code,
+which the method on `t` also runs (told not to send objects back) — unless
+`%print-object-on-built-in` is true, which `add-method` sets for a
+`print-object` method on a built-in class and never clears. A structure
+whose type has only the two default methods skips dispatch too
+(`%printed-plainly-p`, an answer per layout kept with the dispatch epoch;
+dispatch made printing structures a third slower). **A method's
+own `prin1`/`format` continues its printout**: `%print-nesting` is the
+depth while the printer runs a method, and `%print-top` then prints at that
+depth with the same `*print-circle*` table; the circle pass runs methods
+into a discarded stream with `%noting` true. `print-unreadable-object` is
+SBCL's spacing with an empty identity (no address) and counts no level
+(SBCL's pretty printer would). A `defstruct` printer option is a
+`print-object` method on the structure's class (`%note-structure-defined`,
+redefined in `printer.lisp`). `describe`/`describe-object` are in
+`lisp/library/describe.lisp` (after `format.lisp`); `with-slots`/
+`with-accessors` at the end of `clos.lisp`. Rebuild `(:FORMS 1731 :REPLACED 1386)`;
+ansi-test **10,034** (unchanged: its print-object and
+`with-slots` tests are in the unmeasured `objects` group or use `loop`). Rust 0.
+**Next: CLOS sub-step 5** — redefinition: obsolete instances,
+`change-class`, `reinitialize-instance`. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -569,8 +591,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**495 tests**; **57 differential files agree with SBCL** — 17 interpreted and
-compiled, plus forty tier-1 files, compiled only, and all 57 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
+**495 tests**; **58 differential files agree with SBCL** — 17 interpreted and
+compiled, plus forty-one tier-1 files, compiled only, and all 58 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
 **The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 

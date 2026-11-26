@@ -196,6 +196,16 @@
 (defvar *print-right-margin* nil)
 (defvar *print-pprint-dispatch* nil)
 
+;;; While the printer runs a `print-object` method, the depth the object was
+;;; printed at; nil otherwise. A `prin1` or `format` inside the method then
+;;; continues the printout it is part of, one level counted from there, as
+;;; SBCL's does (#124): `(#<BOX (1 #)>)` under `*print-level*` 2.
+(defvar %print-nesting nil)
+
+;;; True while `*print-circle*`'s first pass runs a method to see what it
+;;; would print: everything printed is then noted, not written.
+(defvar %noting nil)
+
 ;;; `(with-standard-io-syntax body...)` — BODY with every variable that
 ;;; controls reading and printing at its standard value (CLHS), so that what
 ;;; is printed inside reads back in any Lisp. `*readtable*` is a fresh copy of
@@ -299,46 +309,34 @@
   object)
 
 ;;; `(print-unreadable-object (object stream &key type identity) body...)`
-;;; (#68): `#<`, the object's type if TYPE, what BODY writes, and `>`. Quokka
-;;; has no type system yet (phase 3), so the type is a plain name for the
-;;; kind of object; and its objects have no stable address to show, so
-;;; IDENTITY adds nothing, which CLHS leaves to the implementation.
+;;; (#68): `#<`, the object's type if TYPE, what BODY writes, and `>`. The
+;;; spacing is SBCL's, measured: the type is always followed by a space,
+;;; body or not (`#<POINT >`), and the identity is preceded by one when
+;;; there is a body or no type. Quokka's objects move and have no address,
+;;; so the identity's own text is empty: only its space is written (#124).
+;;;
+;;; It is no level of nesting: what BODY prints is printed at the depth the
+;;; object was, as in SBCL when it is not pretty-printing (measured; its
+;;; pretty printer does count one, and Quokka has none yet).
 (defmacro print-unreadable-object (spec &body body)
   (destructuring-bind (object stream &key type identity) spec
-    (%print-unreadable-expansion object stream type identity body)))
+    `(%print-unreadable-object ,object ,stream ,type ,identity
+                               ,(if body `(lambda () ,@body) nil))))
 
-;;; The macro destructures its first argument itself: when it was written a
-;;; macro lambda list took no `&key` inside a nested pattern. Since steps AC
-;;; and AG it does.
-(defun %print-unreadable-expansion (object stream type identity body)
-  (let ((out (gensym "OUT")))
-    `(let ((,out (%output-stream ,stream)))
-       (if *print-readably* (error 'print-not-readable "printing readably" ,object))
-       (write-string "#<" ,out)
-       (if ,type (progn (write-string (symbol-name (%type-name ,object)) ,out)
-                        ,@(if body `((write-char #\Space ,out)) nil)))
-       ,identity
-       ,@body
-       (write-char #\> ,out)
-       nil)))
-
-(defun %type-name (object)
-  (cond ((null object) 'null)
-        ((consp object) 'cons)
-        ((symbolp object) 'symbol)
-        ((integerp object) (if (%bignump object) 'bignum 'fixnum))
-        ((%ratiop object) 'ratio)
-        ((floatp object) 'double-float)
-        ((characterp object) 'character)
-        ((stringp object) 'string)
-        ((bit-vector-p object) 'bit-vector)
-        ((vectorp object) 'vector)
-        ((arrayp object) 'array)
-        ((hash-table-p object) 'hash-table)
-        ((functionp object) 'function)
-        ((%package-p object) 'package)
-        ((%structure-layout object) (%layout-name (%structure-layout object)))
-        (t 't)))
+(defun %print-unreadable-object (object stream type identity body)
+  (let ((out (%output-stream stream)))
+    (if *print-readably*
+        (error 'print-not-readable "this object cannot be printed readably" object))
+    (write-string "#<" out)
+    (when type
+      ;; The whole type, however deep the object itself is.
+      (let ((*print-level* nil) (*print-length* nil))
+        (prin1 (type-of object) out))
+      (write-char #\Space out))
+    (if body (funcall body))
+    (if (and identity (or body (not type))) (write-char #\Space out))
+    (write-char #\> out))
+  nil)
 
 ;;; `(string x)`, the designator as a string, is in `strings.lisp` (#54).
 
@@ -370,12 +368,19 @@
 (defvar %circle-table nil)
 (defvar %circle-label 0)
 
-;;; The top of printing one object. Every printout binds its own table, so a
-;;; `prin1-to-string` called while printing starts afresh.
+;;; The top of printing one object. Every printout binds its own table,
+;;; so a `prin1-to-string` called while printing starts afresh — unless it
+;;; is called by a `print-object` method the printer is running: then it
+;;; continues that printout, at that depth and with that table, or, in the
+;;; first pass, only notes what it would print.
 (defun %print-top (object out)
-  (let ((%circle-table (if *print-circle* (%find-shared object) nil))
-        (%circle-label 0))
-    (%print-object object out 0)))
+  (cond (%noting (%note-shared object %circle-table))
+        (%print-nesting
+         (let ((level %print-nesting) (%print-nesting nil))
+           (%print-object object out level)))
+        (t (let ((%circle-table (if *print-circle* (%find-shared object) nil))
+                 (%circle-label 0))
+             (%print-object object out 0)))))
 
 (defun %shareable-p (object)
   (not (or (numberp object)
@@ -408,7 +413,8 @@
           (setf (gethash object table) :many)
           (progn
             (setf (gethash object table) :once)
-            (cond ((consp object)
+            (cond ((%printed-by-method-p object) (%note-through-method object table))
+                  ((consp object)
                    (%note-shared (car object) table)
                    (%note-shared (cdr object) table))
                   ((and (%printed-as-vector-p object) (vectorp object))
@@ -416,10 +422,14 @@
                      (%note-shared (aref object i) table)))
                   ((%printed-as-vector-p object)
                    (dotimes (i (array-total-size object))
-                     (%note-shared (row-major-aref object i) table)))
-                  ((and (%structure-layout object) (not (%unreadable-structure-p object)))
-                   (dotimes (i (%layout-length (%structure-layout object)))
-                     (%note-shared (%structure-ref object i) table))))))))
+                     (%note-shared (row-major-aref object i) table))))))))
+
+;;; What a `print-object` method prints is up to the method, so the first
+;;; pass runs it, into a stream nobody reads, and notes whatever it prints
+;;; (SBCL's way too): `#1=#<BOX #1#>`.
+(defun %note-through-method (object table)
+  (let ((%circle-table table) (%noting t) (%print-nesting 0))
+    (print-object object (make-string-output-stream))))
 
 ;;; Is OBJECT shared in this printout? Its mark: `:many` before its label is
 ;;; given, the label after.
@@ -436,14 +446,17 @@
 
 ;;; Every object is printed through here: `#n#` if it has been labelled,
 ;;; `#n=` and the object if this is its first appearance and it is shared.
+;;; In the first pass of `*print-circle*` (`%noting`), noted instead.
 (defun %print-object (object out level)
-  (let ((mark (%circle-mark object)))
-    (cond ((null mark) (%print-plain object out level))
-          ((integerp mark) (%print-label mark #\# out))
-          (t (setq %circle-label (+ %circle-label 1))
-             (setf (gethash object %circle-table) %circle-label)
-             (%print-label %circle-label #\= out)
-             (%print-plain object out level)))))
+  (cond ((null %circle-table) (%print-plain object out level))
+        (%noting (%note-shared object %circle-table))
+        (t (let ((mark (%circle-mark object)))
+             (cond ((null mark) (%print-plain object out level))
+                   ((integerp mark) (%print-label mark #\# out))
+                   (t (setq %circle-label (+ %circle-label 1))
+                      (setf (gethash object %circle-table) %circle-label)
+                      (%print-label %circle-label #\= out)
+                      (%print-plain object out level)))))))
 
 ;;; The text for an object nothing can read back: `#<...>`, or, when printing
 ;;; readably, the error CLHS asks for instead.
@@ -452,7 +465,35 @@
       (error 'print-not-readable "this object cannot be printed readably" object)
       (write-string text out)))
 
+;;; Printing one object that is not shared: by its `print-object` method
+;;; when it may have one of a program's (#124), by the printer's own code
+;;; otherwise.
 (defun %print-plain (object out level)
+  (if %print-object-on-built-in
+      (%print-with-method object out level)
+      (%print-built-in object out level t)))
+
+;;; Does the printer send OBJECT to `print-object`? Instances, structures and
+;;; conditions always; anything else once a program has a method for a
+;;; built-in class (`%print-object-on-built-in`).
+(defun %printed-by-method-p (object)
+  (if %print-object-on-built-in
+      t
+      (and (not (consp object))
+           (or (%instance-wrapper object)
+               (and (%structure-layout object) (not (%unreadable-structure-p object)))
+               (%conditionp object)))))
+
+(defun %print-with-method (object out level)
+  (let ((%print-nesting level))
+    (print-object object out)))
+
+;;; The printer's own code: what the method on `t` runs. METHODS true sends
+;;; instances, structures and conditions to their `print-object` methods,
+;;; and is false only in the method on `t` itself, which must not send
+;;; them back. The common kinds of object are tested first, and none of
+;;; them pays for `print-object`.
+(defun %print-built-in (object out level methods)
   (cond ((integerp object) (%print-integer object out))
         ((%ratiop object) (%print-ratio object out))
         ((floatp object) (%print-float object out))
@@ -473,8 +514,14 @@
         ((%string-output-stream-p object) (%print-unreadable object "#<STRING-OUTPUT-STREAM>" out))
         ((%console-stream-p object) (%print-unreadable object "#<CONSOLE-STREAM>" out))
         ((%readtable-p object) (%print-unreadable object "#<READTABLE>" out))
-        ((%instance-wrapper object) (%print-unreadable object (%instance-text object) out))
-        ((%structure-layout object) (%print-structure object out level))
+        ((%instance-wrapper object)
+         (if methods
+             (%print-with-method object out level)
+             (%print-unreadable object (%printed object) out)))
+        ((%structure-layout object)
+         (if (and methods (not (%printed-plainly-p object)))
+             (%print-with-method object out level)
+             (%print-structure-slots object (%structure-layout object) out level)))
         ;; Not an array — a function, a condition, a hash table: nothing
         ;; reads them back, so CLHS lets each implementation print them its
         ;; own way, and this is the Rust printer's, so both agree. Or
@@ -482,15 +529,16 @@
         ;; An array of element type nil has no elements to print (#77), so
         ;; it is printed as SBCL prints one, by its type.
         ((not (and (arrayp object) *print-array* (array-element-type object)))
-         (if (arrayp object)
-             (%print-unreadable object
-                                (%string-append (%string-append (if (array-element-type object)
-                                                                    "#<(ARRAY "
-                                                                    "#<(ARRAY NIL ")
-                                                                (princ-to-string (array-dimensions object)))
-                                                ")>")
-                                out)
-             (%print-unreadable object (%printed object) out)))
+         (cond ((arrayp object)
+                (%print-unreadable object
+                                   (%string-append (%string-append (if (array-element-type object)
+                                                                       "#<(ARRAY "
+                                                                       "#<(ARRAY NIL ")
+                                                                   (princ-to-string (array-dimensions object)))
+                                                   ")>")
+                                   out))
+               ((and methods (%conditionp object)) (%print-with-method object out level))
+               (t (%print-unreadable object (%printed object) out))))
         ;; `#*1011`: every bit, `*print-length*` or not, as SBCL prints one.
         ((bit-vector-p object)
          (write-string "#*" out)
@@ -498,28 +546,45 @@
         ((vectorp object) (%print-vector object out level))
         (t (%print-array object out level))))
 
-;;; An instance of a class, as `#<POINT>`, and a class, as `#<STANDARD-CLASS
-;;; POINT>` (#124). SBCL adds the object's address, which Quokka cannot
-;;; show: objects move. `print-object` takes this over in sub-step 4.
-(defun %instance-text (object)
-  (let ((class (class-of object)))
-    (if (%class-object-p object)
-        (%string-append (%string-append (%string-append "#<" (prin1-to-string (class-name class)))
-                                        (%string-append " " (prin1-to-string (class-name object))))
-                        ">")
-        (%string-append (%string-append "#<" (prin1-to-string (class-name class))) ">"))))
+;;; Would the generic function print OBJECT, a structure, exactly as
+;;; `#S(...)`, because no method applies to it but the library's own on
+;;; `structure-object` and `t`? A generic function call costs a class lookup
+;;; and a search of its cache, which made printing a list of structures a
+;;; third slower; so the answer is kept for each structure type, with the
+;;; dispatch epoch it was found in, and found again when a class or a
+;;; method has changed since (#124).
+(defvar %plain-structures (make-hash-table :test 'eq))
+(defvar %default-print-methods nil)
 
-;;; A structure: by its type's `:print-function` (object, stream, depth) or
-;;; `:print-object` (object, stream), or as `#S(POINT :X 1 :Y 2)`, which
-;;; `#S` reads back. `#S` counts as a level of nesting and each slot as one
-;;; element for `*print-length*`, as in SBCL.
-(defun %print-structure (object out level)
+(defun %printed-plainly-p (object)
   (let* ((layout (%structure-layout object))
-         (printer (%structure-printer layout)))
-    (cond ((null printer) (%print-structure-slots object layout out level))
-          ((eq (car printer) :object) (funcall (cdr printer) object out))
-          (t (funcall (cdr printer) object out level)))))
+         (entry (gethash layout %plain-structures)))
+    (if (and entry (eq (car entry) %dispatch-epoch))
+        (cdr entry)
+        (let ((plain (%only-default-print-methods-p object)))
+          (setf (gethash layout %plain-structures) (cons %dispatch-epoch plain))
+          plain))))
 
+;;; No `eql` method and no method on a particular kind of stream, which a
+;;; layout cannot answer for, and every method that applies to OBJECT's
+;;; class is one of the two defaults.
+(defun %only-default-print-methods-p (object)
+  (let ((gf (%defined-function 'print-object)))
+    (and %default-print-methods
+         (null (%gf-eql-positions gf))
+         (let ((cpl (%class-precedence-list (class-of object))))
+           (dolist (method (%gf-methods gf) t)
+             (let ((specializers (%method-specializers method)))
+               (unless (eq (second specializers) (find-class t)) (return nil))
+               (when (and (member (first specializers) cpl)
+                          (not (member method %default-print-methods)))
+                 (return nil))))))))
+
+;;; A structure as `#S(POINT :X 1 :Y 2)`, which `#S` reads back: what the
+;;; method on `structure-object` prints. `#S` counts as a level of nesting
+;;; and each slot as one element for `*print-length*`, as in SBCL. A
+;;; `defstruct`'s `:print-function` or `:print-object` is a method of its
+;;; own (`%note-structure-defined`, below).
 (defun %print-structure-slots (object layout out level)
   (if (%too-deep-p level)
       (write-char #\# out)
@@ -860,3 +925,111 @@
     (cond ((and upper lower) (write-string name out))
           (upper (dotimes (i (length name)) (write-char (char-downcase (aref name i)) out)))
           (t (dotimes (i (length name)) (write-char (char-upcase (aref name i)) out))))))
+
+;;; ------------------------------------------------------------------------
+;;; `print-object` (CLOS sub-step 4, #124)
+;;;
+;;; The generic function a program specialises to say how its objects
+;;; print (CLHS 22.1.3). The printer calls it for instances, structures and
+;;; conditions (`%printed-by-method-p`), and the method on `t` is the
+;;; printer's own code, so a method that calls `call-next-method` gets what
+;;; the printer would have printed. Each method returns the object, as
+;;; CLHS asks.
+
+(defgeneric print-object (object stream))
+
+(defmethod print-object ((object t) stream)
+  (%print-built-in object stream (or %print-nesting 0) nil)
+  object)
+
+;;; `#<POINT>`. SBCL adds the address, which Quokka cannot show: objects
+;;; move. So unlike `print-unreadable-object` with `:type t`, no space
+;;; follows the name.
+(defmethod print-object ((object standard-object) stream)
+  (%print-unreadable-object object stream nil nil
+                            (lambda () (prin1 (class-name (class-of object)) stream)))
+  object)
+
+(defmethod print-object ((object structure-object) stream)
+  (%print-structure-slots object (%structure-layout object) stream (or %print-nesting 0))
+  object)
+
+;;; The two methods `%printed-plainly-p` looks for. Set again whenever this
+;;; file loads, since a warm rebuild replaces both with new method objects.
+(setq %default-print-methods
+      (list (find-method #'print-object nil (list (find-class t) (find-class t)))
+            (find-method #'print-object nil (list (find-class 'structure-object) (find-class t)))))
+
+;;; The metaobjects print as SBCL's do, less the address:
+;;; `#<STANDARD-CLASS POINT>`, `#<STANDARD-GENERIC-FUNCTION AREA (2)>` with
+;;; its number of methods, `#<STANDARD-METHOD AREA :AROUND (CIRCLE)>`.
+(defmethod print-object ((object class) stream)
+  (print-unreadable-object (object stream :type t)
+    (prin1 (class-name object) stream))
+  object)
+
+(defmethod print-object ((object generic-function) stream)
+  (print-unreadable-object (object stream :type t)
+    (prin1 (%gf-name object) stream)
+    (write-string " (" stream)
+    (prin1 (length (%gf-methods object)) stream)
+    (write-string ")" stream))
+  object)
+
+(defmethod print-object ((object method) stream)
+  (print-unreadable-object (object stream :type t)
+    (let ((gf (%method-generic-function object)))
+      (if gf (prin1 (%gf-name gf) stream) (write-string "(no generic function)" stream)))
+    (dolist (qualifier (%method-qualifiers object))
+      (write-char #\Space stream)
+      (prin1 qualifier stream))
+    (write-char #\Space stream)
+    (prin1 (mapcar (lambda (specializer)
+                     (if (%eql-specializer-p specializer)
+                         (list 'eql (%eql-specializer-object specializer))
+                         (class-name specializer)))
+                   (%method-specializers object))
+           stream))
+  object)
+
+(defmethod print-object ((object slot-definition) stream)
+  (print-unreadable-object (object stream :type t)
+    (prin1 (%slot-definition-name object) stream))
+  object)
+
+(defmethod print-object ((object eql-specializer) stream)
+  (print-unreadable-object (object stream :type t)
+    (prin1 (%eql-specializer-object object) stream))
+  object)
+
+;;; A `defstruct` with `:print-function` or `:print-object` defines a
+;;; `print-object` method on its class, as SBCL's does, so that the most
+;;; specific printer wins by the ordinary rules: a structure's own printer
+;;; over a method on a structure it includes, and a method on a structure
+;;; that includes it over both. The method holds the function itself, and a
+;;; later `defstruct` of the name without the option leaves it in place,
+;;; as SBCL's does. Redefined here from `structures.lisp`, which loads
+;;; before generic functions exist; no structure defined before this file
+;;; has a printer option.
+(defun %note-structure-defined (name)
+  (setf (get name '%structure-defined) t)
+  (let ((layout (%find-layout name)))
+    (if (and layout (null (%layout-type layout)) (%layout-printer layout))
+        (%add-structure-printer layout))))
+
+(defun %add-structure-printer (layout)
+  (let* ((printer (%layout-printer layout))
+         (function (cdr printer)))
+    (add-method (%defined-function 'print-object)
+                (%make-method (find-class 'standard-method) nil
+                              (list (%structure-class layout) (find-class t))
+                              '(object stream)
+                              (if (eq (car printer) :object)
+                                  (lambda (args next)
+                                    next
+                                    (funcall function (first args) (second args)))
+                                  (lambda (args next)
+                                    next
+                                    (funcall function (first args) (second args)
+                                             (or %print-nesting 0))))
+                              nil))))

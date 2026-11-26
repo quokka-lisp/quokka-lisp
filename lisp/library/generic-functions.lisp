@@ -339,6 +339,25 @@
 (defun %same-specializers-p (a b)
   (and (= (length a) (length b)) (every #'eq a b)))
 
+;;; The printer sends a cons, a symbol, a number, a string and the other
+;;; built-in objects to `print-object` only once a program has defined a
+;;; `print-object` method that could apply to one (CLHS 22.1.2 allows it;
+;;; 11.1.2.1.2 leaves it undefined for standard classes, and Quokka honours
+;;; it everywhere). Until then the printer goes straight to its own code,
+;;; which keeps printing data as cheap as it was before CLOS (#124). Set by
+;;; `add-method`, never cleared: with it set, printing is only slower.
+(defvar %print-object-on-built-in nil)
+
+(defun %note-print-object-method (gf method)
+  (when (eq (%gf-name gf) 'print-object)
+    (let* ((specializer (car (%method-specializers method)))
+           (class (if (%eql-specializer-p specializer)
+                      (class-of (%eql-specializer-object specializer))
+                      specializer)))
+      (when (and (not (eq class (find-class t)))
+                 (eq (class-of class) (find-class 'built-in-class)))
+        (setq %print-object-on-built-in t)))))
+
 (defun add-method (gf method)
   (when (and (%method-generic-function method) (not (eq (%method-generic-function method) gf)))
     (error "this method already belongs to another generic function" method))
@@ -354,6 +373,7 @@
   (%set-method-generic-function method gf)
   (%set-gf-methods gf (cons method (%gf-methods gf)))
   (%set-gf-eql-positions gf (%compute-eql-positions gf))
+  (%note-print-object-method gf method)
   (%invalidate-dispatch)
   gf)
 

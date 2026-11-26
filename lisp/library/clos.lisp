@@ -895,3 +895,29 @@
 
 (defun %slot-unbound (object slot-name)
   (error 'unbound-slot "the slot is unbound" (list object slot-name)))
+
+;;; ------------------------------------------------------------------------
+;;; with-slots, with-accessors (sub-step 4)
+;;;
+;;; Each makes names that stand for places — a slot of an instance, or what
+;;; an accessor reads — by `symbol-macrolet` (CLHS 3.1.2.1.1.3): `x` in the
+;;; body is replaced by `(slot-value instance 'x)`, so reading it reads the
+;;; slot and `setq`, `setf` and `incf` of it write the slot. The instance
+;;; form is evaluated once, into a variable of its own.
+
+(defmacro with-slots (slot-entries instance-form &body body)
+  (let ((instance (gensym "INSTANCE")))
+    `(let ((,instance ,instance-form))
+       (symbol-macrolet ,(mapcar (lambda (entry)
+                                   (if (consp entry)
+                                       `(,(first entry) (slot-value ,instance ',(second entry)))
+                                       `(,entry (slot-value ,instance ',entry))))
+                                 slot-entries)
+         ,@body))))
+
+(defmacro with-accessors (slot-entries instance-form &body body)
+  (let ((instance (gensym "INSTANCE")))
+    `(let ((,instance ,instance-form))
+       (symbol-macrolet ,(mapcar (lambda (entry) `(,(first entry) (,(second entry) ,instance)))
+                                 slot-entries)
+         ,@body))))

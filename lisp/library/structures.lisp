@@ -101,13 +101,6 @@
            (if (not (equalp (%structure-ref a i) (%structure-ref b i)))
                (return nil))))))
 
-;;; The function that prints structures of LAYOUT's type, as (kind .
-;;; function), or nil for `#S(...)`. An included type's printer is
-;;; inherited.
-(defun %structure-printer (layout)
-  (do ((l layout (%layout-include l)))
-      ((or (null l) (%layout-printer l)) (if l (%layout-printer l) nil))))
-
 ;;; ------------------------------------------------------------------------
 ;;; Reading a `defstruct`
 

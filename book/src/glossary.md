@@ -220,6 +220,8 @@ name) or a character (a string of one); `string` turns any into a string.
 **Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file interpreted and compiled, natively and under WebAssembly, and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md), [33](part-5-the-image/33-two-evaluators-one-answer.md))
 
 <a id="discriminating-function"></a>
+**`describe`.** The function that writes a description of an object for a person to read, by calling the generic function `describe-object`, whose methods a program can add for its own classes. The text is left to each implementation. ([75](part-7-objects/75-printing-objects.md))
+
 **Discriminating function.** The function a generic function runs when called: it finds the classes of the required arguments, looks up the effective method for them in a cache, and computes it on a miss. ([74](part-7-objects/74-generic-functions.md))
 
 <a id="displaced-array"></a>
@@ -711,6 +713,8 @@ only door between the two languages.
 **Printing readably.** Printing with `*print-readably*` true: the printer must write each object so that `read` gives back an equal one, or signal a `print-not-readable` error. A package, a stream or a function cannot be printed readably. `with-standard-io-syntax` turns it on, along with every other printer and reader variable's standard value. ([52](part-6-self-hosting/52-printing-for-another-lisp.md))
 
 <a id="print-read-consistency"></a>
+**`print-object`.** The generic function a program specialises to say how its objects print. Quokka's printer calls it for instances, structures and conditions, and for any other object only once a program has defined a method on a built-in class; its method on `t` is the printer's own code. ([75](part-7-objects/75-printing-objects.md))
+
 **Print-read consistency.** The printer's contract in Common Lisp: what `prin1` writes, `read` reads back as the same object (or an equal one, for a list). For symbols it means a package prefix when the current package would not find the symbol alone, and `|...|` around a name the reader would change. ([39](part-6-self-hosting/39-printing-in-lisp.md))
 
 <a id="proclamation"></a>

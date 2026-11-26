@@ -98,6 +98,7 @@
 - [What is a type?](part-7-objects/72-what-is-a-type.md)
 - [Classes](part-7-objects/73-classes.md)
 - [Generic functions](part-7-objects/74-generic-functions.md)
+- [Printing objects](part-7-objects/75-printing-objects.md)
 
 ---
 

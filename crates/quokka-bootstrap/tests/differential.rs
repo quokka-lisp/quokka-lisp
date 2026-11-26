@@ -178,6 +178,7 @@ tier1_cases! {
     subtypep => "subtypep",
     classes => "classes",
     generic_functions => "generic-functions",
+    print_object => "print-object",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -409,7 +410,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1695 :REPLACED 1374)".into())],
+        [Outcome::Value("(:FORMS 1731 :REPLACED 1386)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -436,6 +437,7 @@ fn a_rebuild_keeps_classes_and_their_instances() {
          (defvar *i* (make-instance 'kept :a 1)) \
          (defgeneric area (s)) \
          (defmethod area ((s kept)) (* 10 (kept-a s))) \
+         (defmethod print-object ((k kept) s) (write-string \"KEPT\" s)) \
          (defvar *mi* #'make-instance) \
          (defvar *w* (quokka::%class-wrapper (find-class 'standard-object))) \
          (defvar *sc* (find-class 'standard-class)) \
@@ -446,7 +448,7 @@ fn a_rebuild_keeps_classes_and_their_instances() {
                (eq *ic* (find-class 'integer)) \
                (eq (class-of (find-class 'standard-class)) (find-class 'standard-class)) \
                (kept-a *i*) (typep *i* 'kept) (slot-value (make-instance 'kept :a 2) 'a) \
-               (eq *mi* #'make-instance) (area *i*))",
+               (eq *mi* #'make-instance) (area *i*) (prin1-to-string *i*))",
         BUDGET * 60,
         SLICE,
         &mut host,
@@ -458,8 +460,104 @@ fn a_rebuild_keeps_classes_and_their_instances() {
     .expect("the forms run");
     assert_eq!(
         said.last(),
-        Some(&Outcome::Value("(T T T T 1 T 2 T 10)".into())),
+        Some(&Outcome::Value("(T T T T 1 T 2 T 10 \"KEPT\")".into())),
         "{said:?}"
+    );
+}
+
+/// What only Quokka can be held to (#124): the default `#<...>` of an
+/// instance, a condition and the metaobjects, which SBCL writes with an
+/// address Quokka does not have.
+#[test]
+fn print_object_prints_metaobjects() {
+    let out = run_compiled(
+        "(defclass point () ((x :initarg :x))) \
+         (defclass circle (point) ()) \
+         (defgeneric area (s)) \
+         (defmethod area ((s circle)) 1) \
+         (defmethod area :around ((s point)) (call-next-method)) \
+         (prin1-to-string (make-instance 'point)) \
+         (prin1-to-string (list (make-instance 'circle))) \
+         (prin1-to-string (find-class 'point)) \
+         (prin1-to-string #'area) \
+         (prin1-to-string (find-method #'area nil (list (find-class 'circle)))) \
+         (prin1-to-string (find-method #'area '(:around) (list (find-class 'point)))) \
+         (prin1-to-string (first (quokka::%class-slots (find-class 'point)))) \
+         (handler-case (error \"x\") (error (c) (prin1-to-string c))) \
+         (let ((*print-readably* t)) \
+           (handler-case (prin1-to-string (make-instance 'point)) (print-not-readable () :nr))) \
+         (progn (defmethod print-object ((c simple-error) s) \
+                  (write-string \"[\" s) (call-next-method) (write-string \"]\" s)) :ok) \
+         (handler-case (error \"y\") (error (c) (prin1-to-string c)))",
+    );
+    assert_eq!(
+        out,
+        "=> #<STANDARD-CLASS POINT>\n=> #<STANDARD-CLASS CIRCLE>\n=> #<STANDARD-GENERIC-FUNCTION AREA (0)>\n\
+         => #<STANDARD-METHOD AREA (CIRCLE)>\n=> #<STANDARD-METHOD AREA :AROUND (POINT)>\n\
+         => \"#<POINT>\"\n=> \"(#<CIRCLE>)\"\n=> \"#<STANDARD-CLASS POINT>\"\n\
+         => \"#<STANDARD-GENERIC-FUNCTION AREA (2)>\"\n\
+         => \"#<STANDARD-METHOD AREA (CIRCLE)>\"\n\
+         => \"#<STANDARD-METHOD AREA :AROUND (POINT)>\"\n\
+         => \"#<QUOKKA::STANDARD-EFFECTIVE-SLOT-DEFINITION X>\"\n\
+         => \"#<SIMPLE-ERROR: x>\"\n=> :NR\n=> :OK\n=> \"[#<SIMPLE-ERROR: y>]\"\n"
+    );
+}
+
+/// A `print-object` method on a built-in class is honoured wherever such an
+/// object is printed (#124; CLHS 11.1.2.1.2 leaves it undefined, and SBCL
+/// honours one on `cons` but not always one on `integer`), with
+/// `call-next-method` reaching the printer's own code.
+#[test]
+fn print_object_on_a_built_in_class() {
+    let out = run_compiled(
+        "(prin1-to-string '(1 (2))) \
+         (progn (defmethod print-object ((x integer) s) (write-string \"I\" s)) :ok) \
+         (progn (defmethod print-object ((x cons) s) \
+                  (write-string \"<\" s) (call-next-method) (write-string \">\" s)) :ok) \
+         (prin1-to-string '(1 (2))) \
+         (prin1-to-string (vector 3 '(4))) \
+         (format nil \"~A\" 5)",
+    );
+    assert_eq!(
+        out,
+        "=> \"(1 (2))\"\n=> :OK\n=> :OK\n=> \"<(I <(I)>)>\"\n=> \"#(I <(I)>)\"\n=> \"I\"\n"
+    );
+}
+
+/// `describe` (#124): the text is Quokka's own, in outline what SBCL's is —
+/// the object, its kind in brackets, then what that kind of object has.
+#[test]
+fn describe_calls_describe_object() {
+    let out = run_compiled(
+        "(progn (defclass dpoint () ((x :initarg :x) (y))) :ok) \
+         (progn (defstruct dpos a b) :ok) \
+         (with-output-to-string (s) (describe (make-instance 'dpoint :x 1) s)) \
+         (with-output-to-string (s) (describe (make-dpos :a 1 :b \"b\") s)) \
+         (with-output-to-string (s) (describe 5 s)) \
+         (with-output-to-string (s) (describe '(1 2) s)) \
+         (with-output-to-string (s) (describe \"abc\" s)) \
+         (let ((s (with-output-to-string (o) (describe 'dpoint o)))) \
+           (mapcar (lambda (x) (not (null x))) (list (search \"DPOINT names the standard-class #<STANDARD-CLASS DPOINT>\" s) \
+                 (search \"Class precedence-list: DPOINT, STANDARD-OBJECT, T\" s) \
+                 (search \"Direct superclasses: STANDARD-OBJECT\" s) \
+                 (search \"No subclasses.\" s)))) \
+         (defvar *dv* 3) \
+         (not (null (search \"*DV* names a special variable:\" \
+                            (with-output-to-string (o) (describe '*dv* o)))))",
+    );
+    assert_eq!(
+        out,
+        "=> :OK\n=> :OK\n\
+         => \"#<DPOINT>\n  [standard-object]\n\nSlots with :INSTANCE allocation:\n  \
+         X                              = 1\n  \
+         Y                              = #<unbound slot>\n\"\n\
+         => \"#S(DPOS :A 1 :B \\\"b\\\")\n  [structure-object]\n\nSlots with :INSTANCE allocation:\n  \
+         A                              = 1\n  \
+         B                              = \\\"b\\\"\n\"\n\
+         => \"5\n  [fixnum]\n\"\n\
+         => \"(1 2)\n  [list]\n\"\n\
+         => \"\\\"abc\\\"\n  [simple-string]\n\nElement-type: CHARACTER\nLength: 3\n\"\n\
+         => (T T T T)\n=> *DV*\n=> T\n"
     );
 }
 

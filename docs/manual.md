@@ -118,6 +118,10 @@ quokka> (hello)
   `quokka world.qi < file.lisp` runs a file.
 - **`(load "path/to/file.lisp")`** loads a file into the world, with the path
   relative to the directory you started in.
+- **`(describe x)`** says what an object is: its kind, an instance's or a
+  structure's slots, what a symbol names. A program changes how its own
+  objects print and are described with methods on `print-object` and
+  `describe-object`.
 - **A world reads files under the directory you started it in, and nowhere
   else.** Not through `..`, not by an absolute path, and not through a
   symbolic link that leads out: a name is judged by where it leads. So a
@@ -371,7 +375,7 @@ several **legs**, and every leg must match the baseline:
 | compiled, rebuilt world | `a_rebuilt_world_passes_every_differential_file` | the same | the same |
 | SBCL | `./scripts/oracle.sh` | SBCL | SBCL |
 
-**Tier 0** files (17) run in every leg. **Tier 1** files (40) use the library,
+**Tier 0** files (17) run in every leg. **Tier 1** files (41) use the library,
 which the interpreter never learns, so they skip the interpreted leg.
 `tests/lisp/README.md` lists what a test file must not contain. In short: no
 bignums in a tier-0 file, no printed functions, nothing the standard leaves unspecified, and no
