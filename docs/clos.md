@@ -225,6 +225,9 @@ classes support `:default-initargs`, `:metaclass` (one of the four above)
 and `:documentation`. Initialisation follows CLHS 7.1: `make-instance` calls
 `allocate-instance`, then `initialize-instance`, which calls
 `shared-initialize`; initargs are checked for validity (7.1.2).
+`make-instance` of a structure class, which CLHS leaves open, does what
+SBCL's does: a structure holding its slots' initforms, then
+`initialize-instance`; a structure's slots take no initargs.
 
 ### Generic functions and dispatch
 

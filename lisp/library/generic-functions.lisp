@@ -39,7 +39,7 @@
 
 (defclass standard-generic-function (generic-function)
   (name lambda-list methods method-combination argument-precedence-order cache epoch
-   declarations documentation method-class initial-methods eql-positions plist)
+   declarations documentation method-class initial-methods eql-positions plist arity)
   (:metaclass funcallable-standard-class))
 
 (defclass method (metaobject) ())
@@ -67,7 +67,7 @@
 (%check-slot-places 'standard-generic-function
                     '(name lambda-list methods method-combination argument-precedence-order
                       cache epoch declarations documentation method-class initial-methods
-                      eql-positions plist))
+                      eql-positions plist arity))
 (%check-slot-places 'standard-method
                     '(generic-function specializers qualifiers lambda-list function
                       documentation plist))
@@ -90,9 +90,19 @@
 (defun %gf-method-class (gf) (%slot-at gf 9))
 (defun %gf-initial-methods (gf) (%slot-at gf 10))
 (defun %gf-eql-positions (gf) (%slot-at gf 11))
+(defun %gf-arity (gf) (%slot-at gf 13))
 
 (defun %set-gf-name (gf value) (%set-slot-at gf 0 value))
-(defun %set-gf-lambda-list (gf value) (%set-slot-at gf 1 value))
+;;; Setting the lambda list sets the arity too: (required . most), MOST
+;;; nil when the lambda list has `&rest` or `&key`. Every call checks it
+;;; (`%dispatch`), so it is worked out once here rather than per call.
+(defun %set-gf-lambda-list (gf value)
+  (let ((shape (%lambda-list-shape value)))
+    (%set-slot-at gf 13 (cons (first shape)
+                              (if (or (third shape) (fourth shape))
+                                  nil
+                                  (+ (first shape) (second shape))))))
+  (%set-slot-at gf 1 value))
 (defun %set-gf-methods (gf value) (%set-slot-at gf 2 value))
 (defun %set-gf-method-combination (gf value) (%set-slot-at gf 3 value))
 (defun %set-gf-argument-precedence-order (gf value) (%set-slot-at gf 4 value))
@@ -995,11 +1005,23 @@
             key))))
 
 (defun %dispatch (gf args)
-  (let ((count (%required-count (%gf-lambda-list gf))))
-    (unless (do ((i 0 (+ i 1)) (rest args (cdr rest)))
-                ((= i count) t)
-              (unless (consp rest) (return nil)))
-      (error 'program-error "too few arguments to a generic function" (%gf-name gf)))
+  (let* ((arity (%gf-arity gf))
+         (count (car arity))
+         (most (cdr arity)))
+    ;; One walk over the arguments checks the arity (CLHS 3.5.1.2-3): the
+    ;; required ones must all be there, and dispatch needs them; when the
+    ;; lambda list has no `&rest` or `&key`, there may be no more than it
+    ;; takes. Past the required ones the walk stops where the arguments end.
+    (do ((i 0 (+ i 1))
+         (limit (or most count))
+         (rest args (cdr rest)))
+        ((= i limit)
+         (when (and most rest)
+           (error 'program-error "too many arguments to a generic function" (%gf-name gf))))
+      (when (null rest)
+        (if (< i count)
+            (error 'program-error "too few arguments to a generic function" (%gf-name gf))
+            (return))))
     (unless (eq (%gf-epoch gf) %dispatch-epoch)
       (%set-gf-cache gf nil)
       (%set-gf-epoch gf %dispatch-epoch))
@@ -1007,26 +1029,11 @@
            (cached (assoc key (%gf-cache gf) :test #'%same-specializers-p)))
       (funcall (if cached
                    (cdr cached)
-                   (let ((emf (%with-arity-check gf (%compute-effective-method gf args))))
+                   (let ((emf (%compute-effective-method gf args)))
                      (%set-gf-cache gf (cons (cons key emf) (%gf-cache gf)))
                      emf))
                args))))
 
-;;; EMF, checking first that the call gives no more arguments than GF's
-;;; lambda list takes, when it has no `&rest` or `&key` (CLHS 3.5.1.3: a
-;;; `program-error`). Too few arguments are found before dispatch, which
-;;; needs the required ones; too many only here, around the cached
-;;; effective method, so the check costs a call nothing it did not cost
-;;; before when the generic function takes any number of arguments.
-(defun %with-arity-check (gf emf)
-  (let ((shape (%lambda-list-shape (%gf-lambda-list gf))))
-    (if (or (third shape) (fourth shape))
-        emf
-        (let ((most (+ (first shape) (second shape))))
-          (lambda (args)
-            (when (nthcdr most args)
-              (error 'program-error "too many arguments to a generic function" (%gf-name gf)))
-            (funcall emf args))))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Standard method combination (CLHS 7.6.6.2)
@@ -1135,7 +1142,7 @@
   initargs
   ;; A structure with every slot nil: SBCL fills its slots with zeros, a
   ;; detail of its memory that no program should see.
-  (let ((layout (get (%class-name class) '%layout)))
+  (let ((layout (%structure-class-layout class)))
     (%make-structure layout (%layout-length layout))))
 
 (defgeneric make-instance (class &rest initargs &key &allow-other-keys))
@@ -1146,8 +1153,22 @@
 (defmethod make-instance ((class funcallable-standard-class) &rest initargs)
   (apply #'%make-instance class initargs))
 
+;;; `make-instance` of a structure class, which CLHS leaves to the
+;;; implementation, does what SBCL's does: a structure whose slots hold
+;;; their initforms (`allocate-instance` leaves them empty), then
+;;; `initialize-instance`. A structure's slots have no initargs, so only
+;;; `:allow-other-keys` and the keywords of applicable methods are valid.
+(defmethod make-instance ((class structure-class) &rest initargs)
+  (%check-initargs class initargs '(allocate-instance initialize-instance shared-initialize))
+  (let ((instance (%make-default-structure class)))
+    (apply #'initialize-instance instance initargs)
+    instance))
+
 (defgeneric initialize-instance (instance &rest initargs &key &allow-other-keys))
 (defmethod initialize-instance ((instance standard-object) &rest initargs)
+  (apply #'shared-initialize instance t initargs)
+  instance)
+(defmethod initialize-instance ((instance structure-object) &rest initargs)
   (apply #'shared-initialize instance t initargs)
   instance)
 
@@ -1201,6 +1222,11 @@
 (defgeneric shared-initialize (instance slot-names &rest initargs &key &allow-other-keys))
 (defmethod shared-initialize ((instance standard-object) slot-names &rest initargs)
   (apply #'%shared-initialize instance slot-names initargs))
+;;; A structure's slots take no initargs and always hold a value, so there
+;;; is nothing here to fill.
+(defmethod shared-initialize ((instance structure-object) slot-names &rest initargs)
+  slot-names initargs
+  instance)
 
 (defgeneric slot-missing (class object slot-name operation &optional new-value))
 (defmethod slot-missing ((class t) object slot-name operation &optional new-value)
@@ -1267,6 +1293,13 @@
 (defmethod (setf class-name) (new-value (class class))
   (%set-class-name class new-value)
   new-value)
+
+;;; A built-in class's name is the language's: SBCL refuses to change it,
+;;; and so do we. Renamed, `defclass` of the old name could make a standard
+;;; class that `find-class` would then give for `integer`.
+(defmethod (setf class-name) (new-value (class built-in-class))
+  new-value
+  (error "the name of a built-in class cannot be changed" (%class-name class)))
 
 ;;; ------------------------------------------------------------------------
 ;;; Load forms (CLHS `make-load-form`)

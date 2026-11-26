@@ -564,8 +564,9 @@ adopts `%quokka-mop-symbol-names` into it as externals, as SBCL's are in
 plist `%direct-methods`, an `eql` specializer's second slot): an `eq` table
 keyed by specializer rehashed in address order and made C2 ≠ C3 — **nothing
 the rebuild runs may allocate in an order that depends on addresses**. The
-`objects` group joined ansi-test; what it found: `%with-arity-check` (too
-many arguments → `program-error`, around each cached effective method);
+`objects` group joined ansi-test; what it found: too many arguments to a
+generic function → `program-error` (checked in `%dispatch`'s walk over the
+arguments, from the `arity` slot that setting the lambda list fills);
 `class-name` and `(setf class-name)` generic (in `generic-functions.lisp`;
 `clos.lisp` uses `%class-name`); a lost proper name makes `defclass` create
 a new class; options and default initargs given twice; `slot-value`'s
@@ -574,8 +575,15 @@ and `make-load-form-saving-slots`; `allocate-instance` of a structure
 class; readers/writers newest first. The review added a kind check to
 every MOP reader (`%check-metaobject`; a `%` reader would answer with
 another object's slot) and slot definitions for structure classes, made
-from the layout (`%structure-slot-definitions`). Rebuild `(:FORMS 1852
-:REPLACED 1470)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
+from the layout (`%structure-slot-definitions`). Its minors, fixed after:
+**a structure's class and layout find each other directly** — the class
+under the name's `%structure-class` property, the layout on the class's
+plist (`%structure-class-layout`) — so `class-of` and `allocate-instance`
+survive `(setf class-name)` and a `defclass` of the old name; a built-in
+class cannot be renamed; `class-prototype` of a built-in class is an object
+of it (`%built-in-prototype`); `make-instance` of a structure class fills
+the initforms (by `eval`) and calls `initialize-instance`, as SBCL. Rebuild `(:FORMS 1859
+:REPLACED 1473)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
 739 of 843; no plain failure, escape, timeout or tier-1 gap. Rust 0.
 **Next: phase 3 step B** (#125, opened 26 Nov 2026 with seven decisions
 and a recommendation for each, awaiting Carsten) — conditions as instances

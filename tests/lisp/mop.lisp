@@ -27,6 +27,11 @@
 (mapcar (lambda (i) (list (first i) (second i))) (class-direct-default-initargs (find-class 'mq)))
 (mapcar (lambda (i) (list (first i) (second i) (funcall (third i)))) (class-default-initargs (find-class 'mq)))
 (typep (class-prototype (find-class 'mq)) 'mq)
+(mapcar (lambda (name) (typep (class-prototype (find-class name)) name))
+        '(number real rational integer fixnum float double-float character symbol
+          sequence list cons null array vector simple-vector bit-vector
+          simple-bit-vector string simple-string hash-table function package
+          readtable stream string-stream))
 (progn (finalize-inheritance (find-class 'mq)) (class-finalized-p (find-class 'mq)))
 (standard-names (class-precedence-list (find-class 'standard-generic-function)))
 
@@ -126,3 +131,7 @@
         (class-slots (find-class 'mst2)))
 (eq (first (class-slots (find-class 'mst2))) (first (class-slots (find-class 'mst2))))
 (mapcar #'slot-definition-name (class-slots (find-class 'mst1)))
+;; ... and keeps them under another name.
+(let ((rc (find-class 'mst1)))
+  (setf (class-name rc) 'mst1-renamed)
+  (mapcar #'slot-definition-name (class-slots rc)))

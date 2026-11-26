@@ -141,10 +141,17 @@ we fixed.
 
 The largest was the number of arguments. Calling a reader with two
 arguments, `(point-x p 1)`, must signal a `program-error`, and Quokka
-called the method and ignored the extra one. We now check, around each
-cached effective method, that a call gives no more arguments than the
-generic function's lambda list takes, which costs nothing for a generic
-function that accepts `&rest` or `&key`. Measuring this in SBCL turned up
+called the method and ignored the extra one. Our first fix wrapped each
+cached effective method in a closure that counted the arguments, and the
+review measured what that cost: about 4% more steps for every call of a
+generic function that takes a fixed number of arguments. The count needed
+no closure of its own. Dispatch already walked the required arguments to
+find their classes, and before that it walked the lambda list, on every
+call, to find out how many there were. We now work the arity out once,
+when the lambda list is set, keep it in a slot of the generic function,
+and check both ends in the one walk over the arguments. A call now takes
+about a fifth fewer steps than it did before the check existed. Measuring
+this in SBCL turned up
 something odd: a writer called with an extra argument reported
 `no-applicable-method` the first time, before any call had been cached,
 and `program-error` afterwards. The standard asks for the second, and we
@@ -176,6 +183,45 @@ The four that SBCL fails too are listed in `tests/ansi/deferred.lisp`
 with what SBCL does. The standard says, for instance, that
 `call-next-method` given arguments for which other methods would apply
 should signal an error, and SBCL does not check; neither do we.
+
+## Structures and built-in classes
+
+Besides the cost of the arity check, the review left four smaller faults,
+all in classes that CLOS does not make itself.
+
+A structure's class is made the first time something asks for it, and the
+structure and its class found each other through the name: the layout
+(chapter 61) knows the structure's name, and the class table maps the name
+to the class. That broke as soon as a program renamed the class with
+`(setf class-name)`. `class-of` of a structure looked the class up by its
+new name and found nothing. Worse, after a `defclass` of the old name,
+which rightly makes a new class because the old one has lost its proper
+name, it found the new standard class under that name and turned it into
+a structure class. SBCL keeps the structures with their renamed class, and
+we do the same now: the class is kept under a property of the structure's
+name, the layout on the class's property list, and neither needs the
+other's name to be found. `allocate-instance` of a structure class finds
+its layout the same way.
+
+A built-in class such as `integer` is different. SBCL refuses to change
+its name, with a `simple-error`, and so do we; renamed, it would let
+`defclass integer` put a standard class where `find-class` looks for
+`integer`.
+
+`class-prototype` of a built-in class was an error, because such a class
+cannot allocate an instance. SBCL answers with some object of the class,
+0 for `integer` and `nil` for `null`, and so does Quokka. Only `t` has
+none, in SBCL too, and so do the few classes whose objects Quokka cannot
+make yet, such as `pathname`.
+
+The last was `make-instance` of a structure class. CLHS leaves it to the
+implementation, and SBCL makes a structure whose slots hold their
+initforms and then calls `initialize-instance`, so that a program's
+`:after` method on it runs. Ours does the same. It evaluates each initform
+with `eval`, in the null lexical environment, which is the environment a
+`defstruct` at top level has. A constructor would evaluate it in the
+`defstruct`'s own environment, but a structure need not have a constructor
+that can be called without arguments.
 
 ## What did it cost?
 

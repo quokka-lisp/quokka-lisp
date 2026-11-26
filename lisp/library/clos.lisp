@@ -414,13 +414,18 @@
 ;;; ------------------------------------------------------------------------
 ;;; class-of
 
+;;; A structure's class is found from its layout (`%structure-class`), so
+;;; it stays the structure's class when it is renamed. Packages, readtables
+;;; and streams are structures too, but their classes are built-in ones.
 (defun class-of (object)
   (let ((wrapper (%instance-wrapper object)))
-    (if wrapper
-        (%wrapper-class wrapper)
-        (find-class (%built-in-class-name object)))))
+    (cond (wrapper (%wrapper-class wrapper))
+          ((and (%structure-layout object) (not (%standard-structure-name object)))
+           (%structure-class (%structure-layout object)))
+          (t (find-class (%built-in-class-name object))))))
 
-;;; The name of the class of an object that is no instance.
+;;; The name of the class of an object that is neither an instance nor a
+;;; structure of a `defstruct` (`class-of`).
 (defun %built-in-class-name (object)
   (cond ((null object) 'null)
         ((symbolp object) 'symbol)
@@ -442,8 +447,6 @@
         ((%conditionp object)
          (if (gethash (%condition-type object) %class-table) (%condition-type object) 'condition))
         ((%standard-structure-name object))
-        ((%structure-layout object)
-         (%class-name (%structure-class (%structure-layout object))))
         (t t)))
 
 ;;; ------------------------------------------------------------------------
@@ -584,15 +587,39 @@
 ;;; The class of the structures LAYOUT describes, made the first time it is
 ;;; asked for, with the class of the structure it includes, or
 ;;; `structure-object`, as its superclass.
+;;;
+;;; The two find each other directly, not through the class's name: the
+;;; class is kept under the structure name's property `%structure-class`,
+;;; and the layout on the class's property list. A program may rename the
+;;; class with `(setf class-name)`, and then `defclass` the old name, which
+;;; puts a new class in the class table under it (CLHS 4.3.1, and SBCL);
+;;; the structures keep the class they had, under its new name.
 (defun %structure-class (layout)
-  (let* ((name (%layout-name layout))
-         (class (gethash name %class-table)))
-    (if (and class (eq (class-of class) (gethash 'structure-class %class-table)))
-        class
-        (%ensure-plain-class name 'structure-class
-                             (list (if (%layout-include layout)
-                                       (%structure-class (%layout-include layout))
-                                       (find-class 'structure-object)))))))
+  (let ((name (%layout-name layout)))
+    (or (get name '%structure-class)
+        (let ((class (gethash name %class-table)))
+          (unless (and class (eq (class-of class) (gethash 'structure-class %class-table)))
+            (setq class (%ensure-plain-class name 'structure-class
+                                             (list (if (%layout-include layout)
+                                                       (%structure-class (%layout-include layout))
+                                                       (find-class 'structure-object))))))
+          (%set-class-plist class (list* '%layout layout
+                                         (%remove-plist-key (%class-plist class) '%layout)))
+          (setf (get name '%structure-class) class)))))
+
+;;; The layout of the structures whose class is CLASS, a structure class.
+(defun %structure-class-layout (class)
+  (getf (%class-plist class) '%layout))
+
+;;; A structure of CLASS's layout with every slot's initform, evaluated in
+;;; the order of the slots: what `make-instance` of a structure class makes
+;;; (`generic-functions.lisp`). An initform is evaluated in the null lexical
+;;; environment, which is the one a `defstruct` at top level has.
+(defun %make-default-structure (class)
+  (let* ((layout (%structure-class-layout class))
+         (structure (%make-structure layout (%layout-length layout))))
+    (dolist (description (%layout-slots layout) structure)
+      (%set-structure-ref structure (second description) (eval (third description))))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Defining classes

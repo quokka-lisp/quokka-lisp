@@ -74,7 +74,7 @@
   (eq (class-of class) (find-class 'structure-class)))
 
 (defun %structure-slot-definitions (class)
-  (let* ((layout (get (%class-name class) '%layout))
+  (let* ((layout (%structure-class-layout class))
          (descriptions (and layout (%layout-slots layout)))
          (kept (getf (%class-plist class) '%structure-slots)))
     (if (and kept (eq (car kept) descriptions))
@@ -117,14 +117,42 @@
 
 ;;; An instance of CLASS that is never initialised, kept on the class's
 ;;; property list, so that a program can ask what methods would apply to
-;;; one without making one of its own (AMOP).
+;;; one without making one of its own (AMOP). A built-in class cannot
+;;; allocate one, so its prototype is an object of the class, as in SBCL;
+;;; nil is the prototype of `null`, so a kept answer is told from none by
+;;; a marker.
 (defun class-prototype (class)
   (%check-metaobject class 'class 'class-prototype)
   (finalize-inheritance class)
-  (or (getf (%class-plist class) '%prototype)
-      (let ((prototype (allocate-instance class)))
-        (%set-class-plist class (list* '%prototype prototype (%class-plist class)))
-        prototype)))
+  (let ((kept (getf (%class-plist class) '%prototype '%none)))
+    (if (eq kept '%none)
+        (let ((prototype (if (eq (class-of class) (find-class 'built-in-class))
+                             (%built-in-prototype (%class-name class))
+                             (allocate-instance class))))
+          (%set-class-plist class (list* '%prototype prototype (%class-plist class)))
+          prototype)
+        kept)))
+
+;;; An object of the built-in class NAME. `t` has none in SBCL either, and
+;;; neither do the classes of objects Quokka cannot make yet.
+(defun %built-in-prototype (name)
+  (case name
+    ((number real rational integer fixnum) 0)
+    (bignum (ash 1 100))
+    (ratio (/ 1 2))
+    ((float double-float) (float 0))
+    (character #\*)
+    ((symbol null list sequence) nil)
+    (cons (list nil))
+    ((array simple-array vector simple-vector) (vector))
+    ((bit-vector simple-bit-vector) (make-array 0 :element-type 'bit))
+    ((string simple-string) (make-string 0))
+    (hash-table (make-hash-table))
+    (function #'identity)
+    (package (find-package "COMMON-LISP"))
+    (readtable (copy-readtable nil))
+    ((stream string-stream) (make-string-input-stream ""))
+    (t (error "this class has no prototype" name))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Slot definitions

@@ -107,3 +107,38 @@
 (let ((object (allocate-instance (find-class 'dmls))))
   (setf (dmls-a object) 'x)
   (list (dmls-p object) (typep object 'dmls) (eq (class-of object) (find-class 'dmls)) (dmls-a object)))
+
+;; A built-in class cannot be renamed, as in SBCL.
+(handler-case (setf (class-name (find-class 'integer)) 'whole-number) (error (c) (condition-kind c)))
+(class-name (find-class 'integer))
+
+;; A structure class can be renamed. It then has no proper name, and a
+;; `defclass` of the old name makes a new class; the structures keep theirs.
+(defstruct drs (a 1))
+(defvar *drs-class* (find-class 'drs))
+(setf (class-name *drs-class*) 'drs-renamed)
+(list (eq (class-of (make-drs)) *drs-class*) (class-name (class-of (make-drs))))
+(progn (defclass drs () ((z :initform 3))) :defined)
+(list (eq (find-class 'drs) *drs-class*)
+      (eq (class-of (make-drs)) *drs-class*)
+      (class-name (class-of (make-drs)))
+      (slot-value (make-instance 'drs) 'z)
+      (drs-a (make-drs)))
+
+;; allocate-instance finds a structure's layout from its class, whatever
+;; the class is now called.
+(defstruct dra (b 2))
+(let ((rc (find-class 'dra)))
+  (setf (class-name rc) 'dra-renamed)
+  (let ((object (allocate-instance rc)))
+    (list (typep object rc) (eq (class-of object) rc))))
+
+;; make-instance of a structure class: the slots' initforms, then
+;; initialize-instance; a structure's slots take no initargs.
+(defvar *dmi-count* 0)
+(defstruct dmi (a (incf *dmi-count*)) b)
+(defstruct (dmi2 (:include dmi)) (c 3))
+(progn (defmethod initialize-instance :after ((s dmi) &key) (setf (dmi-b s) :init)) :defined)
+(make-instance 'dmi)
+(make-instance (find-class 'dmi2) :allow-other-keys t :a 5)
+(handler-case (make-instance 'dmi :a 5) (error (c) (condition-kind c)))
