@@ -475,8 +475,10 @@ its `defstruct` has *run* (`%note-structure-defined` in the expansion —
 the layout exists at expansion time). Class names and class objects are
 types; the algebra's `:instance` kind names class objects, and `%tree-and`
 drops surely-empty terms (or a long and-of-ors explodes). MOP-only names
-are QUOKKA symbols until sub-step 7. Rebuild `(:FORMS 1575 :REPLACED
-1290)`; ansi-test **10,030**. Rust 242.
+are QUOKKA symbols until sub-step 7. An instance of a redefined class is
+brought to the new layout when touched (`%ensure-current-instance`);
+`defclass` refuses a non-standard class and non-standard superclasses.
+Rebuild `(:FORMS 1578 :REPLACED 1293)`; ansi-test **10,030**. Rust 242.
 **Next: CLOS sub-step 3** — generic functions, dispatch, method
 combination. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

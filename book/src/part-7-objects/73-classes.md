@@ -77,8 +77,22 @@ wrapper, costs one extra step on every slot access. It buys something a
 running world needs: when a class is redefined with another slot, its
 existing instances must gain that slot while staying the same objects, `eq`
 to what they were. An object in our heap cannot grow, but its vector can be
-replaced. This is how PCL, SBCL's CLOS, represents instances, and it is
-what sub-step 5 will use when it brings class redefinition.
+replaced. This is how PCL, SBCL's CLOS, represents instances.
+
+Our first version did not use it yet, and a review of the finished work
+showed what that cost. Redefine `point` with a slot `w` before `x`, and an
+old point's slot vector still had `x` first while the class now said `x`
+was second: `(slot-value old 'w)` quietly returned the value of `x`. CLHS
+4.3.6 says an instance of a redefined class is updated before any of its
+slots is touched, and now it is: the first slot access sees that the
+instance's wrapper is no longer its class's, makes a new slot vector in
+the class's layout, keeps every value whose slot kept its name, and fills
+the new slots from their initforms. Sub-step 5 will add the generic
+function a program can specialise around that,
+`update-instance-for-redefined-class`. The same review found that
+`defclass` would quietly turn a structure's class into a standard class,
+and accepted a built-in class such as `integer` as a superclass, which
+SBCL refuses; both are refused now.
 
 Our design document first said an instance would be the `Instance` heap
 type that structures already use (chapter 61). When we came to build it we

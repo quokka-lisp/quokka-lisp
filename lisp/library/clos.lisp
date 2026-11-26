@@ -548,7 +548,12 @@
 (defun ensure-class (name &key direct-superclasses direct-slots direct-default-initargs
                                (metaclass 'standard-class) documentation &allow-other-keys)
   (let* ((metaclass (if (symbolp metaclass) (find-class metaclass) metaclass))
-         (existing (find-class name nil))
+         (existing (let ((found (find-class name nil)))
+                     ;; A built-in, structure or condition class is not
+                     ;; redefined by `defclass`, as in SBCL.
+                     (when (and found (not (%standard-metaclass-p (class-of found))))
+                       (error "defclass cannot redefine a class of this kind" name))
+                     found))
          (class (or existing (%allocate-class-object (%class-wrapper metaclass))))
          (supers (mapcar #'%superclass-named
                          (or direct-superclasses
@@ -558,6 +563,9 @@
          (done nil))
     (when (member class supers)
       (error "a class cannot be its own superclass" name))
+    (dolist (super supers)
+      (unless (%valid-superclass-p metaclass super)
+        (error "this class cannot be a superclass of a standard class" (%class-name super))))
     (%set-instance-wrapper class (%class-wrapper metaclass))
     (%set-class-name class name)
     (%set-class-documentation class documentation)
@@ -579,6 +587,25 @@
       (unless (or done existing)
         (remhash name %class-table)))
     class))
+
+;;; Is METACLASS one whose instances `defclass` makes and redefines?
+(defun %standard-metaclass-p (metaclass)
+  (if (member metaclass (list (find-class 'standard-class)
+                              (find-class 'funcallable-standard-class)
+                              (find-class 'forward-referenced-class)))
+      t
+      nil))
+
+;;; May SUPER be a direct superclass of a class of METACLASS? AMOP's
+;;; `validate-superclass`: `t`, a standard or funcallable standard class
+;;; (the two mix), a class not yet defined, and for a funcallable class
+;;; also `function`. A built-in or structure class may not be: its
+;;; instances are not standard objects.
+(defun %valid-superclass-p (metaclass super)
+  (or (eq super (find-class t))
+      (%standard-metaclass-p (class-of super))
+      (and (eq metaclass (find-class 'funcallable-standard-class))
+           (eq super (find-class 'function)))))
 
 ;;; A reader, writer or accessor named in a slot is an ordinary function in
 ;;; this sub-step (sub-step 3 makes it a method of a generic function).
@@ -713,6 +740,7 @@
   instance)
 
 (defun reinitialize-instance (instance &rest initargs)
+  (%ensure-current-instance instance)
   (%check-initargs (class-of instance) initargs)
   (apply #'shared-initialize instance nil initargs)
   instance)
@@ -756,8 +784,35 @@
 ;;; OBJECT's effective slot named NAME, or nil.
 (defun %find-slot (object name)
   (if (%instance-wrapper object)
-      (find name (%class-slots (class-of object)) :key #'%slot-definition-name)
+      (progn (%ensure-current-instance object)
+             (find name (%class-slots (class-of object)) :key #'%slot-definition-name))
       nil))
+
+;;; An instance made before its class was redefined with other slots still
+;;; has the old wrapper and a slot vector laid out by it. The first time
+;;; one of its slots is touched it is brought up to date (CLHS 4.3.6): a
+;;; new slot vector in the class's current layout, keeping the value of
+;;; every slot whose name is in both, and the slots it gains filled from
+;;; their initforms. Sub-step 5 adds the generic function a program can
+;;; specialise, `update-instance-for-redefined-class`, around this.
+(defun %ensure-current-instance (instance)
+  (let* ((wrapper (%instance-wrapper instance))
+         (class (%wrapper-class wrapper)))
+    (unless (or (eq wrapper (%class-wrapper class)) (not (%class-finalized-p class)))
+      (let* ((old-names (%wrapper-slot-names wrapper))
+             (old-slots (%instance-slots instance))
+             (new-names (%wrapper-slot-names (%class-wrapper class)))
+             (new-slots (make-array (length new-names) :initial-element %slot-unbound-marker))
+             (added nil))
+        (dotimes (i (length new-names))
+          (let ((at (position (aref new-names i) old-names)))
+            (if at
+                (setf (aref new-slots i) (aref old-slots at))
+                (push (aref new-names i) added))))
+        (%set-instance-slots instance new-slots)
+        (%set-instance-wrapper instance (%class-wrapper class))
+        (shared-initialize instance added)))
+    instance))
 
 ;;; A structure's slot description named NAME, for `slot-value` on a
 ;;; structure, which SBCL allows.

@@ -122,3 +122,17 @@
 => GUARDED-STRUCT
 => (T T)
 => (T T)
+=> REDEF
+=> *RI*
+=> REDEF
+=> 1
+=> :UNBOUND
+=> (1 5)
+=> REDEF
+=> (1 3 NIL)
+=> :REFUSED
+=> STRUCTURE-CLASS
+=> :REFUSED
+=> :REFUSED
+=> NIL
+=> NIL

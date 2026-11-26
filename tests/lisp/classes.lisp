@@ -160,3 +160,21 @@
 ;; A boolean combination of classes that no object can satisfy.
 (multiple-value-list (subtypep '(and (or tac-a tac-b) (or (not tac-a) (not tac-b)) (or tac-a tac-c) (or (not tac-a) (not tac-c)) (or tac-b tac-c) (or (not tac-b) (not tac-c))) nil))
 (multiple-value-list (subtypep t '(not (and (or tac-a tac-b) (or (not tac-a) (not tac-b)) (or tac-a tac-c) (or (not tac-a) (not tac-c)) (or tac-b tac-c) (or (not tac-b) (not tac-c))))))
+
+;; An instance made before its class was redefined has the new slots.
+(class-name (defclass redef () ((a :initarg :a))))
+(defvar *ri* (make-instance 'redef :a 1))
+(class-name (defclass redef () ((b :initarg :b) (a :initarg :a))))
+(slot-value *ri* 'a)
+(handler-case (slot-value *ri* 'b) (unbound-slot () :unbound))
+(progn (setf (slot-value *ri* 'b) 5) (list (slot-value *ri* 'a) (slot-value *ri* 'b)))
+(class-name (defclass redef () ((a :initarg :a) (c :initform 3))))
+(list (slot-value *ri* 'a) (slot-value *ri* 'c) (slot-exists-p *ri* 'b))
+;; defclass cannot make a structure's class a standard class.
+(handler-case (defclass cpoint () ()) (error () :refused))
+(class-name (class-of (find-class 'cpoint)))
+;; A standard class's superclasses must be standard classes.
+(handler-case (defclass bad-sub (integer) ()) (error () :refused))
+(handler-case (defclass bad-sub2 (cpoint) ()) (error () :refused))
+(find-class 'bad-sub nil)
+(find-class 'bad-sub2 nil)
