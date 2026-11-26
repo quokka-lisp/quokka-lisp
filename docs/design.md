@@ -204,7 +204,7 @@ We designed the environment around three kinds of user, and the first of them is
 2. A **medium user** browses the system to see how it is made, as people do in Smalltalk, and changes small things by following tutorials on the Quokka website: how the tiles look, a colour scheme, the listener's prompt. The same user writes whole applications with a user interface, graphics, sound and MIDI, such as a Rolodex, a small graphics editor, a MIDI player or a platform game.
 3. An **advanced user** extends Quokka itself, down to the compiler and the library.
 
-From these we took six use cases. The first four were drawn as mock-ups; the last two are still to be drawn.
+From these we took six use cases, and drew a mock-up for each.
 
 1. Follow a book chapter: type the examples, see the results, make a mistake, fix it and go on.
 2. Find where something lives: go from something on the screen (the prompt) to the code that drew it, change that code, and see the change at once.
@@ -263,9 +263,23 @@ An export comes in two kinds:
 
 Stripping a world is *tree shaking*, which LispWorks calls *delivery*: keep only what is reachable from a root, here the main view, as a garbage collector keeps only what is reachable from its roots. Its known weakness is late binding. A call through `(funcall (intern name))`, `eval` or `find-class` on a computed name reaches code that no reference points at, the shaker removes it, and the application fails only when that path runs; LispWorks offers delivery levels for this reason. The who-calls index makes Quokka's shaker better informed but cannot make it perfect, so how much a locked export keeps (the compiler? `eval`?) is still open. `boot::build_image` already builds a world and then scans its heap to prove what is in it, and a shaken world is the same kind of operation.
 
-### Open questions
+### Saving and coming back
 
-- Draw the last two use cases: saving and coming back (5), and changing the system itself (6).
+A world has no Save button, and closing its tab never asks whether to save. It saves itself as you work, by **journalling every change**: each definition installed with Cmd-Enter is appended at once to a journal in the host's storage (in the browser, the Origin Private File System), and a snapshot of the whole world is taken from time to time. To open a world, load its last snapshot and replay the journal written since. A crash then loses at most the form being typed. This is *system prevalence*, the snapshot-and-journal technique that Prevayler (Java, 2002) named, and Smalltalk's changes file is the same idea applied to source. We chose it over snapshots alone because without a journal "no Save button" would be a promise the system could not keep.
+
+The start page lists your worlds with what you want to know before opening one: where you were, and whether any definitions have changed since the last commit. A world opens exactly as it was left, with the same tiles, the same transcript (a line marks the gap in time) and the same uncommitted definitions still installed. Downloading a world keeps a copy elsewhere or moves it to another computer.
+
+The journal settles the code half of [#24](https://github.com/quokka-lisp/quokka-lisp/issues/24). The other half is still open: whether the journal also records changes to data, such as a new card in the Rolodex, or whether data is safe only as of the last snapshot.
+
+### Changing the system itself
+
+The compiler and the library are definitions in the system `quokka`, browsed, inspected and edited like any other. Installing one of them is different, though: a change to the compiler installed in the world you work in changes how the next fix to the compiler is compiled. So a definition in system `quokka` asks before it installs, and offers to **try the change in a copy**.
+
+A copy is a second world started from one of your save points and running beside yours, in the browser in a Web Worker of its own. It installs the change, rebuilds itself (the warm rebuild of chapter 41), and runs the checks that `scripts/check.sh` runs today: the fixpoint, the differential files and the ansi-test ratchet, each result a presentation that opens the failing form. Only when they pass do you bring the change into your own world. A copy is cheap because of decisions made long ago: all of a world's state is in its heap (rule 4), an image can be saved and loaded in the middle of a computation (phase 1), and the VM has no globals for two worlds to share.
+
+Committing the change writes its package back to its file under `lisp/`, so Git sees ordinary text, and Quokka's own history stays in the repository. Natively this goes through the `local:` file host; in the browser it needs one of the answers to *Git in the browser*, an open question below.
+
+### Open questions
 - Whether the Quokka source tree in Git stays a set of files that a world files in, or becomes an export the world writes, and what that does to the cold build and the fixpoint tests, which read `lisp/` today. This reopens the decided *Source of truth* (see *Decisions and open questions*, where a reconciliation is proposed: a commit writes changed packages back to their files).
 - How much a locked export keeps, and whether data can be exported with a system.
 - The window model of [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21). Every mock-up so far fitted fixed tracks, a track holding a column of viewers, and none needed a general tree of splits; that is evidence for tracks, not yet a decision.
@@ -360,7 +374,7 @@ Code never knows which backend it is talking to, so the same environment works n
 - **Local host** (`local:/…`). The real filesystem, on native builds only. This is where Git working trees live.
 - **Remote hosts (later)** (`cloud:/…`). Files on a server over HTTPS. A documented protocol lets people self-host; a subscription file service can be offered on top. Offline edits need a sync and conflict model, and the Krill Notes Swarm protocol work may carry over.
 - **Versions.** CL pathnames have a version component. Hosts that can keep versions (image, remote) expose file history, as Genera's file system did.
-- **Image backup.** In the browser, the whole image can be downloaded as a file and uploaded again to restore or move it. Periodic snapshots go to browser storage automatically. What is **not** decided is whether anything records the work *between* two snapshots — a change log, in the prevalence sense, which is also what a user-built in-image database would need. See [#24](https://github.com/quokka-lisp/quokka-lisp/issues/24). The one part that cannot wait, because it constrains the image format phase 1 is fixing, is a monotonic sequence number in the image header saying which point in history a snapshot is.
+- **Image backup.** In the browser, the whole image can be downloaded as a file and uploaded again to restore or move it. Periodic snapshots go to browser storage automatically. What records the work *between* two snapshots was undecided until 27 Nov 2026, when the environment design chose a journal of every installed definition (see *Saving and coming back*, and [#126](https://github.com/quokka-lisp/quokka-lisp/issues/126)). Whether the journal also records changes to data, which is what a user-built in-image database would need, is still open. See [#24](https://github.com/quokka-lisp/quokka-lisp/issues/24). The one part that cannot wait, because it constrains the image format phase 1 is fixing, is a monotonic sequence number in the image header saying which point in history a snapshot is.
 - **A world reads what its host was given, not what its user can.** A world reaches the outside only through its host, and the native host grants a directory: the current one, or `--root DIR`, plus anything named with `--allow-read PATH`. A name is judged by where it leads once every `..` and every symbolic link has been followed, so neither is a way out. Images are meant to be shared and opening one runs its code; without this a downloaded world could read `~/.ssh`, and keeping credentials out of the image would protect nothing. This is the capability model of WASI's preopened directories. It is not multi-user security, which stays a non-goal: it bounds what an image can touch, not who may run one. In the browser the sandbox is the root. The `local:/` file host will stand on the same grant. Decided 25 Nov 2026 ([#87](https://github.com/quokka-lisp/quokka-lisp/issues/87)).
 - **Credentials stay out of the image.** Tokens for remote hosts live in the browser's or OS's credential store, so a downloaded or shared image never carries them. Opening someone else's image means running their code.
 
