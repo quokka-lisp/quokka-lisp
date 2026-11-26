@@ -410,7 +410,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1731 :REPLACED 1386)".into())],
+        [Outcome::Value("(:FORMS 1732 :REPLACED 1387)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -522,6 +522,42 @@ fn print_object_on_a_built_in_class() {
         out,
         "=> \"(1 (2))\"\n=> :OK\n=> :OK\n=> \"<(I <(I)>)>\"\n=> \"#(I <(I)>)\"\n=> \"I\"\n"
     );
+}
+
+/// `*print-circle*` still finds shared and circular tails once a program has
+/// a `print-object` method on a built-in class, which sends every list
+/// through `print-object` in the first pass too (#124, found in review: a
+/// circular list then never finished printing).
+#[test]
+fn print_circle_after_a_method_on_a_built_in_class() {
+    let out = run_compiled(
+        "(progn (defmethod print-object ((h hash-table) s) (write-string \"TABLE\" s)) :ok) \
+         (prin1-to-string (list (make-hash-table))) \
+         (let* ((*print-circle* t) (x (list 1 2)) (y (list x (cdr x)))) (prin1-to-string y)) \
+         (let* ((*print-circle* t) (x (list 1 2))) (setf (cdr (last x)) x) (prin1-to-string x)) \
+         (let* ((*print-circle* t) (x (list 1 2))) (prin1-to-string (list x x)))",
+    );
+    assert_eq!(
+        out,
+        "=> :OK\n=> \"(TABLE)\"\n=> \"((1 . #1=(2)) #1#)\"\n=> \"#1=(1 2 . #1#)\"\n\
+         => \"(#1=(1 2) #1#)\"\n"
+    );
+}
+
+/// Under `*print-circle*` a structure with only the default methods is
+/// walked by its slots in the first pass, as before `print-object`, not
+/// printed through the generic function into a discarded stream: three
+/// hundred of them fit the step budget (#124, found in review: 230 did,
+/// against 350 before).
+#[test]
+fn print_circle_walks_plain_structures() {
+    let out = run_compiled(
+        "(progn (defstruct bp a b) :ok) \
+         (let ((*print-circle* t) (l nil)) \
+           (dotimes (i 300) (push (make-bp :a i :b (list i)) l)) \
+           (< 0 (length (prin1-to-string l))))",
+    );
+    assert_eq!(out, "=> :OK\n=> T\n");
 }
 
 /// `describe` (#124): the text is Quokka's own, in outline what SBCL's is —

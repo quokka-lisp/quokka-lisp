@@ -515,7 +515,7 @@ SBCL's spacing with an empty identity (no address) and counts no level
 `print-object` method on the structure's class (`%note-structure-defined`,
 redefined in `printer.lisp`). `describe`/`describe-object` are in
 `lisp/library/describe.lisp` (after `format.lisp`); `with-slots`/
-`with-accessors` at the end of `clos.lisp`. Rebuild `(:FORMS 1731 :REPLACED 1386)`;
+`with-accessors` at the end of `clos.lisp`. Rebuild `(:FORMS 1732 :REPLACED 1387)`;
 ansi-test **10,034** (unchanged: its print-object and
 `with-slots` tests are in the unmeasured `objects` group or use `loop`). Rust 0.
 **Next: CLOS sub-step 5** — redefinition: obsolete instances,

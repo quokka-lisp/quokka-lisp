@@ -413,7 +413,10 @@
           (setf (gethash object table) :many)
           (progn
             (setf (gethash object table) :once)
-            (cond ((%printed-by-method-p object) (%note-through-method object table))
+            (cond ((%plain-structure-p object)
+                   (dotimes (i (%layout-length (%structure-layout object)))
+                     (%note-shared (%structure-ref object i) table)))
+                  ((%printed-by-method-p object) (%note-through-method object table))
                   ((consp object)
                    (%note-shared (car object) table)
                    (%note-shared (cdr object) table))
@@ -423,6 +426,14 @@
                   ((%printed-as-vector-p object)
                    (dotimes (i (array-total-size object))
                      (%note-shared (row-major-aref object i) table))))))))
+
+;;; A structure that prints as `#S(...)` because no method of a program's
+;;; applies to it: its slots are walked directly, as before `print-object`,
+;;; which is cheaper than running the default method (#124).
+(defun %plain-structure-p (object)
+  (and (%structure-layout object)
+       (not (%unreadable-structure-p object))
+       (%printed-plainly-p object)))
 
 ;;; What a `print-object` method prints is up to the method, so the first
 ;;; pass runs it, into a stream nobody reads, and notes whatever it prints
@@ -650,6 +661,15 @@
         (%print-object (car list) out level)
         (let ((rest (cdr list)))
           (cond ((null rest) nil)
+                ;; In the first pass of `*print-circle*`, through a method
+                ;; (#124): each tail is noted as it is walked into, as
+                ;; `%note-shared` notes one, so that a shared tail is found
+                ;; and a circular list ends.
+                ((and %noting (consp rest))
+                 (if (gethash rest %circle-table)
+                     (setf (gethash rest %circle-table) :many)
+                     (progn (setf (gethash rest %circle-table) :once)
+                            (%print-list-items rest out level (+ count 1)))))
                 ;; A shared tail is printed after a dot, so that its label
                 ;; stands for the rest of the list: `(a . #1#)`.
                 ((and (consp rest) (null (%circle-mark rest)))

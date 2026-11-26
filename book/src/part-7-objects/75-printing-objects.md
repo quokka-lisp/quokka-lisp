@@ -250,6 +250,24 @@ body in `symbol-macrolet` (chapter 44), which makes `x` stand for the form
 `setf` and `incf` of `x` write it, because a symbol macro is a place
 wherever its expansion is one.
 
+## What the review found
+
+A review of the finished work ran its probes in Quokka and SBCL side by
+side and found two faults, both in the first pass of `*print-circle*`.
+The first appeared only after a program had defined a `print-object`
+method on a built-in class, such as `hash-table`. From then on every list
+went through the generic function in the first pass too, and the list
+printer, which walks along a list's tail itself, never noted the tail
+conses as it went. A shared tail was therefore never found, and a circular
+list never finished printing, in that world for good, since the flag is
+never cleared. The list printer now notes each tail as it walks into it,
+as the first pass always had. The second fault was a cost. The first pass
+ran the default method for every structure, through the generic function
+and into a discarded stream, where it used to walk the slots, and printing
+a list of structures with `*print-circle*` true fit 230 of them into the
+step budget where it used to fit 350. A structure that prints plainly is
+walked by its slots again. Each fault has a test of its own.
+
 ## What did it cost?
 
 No Rust. The printer grew by about a hundred and fifty lines of Lisp and
