@@ -28,7 +28,8 @@ use std::path::{Path, PathBuf};
 
 /// The groups tier 1 is measured by (#60, decision 3), in this order.
 /// `arrays` joined when step T moved arrays into tier 1 (#67), and
-/// `types-and-classes` when phase 3 began with the type system (#124).
+/// `types-and-classes` when phase 3 began with the type system (#124), and
+/// `objects` when CLOS was complete (#124, sub-step 7).
 const GROUPS: &[&str] = &[
     "cons",
     "sequences",
@@ -46,6 +47,7 @@ const GROUPS: &[&str] = &[
     "hash-tables",
     "structures",
     "types-and-classes",
+    "objects",
 ];
 
 /// What ansi-test's own loader (`gclload1.lsp`) loads before any group:

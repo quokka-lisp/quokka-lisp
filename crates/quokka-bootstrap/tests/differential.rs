@@ -181,6 +181,7 @@ tier1_cases! {
     print_object => "print-object",
     redefinition => "redefinition",
     method_combination => "method-combination",
+    mop => "mop",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -412,7 +413,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1792 :REPLACED 1421)".into())],
+        [Outcome::Value("(:FORMS 1838 :REPLACED 1465)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -521,7 +522,7 @@ fn print_object_prints_metaobjects() {
          => \"#<STANDARD-GENERIC-FUNCTION AREA (2)>\"\n\
          => \"#<STANDARD-METHOD AREA (CIRCLE)>\"\n\
          => \"#<STANDARD-METHOD AREA :AROUND (POINT)>\"\n\
-         => \"#<QUOKKA::STANDARD-EFFECTIVE-SLOT-DEFINITION X>\"\n\
+         => \"#<QUOKKA-MOP:STANDARD-EFFECTIVE-SLOT-DEFINITION X>\"\n\
          => \"#<SIMPLE-ERROR: x>\"\n=> :NR\n=> :OK\n=> \"[#<SIMPLE-ERROR: y>]\"\n"
     );
 }
@@ -933,7 +934,9 @@ fn objects(heap: &[u64]) -> Vec<(usize, u8, usize)> {
 /// after a count) or one character a word.
 fn string_at(heap: &[u64], at: usize, object_type: u8, slots: usize) -> String {
     if object_type == quokka_vm::heap::ObjectType::PackedString as u8 {
-        let count = heap[at + 1] as usize;
+        // Bounded by the object's size: read with the other world's layout,
+        // the count word may belong to something else.
+        let count = (heap[at + 1] as usize).min(slots.saturating_sub(1) * 8);
         (0..count)
             .map(|i| char::from((heap[at + 2 + i / 8] >> ((i % 8) * 8)) as u8))
             .collect()

@@ -734,7 +734,8 @@
     `(list :name ',name :initargs ',(nreverse initargs)
            ,@(if initform-p `(:initform ',initform :initfunction (lambda () ,initform)) nil)
            :allocation ,(or allocation :instance) :type ',(or type t)
-           :readers ',(nreverse readers) :writers ',(nreverse writers)
+           ;; Readers and writers newest first, as SBCL lists them.
+           :readers ',readers :writers ',writers
            :documentation ,documentation)))
 
 ;;; The class options of `defclass` as keywords for `ensure-class`.

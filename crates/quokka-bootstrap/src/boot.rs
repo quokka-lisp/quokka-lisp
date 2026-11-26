@@ -160,6 +160,7 @@ pub const LIBRARY: &[(&str, &str)] = &[
         "generic-functions.lisp",
         include_str!("../../../lisp/library/generic-functions.lisp"),
     ),
+    ("mop.lisp", include_str!("../../../lisp/library/mop.lisp")),
     (
         "char-names.lisp",
         include_str!("../../../lisp/library/char-names.lisp"),

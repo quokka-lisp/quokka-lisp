@@ -51,7 +51,7 @@
 (defclass standard-reader-method (standard-accessor-method) ())
 (defclass standard-writer-method (standard-accessor-method) ())
 
-(defclass eql-specializer (specializer) (object))
+(defclass eql-specializer (specializer) (object direct-methods))
 
 (defclass method-combination (metaobject) ())
 (defclass standard-method-combination (method-combination) (name options))
@@ -523,6 +523,7 @@
   (or (gethash object %eql-specializers)
       (let ((specializer (%allocate-instance (find-class 'eql-specializer))))
         (%set-slot-at specializer 0 object)
+        (%set-slot-at specializer 1 nil)
         (setf (gethash object %eql-specializers) specializer))))
 
 ;;; ------------------------------------------------------------------------
@@ -766,6 +767,31 @@
                  (eq (class-of class) (find-class 'built-in-class)))
         (setq %print-object-on-built-in t)))))
 
+;;; Each specializer keeps the methods it appears in, for
+;;; `specializer-direct-methods` (`mop.lisp`): a class on its property list,
+;;; an `eql` specializer in its second slot. Not a table keyed by the
+;;; specializer: an `eq` table hashes by address, and rehashing it after a
+;;; collection conses in an order that differs between generations, so C2
+;;; and C3 would differ (chapter 42).
+(defun %specializer-methods (specializer)
+  (if (%eql-specializer-p specializer)
+      (%slot-at specializer 1)
+      (getf (%class-plist specializer) '%direct-methods)))
+
+(defun %set-specializer-methods (specializer methods)
+  (if (%eql-specializer-p specializer)
+      (%set-slot-at specializer 1 methods)
+      (%set-class-plist specializer
+                        (if methods
+                            (list* '%direct-methods methods
+                                   (%remove-plist-key (%class-plist specializer) '%direct-methods))
+                            (%remove-plist-key (%class-plist specializer) '%direct-methods)))))
+
+(defun %note-specializers (method add)
+  (dolist (specializer (remove-duplicates (%method-specializers method)))
+    (let ((methods (remove method (%specializer-methods specializer))))
+      (%set-specializer-methods specializer (if add (cons method methods) methods)))))
+
 (defun add-method (gf method)
   (when (and (%method-generic-function method) (not (eq (%method-generic-function method) gf)))
     (error "this method already belongs to another generic function" method))
@@ -777,8 +803,10 @@
                       (%gf-methods gf))))
     (when old
       (%set-method-generic-function old nil)
+      (%note-specializers old nil)
       (%set-gf-methods gf (remove old (%gf-methods gf)))))
   (%set-method-generic-function method gf)
+  (%note-specializers method t)
   (%set-gf-methods gf (cons method (%gf-methods gf)))
   (%set-gf-eql-positions gf (%compute-eql-positions gf))
   (%note-print-object-method gf method)
@@ -789,6 +817,7 @@
   (when (member method (%gf-methods gf))
     (%set-gf-methods gf (remove method (%gf-methods gf)))
     (%set-method-generic-function method nil)
+    (%note-specializers method nil)
     (%set-gf-eql-positions gf (%compute-eql-positions gf))
     (%invalidate-dispatch))
   gf)

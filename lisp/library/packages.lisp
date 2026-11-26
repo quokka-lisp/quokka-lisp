@@ -691,11 +691,39 @@
 
 (defvar %common-lisp-package (make-package "COMMON-LISP" :nicknames '("CL")))
 (defvar %keyword-package (make-package "KEYWORD"))
-(defvar %quokka-package (make-package "QUOKKA" :use '("COMMON-LISP")))
+;;; The metaobject protocol's names (`mop.lisp`), which are not Common
+;;; Lisp's, have a package of their own, as SBCL's are in `SB-MOP`; `QUOKKA`
+;;; uses it, so the library reads them without a prefix.
+(defvar %quokka-mop-package (make-package "QUOKKA-MOP" :use '("COMMON-LISP")))
+(defvar %quokka-package (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP")))
 (defvar %cl-user-package
   (make-package "COMMON-LISP-USER" :nicknames '("CL-USER") :use '("COMMON-LISP")))
 
 (defvar *package* %cl-user-package)
+
+;;; The names `QUOKKA-MOP` exports: the metaobject classes and the readers
+;;; of `mop.lisp`, those of SBCL's `SB-MOP` that Quokka has.
+(defvar %quokka-mop-symbol-names
+  '("METAOBJECT" "SPECIALIZER" "EQL-SPECIALIZER" "FUNCALLABLE-STANDARD-CLASS"
+    "FUNCALLABLE-STANDARD-OBJECT" "FORWARD-REFERENCED-CLASS" "SLOT-DEFINITION"
+    "STANDARD-SLOT-DEFINITION" "DIRECT-SLOT-DEFINITION" "EFFECTIVE-SLOT-DEFINITION"
+    "STANDARD-DIRECT-SLOT-DEFINITION" "STANDARD-EFFECTIVE-SLOT-DEFINITION"
+    "STANDARD-ACCESSOR-METHOD" "STANDARD-READER-METHOD" "STANDARD-WRITER-METHOD"
+    "CLASS-DIRECT-SUPERCLASSES" "CLASS-DIRECT-SUBCLASSES" "CLASS-PRECEDENCE-LIST"
+    "CLASS-DIRECT-SLOTS" "CLASS-SLOTS" "CLASS-DIRECT-DEFAULT-INITARGS" "CLASS-DEFAULT-INITARGS"
+    "CLASS-FINALIZED-P" "CLASS-PROTOTYPE" "FINALIZE-INHERITANCE" "ENSURE-CLASS"
+    "SLOT-DEFINITION-NAME" "SLOT-DEFINITION-INITARGS" "SLOT-DEFINITION-INITFORM"
+    "SLOT-DEFINITION-INITFUNCTION" "SLOT-DEFINITION-ALLOCATION" "SLOT-DEFINITION-TYPE"
+    "SLOT-DEFINITION-READERS" "SLOT-DEFINITION-WRITERS" "SLOT-DEFINITION-LOCATION"
+    "STANDARD-INSTANCE-ACCESS" "FUNCALLABLE-STANDARD-INSTANCE-ACCESS"
+    "GENERIC-FUNCTION-NAME" "GENERIC-FUNCTION-METHODS" "GENERIC-FUNCTION-LAMBDA-LIST"
+    "GENERIC-FUNCTION-METHOD-COMBINATION" "GENERIC-FUNCTION-METHOD-CLASS"
+    "GENERIC-FUNCTION-DECLARATIONS" "GENERIC-FUNCTION-ARGUMENT-PRECEDENCE-ORDER"
+    "METHOD-SPECIALIZERS" "METHOD-LAMBDA-LIST" "METHOD-GENERIC-FUNCTION" "METHOD-FUNCTION"
+    "ACCESSOR-METHOD-SLOT-DEFINITION" "EQL-SPECIALIZER-OBJECT" "INTERN-EQL-SPECIALIZER"
+    "SPECIALIZER-DIRECT-METHODS" "SPECIALIZER-DIRECT-GENERIC-FUNCTIONS"
+    "FIND-METHOD-COMBINATION" "EXTRACT-LAMBDA-LIST" "EXTRACT-SPECIALIZER-NAMES"
+    "SET-FUNCALLABLE-INSTANCE-FUNCTION"))
 
 ;;; Sort every symbol in the Rust system table into a package: each of the
 ;;; standard's 978 names into `COMMON-LISP`, as an external symbol — creating
@@ -703,6 +731,8 @@
 ;;; `QUOKKA`, internally. Keywords are already `KEYWORD`'s, by their home.
 (defun %adopt-system-symbols ()
   (%adopt-common-lisp %common-lisp-symbol-names)
+  (dolist (name %quokka-mop-symbol-names)
+    (%adopt (%intern name) %quokka-mop-package t))
   (%adopt-the-rest (%system-symbols))
   ;; The names have done their job — each symbol has its own copy now — and a
   ;; list of 978 strings is not worth carrying in every image.

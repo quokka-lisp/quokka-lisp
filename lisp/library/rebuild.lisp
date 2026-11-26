@@ -43,7 +43,7 @@
     "lisp/library/integers.lisp" "lisp/library/floats.lisp" "lisp/library/ratios.lisp"
     "lisp/library/types.lisp" "lisp/library/type-algebra.lisp"
     "lisp/library/clos.lisp"
-    "lisp/library/generic-functions.lisp"
+    "lisp/library/generic-functions.lisp" "lisp/library/mop.lisp"
     "lisp/library/char-names.lisp" "lisp/library/reader.lisp"
     "lisp/library/printer.lisp" "lisp/library/format.lisp" "lisp/library/describe.lisp"
     "lisp/library/eval.lisp"
