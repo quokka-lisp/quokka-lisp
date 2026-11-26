@@ -187,10 +187,88 @@ One interaction loop runs through everything: evaluate a form, get presentations
 
 - **Tiled viewers.** Oberon-style tracks: a wide main track and a narrow tool track. Viewers split and resize but never overlap. Rooms-style workspaces come later, as named sets of viewers per task. This is a want, not a default — overlapping windows are what a system grows if nobody decides otherwise, and Oberon's own reason for rejecting them (too much complication for too small an advantage, 1987) is rule 7 in other words. What is still open is the *model*: fixed tracks or a tree of splits, keyboard-driven or mouse-driven, and whether the display protocol can express layout at all — because if it cannot, the window manager ends up in the renderer where Lisp cannot change it. See [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21).
 - **Live text.** Every viewer is a rich-text document mixing prose, code and embedded results. Evaluating a form inserts its result below it as a presentation, so notes, scratch code and the command line are the same thing.
-- **Presentations.** Each printed object keeps a reference to the object and its presentation type. When a command needs an argument, clicking any matching presentation on screen supplies it, as Genera's `accept` did.
-- **Moldable inspectors.** Objects add views by defining methods on one generic function. A heap object might show its tag and raw words, a file its text, a function its callers.
-- **Debugger as a viewer.** An unhandled condition opens a viewer with frames as presentations and restarts as commands. You edit the failing function in place, then retry the frame.
-- **Editor.** Text-based with structural (paredit-style) commands. Text keeps the system approachable and Git-friendly.
+- **Presentations.** Each printed object keeps a reference to the object and its presentation type. When a command needs an argument, clicking any matching presentation on screen supplies it, as Genera's `accept` did. Drawings are presentations too: a shape on a canvas knows the object it draws.
+- **Point at anything.** Right-clicking any output gives the commands that fit what it is, and always *Inspect* and *Show the code that drew this*. For the second, every output record remembers the function that produced it, which is a requirement on the display protocol of phase 4.
+- **Moldable inspectors.** Objects add views by defining methods on one generic function. A heap object might show its tag and raw words, a file its text, a function its callers, a number in a running program a slider.
+- **Debugger as a viewer.** An unhandled condition opens a viewer with frames as presentations and restarts as commands. You edit the failing function in place, then retry the frame. For a name that is not defined, a handler written in Lisp offers the nearest defined names as restarts ("Use `ADD-RECORD` instead"), which SBCL does not.
+- **Running programs are processes.** A game loop or an animation runs in its own process beside the listener, so the listener still answers. Clicking a drawing in a running program suspends that process and inspects the object, and continuing resumes it, which is the debugger stopping a process for a reason other than an error.
+- **Editor.** Text with structural (paredit-style) commands, editing one definition at a time; a whole package can be opened as text when many definitions change at once (see *The world is a database of definitions*).
+
+> **Status: worked out 27 Nov 2026, in a brainstorm with mock-ups; nothing below is built.** The sections from here to the end of *Environment and UI* record what phases 4 to 6 aim at. The mock-ups were drawn for four use cases and live only in that conversation; the decisions they led to are written out here.
+
+### Who it is for
+
+We designed the environment around three kinds of user, and the first of them is the one it has to please first.
+
+1. A **beginner** writes snippets and small programs while following a Lisp book or tutorial, such as *Practical Common Lisp* or *Land of Lisp*. This is also how we expect to use Quokka first ourselves.
+2. A **medium user** browses the system to see how it is made, as people do in Smalltalk, and changes small things by following tutorials on the Quokka website: how the tiles look, a colour scheme, the listener's prompt. The same user writes whole applications with a user interface, graphics, sound and MIDI, such as a Rolodex, a small graphics editor, a MIDI player or a platform game.
+3. An **advanced user** extends Quokka itself, down to the compiler and the library.
+
+From these we took six use cases. The first four were drawn as mock-ups; the last two are still to be drawn.
+
+1. Follow a book chapter: type the examples, see the results, make a mistake, fix it and go on.
+2. Find where something lives: go from something on the screen (the prompt) to the code that drew it, change that code, and see the change at once.
+3. Build a small application with a user interface (the Rolodex).
+4. Run a program with graphics and sound and change it while it runs (the platform game).
+5. Save your work and come back to it the next day.
+6. Change the system itself: the compiler or the library, then rebuild and test.
+
+Following a book also sets priorities for the library. Both books lean on `loop`, `format` and files from their first chapters, so a beginner meets missing `loop` long before missing graphics.
+
+### The listener
+
+The listener looks like the transcripts in the books, a prompt such as `CL-USER>` followed by forms and their results, but the transcript is live text like every other viewer. You can scroll up, edit any earlier form and run it again.
+
+An edited form does not run in place. It runs as a new entry at the bottom of the transcript, the old result is struck through, and a note points back to where the form came from. We chose this over running in place, as a notebook such as Jupyter does, because in Lisp the order matters: `*db*` holds whatever every earlier `add-record` left in it, and a notebook run in place can show a page whose state nobody could reproduce by reading it from the top. Appending keeps the transcript a true record of what ran, in the order it ran.
+
+Beside the listener, a small viewer lists the definitions made in this session. From it a scratch session can become something kept: the definitions you tick are committed into a package. This is a beginner's version of what Interlisp-D's *file package* did, which watched what you defined and offered to keep it.
+
+### The world is a database of definitions
+
+A world is not a heap of compiled code with source files somewhere else. It is a live database whose rows are definitions, and files are a view of it, as a dump is a view of a SQL database. We took this from Smalltalk, where methods are objects in the image, and chose it over a file-based environment because the browser, the inspector and the history all want to ask questions of definitions, and a definition that lives in a file has to be found again by parsing.
+
+Each definition is an object holding its name, its kind (function, class, variable, macro, viewer, …), its package, its source text, the compiled object it made, and its versions. Today the compiler throws the source away (`function-lambda-expression` always answers "unknown"), so keeping it is new work, and so is a **who-calls index** that the compiler updates each time it installs a definition, as SBCL's `sb-introspect:who-calls` and Genera's own tables do. Without that index the inspector cannot answer "used by" quickly.
+
+The browser follows the database. Its columns go from systems to packages to definitions, grouped by kind, to the live objects a definition holds (the cards in `*cards*`). Selecting anything opens it in the inspector, which shows its description, what it uses, what uses it, its connections, and its versions, and every name there can be clicked to go on.
+
+Editing a definition and pressing Cmd-Enter **installs it at once**: the world runs the new version from the next call, and the definition is marked as changed since the last commit. A **commit** gives a name and a version number to the state you have installed. We chose this order, Smalltalk's, over Git's (drafts until commit, and the world runs only committed code), because otherwise every experiment would need a commit, or a temporary install that is the Smalltalk model under another name.
+
+Going back comes in two kinds, kept apart on purpose:
+
+1. **Rolling back to a commit** restores definitions and nothing else. Your data (`*db*`, the Rolodex's cards) stays as it is.
+2. **Restoring a save point** brings back the whole world as it was, data included. Save points are the image snapshots of *Files and storage*.
+
+One button that did both would undo work you did not mean to undo, which is why the history viewer lists commits and save points separately and draws them differently. Commits grouped by task are Smalltalk's *change sets*; a log of every installed change, which Smalltalk keeps in its *changes file* for recovery after a crash, is the open question of [#24](https://github.com/quokka-lisp/quokka-lisp/issues/24).
+
+Files remain, in three roles. They are how many definitions are changed in one go, how code reaches Git, and how a world is built cold. Once a world is running, the world is the truth: a package is written out as a file ("file out") and read back in ("file in"). Pharo has the same arrangement, with code kept in the image and written to one file per class (its Tonel format, managed by its Iceberg tool) only so that Git has text to version. Quokka's own `lisp/library/` would become such an export, and the warm rebuild that reads it would become filing in a system.
+
+### Systems and packages
+
+You start an application by creating a **system** and an empty package in it, and you fill the package with definitions one at a time, each in its own small editor. The package's own definition, what it uses and what it exports, is the first thing you edit. A stray parenthesis in one definition cannot break its neighbours, because they are not in the same text.
+
+Common Lisp has no sub-packages: package names are flat strings, and `rolodex.import` is a different package from `rolodex` that only looks related. Dotted names are a convention, and package-local nicknames only shorten names. The grouping that CL practice uses is the system, from ASDF's `defsystem`, a named set of components that load and travel together. A Quokka system is an object in the world that **lists its packages explicitly**. The browser suggests dotted names and puts a new `rolodex.something` package into the `rolodex` system by default, but membership is stored, never inferred from a prefix. Systems are a Quokka extension and live in a Quokka package (rule 6).
+
+A package can be opened as text, a view the world generates with a bar marking each definition and its version. Editing several definitions there and installing gives each changed definition its own new version. Exporting a system writes exactly this text, one file per package plus a `system.lisp` naming the packages and, for an application, its main view.
+
+Two consequences follow. A package must remember the **order** of its definitions, because a `defmacro` has to come before its first use and a `defclass` before the methods on it; we proposed creation order, which the text view can change. And **data is not exported**: `*cards*` is written as its `defvar`, not with the cards in it. Data travels with the world or a save point; exporting it as well is an open question, for which CL's hook is `make-load-form`.
+
+### Exporting an application
+
+A system that names a **main view** can be exported as a web page: the page, the VM as WebAssembly, and a stripped world holding the application. Whoever receives it runs it on their own computer, in their browser's sandbox. We considered an app mode, where a link opens your world with the application filling the screen, and rejected it because a world opened from a link runs someone else's code with far less deliberation than downloading and opening an export.
+
+An export comes in two kinds:
+
+1. **Locked**: the editor, the inspector and the browser are stripped out. The world is smaller and simpler. It is not secret: whoever has the file can take the image apart, and the export dialog says so.
+2. **Open**: the environment comes along, so the person who receives it can change the application. Their changes form their own change set, which they can export and send back.
+
+Stripping a world is *tree shaking*, which LispWorks calls *delivery*: keep only what is reachable from a root, here the main view, as a garbage collector keeps only what is reachable from its roots. Its known weakness is late binding. A call through `(funcall (intern name))`, `eval` or `find-class` on a computed name reaches code that no reference points at, the shaker removes it, and the application fails only when that path runs; LispWorks offers delivery levels for this reason. The who-calls index makes Quokka's shaker better informed but cannot make it perfect, so how much a locked export keeps (the compiler? `eval`?) is still open. `boot::build_image` already builds a world and then scans its heap to prove what is in it, and a shaken world is the same kind of operation.
+
+### Open questions
+
+- Draw the last two use cases: saving and coming back (5), and changing the system itself (6).
+- Whether the Quokka source tree in Git stays a set of files that a world files in, or becomes an export the world writes, and what that does to the cold build and the fixpoint tests, which read `lisp/` today. This reopens the decided *Source of truth* (see *Decisions and open questions*, where a reconciliation is proposed: a commit writes changed packages back to their files).
+- How much a locked export keeps, and whether data can be exported with a system.
+- The window model of [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21). Every mock-up so far fitted fixed tracks, a track holding a column of viewers, and none needed a general tree of splits; that is evidence for tracks, not yet a decision.
 
 ## Display: hybrid renderer
 
@@ -256,7 +334,7 @@ A sketch of how it might read (proposed names):
                     :rate 48000))
 ```
 
-- **Time belongs to the host.** `audio-time` is a host request that answers with the audio clock, and `:at` schedules against it, so a slow slice delays *when Lisp asks* but not *when the sound plays*, as long as it asks far enough ahead. The VM itself still never reads a clock.
+- **Time belongs to the host.** `audio-time` is a host request that answers with the audio clock, and `:at` schedules against it, so a slow slice delays *when Lisp asks* but not *when the sound plays*, as long as it asks far enough ahead. The VM itself still never reads a clock. Animation follows the same rule: the time of the next frame comes from the host (in the browser, `requestAnimationFrame`) as the answer to a host request.
 - **A sound is an object.** It prints as a presentation — a waveform you can click to play — and the inspector shows its parts. Errors and the debugger can `beep`, as Lisp machines did.
 - **Rust only for the player.** The parts list is small and fixed; anything built from them (instruments, sequencers, music theory, a tracker viewer) is Lisp, by rule 1.
 - **The native host needs an audio library** (in Rust, `cpal` is the usual choice, under the permissive Apache-2.0 licence). The browser has Web Audio. A host with no audio answers every sound request with nothing, so programs still run.
@@ -337,7 +415,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka int
 - [x] **Dialect:** a Common Lisp subset, tested against SBCL as the reference.
 - [x] **Bootstrap host:** bootstrap by interpretation — the Rust interpreter runs the CL compiler to build the first image.
 - [x] **Subset boundary:** three tiers matched to phases (see The CL subset boundary).
-- [x] **Source of truth:** files on any file host are the truth; the image is a live cache of them. It follows that **images are not committed**: they are build artefacts (`.gitignore` has `*.qi`), rebuilt in seconds by the cold build or the warm rebuild, and a committed one would be an undiffable second truth that every format bump invalidates. The system's own source changes in files and reaches an image by `quokka rebuild`; when the editor lives in the image, editing a definition writes its file back. A browser will load a published image — a CI artefact or release download — not one from the repository.
+- [x] **Source of truth:** *(under review since 27 Nov 2026: the environment design in* The world is a database of definitions *makes the running world the truth and files a view of it; see the open question below.)* Files on any file host are the truth; the image is a live cache of them. It follows that **images are not committed**: they are build artefacts (`.gitignore` has `*.qi`), rebuilt in seconds by the cold build or the warm rebuild, and a committed one would be an undiffable second truth that every format bump invalidates. The system's own source changes in files and reaches an image by `quokka rebuild`; when the editor lives in the image, editing a definition writes its file back. A browser will load a published image — a CI artefact or release download — not one from the repository.
 - [x] **Rooting:** lifetime branding, not a shadow stack. Holding a value across a collection is a compile error. Chosen over an explicit root stack because the Rust surface is small and permanently bounded by rule 1, so the cost of the stricter scheme is bounded too. See Substrate: the Rust VM.
 - [x] **Yielding:** the caller passes a step budget (`run_slice(budget)`); no clock and no yield callback in the VM. Chosen over a host-set wall-clock deadline for determinism and replayability. See Substrate: the Rust VM.
 - [x] **Browser target:** WASM is first-class from phase 0. The VM runs client-side in the browser, yields to the browser's event loop, and keeps images in browser storage.
@@ -469,6 +547,7 @@ The backbone is differential testing: the same Lisp test file runs on Quokka int
 - [x] **One lexical environment in the compiler** (#111 item 2, 25 Nov 2026). The compiler described where a form stands with three structures: `env`, the scopes, passed as an argument; `%open`, a global list of what is open between the form and the start of its function (unwind records, tagbodies, a function's edge), which `go` reads to choose between `JMP-TAG` and `GO`; and `%local-macros`, a global list of `macrolet` expanders, which could not know that an `flet` further in had taken a macro's name and so was given an entry with no expander to say so. They are one list now, innermost first, each entry `(kind . contents)`, nil the null lexical environment, and the same object is a macro's `&environment`. Four kinds are **run-time scopes** the machine builds a link for (`:variable`, `:function`, `:block`, `:tag`) and `%lookup` counts them, so `(depth, index)` is what it was; seven exist **only while compiling** and are stepped over (`:macro`, `:symbol-macro`, `:special`, `:notinline`, and the open entries `:record`, `:tagbody`, `:lambda`). A local function hides a `macrolet` macro, and the reverse, by which is met first. Compiling is re-entrant in all of it without saving anything, and the compiler's globals are down to the code and the constants. Emitted code is the same instruction for instruction. Rejected: SBCL's shape, a `lexenv` structure with a list per namespace — the machine's scope chain is one chain across namespaces, so the interleaving that `depth` counts would have to be recorded a second time; and a record of three fields, which is the three structures under one name. One behaviour changed on purpose: **a `macrolet` expander is compiled in the compile-time part of its environment** — outer `macrolet` and `symbol-macrolet` definitions and declarations — as CLHS `macrolet` says and SBCL does; before, it saw outer local macros but not symbol macros. A library function reads an environment only through `%environment-macro`, `%environment-symbol-macro` and `%environment-function-p`. With it: the constants of a function being compiled have an `eq` table beside their list (#111 item 5; a `progn` of 500 calls to different functions ran out of the REPL's step budget in the linear search, and compiles in 0.4 s), and a tagbody's labels are handed out in order instead of searched for.
 - [ ] **The compiler's state becomes per-process special variables** (#111 item 1, decided 25 Nov 2026; to build in phase 3). The compiler keeps its work in progress in global variables — `%code`, `%constants`, `%constant-count`, `%constant-table`, `%pending-name`, `%toplevel-form` — saved and restored by hand around a nested compilation. That is re-entrant and not safe for two processes compiling at once: a switch between them lands in the middle of both. They become special variables bound in `compile-form`, so each process's compilation has its own. Two things must exist first: per-process dynamic bindings (#34 item 3; today a binding is shallow, in the symbol, and the scheduler would have to swap them at a switch), and special variables in tier 0, because the interpreter runs the compiler in the cold build. Rejected: one compile lock (simple, and it makes a debugger that evaluates a form while another process is stopped inside a compilation wait for it — the first two-process case there will be). The four persistent tables (`%special-variables`, `%constant-variables`, `%compiler-macros`, `%global-symbol-macros`) are shared on purpose, and writes to them need the same answer as every other shared table in phase 3.
 - [ ] **A debug setting keeps a function's original arguments in its frame** (#111 item 4, decided 25 Nov 2026; to build in phase 3). A frame holds the saved pc, the frame pointer, and the *caller's* function and environment; `CALL` pops the arguments into the callee's scope, where `setq` may change them. Phase 3's gate is to fix a function from inside an error and retry the frame, and retrying needs the callee and the arguments it was called with. So under a debug setting — SBCL's `(debug 2)` and above does the same — compiled code keeps its original arguments (and the callee) where the debugger can find them, at the cost of the frame's size and of objects living as long as the call; without it, the debugger says a frame cannot be restarted. Rejected: always keeping them (every call pays), and re-reading them from the scope (wrong after a `setq` of a parameter).
+- [ ] **Source of truth, again** (raised 27 Nov 2026). The decision above says files are the truth and a world caches them; the environment design (*The world is a database of definitions*) says a running world is the truth and files are a view written from it. A reconciliation we proposed: committing writes each changed package back to its file, so between commits the world is ahead of the files, and at every commit the two agree again. Images would still not be committed. To decide before phase 6, and before then if the who-calls index or keeping source in definitions is built.
 - [ ] **Concurrency:** green threads on one OS thread for good, or plan for real parallelism later? Open in [#34](https://github.com/quokka-lisp/quokka-lisp/issues/34), which recommends one OS thread per world for good.
 - [ ] **Remote protocol:** WebDAV, an S3-compatible API, or our own protocol over HTTPS?
 - [ ] **Git in the browser:** through a Git hosting API, or a Git implementation compiled to WASM?
