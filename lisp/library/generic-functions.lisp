@@ -209,6 +209,9 @@
 
 (defun %make-generic-function (name lambda-list)
   (let ((gf (%allocate-instance (find-class 'standard-generic-function))))
+    ;; Every slot starts as nil: `%allocate-instance` leaves them unbound,
+    ;; and the readers here index them directly.
+    (dotimes (i (length (%instance-slots gf))) (%set-slot-at gf i nil))
     (%set-gf-name gf name)
     (%set-gf-lambda-list gf lambda-list)
     (%set-gf-methods gf nil)
@@ -229,14 +232,17 @@
   gf)
 
 ;;; The generic function NAME names, made if there is none. An ordinary
-;;; function there is replaced, as SBCL replaces one; a macro or a special
-;;; operator is an error.
+;;; function, a macro or a special operator there is an error (CLHS
+;;; `ensure-generic-function`, and SBCL): replacing an ordinary function
+;;; would let `(defmethod reverse ...)` take `reverse` from the reader.
 (defun ensure-generic-function (name &key (lambda-list nil lambda-list-p) documentation
                                           (method-combination nil) argument-precedence-order
                                           declare &allow-other-keys)
   (let ((existing (%defined-function name)))
     (when (and (symbolp name) (or (macro-function name) (%special-operator-p name)))
-      (error "a macro or special operator cannot become a generic function" name))
+      (error 'program-error "a macro or special operator cannot become a generic function" name))
+    (when (and existing (not (%generic-function-p existing)))
+      (error 'program-error "an ordinary function cannot become a generic function" name))
     (let ((gf (if (%generic-function-p existing)
                   existing
                   (let ((new (%make-generic-function name lambda-list)))
@@ -249,9 +255,9 @@
         (%set-gf-lambda-list gf lambda-list))
       (when (and method-combination (not (member method-combination '(standard (standard)) :test #'equal)))
         (error "only standard method combination exists yet (CLOS sub-step 6)" method-combination))
-      (%set-gf-argument-precedence-order
-       gf (and argument-precedence-order
-               (mapcar (lambda (name) (position name lambda-list)) argument-precedence-order)))
+      (when argument-precedence-order
+        (%set-gf-argument-precedence-order
+         gf (%precedence-positions (%gf-lambda-list gf) argument-precedence-order)))
       (when documentation (%set-gf-documentation gf documentation))
       (when declare (%set-gf-declarations gf declare))
       (%invalidate-dispatch)
@@ -285,11 +291,27 @@
          ,gf))))
 
 (defun %defgeneric (name lambda-list &rest keys)
+  (when (getf keys :argument-precedence-order)
+    (%precedence-positions lambda-list (getf keys :argument-precedence-order)))
   (let ((existing (%defined-function name)))
     (when (%generic-function-p existing)
       (dolist (method (%gf-initial-methods existing)) (remove-method existing method))
       (%set-gf-initial-methods existing nil))
     (apply #'ensure-generic-function name :lambda-list lambda-list keys)))
+
+;;; The positions of the parameters ORDER names among LAMBDA-LIST's required
+;;; ones; ORDER must name every required parameter exactly once.
+(defun %precedence-positions (lambda-list order)
+  (let ((required (let ((found nil))
+                    (dolist (item lambda-list (nreverse found))
+                      (if (member item %lambda-markers) (return (nreverse found)))
+                      (push item found)))))
+    (unless (and (= (length order) (length required))
+                 (every (lambda (name) (member name required)) order)
+                 (= (length (remove-duplicates order)) (length order)))
+      (error 'program-error "the argument precedence order must name each required parameter once"
+             order))
+    (mapcar (lambda (name) (position name required)) order)))
 
 ;;; ------------------------------------------------------------------------
 ;;; Methods
@@ -574,7 +596,9 @@
               (any (fifth shape)))
           (dolist (method methods)
             (let ((m (%lambda-list-shape (%method-lambda-list method))))
-              (when (or (fifth m) (and (third m) (not (fourth m)))) (setq any t))
+              ;; A method with `&rest` but no `&key` does not affect which
+              ;; keywords are accepted (CLHS 7.6.5); only `&allow-other-keys` does.
+              (when (fifth m) (setq any t))
               (setq valid (append (sixth m) valid))))
           (lambda (args)
             (let ((keys (nthcdr positional args)))
@@ -649,12 +673,28 @@
 (defmethod slot-unbound ((class t) instance slot-name)
   (%slot-unbound instance slot-name))
 
+;;; `%method-initargs`' answers, by class and list of functions, each with
+;;; the epoch it was computed in: it depends only on those, and
+;;; `make-instance` asks on every call.
+(defvar %method-initargs-cache (make-hash-table :test 'eq))
+
+(defun %method-initargs (class functions)
+  (let* ((entries (gethash class %method-initargs-cache))
+         (entry (assoc functions entries)))
+    (if (and entry (eq (second entry) %dispatch-epoch))
+        (values (third entry) (fourth entry))
+        (multiple-value-bind (keys any) (%compute-method-initargs class functions)
+          (setf (gethash class %method-initargs-cache)
+                (cons (list functions %dispatch-epoch keys any)
+                      (remove functions entries :key #'car)))
+          (values keys any)))))
+
 ;;; The keywords the applicable methods of the generic functions named in
 ;;; FUNCTIONS accept, for an instance of CLASS (CLHS 7.1.2), and whether one
 ;;; of them accepts any. A method applies when its first specializer is in
 ;;; CLASS's precedence list (for `allocate-instance` and `make-instance`,
 ;;; whose first argument is the class itself, in its metaclass's).
-(defun %method-initargs (class functions)
+(defun %compute-method-initargs (class functions)
   (let ((keys nil) (any nil))
     (dolist (name functions)
       (let ((gf (%defined-function name)))
@@ -683,7 +723,8 @@
                               (lambda (args next) next (slot-value (car args) slot-name))
                               nil)))
     (%set-slot-at method 7 slot-name)
-    (add-method (%accessor-generic-function name '(object)) method)))
+    (add-method (%accessor-generic-function name '(object)) method)
+    method))
 
 (defun %add-writer-method (class name slot-name)
   (let ((method (%make-method (find-class 'standard-writer-method) nil
@@ -693,4 +734,5 @@
                                 (setf (slot-value (second args) slot-name) (first args)))
                               nil)))
     (%set-slot-at method 7 slot-name)
-    (add-method (%accessor-generic-function name '(new-value object)) method)))
+    (add-method (%accessor-generic-function name '(new-value object)) method)
+    method))

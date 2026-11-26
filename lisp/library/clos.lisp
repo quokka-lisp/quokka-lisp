@@ -621,14 +621,23 @@
            (eq super (find-class 'function)))))
 
 ;;; A reader, writer or accessor named in a slot is a method of a generic
-;;; function of that name (`generic-functions.lisp`).
+;;; function of that name (`generic-functions.lisp`). The methods a class's
+;;; previous definition made are removed first, so a reader the new
+;;; definition no longer names no longer applies; they are kept on the
+;;; class's plist for that.
 (defun %define-accessors (class)
-  (dolist (slot (%class-direct-slots class))
-    (let ((name (%slot-definition-name slot)))
-      (dolist (reader (%slot-definition-readers slot))
-        (%add-reader-method class reader name))
-      (dolist (writer (%slot-definition-writers slot))
-        (%add-writer-method class writer name)))))
+  (dolist (method (getf (%class-plist class) '%accessor-methods))
+    (when (%method-generic-function method)
+      (remove-method (%method-generic-function method) method)))
+  (let ((made nil))
+    (dolist (slot (%class-direct-slots class))
+      (let ((name (%slot-definition-name slot)))
+        (dolist (reader (%slot-definition-readers slot))
+          (push (%add-reader-method class reader name) made))
+        (dolist (writer (%slot-definition-writers slot))
+          (push (%add-writer-method class writer name) made))))
+    (%set-class-plist class (list* '%accessor-methods made
+                                   (%remove-plist-key (%class-plist class) '%accessor-methods)))))
 
 ;;; A slot specifier of `defclass` as the list of keywords `ensure-class`
 ;;; takes: (:name x :initargs (:x) :initform 0 :initfunction (lambda () 0) ...).

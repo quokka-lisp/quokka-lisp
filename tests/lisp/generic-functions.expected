@@ -101,3 +101,18 @@
 => :OK
 !! type-error
 => (T T T)
+=> :OK
+=> :BAD-KEY
+=> (:A 2)
+=> ORDF
+=> :REFUSED
+=> (:ORDINARY 5)
+=> :REFUSED
+=> :REFUSED
+=> :REFUSED
+=> RR
+=> 1
+=> RR
+=> :NO-METHOD
+=> BENCH
+=> 299

@@ -494,7 +494,7 @@ generic functions. This file runs while the library loads, before
 `eval.lisp`: no `fdefinition` (use `%defined-function`), no
 `special-operator-p`, no `lambda-list-keywords`. The fixpoint test
 describes an instance by its class name (a depth-bounded walk of a generic
-function took 20 GB). Rebuild `(:FORMS 1692 :REPLACED 1372)`; ansi-test
+function took 20 GB). Rebuild `(:FORMS 1695 :REPLACED 1374)`; ansi-test
 **10,034**. Rust 0.
 **Next: CLOS sub-step 4** — `print-object`, `describe-object`,
 `with-slots`, `with-accessors`. Phase 2's scope was

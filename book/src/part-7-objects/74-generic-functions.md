@@ -196,6 +196,25 @@ produced, so the test now describes one by its class's name, and the run
 takes under a minute again. The other half of the fixpoint, comparing C2
 and C3 word for word, still covers every byte of every method.
 
+## What the review found
+
+A review of the finished work ran some sixty probes in Quokka and in SBCL
+side by side, and five of them disagreed. Our plan said that `defmethod`
+on a name holding an ordinary function would replace the function, which
+seemed friendly; CLHS and SBCL make it an error, and the review showed
+why: `(defmethod reverse ((x integer)) x)` replaced `reverse`, which the
+reader calls, and every form typed after it failed. It is an error now. A
+method with `&rest` but no `&key` had been counted as accepting every
+keyword, which CLHS 7.6.5 says it does not. An `:argument-precedence-order`
+that left out a parameter was accepted and then dispatched on the wrong
+argument. Redefining a class left the reader methods of its old definition
+in place, so a reader the class no longer had still worked. And
+`make-instance` cost about twenty thousand steps, a third of them spent
+working out again, on every call, which keywords the class's
+initialization methods accept; that answer now waits in a cache until the
+next class or method changes, and the cost is about half. Each of these
+has a test beside the others.
+
 ## What did it cost?
 
 No Rust: `generic-functions.lisp` is about 700 lines of Lisp. The file

@@ -152,3 +152,24 @@
 (progn (defmethod rect-w :around ((r rect)) (list :around (call-next-method))) :ok)
 (rect-w (make-instance 'rect :w 5 :h 1))
 (list (typep #'rect-w 'generic-function) (typep #'make-instance 'generic-function) (typep #'initialize-instance 'generic-function))
+
+;; A method with &rest and no &key does not widen the accepted keywords.
+(progn (defgeneric f3 (x &key)) (defmethod f3 ((x integer) &rest r) r) (defmethod f3 ((x number) &key a) (list x a)) :ok)
+(handler-case (f3 1 :b 2) (program-error () :bad-key))
+(f3 1 :a 2)
+;; An ordinary function does not become a generic function.
+(defun ordf (x) (list :ordinary x))
+(handler-case (defmethod ordf ((x integer)) x) (error () :refused))
+(ordf 5)
+(handler-case (defgeneric ordf (x)) (error () :refused))
+;; An argument precedence order must name every required parameter once.
+(handler-case (defgeneric ap2 (a b) (:argument-precedence-order b)) (error () :refused))
+(handler-case (defgeneric ap3 (a b) (:argument-precedence-order b c)) (error () :refused))
+;; Redefining a class removes the accessor methods its old definition made.
+(class-name (defclass rr () ((a :initform 1 :reader rr-a))))
+(rr-a (make-instance 'rr))
+(class-name (defclass rr () ((a :initform 1))))
+(handler-case (rr-a (make-instance 'rr)) (error () :no-method))
+;; Making instances stays cheap enough for a loop of three hundred in one form.
+(class-name (defclass bench () ((a :initarg :a))))
+(let ((made nil)) (dotimes (i 300) (setq made (make-instance 'bench :a i))) (slot-value made 'a))
