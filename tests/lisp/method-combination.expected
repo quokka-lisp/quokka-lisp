@@ -199,3 +199,17 @@
 => T
 => NIL
 => :SIMPLE-ERROR
+=> AUX-ARGUMENTS
+=> NIL
+=> :OK
+=> (1 3 :M)
+=> SUPPLIED-ARGUMENTS
+=> NIL
+=> :OK
+=> (1 1 NIL NIL NIL Y)
+=> (1 2 T 5 T Y)
+=> NIL
+=> :OK
+=> :ERROR
+=> :OK
+=> :PROGRAM-ERROR

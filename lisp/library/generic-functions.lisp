@@ -334,7 +334,7 @@
               (%form-effective-method
                ,gf ,methods ',spec
                (let (,@(if gf-symbol `((,gf-symbol ,gf)) nil)
-                     ,@(mapcar (lambda (entry) `(,(second entry) ',(third entry))) spec))
+                     ,@(mapcar (lambda (variable) `(,variable ',variable)) (%arguments-variables spec)))
                  ,@body))))
           ,options)))))
 
@@ -382,49 +382,70 @@
     (:most-specific-first (reverse methods))
     (:most-specific-last methods)))
 
-;;; An `:arguments` lambda list as a list of `(kind variable symbol
-;;; default)`, KIND one of `:whole`, `(:required i)`, `(:optional i)`,
-;;; `:rest`, `(:key keyword)`; SYMBOL is what the body sees and the effective
-;;; method binds.
+;;; An `:arguments` lambda list as a list of `(kind variable default
+;;; supplied)`, KIND one of `:whole`, `(:required i)`, `(:optional i)`,
+;;; `:rest`, `(:key keyword)` and `:aux`, SUPPLIED a supplied-p variable or
+;;; nil. As in SBCL, the body sees each variable bound to its own name, and
+;;; the effective method binds those names to the arguments, in order, so a
+;;; default can read the variables before it.
 (defun %arguments-spec (lambda-list)
   (let ((spec nil) (state :required) (required 0) (optional 0))
     (dolist (item lambda-list (nreverse spec))
-      (cond ((member item '(&whole &optional &rest &key))
+      (cond ((member item '(&whole &optional &rest &key &aux))
              (setq state item))
-            ((member item '(&allow-other-keys &aux)))
-            (t (let ((variable (if (consp item) (car item) item))
-                     (default (if (consp item) (second item) nil)))
+            ((eq item '&allow-other-keys))
+            (t (let* ((variable (if (consp item) (car item) item))
+                      (variable (if (consp variable) (second variable) variable)))
                  (push (list (case state
                                (&whole (setq state :required) :whole)
                                (&optional (prog1 (list :optional optional) (setq optional (+ optional 1))))
                                (&rest :rest)
                                (&key (list :key (%keyword-of item)))
+                               (&aux :aux)
                                (t (prog1 (list :required required) (setq required (+ required 1)))))
-                             (if (and (consp variable) (eq state '&key)) (second variable) variable)
-                             (gensym (symbol-name (if (consp variable) (second variable) variable)))
-                             default)
+                             variable
+                             (if (consp item) (second item) nil)
+                             (if (consp item) (third item) nil))
                        spec)))))))
 
-;;; The binding of an `:arguments` variable, by its place among the generic
+;;; The variables an `:arguments` entry binds: its own and its supplied-p.
+(defun %arguments-variables (spec)
+  (let ((variables nil))
+    (dolist (entry spec (nreverse variables))
+      (push (second entry) variables)
+      (when (fourth entry) (push (fourth entry) variables)))))
+
+;;; The bindings of an `:arguments` entry, by its place among the generic
 ;;; function's own parameters (CLHS 7.6.6.4 leaves the rest to SBCL's
 ;;; example): a required variable past the generic function's required
 ;;; parameters, or an optional one past its optional ones, is nil or its
-;;; default; `&rest` is what follows the generic function's positional
-;;; parameters.
-(defun %argument-binding (entry required optional)
-  (let ((kind (first entry)) (symbol (third entry)) (default (fourth entry))
-        (args '%emf-args))
-    (list symbol
-          (cond ((eq kind :whole) args)
-                ((eq kind :rest) `(nthcdr ,(+ required optional) ,args))
-                ((eq (car kind) :required)
-                 (if (< (second kind) required) `(nth ,(second kind) ,args) nil))
-                ((eq (car kind) :optional)
-                 (let ((place (+ required (second kind))))
-                   (if (< (second kind) optional)
-                       `(if (nthcdr ,place ,args) (nth ,place ,args) ,default)
-                       default)))
-                (t `(getf (nthcdr ,(+ required optional) ,args) ',(second kind) ,default))))))
+;;; default; `&rest` and `&key` read what follows the generic function's
+;;; positional parameters.
+(defun %argument-bindings (entry required optional)
+  (let* ((kind (first entry)) (variable (second entry)) (default (third entry))
+         (supplied-variable (fourth entry))
+         (args '%emf-args)
+         (rest `(nthcdr ,(+ required optional) ,args))
+         (supplied (cond ((and (consp kind) (eq (car kind) :optional))
+                          (if (< (second kind) optional) `(nthcdr ,(+ required (second kind)) ,args) nil))
+                         ((and (consp kind) (eq (car kind) :key))
+                          `(%key-supplied-p ,rest ',(second kind)))
+                         (t nil)))
+         (value (cond ((eq kind :whole) args)
+                      ((eq kind :rest) rest)
+                      ((eq kind :aux) default)
+                      ((eq (car kind) :required)
+                       (if (< (second kind) required) `(nth ,(second kind) ,args) nil))
+                      ((eq (car kind) :optional)
+                       (if supplied `(if ,supplied (nth ,(+ required (second kind)) ,args) ,default) default))
+                      (t `(if ,supplied (getf ,rest ',(second kind)) ,default)))))
+    (cons (list variable value)
+          (if supplied-variable (list (list supplied-variable `(if ,supplied t nil))) nil))))
+
+(defun %key-supplied-p (plist key)
+  (do ((rest plist (cddr rest)))
+      ((null rest) nil)
+    (when (eq (car rest) key) (return t))))
 
 ;;; The effective method for FORM: a compiled function of the argument list
 ;;; in which `call-method` and `make-method` are local macros (CLHS
@@ -433,7 +454,7 @@
 (defun %form-effective-method (gf methods spec form)
   (let* ((shape (%lambda-list-shape (%gf-lambda-list gf)))
          (code `(lambda (%emf-args)
-                  (let* ,(mapcar (lambda (entry) (%argument-binding entry (first shape) (second shape)))
+                  (let* ,(mapcan (lambda (entry) (%argument-bindings entry (first shape) (second shape)))
                                  spec)
                     (macrolet ((call-method (method &optional next-methods)
                                  (%expand-call-method method next-methods))
@@ -955,15 +976,19 @@
         (funcall (%combiner (%gf-method-combination gf)) gf methods))))
 
 (defun %standard-effective-method (gf methods)
-  (let ((around nil) (before nil) (primary nil) (after nil))
+  (let ((around nil) (before nil) (primary nil) (after nil) (invalid nil))
     (dolist (method methods)
       (let ((qualifiers (%method-qualifiers method)))
         (cond ((null qualifiers) (push method primary))
               ((equal qualifiers '(:around)) (push method around))
               ((equal qualifiers '(:before)) (push method before))
               ((equal qualifiers '(:after)) (push method after))
-              (t (invalid-method-error method "standard method combination does not accept ~S"
-                                       qualifiers)))))
+              ((null invalid) (setq invalid method)))))
+    ;; As under an operator combination, SBCL asks for a primary method
+    ;; before it looks at qualifiers it does not accept.
+    (when (and invalid primary)
+      (invalid-method-error invalid "standard method combination does not accept ~S"
+                            (%method-qualifiers invalid)))
     (setq around (nreverse around) before (nreverse before) primary (nreverse primary))
     ;; AFTER is now least specific first, the order the after methods run.
     (if (null primary)

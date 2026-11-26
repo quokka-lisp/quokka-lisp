@@ -552,8 +552,8 @@ plain `error` (neither `program-error` nor `simple-error`);
 an empty `:required` group and two methods with the same specializers in
 a group (not under a lone `*` group) are `simple-error`s; `defgeneric`
 without the option keeps the combination; `call-method` is also a global
-macro expanding into an error, as in SBCL. Rebuild `(:FORMS 1790 :REPLACED
-1419)`. Rust 0.
+macro expanding into an error, as in SBCL. Rebuild `(:FORMS 1792 :REPLACED
+1421)`. Rust 0.
 **Next: CLOS sub-step 7** — MOP introspection in `QUOKKA-MOP`, ansi-test's
 `objects` group measured and its non-passing tests explained. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

@@ -325,3 +325,26 @@
 (not (null (macro-function 'call-method)))
 (fboundp 'make-method)
 (handler-case (eval '(call-method nil)) (error (c) (condition-kind c)))
+
+;; :arguments with &aux, supplied-p variables, and defaults that read an
+;; earlier variable; the body sees each variable's own name.
+(define-method-combination aux-arguments () ((ms *)) (:arguments x &aux (y 3))
+  `(list ,x ,y (call-method ,(first ms))))
+(null (defgeneric laux (x) (:method-combination aux-arguments)))
+(progn (defmethod laux ((x integer)) :m) :ok)
+(laux 1)
+(define-method-combination supplied-arguments () ((ms *))
+  (:arguments x &optional (y x y-p) &key (k nil k-p))
+  `(list ,x ,y ,y-p ,k ,k-p ',y))
+(null (defgeneric lsupplied (x &optional y &key k) (:method-combination supplied-arguments)))
+(progn (defmethod lsupplied ((x integer) &optional y &key k) (list y k)) :ok)
+(lsupplied 1)
+(lsupplied 1 2 :k 5)
+
+;; Under standard combination too, no primary method is reported before a
+;; qualifier the combination does not accept.
+(null (defgeneric lstdbad (x)))
+(progn (defmethod lstdbad :bogus ((x integer)) 1) (defmethod lstdbad :before ((x integer)) 2) :ok)
+(handler-case (lstdbad 1) (error (c) (condition-kind c)))
+(progn (defmethod lstdbad ((x integer)) 3) :ok)
+(handler-case (lstdbad 1) (error (c) (condition-kind c)))

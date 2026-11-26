@@ -292,6 +292,25 @@ methods no longer fit (their qualifier is `+`, the new combination wants
 `list`), and the next call reports them. The same test defines a
 combination again and checks that the next call uses the new definition.
 
+## What the review found
+
+A review of the finished work, probing Quokka and SBCL side by side, found
+two faults. The first was in `:arguments`. We had bound each of its
+variables, in the body, to a fresh uninterned symbol, which the effective
+method then bound to the argument. That handled plain variables, but a
+default that named an earlier variable, such as `&optional (y x)`, could
+not see it, a supplied-p variable was never bound at all, and `&aux` was
+ignored. SBCL does something simpler: in the body each variable is bound
+to its own name, and the effective method binds those same names, one
+after the other, as `let*` does, so every default sees the variables
+before it. We changed to that.
+
+The second was an order of checks. We had made a call with no primary
+method report that first under the operator combinations, as SBCL does,
+and then left standard combination reporting a method with a qualifier it
+does not accept before it looked for a primary method. Both now ask for
+the primary method first.
+
 ## What did it cost?
 
 No Rust. The table, the operator combinations, both forms of
