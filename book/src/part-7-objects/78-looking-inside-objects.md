@@ -76,19 +76,33 @@ rest, and `QUOKKA` uses `QUOKKA-MOP`, so the library goes on reading
 `class-slots` without a prefix, and a warm rebuild (chapter 41), which
 reads the source again in package `QUOKKA`, finds the same symbols.
 
-The readers themselves are short. Each calls the function Quokka's own
-code has used since chapter 73, whose name starts with `%`:
+The readers themselves are short. Each checks that it was given the kind
+of object it reads, then calls the function Quokka's own code has used
+since chapter 73, whose name starts with `%`:
 
 ```lisp
-(defun class-slots (class) (%class-slots class))
-(defun slot-definition-location (slot) (%slot-definition-location slot))
+(defun class-precedence-list (class)
+  (%check-metaobject class 'class 'class-precedence-list)
+  (%class-precedence-list class))
 ```
+
+The check was added after review. A `%` reader only indexes a slot vector,
+so without it `(class-precedence-list #'print-object)` answered with
+whatever a generic function keeps in that place, and an inspector, which
+passes these readers whatever it is shown, would have shown nonsense
+instead of reporting an error, as SBCL does.
 
 AMOP makes every reader a generic function, so that a program's own
 metaclass could add methods to them. Without the intercessory half there
 is no such metaclass, and a method on a reader could change only what the
 system says about itself, never what it does; so we kept them ordinary
-functions, as cheap as the `%` functions they call.
+functions.
+
+A structure class had no slot definitions at all: a structure's slots are
+described by its layout (chapter 61), not by CLOS. The review found that
+`class-slots` gave nil for one, and now the slot definitions are made from
+the layout the first time they are asked for, and kept until a
+redefinition of the structure replaces them.
 
 ## A table that broke the fixpoint
 
@@ -154,7 +168,9 @@ The others were smaller:
    into a compiled file, did not exist. Quokka has no file compiler yet,
    but a program may define methods and call it, so it is now a generic
    function with the standard's default methods, and
-   `make-load-form-saving-slots` writes the two forms SBCL writes.
+   `make-load-form-saving-slots` writes the two forms SBCL writes for an
+   instance (for a structure SBCL's use its internal functions, and ours
+   use `allocate-instance` and `slot-value`).
 
 The four that SBCL fails too are listed in `tests/ansi/deferred.lisp`
 with what SBCL does. The standard says, for instance, that

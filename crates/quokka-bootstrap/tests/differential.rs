@@ -414,7 +414,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1848 :REPLACED 1466)".into())],
+        [Outcome::Value("(:FORMS 1852 :REPLACED 1470)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

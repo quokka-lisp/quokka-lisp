@@ -100,3 +100,29 @@
                                 :initarg :a :initarg :b :initarg :a))))
 (let ((c (first (class-direct-slots (find-class 'mr)))))
   (list (slot-definition-readers c) (slot-definition-writers c) (slot-definition-initargs c)))
+
+;; A reader given the wrong kind of metaobject is an error, not another
+;; slot's value.
+(mapcar (lambda (f)
+          (handler-case (progn (funcall f (find-class 'mq)) :no-error) (error () :error)))
+        (list #'generic-function-methods #'method-specializers #'slot-definition-name
+              #'eql-specializer-object #'generic-function-name #'method-qualifiers))
+(mapcar (lambda (f)
+          (handler-case (progn (funcall f #'mg) :no-error) (error () :error)))
+        (list #'class-precedence-list #'class-slots #'class-direct-superclasses
+              #'slot-definition-initargs #'method-lambda-list))
+(handler-case (class-direct-superclasses (make-instance 'mq)) (error () :error))
+(find-method-combination #'mg 'no-such-combination nil)
+
+;; A structure class has slot definitions: its direct ones are those it
+;; adds to the structure it includes.
+(defstruct mst1 a (b 2 :type integer :read-only t))
+(defstruct (mst2 (:include mst1)) (c (+ 1 2)))
+(mapcar #'slot-definition-name (class-direct-slots (find-class 'mst2)))
+(mapcar (lambda (s)
+          (list (slot-definition-name s) (slot-definition-initform s) (slot-definition-type s)
+                (slot-definition-initargs s) (slot-definition-allocation s)
+                (and (slot-definition-initfunction s) (funcall (slot-definition-initfunction s)))))
+        (class-slots (find-class 'mst2)))
+(eq (first (class-slots (find-class 'mst2))) (first (class-slots (find-class 'mst2))))
+(mapcar #'slot-definition-name (class-slots (find-class 'mst1)))

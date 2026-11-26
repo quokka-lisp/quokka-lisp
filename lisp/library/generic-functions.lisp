@@ -848,7 +848,11 @@
             (error "there is no method with these qualifiers and specializers" (%gf-name gf))
             nil))))
 
-(defun method-qualifiers (method) (%method-qualifiers method))
+(defun method-qualifiers (method)
+  (unless (typep method 'method)
+    (error 'error "no method of this generic function applies to these arguments"
+           (list 'method-qualifiers method)))
+  (%method-qualifiers method))
 
 ;;; `(%ensure-method name qualifiers specializers lambda-list function
 ;;; documentation)`: what `defmethod` does when it runs.

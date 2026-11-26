@@ -23,9 +23,10 @@
 ;;;; too.
 ;;;;
 ;;;; The names that belong to the metaobject protocol and not to Common Lisp
-;;;; (`metaobject`, `specializer`, `condition-class`, the slot definition
-;;;; classes, ...) are QUOKKA symbols until sub-step 7 exports them from a
-;;;; package of their own.
+;;;; (`metaobject`, `specializer`, the slot definition classes, ...) are in
+;;;; package `QUOKKA-MOP` (`packages.lisp`, sub-step 7), as SBCL's are in
+;;;; `SB-MOP`; `condition-class`, which SBCL keeps internal, stays in
+;;;; `QUOKKA`.
 
 ;;; ------------------------------------------------------------------------
 ;;; Wrappers

@@ -571,8 +571,11 @@ many arguments → `program-error`, around each cached effective method);
 a new class; options and default initargs given twice; `slot-value`'s
 single value from `slot-unbound`/`slot-missing`; `make-load-form` generic
 and `make-load-form-saving-slots`; `allocate-instance` of a structure
-class; readers/writers newest first. Rebuild `(:FORMS 1848 :REPLACED
-1466)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
+class; readers/writers newest first. The review added a kind check to
+every MOP reader (`%check-metaobject`; a `%` reader would answer with
+another object's slot) and slot definitions for structure classes, made
+from the layout (`%structure-slot-definitions`). Rebuild `(:FORMS 1852
+:REPLACED 1470)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
 739 of 843; no plain failure, escape, timeout or tier-1 gap. Rust 0.
 **Next: phase 3 step B** (#123) — conditions as instances of CLOS classes:
 `define-condition`, `make-condition`, `handler-bind`, `signal` without
