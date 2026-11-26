@@ -577,10 +577,13 @@ another object's slot) and slot definitions for structure classes, made
 from the layout (`%structure-slot-definitions`). Rebuild `(:FORMS 1852
 :REPLACED 1470)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
 739 of 843; no plain failure, escape, timeout or tier-1 gap. Rust 0.
-**Next: phase 3 step B** (#123) — conditions as instances of CLOS classes:
-`define-condition`, `make-condition`, `handler-bind`, `signal` without
-unwinding, restarts, the machine's errors signalled through Lisp; its issue
-is opened with the options written out before it starts. Phase 2's scope was
+**Next: phase 3 step B** (#125, opened 26 Nov 2026 with seven decisions
+and a recommendation for each, awaiting Carsten) — conditions as instances
+of CLOS classes: `define-condition`, `make-condition`, `handler-bind`,
+`signal` without unwinding, restarts, the machine's errors signalled
+through Lisp. The fixpoint constrains it: the prelude's `handler-case`
+keeps its `HANDLER` records, and `signal` must walk them and the
+`handler-bind` clusters in their true dynamic order. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
