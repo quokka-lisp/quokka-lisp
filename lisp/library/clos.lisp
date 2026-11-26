@@ -653,6 +653,14 @@
                      ;; changed is left as it is, and a new class made.
                      (when (and found (not (eq (%class-name found) name)))
                        (setq found nil))
+                     ;; A placeholder that standard classes name as their
+                     ;; superclass does not become a condition class: the
+                     ;; condition is a new class, and they keep waiting
+                     ;; for a standard one, as in SBCL.
+                     (when (and found
+                                (eq (class-of found) (find-class 'forward-referenced-class))
+                                (eq metaclass (find-class 'condition-class)))
+                       (setq found nil))
                      ;; A built-in or structure class is not redefined by
                      ;; `defclass`, as in SBCL, nor is a class turned into
                      ;; one of another kind: a condition class is redefined
@@ -664,7 +672,15 @@
                                          (%metaclass-kind metaclass))))
                        (error "defclass cannot redefine a class of this kind" name))
                      found))
-         (class (or existing (%allocate-class-object (%class-wrapper metaclass))))
+         (class (progn
+                  ;; A condition's parents must be defined already: SBCL
+                  ;; refuses one that is not, and a placeholder made for
+                  ;; it could later become a standard class.
+                  (when (eq metaclass (find-class 'condition-class))
+                    (dolist (super direct-superclasses)
+                      (when (and (symbolp super) (null (find-class super nil)))
+                        (error 'type-error "a condition's parent type is not defined" super))))
+                  (or existing (%allocate-class-object (%class-wrapper metaclass)))))
          (supers (mapcar #'%superclass-named
                          (or direct-superclasses
                              (cond ((eq metaclass (find-class 'funcallable-standard-class))
@@ -733,8 +749,7 @@
 (defun %valid-superclass-p (metaclass super)
   (if (eq metaclass (find-class 'condition-class))
       ;; A condition's superclasses are conditions (CLHS `define-condition`).
-      (or (eq (class-of super) metaclass)
-          (eq (class-of super) (find-class 'forward-referenced-class)))
+      (eq (class-of super) metaclass)
       (or (eq super (find-class t))
           (%standard-metaclass-p (class-of super))
           (and (eq metaclass (find-class 'funcallable-standard-class))

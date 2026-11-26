@@ -12,7 +12,8 @@
 ;;;;
 ;;;; Signalling is the next sub-step. Until then the only conditions
 ;;;; signalled are still the machine's, which `class-of` maps to their
-;;;; classes by name, so `typep` and `handler-case` treat both alike.
+;;;; classes by name, so `typep` and `handler-case` treat both alike; the
+;;;; readers do not work on one of those, which has no slots.
 
 ;;; ------------------------------------------------------------------------
 ;;; Making conditions
@@ -26,6 +27,8 @@
   (let ((class (if (symbolp type) (find-class type nil) type)))
     (unless (%condition-class-p class)
       (error 'type-error "make-condition wants a condition type" type))
+    (unless (evenp (length initargs))
+      (error "make-condition was given an odd number of initialization arguments" initargs))
     (%make-condition class initargs)))
 
 (defun %condition-class-p (object)
@@ -50,15 +53,15 @@
 ;;; printed by `print-object` (below).
 (defmacro define-condition (name parent-types slot-specs &rest options)
   (let ((names (mapcar (lambda (spec) (if (consp spec) (car spec) spec)) slot-specs))
-        (report nil) (report-p nil) (class-options nil))
+        (report nil) (class-options nil))
     (unless (= (length names) (length (remove-duplicates names)))
       (error 'program-error "two slots with the same name" name))
     (dolist (option options)
       (unless (and (consp option) (member (car option) '(:default-initargs :documentation :report)))
         (error 'program-error "an unknown define-condition option" option))
+      ;; A second `:report` replaces the first, as in SBCL.
       (if (eq (car option) :report)
-          (progn (when report-p (error 'program-error "a define-condition option given twice" :report))
-                 (setq report (cadr option) report-p t))
+          (setq report (cadr option))
           (push option class-options)))
     `(progn
        (ensure-class ',name :metaclass 'condition-class
@@ -145,25 +148,38 @@
 ;;; when not, which is what `princ` and `~A` show (CLHS 9.1.3). The report
 ;;; is the message of a condition the library made its own way, then the
 ;;; nearest report in the class precedence list, then CLHS's default. One
-;;; of the machine's own conditions is escaped as the printer has always
-;;; printed it, `#<SIMPLE-ERROR: message>`, by the method on `t`.
+;;; of the machine's own conditions prints as the printer has always printed
+;;; it, `#<SIMPLE-ERROR: message>`, by the method on `t`, unless it has a
+;;; message to report: it has no slots, so no class report can read it.
 (defmethod print-object ((condition condition) stream)
-  (cond ((not *print-escape*) (%report-condition condition stream))
-        ((%conditionp condition) (call-next-method))
-        (t (print-unreadable-object (condition stream :type t))))
+  (cond ((%conditionp condition)
+         (if (or *print-escape* (not (stringp (%condition-message condition))))
+             (call-next-method)
+             (write-string (%condition-message condition) stream)))
+        (*print-escape* (print-unreadable-object (condition stream :type t)))
+        (t (%report-condition condition stream)))
   condition)
 
 (defun %report-condition (condition stream)
-  (if (%conditionp condition)
-      ;; One of the machine's own conditions.
-      (write-string (%condition-text condition) stream)
-      (let ((message (slot-value condition '%message)))
-        (if message
-            (write-string message stream)
-            (let ((report (%condition-report (class-of condition))))
-              (cond ((stringp report) (write-string report stream))
-                    (report (funcall report condition stream))
-                    (t (format stream "Condition ~S was signalled." (type-of condition)))))))))
+  (let ((message (slot-value condition '%message)))
+    (if message
+        (write-string message stream)
+        (let ((report (%condition-report (class-of condition))))
+          (cond ((stringp report) (write-string report stream))
+                (report (funcall report condition stream))
+                (t (format stream "Condition ~A was signalled."
+                           (%name-with-prefix (type-of condition) t))))))))
+
+;;; NAME as SBCL's reports print a name (`sb-ext:print-symbol-with-prefix`):
+;;; with its package's name in front, `COMMON-LISP-USER::ZZ`, whatever the
+;;; current package. With EXCEPT-STANDARD, a standard name is printed bare,
+;;; as SBCL's default report prints `Condition ERROR was signalled.`
+(defun %name-with-prefix (name &optional except-standard)
+  (if (and (symbolp name) (symbol-package name)
+           (not (and except-standard (eq (symbol-package name) (find-package "COMMON-LISP")))))
+      (let ((*package* (find-package "KEYWORD")))
+        (prin1-to-string name))
+      (prin1-to-string name)))
 
 ;;; The report of the first class in CLASS's precedence list that has one.
 (defun %condition-report (class)
@@ -179,8 +195,9 @@
         (if (stringp message) message (princ-to-string message)))
       (princ-to-string condition)))
 
-;;; The standard types' reports, SBCL's words on one line: SBCL breaks the
-;;; longer ones over several with the pretty printer, which is tier 2.
+;;; The standard types' reports, in SBCL's words, as SBCL prints them with
+;;; `*print-pretty*` false: with it true SBCL breaks the longer ones over
+;;; several lines, and the pretty printer is tier 2.
 (%set-condition-report
  (find-class 'simple-condition)
  (lambda (condition stream)
@@ -192,7 +209,7 @@
 (%set-condition-report
  (find-class 'type-error)
  (lambda (condition stream)
-   (format stream "The value ~S is not of type ~S."
+   (format stream "The value ~S is not of type ~S"
            (type-error-datum condition) (type-error-expected-type condition))))
 
 (%set-condition-report
@@ -203,13 +220,13 @@
 (%set-condition-report
  (find-class 'undefined-function)
  (lambda (condition stream)
-   (format stream "The function ~S is undefined." (cell-error-name condition))))
+   (format stream "The function ~A is undefined." (%name-with-prefix (cell-error-name condition)))))
 
 (%set-condition-report
  (find-class 'unbound-slot)
  (lambda (condition stream)
-   (format stream "The slot ~S is unbound in the object ~S."
-           (cell-error-name condition) (unbound-slot-instance condition))))
+   (format stream "The slot ~A is unbound in the object ~S."
+           (%name-with-prefix (cell-error-name condition)) (unbound-slot-instance condition))))
 
 (%set-condition-report
  (find-class 'print-not-readable)
@@ -221,7 +238,7 @@
  (lambda (condition stream)
    (format stream "arithmetic error ~S signalled" (type-of condition))
    (when (slot-boundp condition 'operation)
-     (format stream ": operation was ~S."
+     (format stream "~%Operation was ~S."
              (cons (arithmetic-error-operation condition)
                    (arithmetic-error-operands condition))))))
 

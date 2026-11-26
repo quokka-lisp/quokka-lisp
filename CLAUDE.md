@@ -603,8 +603,8 @@ calls use; reports on the class plist (`%report`), printed by a
 type algebra's `:condition` kind is gone: condition types are `:instance`
 terms, and the machine's condition objects are of their class by
 `class-of`. `%condition-text` moved from `eval.lisp` to `conditions.lisp`.
-`error` is still the Rust primitive until sub-step 2. Rebuild `(:FORMS 1888
-:REPLACED 1482)`. ansi-test **10,802**, with **4 plain failures, expected
+`error` is still the Rust primitive until sub-step 2. Rebuild `(:FORMS 1889
+:REPLACED 1483)`. ansi-test **10,802**, with **4 plain failures, expected
 until sub-steps 2–3**: CLHS readers (`type-error-datum`, `cell-error-name`,
 `unbound-slot-instance`) called on the machine's old condition objects,
 which have no slots. Phase 2's scope was

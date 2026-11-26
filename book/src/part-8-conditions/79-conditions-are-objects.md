@@ -144,15 +144,20 @@ happens in the steps that follow, as the tests find them.
 ## Reports
 
 A condition prints in two ways. With `*print-escape*` true, as `prin1`
-prints, it is an unreadable object, `#<BAD-LINE>`. With it false, as
-`princ` and `~A` print, it is its report (CLHS 9.1.3). That is one
-`print-object` method on class `condition`:
+prints, it is an unreadable object, `#<BAD-LINE >`, with SBCL's spacing
+and without the address SBCL prints. With it false, as `princ` and `~A`
+print, it is its report (CLHS 9.1.3). That is one `print-object` method on
+class `condition`, whose first branch is for the machine's old condition
+objects, which have a message and no slots:
 
 ```lisp
 (defmethod print-object ((condition condition) stream)
-  (if *print-escape*
-      (print-unreadable-object (condition stream :type t :identity t))
-      (%report-condition condition stream))
+  (cond ((%conditionp condition)
+         (if (or *print-escape* (not (stringp (%condition-message condition))))
+             (call-next-method)
+             (write-string (%condition-message condition) stream)))
+        (*print-escape* (print-unreadable-object (condition stream :type t)))
+        (t (%report-condition condition stream)))
   condition)
 ```
 
@@ -161,9 +166,11 @@ condition is the first one found in its class precedence list, so a
 condition type without `:report` reports as its parent does. A report can
 be a string, a function, or the name of a function, which is called by
 name when the condition is reported, so that it may be defined after the
-condition. The standard types have reports too, in SBCL's words, kept on
-one line where SBCL breaks them with the pretty printer, which Quokka does
-not have yet: `The value 5 is not of type LIST.`
+condition. The standard types have reports too, in SBCL's words as SBCL
+prints them with `*print-pretty*` false, `The value 5 is not of type
+LIST`; with it true SBCL breaks the line, and Quokka has no pretty printer
+yet. A name in a report has its package in front of it,
+`COMMON-LISP-USER::ZZ`, because SBCL's reports print names that way.
 
 ## Condition types in the type algebra
 
@@ -179,9 +186,12 @@ program can define a condition type with both as parents, so `(subtypep
 ours did before.
 
 The machine still makes its own condition objects when `(car 5)` fails,
-until the third step of this part. `class-of` maps such an object to the
-class its type names, so `typep` and `handler-case` treat both kinds of
-condition alike in the meantime.
+and `error` still makes one, until the next two steps of this part.
+`class-of` maps such an object to the class its type names, so `typep`,
+`subtypep` and `handler-case` treat both kinds of condition alike in the
+meantime. The readers do not: an old condition has no slots, so
+`type-error-datum` of one is an error, and `princ` of one shows its
+message rather than its class's report.
 
 ## What did it cost?
 

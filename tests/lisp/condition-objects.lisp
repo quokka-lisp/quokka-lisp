@@ -87,3 +87,28 @@
 ;; The machine's errors are still caught, and of their types.
 (handler-case (car 5) (type-error (c) (list (typep c 'error) (typep c 'type-error))))
 (handler-case (car 5) (error (c) (typep c 'condition)))
+
+;; A condition's parents must be defined; a name a standard class is
+;; waiting for does not become a condition class under it.
+(handler-case (eval '(define-condition dc-orphan (dc-no-such-parent) ())) (type-error () :type-error))
+(progn (defclass dc-standard-child (dc-awaited) ()) :defined)
+(progn (define-condition dc-awaited (error) ()) :defined)
+(list (subtypep 'dc-standard-child 'error) (typep (make-condition 'dc-awaited) 'error))
+
+;; A second :report replaces the first; an odd initarg list is refused.
+(define-condition dc-twice (error) () (:report "one") (:report "two"))
+(princ-to-string (make-condition 'dc-twice))
+(handler-case (make-condition 'simple-error :format-control) (error () :error))
+
+;; The standard types' reports, in SBCL's words.
+(princ-to-string (make-condition 'type-error :datum 1 :expected-type 'list))
+(princ-to-string (make-condition 'undefined-function :name 'dc-zz))
+(princ-to-string (make-condition 'undefined-function :name 'car))
+(princ-to-string (make-condition 'unbound-variable :name 'dc-zz))
+(princ-to-string (make-condition 'unbound-slot :name 'dc-a :instance 3))
+(princ-to-string (make-condition 'dc-plain))
+(princ-to-string (make-condition 'error))
+(princ-to-string (make-condition 'division-by-zero :operation '/ :operands '(1 0)))
+(princ-to-string (make-condition 'arithmetic-error))
+(princ-to-string (make-condition 'print-not-readable :object 3))
+(princ-to-string (make-condition 'end-of-file :stream nil))

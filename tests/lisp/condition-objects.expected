@@ -48,3 +48,22 @@
 => (T 1)
 => (T T)
 => T
+=> :TYPE-ERROR
+=> :DEFINED
+=> :DEFINED
+=> (NIL T)
+=> DC-TWICE
+=> "two"
+=> :ERROR
+=> "The value 1 is not of type LIST"
+=> "The function COMMON-LISP-USER::DC-ZZ is undefined."
+=> "The function COMMON-LISP:CAR is undefined."
+=> "The variable DC-ZZ is unbound."
+=> "The slot COMMON-LISP-USER::DC-A is unbound in the object 3."
+=> "Condition COMMON-LISP-USER::DC-PLAIN was signalled."
+=> "Condition ERROR was signalled."
+=> "arithmetic error DIVISION-BY-ZERO signalled
+Operation was (/ 1 0)."
+=> "arithmetic error ARITHMETIC-ERROR signalled"
+=> "3 cannot be printed readably."
+=> "end of file on NIL"
