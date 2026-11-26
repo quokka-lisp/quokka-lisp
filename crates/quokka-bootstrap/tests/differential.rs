@@ -412,7 +412,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1789 :REPLACED 1418)".into())],
+        [Outcome::Value("(:FORMS 1790 :REPLACED 1419)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -421,7 +421,9 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
 /// A warm rebuild keeps every class (#124): it reloads `clos.lisp` while
 /// classes and instances are alive, so the bootstrap refills the classes it
 /// finds, a class whose slots did not change keeps its wrapper, and an
-/// instance made before the rebuild is still an instance of its class.
+/// instance made before the rebuild is still an instance of its class. It
+/// also reloads `generic-functions.lisp`: a program's method combinations,
+/// and generic functions using them or the built-in ones, still work.
 #[test]
 fn a_rebuild_keeps_classes_and_their_instances() {
     use quokka_vm::vm::{eval_source, Outcome};
@@ -447,6 +449,18 @@ fn a_rebuild_keeps_classes_and_their_instances() {
          (defclass moved () ((a :initform 1))) \
          (defvar *m* (make-instance 'moved)) \
          (defclass moved () ((a :initform 1) (b :initform 2))) \
+         (define-method-combination tally :operator + :identity-with-one-argument t) \
+         (defgeneric tallied (s) (:method-combination tally)) \
+         (defmethod tallied tally ((s kept)) 3) \
+         (defmethod tallied tally ((s standard-object)) 4) \
+         (define-method-combination collect () ((ms *)) \
+           `(list ,@(mapcar (lambda (m) `(call-method ,m)) ms))) \
+         (defgeneric collected (s) (:method-combination collect)) \
+         (defmethod collected :a ((s kept)) :k) \
+         (defmethod collected :b ((s standard-object)) :o) \
+         (defgeneric summed (s) (:method-combination +)) \
+         (defmethod summed + ((s kept)) 5) \
+         (list (tallied *i*) (collected *i*) (summed *i*)) \
          (quokka::%rebuild-world) \
          (list (eq *w* (quokka::%class-wrapper (find-class 'standard-object))) \
                (eq *sc* (find-class 'standard-class)) \
@@ -454,7 +468,8 @@ fn a_rebuild_keeps_classes_and_their_instances() {
                (eq (class-of (find-class 'standard-class)) (find-class 'standard-class)) \
                (kept-a *i*) (typep *i* 'kept) (slot-value (make-instance 'kept :a 2) 'a) \
                (eq *mi* #'make-instance) (area *i*) (prin1-to-string *i*) \
-               (list (slot-value *m* 'a) (slot-value *m* 'b)))",
+               (list (slot-value *m* 'a) (slot-value *m* 'b)) \
+               (tallied *i*) (collected *i*) (summed *i*))",
         BUDGET * 60,
         SLICE,
         &mut host,
@@ -467,7 +482,7 @@ fn a_rebuild_keeps_classes_and_their_instances() {
     assert_eq!(
         said.last(),
         Some(&Outcome::Value(
-            "(T T T T 1 T 2 T 10 \"KEPT\" (1 2))".into()
+            "(T T T T 1 T 2 T 10 \"KEPT\" (1 2) 7 (:K :O) 5)".into()
         )),
         "{said:?}"
     );

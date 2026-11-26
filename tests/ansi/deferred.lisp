@@ -11,8 +11,6 @@
 (%deferred "tier-2:loop" :loop :loop-finish)
 
 (%deferred "tier-2:clos"
-  :call-method :make-method
-  :invalid-method-error :method-combination-error :define-method-combination
   :make-load-form :make-load-form-saving-slots :function-keywords :documentation)
 
 (%deferred "tier-2:conditions"

@@ -534,8 +534,28 @@ class is defined (`%initialize-shared-slots`). `change-class` (generic, in
 wrapper and slots and calls `update-instance-for-different-class` with a
 copy of the old instance; `make-instances-obsolete` gives a new wrapper with
 the same slots. Rebuild `(:FORMS 1752 :REPLACED 1394)`. Rust 0.
-**Next: CLOS sub-step 6** — built-in method combinations, then
-`define-method-combination`, short form then long. Phase 2's scope was
+**Sub-step 6, method combination, is done** (chapter 77): a generic
+function's slot 3 holds a `standard-method-combination` object (name,
+options); `%combinations` maps a name to a function of the options that
+returns a combiner `(lambda (gf methods) emf)`, looked up on every cache
+miss. Standard and the nine operator combinations are closures
+(`%define-operator-combination`; `and`/`or`/`progn` stop early); a long
+`define-method-combination`, or a short one over a macro operator,
+**compiles** its effective method form once per cache miss
+(`%form-effective-method`: `(lambda (%emf-args) ...)` with `call-method`
+and `make-method` as local macros; a make-method is a function of the
+arguments, so `call-next-method` with new arguments reaches it). As SBCL:
+operator options are checked at `defgeneric`, a long form's at the call;
+no primary method is checked first and, like `no-applicable-method`, is a
+plain `error` (neither `program-error` nor `simple-error`);
+`invalid-method-error`/`method-combination-error` are `program-error`s;
+an empty `:required` group and two methods with the same specializers in
+a group (not under a lone `*` group) are `simple-error`s; `defgeneric`
+without the option keeps the combination; `call-method` is also a global
+macro expanding into an error, as in SBCL. Rebuild `(:FORMS 1790 :REPLACED
+1419)`. Rust 0.
+**Next: CLOS sub-step 7** — MOP introspection in `QUOKKA-MOP`, ansi-test's
+`objects` group measured and its non-passing tests explained. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -607,8 +627,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**505 tests**; **59 differential files agree with SBCL** — 17 interpreted and
-compiled, plus forty-two tier-1 files, compiled only, and all 59 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
+**505 tests**; **60 differential files agree with SBCL** — 17 interpreted and
+compiled, plus forty-three tier-1 files, compiled only, and all 60 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
 **The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 

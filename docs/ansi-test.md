@@ -89,7 +89,6 @@ A test can need several things.
 | `WITH-OPEN-FILE[tier-2:streams]` | 13 |
 | `CELL-ERROR-NAME[tier-2:conditions]` | 12 |
 | `DEFINE-CONDITION[tier-2:conditions]` | 12 |
-| `DEFINE-METHOD-COMBINATION[tier-2:clos]` | 12 |
 | `PPRINT-DISPATCH[tier-2:pretty-printer]` | 12 |
 | `RESTART-BIND[tier-2:conditions]` | 12 |
 | `RESTART-CASE[tier-2:conditions]` | 12 |
@@ -137,7 +136,6 @@ A test can need several things.
 | `HOST-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
 | `INSPECT[tier-2:environment]` | 9 |
 | `INTERACTIVE-STREAM-P[tier-2:streams]` | 9 |
-| `INVALID-METHOD-ERROR[tier-2:clos]` | 9 |
 | `INVOKE-DEBUGGER[tier-2:conditions]` | 9 |
 | `INVOKE-RESTART-INTERACTIVELY[tier-2:conditions]` | 9 |
 | `INVOKE-RESTART[tier-2:conditions]` | 9 |
@@ -156,7 +154,6 @@ A test can need several things.
 | `MAKE-LOAD-FORM[tier-2:clos]` | 9 |
 | `MAKE-SYNONYM-STREAM[tier-2:streams]` | 9 |
 | `MERGE-PATHNAMES[tier-2:pathnames-and-files]` | 9 |
-| `METHOD-COMBINATION-ERROR[tier-2:clos]` | 9 |
 | `OPEN-STREAM-P[tier-2:streams]` | 9 |
 | `OPEN[tier-2:streams]` | 9 |
 | `PARSE-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
@@ -201,7 +198,6 @@ A test can need several things.
 | `WRITE-SEQUENCE[tier-2:streams]` | 9 |
 | `Y-OR-N-P[tier-2:streams]` | 9 |
 | `YES-OR-NO-P[tier-2:streams]` | 9 |
-| `CALL-METHOD[tier-2:clos]` | 8 |
 | `ED[tier-2:environment]` | 8 |
 | `note[NO-FLOATING-POINT-UNDERFLOW-BY-DEFAULT]` | 8 |
 | `sbcl[same-as-sbcl]` | 2 |

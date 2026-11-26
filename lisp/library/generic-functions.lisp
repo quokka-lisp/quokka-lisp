@@ -370,14 +370,14 @@
 ;;; checked and put in ORDER. SBCL's errors here are `simple-error`s.
 (defun %finish-method-group (name methods order required check-duplicates)
   (when (and required (null methods))
-    (error "No ~S methods." name))
+    (error (format nil "No ~S methods." name)))
   (when check-duplicates
     (do ((rest methods (cdr rest)))
         ((null rest))
       (when (and (%method-specializers (car rest))
                  (find (%method-specializers (car rest)) (cdr rest)
                        :key #'%method-specializers :test #'%same-specializers-p))
-        (error "More than one method of type ~S with the same specializers." name))))
+        (error (format nil "More than one method of type ~S with the same specializers." name)))))
   (ecase order
     (:most-specific-first (reverse methods))
     (:most-specific-last methods)))
@@ -442,6 +442,13 @@
                                  (error 'program-error "make-method is used outside call-method")))
                       ,form)))))
     (%with-keyword-check gf methods (compile nil code))))
+
+;;; Outside an effective method form `call-method` is an error, as in SBCL,
+;;; whose global macro expands into one; `%form-effective-method` shadows
+;;; it with a local macro. `make-method` has no global definition.
+(defmacro call-method (&rest arguments)
+  arguments
+  '(error "call-method is used outside an effective method form"))
 
 ;;; `(call-method method next-methods)`: METHOD called with the arguments
 ;;; and, for `call-next-method`, the chain of NEXT-METHODS, each a method or

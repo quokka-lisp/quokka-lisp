@@ -196,3 +196,6 @@
 => :OK
 => (2 10)
 => :PROGRAM-ERROR
+=> T
+=> NIL
+=> :SIMPLE-ERROR

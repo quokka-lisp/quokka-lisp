@@ -248,7 +248,7 @@ the compiler's re-entrancy into every first call.
 Method combination: `standard` (primary, `:before`, `:after`, `:around`),
 the nine built-in operator combinations (`+`, `and`, `append`, `list`, `max`,
 `min`, `nconc`, `or`, `progn`), and `define-method-combination` in both its
-short and long forms. The long form comes last, as its own sub-step.
+short and long forms (sub-step 6, done).
 
 The long form is the one exception to building effective methods from
 closures. Its body returns an arbitrary Lisp form containing `call-method`
@@ -258,8 +258,9 @@ methods. `compile-form` is already re-entrant, so a compilation started from
 inside another (a dispatch during macro expansion) is safe today. It is not
 safe for two processes at once, but neither is any other compilation, and
 the processes step already makes the compiler's state per-process (decided
-in #111), which covers this case with the rest. Standard and operator
-combinations never compile.
+in #111), which covers this case with the rest. Standard and the built-in operator
+combinations never compile; a short form whose operator is a macro or a
+special operator other than `and`, `or` and `progn` does, the same way.
 
 ### Conditions in this step
 

@@ -95,6 +95,9 @@ uses one to make it impossible to hold a value across a garbage collection.
 <a id="byte-specifier"></a>
 **Byte specifier.** What `(byte size position)` returns: the name of a field of SIZE bits in an integer, starting POSITION bits from the least significant. Not eight bits, despite the name. `ldb` reads such a field and `dpb` replaces it; in Quokka, as in SBCL, a byte specifier is a cons of the two numbers. ([57](part-6-self-hosting/57-bit-fields.md))
 
+<a id="call-method"></a>
+**Call-method.** An operator that exists only inside an [effective method form](#effective-method-form): `(call-method m next-methods)` calls the method `m`, whose `call-next-method` then reaches the first of NEXT-METHODS. Its companion `(make-method form)` stands for a method made of FORM. In Quokka both are local macros of the compiled effective method. ([77](part-7-objects/77-method-combination.md))
+
 <a id="capture-variable-capture"></a>
 **Capture (variable capture).** A [macro](#macro) binding a name that the
 caller also uses, so the caller's variable silently disappears inside the
@@ -240,6 +243,9 @@ name) or a character (a string of one); `string` turns any into a string.
 
 <a id="effective-method"></a>
 **Effective method.** The applicable methods of one call, ordered and combined into a single function, under standard method combination the around, before, primary and after methods. ([74](part-7-objects/74-generic-functions.md))
+
+<a id="effective-method-form"></a>
+**Effective method form.** The Lisp form that the body of a long-form `define-method-combination` returns, saying with [call-method](#call-method) how one call's methods are to be run. Quokka compiles it, once per cache miss, into the [effective method](#effective-method). ([77](part-7-objects/77-method-combination.md))
 
 <a id="environment"></a>
 **Environment.** The chain of scopes a name is looked up in: innermost first, then outward, then the symbol's own value cell for globals. ([10](part-2-reading-and-running/10-functions-and-scope.md))
@@ -591,7 +597,7 @@ surrounding variables, because at expansion time they do not have values yet.
 **Method.** One piece of a generic function's code, with a specializer for each required argument saying when it applies, and qualifiers such as `:before` saying how it combines with the others. ([74](part-7-objects/74-generic-functions.md))
 
 <a id="method-combination"></a>
-**Method combination.** The rule that turns a call's applicable methods into one effective method. *Standard method combination* runs the most specific primary method, which may call the next with `call-next-method`, inside any `:around` methods, between the `:before` and `:after` methods. ([74](part-7-objects/74-generic-functions.md))
+**Method combination.** The rule that turns a call's applicable methods into one effective method. *Standard method combination* runs the most specific primary method, which may call the next with `call-next-method`, inside any `:around` methods, between the `:before` and `:after` methods; the [operator method combinations](#operator-method-combination) and those a program defines with `define-method-combination` are the others. ([74](part-7-objects/74-generic-functions.md), [77](part-7-objects/77-method-combination.md))
 
 <a id="multiple-dispatch"></a>
 **Multiple dispatch.** Choosing a method by the classes of several arguments rather than the first alone. CLOS does; Smalltalk, Java and Python dispatch on the receiver only. ([74](part-7-objects/74-generic-functions.md))
@@ -652,6 +658,9 @@ and how wide — is fixed by the opcode, which is what spares the assembler a
 nest and a stack nests, which is why compiling to a stack machine is simpler
 than compiling to anything else. In Quokka it is a vector in the heap, not a
 Rust local, because of rule 4. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
+
+<a id="operator-method-combination"></a>
+**Operator method combination.** A [method combination](#method-combination) that applies one operator to the values of every applicable primary method, such as `+`, `list`, `and` or `progn`; each primary method is qualified with the combination's name. Common Lisp defines nine, and the short form of `define-method-combination` defines more. ([77](part-7-objects/77-method-combination.md))
 
 <a id="oracle"></a>
 **Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))

@@ -319,3 +319,9 @@
 (progn (defmethod lkeys ((x ka) &key (k 1)) k) (defmethod lkeys :b ((x kb) &key (j 2)) j) :ok)
 (lkeys (make-instance 'kb) :k 10)
 (handler-case (lkeys (make-instance 'ka) :j 5) (error (c) (condition-kind c)))
+
+;; call-method is a global macro too, an error outside an effective method
+;; form; make-method is not.
+(not (null (macro-function 'call-method)))
+(fboundp 'make-method)
+(handler-case (eval '(call-method nil)) (error (c) (condition-kind c)))
