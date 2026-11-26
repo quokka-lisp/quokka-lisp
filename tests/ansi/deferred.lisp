@@ -11,13 +11,9 @@
 (%deferred "tier-2:loop" :loop :loop-finish)
 
 (%deferred "tier-2:clos"
-  :defgeneric :defmethod :make-instances-obsolete
-  :call-next-method :next-method-p :call-method :make-method
-  :change-class
+  :make-instances-obsolete :call-method :make-method :change-class
   :update-instance-for-different-class :update-instance-for-redefined-class :with-slots
-  :with-accessors :add-method :remove-method :find-method :compute-applicable-methods
-  :ensure-generic-function :method-qualifiers :no-applicable-method :no-next-method
-  :invalid-method-error :method-combination-error :define-method-combination
+  :with-accessors :invalid-method-error :method-combination-error :define-method-combination
   :print-object :describe-object :make-load-form :make-load-form-saving-slots
   :function-keywords :documentation :describe)
 

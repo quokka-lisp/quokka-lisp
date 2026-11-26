@@ -157,6 +157,10 @@ pub const LIBRARY: &[(&str, &str)] = &[
     ),
     ("clos.lisp", include_str!("../../../lisp/library/clos.lisp")),
     (
+        "generic-functions.lisp",
+        include_str!("../../../lisp/library/generic-functions.lisp"),
+    ),
+    (
         "char-names.lisp",
         include_str!("../../../lisp/library/char-names.lisp"),
     ),

@@ -177,6 +177,7 @@ tier1_cases! {
     types => "types",
     subtypep => "subtypep",
     classes => "classes",
+    generic_functions => "generic-functions",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -408,7 +409,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1578 :REPLACED 1293)".into())],
+        [Outcome::Value("(:FORMS 1692 :REPLACED 1372)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -433,6 +434,9 @@ fn a_rebuild_keeps_classes_and_their_instances() {
         &mut heap,
         "(defclass kept () ((a :initarg :a :reader kept-a))) \
          (defvar *i* (make-instance 'kept :a 1)) \
+         (defgeneric area (s)) \
+         (defmethod area ((s kept)) (* 10 (kept-a s))) \
+         (defvar *mi* #'make-instance) \
          (defvar *w* (quokka::%class-wrapper (find-class 'standard-object))) \
          (defvar *sc* (find-class 'standard-class)) \
          (defvar *ic* (find-class 'integer)) \
@@ -441,7 +445,8 @@ fn a_rebuild_keeps_classes_and_their_instances() {
                (eq *sc* (find-class 'standard-class)) \
                (eq *ic* (find-class 'integer)) \
                (eq (class-of (find-class 'standard-class)) (find-class 'standard-class)) \
-               (kept-a *i*) (typep *i* 'kept) (slot-value (make-instance 'kept :a 2) 'a))",
+               (kept-a *i*) (typep *i* 'kept) (slot-value (make-instance 'kept :a 2) 'a) \
+               (eq *mi* #'make-instance) (area *i*))",
         BUDGET * 60,
         SLICE,
         &mut host,
@@ -453,7 +458,7 @@ fn a_rebuild_keeps_classes_and_their_instances() {
     .expect("the forms run");
     assert_eq!(
         said.last(),
-        Some(&Outcome::Value("(T T T T 1 T 2)".into())),
+        Some(&Outcome::Value("(T T T T 1 T 2 T 10)".into())),
         "{said:?}"
     );
 }
@@ -605,6 +610,27 @@ fn describe<'h>(
                 code,
                 describe(mc, mc.slot(v, function::CONSTANTS), gensyms, depth + 1),
             )
+        }
+        // An instance of a class (#124) is described by its class's name:
+        // it is not something a compiler decided, and its slots lead into
+        // the whole graph of classes and methods, which a walk bounded only
+        // by depth would follow along every branch. `a_rebuilt_world_is_the_
+        // same_world` still compares every word of it.
+        ObjectType::StandardInstance | ObjectType::FuncallableInstance => {
+            let wrapper =
+                quokka_vm::instance::wrapper(mc, v).unwrap_or(quokka_vm::value::Value::NIL);
+            let name = if wrapper.is_object() {
+                let class = mc.slot(wrapper, 0);
+                match quokka_vm::instance::slots(mc, class) {
+                    Some(slots) if slots.is_object() => {
+                        describe(mc, mc.slot(slots, 0), gensyms, depth + 1)
+                    }
+                    _ => "?".into(),
+                }
+            } else {
+                "?".into()
+            };
+            format!("{:?}<{name}>", header.object_type)
         }
         t if t.slots_are_values() => {
             let slots: Vec<String> = (0..header.slots)

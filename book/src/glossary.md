@@ -219,6 +219,9 @@ name) or a character (a string of one); `string` turns any into a string.
 <a id="differential-testing"></a>
 **Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file interpreted and compiled, natively and under WebAssembly, and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md), [33](part-5-the-image/33-two-evaluators-one-answer.md))
 
+<a id="discriminating-function"></a>
+**Discriminating function.** The function a generic function runs when called: it finds the classes of the required arguments, looks up the effective method for them in a cache, and computes it on a miss. ([74](part-7-objects/74-generic-functions.md))
+
 <a id="displaced-array"></a>
 **Displaced array.** An array with no elements of its own, which shares another array's, starting at an offset: writing through either is seen through both. ([55](part-6-self-hosting/55-arrays.md))
 
@@ -230,6 +233,9 @@ name) or a character (a string of one); `string` turns any into a string.
 
 <a id="dynamic-extent"></a>
 **Dynamic extent.** Found by searching the stack at run time rather than by looking at the source. `catch` and `throw` work this way, so a function can abandon a computation on behalf of a caller it has never heard of. Contrast [lexical](#lexical-scope). ([14](part-2-reading-and-running/14-leaving-early.md))
+
+<a id="effective-method"></a>
+**Effective method.** The applicable methods of one call, ordered and combined into a single function, under standard method combination the around, before, primary and after methods. ([74](part-7-objects/74-generic-functions.md))
 
 <a id="environment"></a>
 **Environment.** The chain of scopes a name is looked up in: innermost first, then outward, then the symbol's own value cell for globals. ([10](part-2-reading-and-running/10-functions-and-scope.md))
@@ -327,6 +333,9 @@ a shared object being copied twice and a circular structure looping forever.
 
 <a id="funcallable-instance"></a>
 **Funcallable instance.** An [instance](#instance) that can also be called as a function, which is what a generic function is: it has slots (its name, its methods) and the machine calls the function it holds. In Quokka a heap type of its own, and the one part of CLOS in Rust. ([73](part-7-objects/73-classes.md))
+
+<a id="generic-function"></a>
+**Generic function.** A function whose code is chosen at each call by the classes (or identity) of its arguments, from the methods defined for it. ([74](part-7-objects/74-generic-functions.md))
 
 <a id="function-designator"></a>
 **Function designator.** An object that stands for a function wherever one is wanted: the function itself, or a symbol, meaning its global function. Why `(funcall 'car x)` and `:test 'eql` work. ([50](part-6-self-hosting/50-first-gaps.md))
@@ -573,6 +582,15 @@ surrounding variables, because at expansion time they do not have values yet.
 
 <a id="marker"></a>
 **Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. Markers have a header type of their own, so that nothing else can be mistaken for one. ([14](part-2-reading-and-running/14-leaving-early.md), [61](part-6-self-hosting/61-structures.md))
+
+<a id="method"></a>
+**Method.** One piece of a generic function's code, with a specializer for each required argument saying when it applies, and qualifiers such as `:before` saying how it combines with the others. ([74](part-7-objects/74-generic-functions.md))
+
+<a id="method-combination"></a>
+**Method combination.** The rule that turns a call's applicable methods into one effective method. *Standard method combination* runs the most specific primary method, which may call the next with `call-next-method`, inside any `:around` methods, between the `:before` and `:after` methods. ([74](part-7-objects/74-generic-functions.md))
+
+<a id="multiple-dispatch"></a>
+**Multiple dispatch.** Choosing a method by the classes of several arguments rather than the first alone. CLOS does; Smalltalk, Java and Python dispatch on the receiver only. ([74](part-7-objects/74-generic-functions.md))
 
 <a id="metaclass"></a>
 **Metaclass.** A class whose instances are classes. `standard-class` is the metaclass of classes `defclass` makes, and is an instance of itself. ([73](part-7-objects/73-classes.md))

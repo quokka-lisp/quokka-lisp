@@ -331,6 +331,7 @@ Each chapter answers one question.
 | 71 | [Phase 2 ends](part-6-self-hosting/71-phase-two-ends.md) | What does it mean that tier 1 is complete and measured, and what does it not mean? |
 | 72 | [What is a type?](part-7-objects/72-what-is-a-type.md) | How can a program ask whether every object of one type is also of another? |
 | 73 | [Classes](part-7-objects/73-classes.md) | How can a class be an object, and an instance of itself? |
+| 74 | [Generic functions](part-7-objects/74-generic-functions.md) | How does a call choose its code by the classes of its arguments, and stay fast? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -359,8 +360,8 @@ Still to come, and deliberately so:
   lattice.
   Chapter 70 adds ratios, the last numbers of tier 1. Chapter 72 begins
   tier 2 with the type system, `typep` and `subtypep`, and chapter 73 adds
-  classes and instances. Still to come are generic functions and the rest
-  of CLOS, `loop` and the rest, in phases 3 to 5.
+  classes and instances, and chapter 74 generic functions. Still to come
+  are the rest of CLOS, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a
   **compiler**, written in Lisp, that translates source into those instructions.

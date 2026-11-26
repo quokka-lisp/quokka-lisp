@@ -19,13 +19,13 @@ A test can need several things.
 | numbers | 598 | 0 | 0 | 0 | 0 | 846 | 1444 |
 | reader | 423 | 0 | 0 | 0 | 0 | 152 | 575 |
 | printer | 419 | 0 | 0 | 0 | 0 | 1450 | 1869 |
-| data-and-control-flow | 1237 | 0 | 0 | 0 | 0 | 191 | 1428 |
+| data-and-control-flow | 1239 | 0 | 0 | 0 | 0 | 189 | 1428 |
 | eval-and-compile | 280 | 0 | 0 | 0 | 0 | 38 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 748 | 843 |
 | hash-tables | 119 | 0 | 0 | 0 | 0 | 48 | 167 |
 | structures | 72 | 0 | 0 | 0 | 0 | 44 | 116 |
-| types-and-classes | 406 | 0 | 0 | 0 | 0 | 106 | 512 |
-| **all** | **10030** | **0** | **0** | **0** | **0** | **5954** | **15984** |
+| types-and-classes | 408 | 0 | 0 | 0 | 0 | 106 | 514 |
+| **all** | **10034** | **0** | **0** | **0** | **0** | **5952** | **15986** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -40,12 +40,10 @@ A test can need several things.
 | `ASSERT[tier-2:conditions]` | 1394 |
 | `RANDOM[tier-2:random]` | 568 |
 | `reader[#C]` | 488 |
-| `DEFGENERIC[tier-2:clos]` | 414 |
 | `MAKE-CONDITION[tier-2:conditions]` | 399 |
 | `MAKE-RANDOM-STATE[tier-2:random]` | 396 |
 | `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 390 |
 | `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 384 |
-| `FIND-METHOD[tier-2:clos]` | 381 |
 | `HANDLER-BIND[tier-2:conditions]` | 285 |
 | `TYPE-ERROR-DATUM[tier-2:conditions]` | 280 |
 | `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 280 |
@@ -86,7 +84,6 @@ A test can need several things.
 | `ARITHMETIC-ERROR-OPERATION[tier-2:conditions]` | 14 |
 | `CIS[deferred:complex-numbers]` | 14 |
 | `CONJUGATE[deferred:complex-numbers]` | 13 |
-| `DEFMETHOD[tier-2:clos]` | 13 |
 | `PPRINT[tier-2:pretty-printer]` | 13 |
 | `STEP[tier-2:environment]` | 13 |
 | `WITH-OPEN-FILE[tier-2:streams]` | 13 |
@@ -110,7 +107,6 @@ A test can need several things.
 | `CONTINUE[tier-2:conditions]` | 10 |
 | `DELETE-FILE[tier-2:pathnames-and-files]` | 10 |
 | `NAMESTRING[tier-2:pathnames-and-files]` | 10 |
-| `ADD-METHOD[tier-2:clos]` | 9 |
 | `APROPOS-LIST[tier-2:environment]` | 9 |
 | `APROPOS[tier-2:environment]` | 9 |
 | `BROADCAST-STREAM-STREAMS[tier-2:streams]` | 9 |
@@ -118,7 +114,6 @@ A test can need several things.
 | `CHANGE-CLASS[tier-2:clos]` | 9 |
 | `CLEAR-INPUT[tier-2:streams]` | 9 |
 | `CLOSE[tier-2:streams]` | 9 |
-| `COMPUTE-APPLICABLE-METHODS[tier-2:clos]` | 9 |
 | `CONCATENATED-STREAM-STREAMS[tier-2:streams]` | 9 |
 | `DECODE-UNIVERSAL-TIME[tier-2:environment]` | 9 |
 | `DESCRIBE-OBJECT[tier-2:clos]` | 9 |
@@ -131,7 +126,6 @@ A test can need several things.
 | `ENCODE-UNIVERSAL-TIME[tier-2:environment]` | 9 |
 | `ENOUGH-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
 | `ENSURE-DIRECTORIES-EXIST[tier-2:pathnames-and-files]` | 9 |
-| `ENSURE-GENERIC-FUNCTION[tier-2:clos]` | 9 |
 | `FILE-AUTHOR[tier-2:pathnames-and-files]` | 9 |
 | `FILE-ERROR-PATHNAME[tier-2:conditions]` | 9 |
 | `FILE-LENGTH[tier-2:streams]` | 9 |
@@ -169,9 +163,6 @@ A test can need several things.
 | `MAKE-SYNONYM-STREAM[tier-2:streams]` | 9 |
 | `MERGE-PATHNAMES[tier-2:pathnames-and-files]` | 9 |
 | `METHOD-COMBINATION-ERROR[tier-2:clos]` | 9 |
-| `METHOD-QUALIFIERS[tier-2:clos]` | 9 |
-| `NO-APPLICABLE-METHOD[tier-2:clos]` | 9 |
-| `NO-NEXT-METHOD[tier-2:clos]` | 9 |
 | `OPEN-STREAM-P[tier-2:streams]` | 9 |
 | `OPEN[tier-2:streams]` | 9 |
 | `PARSE-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
@@ -190,7 +181,6 @@ A test can need several things.
 | `READ-CHAR-NO-HANG[tier-2:streams]` | 9 |
 | `READ-LINE[tier-2:streams]` | 9 |
 | `READ-SEQUENCE[tier-2:streams]` | 9 |
-| `REMOVE-METHOD[tier-2:clos]` | 9 |
 | `RENAME-FILE[tier-2:pathnames-and-files]` | 9 |
 | `ROOM[tier-2:environment]` | 9 |
 | `SHORT-SITE-NAME[tier-2:environment]` | 9 |

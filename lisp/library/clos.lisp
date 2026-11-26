@@ -45,6 +45,18 @@
 ;;; keep their unbound slots unbound.
 (defvar %slot-unbound-marker (make-symbol "UNBOUND-SLOT"))
 
+;;; Incremented whenever something a generic function's dispatch depends on
+;;; changes: a class is defined or redefined, a method added or removed.
+;;; Each generic function empties its cache when its own copy of this
+;;; differs (`generic-functions.lisp`).
+;;; Each epoch is a fresh cons, compared with `eq`, rather than a number:
+;;; a counter would keep counting across warm rebuilds, so two generations
+;;; of the world would hold different numbers and differ word for word,
+;;; and resetting it could make a stale cache look current.
+(defvar %dispatch-epoch (list :epoch))
+
+(defun %invalidate-dispatch () (setq %dispatch-epoch (list :epoch)))
+
 ;;; ------------------------------------------------------------------------
 ;;; Class metaobjects
 ;;;
@@ -571,6 +583,7 @@
     (%set-class-documentation class documentation)
     (%set-class-direct-slots class (mapcar #'%make-direct-slot-definition direct-slots))
     (%set-class-direct-default-initargs class direct-default-initargs)
+    (%invalidate-dispatch)
     (unwind-protect
          (progn
            (unless existing (setf (gethash name %class-table) class))
@@ -607,15 +620,15 @@
       (and (eq metaclass (find-class 'funcallable-standard-class))
            (eq super (find-class 'function)))))
 
-;;; A reader, writer or accessor named in a slot is an ordinary function in
-;;; this sub-step (sub-step 3 makes it a method of a generic function).
+;;; A reader, writer or accessor named in a slot is a method of a generic
+;;; function of that name (`generic-functions.lisp`).
 (defun %define-accessors (class)
   (dolist (slot (%class-direct-slots class))
     (let ((name (%slot-definition-name slot)))
       (dolist (reader (%slot-definition-readers slot))
-        (setf (fdefinition reader) (lambda (object) (slot-value object name))))
+        (%add-reader-method class reader name))
       (dolist (writer (%slot-definition-writers slot))
-        (setf (fdefinition writer) (lambda (new object) (setf (slot-value object name) new)))))))
+        (%add-writer-method class writer name)))))
 
 ;;; A slot specifier of `defclass` as the list of keywords `ensure-class`
 ;;; takes: (:name x :initargs (:x) :initform 0 :initfunction (lambda () 0) ...).
@@ -685,8 +698,18 @@
 (defun %class-designated (class)
   (if (symbolp class) (find-class class) class))
 
-(defun allocate-instance (class &rest initargs)
-  initargs
+;;; The worker every way of making an instance comes to, and what the
+;;; standard methods of `allocate-instance` call (`generic-functions.lisp`).
+;;;
+;;; The instance protocol's public functions (`make-instance`,
+;;; `allocate-instance`, `initialize-instance`, `reinitialize-instance`,
+;;; `shared-initialize`, `slot-missing`, `slot-unbound`) are generic
+;;; functions, defined in `generic-functions.lisp`; this file has only the
+;;; workers their standard methods call. Were they defined here as ordinary
+;;; functions, a warm rebuild would replace each generic function with one
+;;; before `generic-functions.lisp` made it generic again, and the generic
+;;; function object, with any method a program had added, would be lost.
+(defun %allocate-instance (class)
   (let* ((class (%ensure-finalized (%class-designated class)))
          (wrapper (%class-wrapper class))
          (slots (make-array (length (%wrapper-slot-names wrapper))
@@ -711,44 +734,46 @@
     (when (eq (car rest) key) (return t))))
 
 ;;; Check INITARGS against what CLASS accepts (CLHS 7.1.2): the slots'
-;;; initargs and `:allow-other-keys`, unless `:allow-other-keys` is true.
-(defun %check-initargs (class initargs)
+;;; initargs, `:allow-other-keys`, and the keywords the applicable methods
+;;; of the generic functions named in FUNCTIONS accept, unless
+;;; `:allow-other-keys` is true or one of those methods allows any.
+(defun %check-initargs (class initargs functions)
   (unless (and (listp initargs) (evenp (length initargs)))
     (error 'program-error "an odd number of initialization arguments" initargs))
-  (unless (getf initargs :allow-other-keys)
-    (let ((valid (list :allow-other-keys)))
+  (multiple-value-bind (method-keys any) (%method-initargs class functions)
+   (unless (or any (getf initargs :allow-other-keys))
+    (let ((valid (cons :allow-other-keys method-keys)))
       (dolist (slot (%class-slots class))
         (setq valid (append (%slot-definition-initargs slot) valid)))
       (do ((rest initargs (cddr rest)))
           ((null rest))
         (unless (member (car rest) valid)
-          (error 'program-error "an invalid initialization argument" (car rest)))))))
+          (error 'program-error "an invalid initialization argument" (car rest))))))))
 
-(defun make-instance (class &rest initargs)
+;;; What the standard method of `make-instance` does (CLHS 7.1): the default
+;;; initargs added, the initargs checked, then `allocate-instance` and
+;;; `initialize-instance`, both generic.
+(defun %make-instance (class &rest initargs)
   (let* ((class (%ensure-finalized (%class-designated class)))
          (initargs (%add-default-initargs class initargs)))
     (unless (member (class-of class) (list (find-class 'standard-class)
                                            (find-class 'funcallable-standard-class)))
       (error "make-instance cannot make an instance of this class" (%class-name class)))
-    (%check-initargs class initargs)
+    (%check-initargs class initargs '(allocate-instance initialize-instance shared-initialize))
     (let ((instance (apply #'allocate-instance class initargs)))
       (apply #'initialize-instance instance initargs)
       instance)))
 
-(defun initialize-instance (instance &rest initargs)
-  (apply #'shared-initialize instance t initargs)
-  instance)
-
-(defun reinitialize-instance (instance &rest initargs)
+(defun %reinitialize-instance (instance &rest initargs)
   (%ensure-current-instance instance)
-  (%check-initargs (class-of instance) initargs)
+  (%check-initargs (class-of instance) initargs '(reinitialize-instance shared-initialize))
   (apply #'shared-initialize instance nil initargs)
   instance)
 
 ;;; Fill INSTANCE's slots: each from the first initarg that names it, and
 ;;; otherwise, if it is unbound and one of SLOT-NAMES (or SLOT-NAMES is t),
-;;; from its initform.
-(defun shared-initialize (instance slot-names &rest initargs)
+;;; from its initform. What the standard method of `shared-initialize` does.
+(defun %shared-initialize (instance slot-names &rest initargs)
   (dolist (slot (%class-slots (class-of instance)) instance)
     (let ((name (%slot-definition-name slot))
           (found nil) (value nil))
@@ -854,12 +879,10 @@
 (defun slot-exists-p (object slot-name)
   (if (or (%find-slot object slot-name) (%structure-slot object slot-name)) t nil))
 
-;;; CLHS makes these two generic functions a program may specialise; they
-;;; become generic in sub-step 3. By default each signals an error.
-(defun slot-missing (class object slot-name operation &optional new-value)
-  class operation new-value
+;;; What the standard methods of the generic functions `slot-missing` and
+;;; `slot-unbound` do: signal an error.
+(defun %slot-missing (object slot-name)
   (error "the object has no slot of this name" (list object slot-name)))
 
-(defun slot-unbound (class object slot-name)
-  class
+(defun %slot-unbound (object slot-name)
   (error 'unbound-slot "the slot is unbound" (list object slot-name)))

@@ -2898,6 +2898,7 @@ data-and-control-flow COMPLEMENT.5
 data-and-control-flow COMPLEMENT.6
 data-and-control-flow COMPLEMENT.7
 data-and-control-flow COMPLEMENT.8
+data-and-control-flow COMPLEMENT.9
 data-and-control-flow COMPLEMENT.ERROR.1
 data-and-control-flow COMPLEMENT.ERROR.2
 data-and-control-flow COMPLEMENT.ERROR.3
@@ -3278,6 +3279,7 @@ data-and-control-flow FUNCALL.ORDER.1
 data-and-control-flow FUNCALL.ORDER.2
 data-and-control-flow FUNCTION-LAMBDA-EXPRESSION.1
 data-and-control-flow FUNCTION-LAMBDA-EXPRESSION.2
+data-and-control-flow FUNCTION-LAMBDA-EXPRESSION.3
 data-and-control-flow FUNCTION-LAMBDA-EXPRESSION.ERROR.1
 data-and-control-flow FUNCTION-LAMBDA-EXPRESSION.ERROR.2
 data-and-control-flow FUNCTION-LAMBDA-EXPRESSION.ORDER.1
@@ -9700,6 +9702,8 @@ types-and-classes SIMPLE-VECTOR-IS-SIMPLE-1D-ARRAY.3
 types-and-classes SIMPLE-VECTOR-IS-SIMPLE-1D-ARRAY.4
 types-and-classes SIMPLE-VECTOR-IS-SIMPLE-1D-ARRAY.5
 types-and-classes SIMPLE-VECTOR-IS-SIMPLE-1D-ARRAY.6
+types-and-classes STANDARD-GENERIC-FUNCTION.1
+types-and-classes STANDARD-GENERIC-FUNCTION.2
 types-and-classes STANDARD-OBJECT-IS-IN-STANDARD-CLASS
 types-and-classes STRING-IS-NOT-SIMPLE-VECTOR
 types-and-classes STRUCTURE-OBJECT-IS-IN-STRUCTURE-CLASS

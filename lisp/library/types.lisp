@@ -392,16 +392,17 @@
                ((%base-char-p object) 'base-char)
                (t 'character)))
         ((arrayp object) (%array-type-of object))
-        ((functionp object) (if (compiled-function-p object) 'compiled-function 'function))
-        ((hash-table-p object) 'hash-table)
-        ((%conditionp object) (%condition-type object))
         ;; An instance's type is its class's name, if that name still names
-        ;; the class; otherwise the class itself.
+        ;; the class; otherwise the class itself. A generic function is an
+        ;; instance and a function, and its type is its class's name.
         ((%instance-wrapper object)
          (let ((class (class-of object)))
            (if (and (%class-name class) (eq (find-class (%class-name class) nil) class))
                (%class-name class)
                class)))
+        ((functionp object) (if (compiled-function-p object) 'compiled-function 'function))
+        ((hash-table-p object) 'hash-table)
+        ((%conditionp object) (%condition-type object))
         ((%standard-structure-name object))
         ((%structure-layout object) (%layout-name (%structure-layout object)))
         (t t)))
