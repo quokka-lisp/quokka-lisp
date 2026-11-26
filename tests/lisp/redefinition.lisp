@@ -128,3 +128,54 @@
 (class-name (defclass cc () ((m :initarg :m) (n :initform :n))))
 (class-name (defclass cd () ((m :initarg :m) (n :initform :other) (o :initform :o))))
 (progn (change-class *cc* 'cd) (list (slot-value *cc* 'm) (slot-value *cc* 'n) (slot-value *cc* 'o)))
+
+;; What the update calls added: every new local slot still unbound after
+;; the copy, an unbound one kept included (SBCL; CLHS 4.3.6.1 would keep
+;; it unbound), and all three lists in reverse slot order, as SBCL gives
+;; them.
+(class-name (defclass mo () ((a) (b :initform 2) (z) (y :initform 9))))
+(progn (defmethod update-instance-for-redefined-class :before ((i mo) added discarded plist &rest initargs)
+         initargs (push (list added discarded plist) *log*))
+       :ok)
+(defvar *mo* (make-instance 'mo))
+(class-name (defclass mo () ((a :initform 1) (b :initform 2) (c :initform 3) (d :initform 4))))
+(list (slot-value *mo* 'a) (slot-value *mo* 'b) (slot-value *mo* 'd) (take-log))
+(class-name (defclass mn () ((a :initarg :a) (b :initarg :b) (c :initform 3))))
+(progn (defmethod update-instance-for-redefined-class :before ((i mn) added discarded plist &rest initargs)
+         initargs (push (list added discarded plist) *log*))
+       :ok)
+(defvar *mn* (make-instance 'mn :a 1 :b 2))
+(class-name (defclass mn () ((c :initform 3))))
+(list (slot-value *mn* 'c) (take-log))
+(class-name (defclass mi () ((a :initarg :a) (b))))
+(progn (defmethod update-instance-for-redefined-class :before ((i mi) added discarded plist &rest initargs)
+         initargs (push (list added discarded plist) *log*))
+       :ok)
+(defvar *mi* (make-instance 'mi))
+(make-instances-obsolete 'mi)
+(list (slot-boundp *mi* 'a) (take-log))
+
+;; An update that fails leaves the instance as it was, so the next touch
+;; tries again.
+(class-name (defclass er () ((a :initform 1))))
+(defvar *er* (make-instance 'er))
+(defvar *fail* t)
+(progn (defmethod update-instance-for-redefined-class :before ((i er) added discarded plist &rest initargs)
+         added discarded plist initargs (when *fail* (error "the update fails")))
+       :ok)
+(class-name (defclass er () ((a :initform 1) (b :initform 2))))
+(handler-case (slot-value *er* 'b) (error () :error))
+(setq *fail* nil)
+(list (slot-boundp *er* 'b) (slot-value *er* 'a))
+
+;; So does a change-class whose update fails.
+(class-name (defclass ce1 () ((a :initform 1))))
+(class-name (defclass ce2 () ((a :initform 1) (b :initform 2))))
+(progn (defmethod update-instance-for-different-class :before ((old ce1) (new ce2) &rest initargs)
+         initargs (when *fail* (error "the change fails")))
+       :ok)
+(defvar *ce* (make-instance 'ce1))
+(setq *fail* t)
+(handler-case (change-class *ce* 'ce2) (error () :error))
+(list (class-name (class-of *ce*)) (slot-exists-p *ce* 'b) (slot-value *ce* 'a))
+(setq *fail* nil)

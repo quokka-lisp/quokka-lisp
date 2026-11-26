@@ -626,6 +626,23 @@ fn describe_names_the_library_structures() {
     );
 }
 
+/// An obsolete instance of a class that is not finalized just now, because
+/// a redefinition named a superclass not defined yet, is brought up to the
+/// layout the class was last finalized with, and reads its own slots
+/// (#124, found in review: it read them through the new layout, swapped).
+/// SBCL refuses the last `defclass`, so this is Quokka's alone.
+#[test]
+fn an_obsolete_instance_of_an_unfinalized_class() {
+    let out = run_compiled(
+        "(progn (defclass ra () ((x :initform :x) (y :initform :y))) :ok) \
+         (defvar *ra* (make-instance 'ra)) \
+         (progn (defclass ra () ((y :initform :y) (x :initform :x))) :ok) \
+         (progn (defclass ra (not-defined-yet) ((y :initform :y) (x :initform :x) (z))) :ok) \
+         (list (slot-value *ra* 'x) (slot-value *ra* 'y))",
+    );
+    assert_eq!(out, "=> :OK\n=> *RA*\n=> :OK\n=> :OK\n=> (:X :Y)\n");
+}
+
 /// C2 in #39's terms: the cold-built world, rebuilt once by itself.
 fn rebuilt_image() -> &'static [u8] {
     static IMAGE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();

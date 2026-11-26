@@ -521,8 +521,10 @@ ansi-test **10,034** (unchanged: its print-object and
 **Sub-step 5, redefinition, is done** (chapter 76): a replaced wrapper is
 marked `(:obsolete . shared-cells)` (`%obsolete-wrapper`), and
 `%ensure-current-instance`, on every slot access, updates an instance
-through the generic function `update-instance-for-redefined-class` (added,
-discarded — only bound ones, as SBCL — and the property list). **Updates
+through the generic function `update-instance-for-redefined-class` (added —
+every local slot unbound after the copy — discarded — only bound ones —
+and the property list, all in reverse slot order, as SBCL); an update or
+`change-class` that does not finish is undone. **Updates
 happen only when a slot is touched**, not on a generic function call as in
 SBCL (CLHS leaves it open): a differential file must read a slot before
 observing an update. Unchanged local slots keep the wrapper (nothing goes
@@ -605,7 +607,7 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**503 tests**; **59 differential files agree with SBCL** — 17 interpreted and
+**504 tests**; **59 differential files agree with SBCL** — 17 interpreted and
 compiled, plus forty-two tier-1 files, compiled only, and all 59 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
 **The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.

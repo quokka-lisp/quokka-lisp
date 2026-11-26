@@ -84,8 +84,9 @@ from its own old wrapper to the class's current one, with the slots added
 and discarded between those two.
 
 `make-instances-obsolete` does the same without a redefinition: the class
-gets a new wrapper with the same slots, and every instance runs the update,
-with nothing added or discarded, the next time it is touched. A program
+gets a new wrapper with the same slots, and every instance runs the update
+the next time it is touched, with nothing discarded and, as the next
+section explains, its unbound slots counted as added. A program
 calls it when it has changed what its update methods do.
 
 ## What we matched in SBCL
@@ -102,6 +103,36 @@ we followed SBCL. And SBCL evaluates a shared slot's initform when the
 when Quokka used to do it; a shared slot added by a redefinition was then
 unbound until something made an instance. Now `%finalize-class` fills
 every unbound shared slot as the class is defined.
+
+## What the review found
+
+A review of the finished work, again probing Quokka and SBCL side by side,
+found three faults. The first was older than this step but belonged to
+it. A redefinition can name a superclass that is not defined yet, which
+leaves the class unfinalized, and the update skipped any instance of an
+unfinalized class. But the class still had the slots and the wrapper of
+its last finalization, so such an instance was read through a layout that
+was not its own, and two slots that had swapped places in between read
+each other's values. Now the instance is brought up to the layout the
+class was last finalized with.
+
+The second was a difference from SBCL we had not measured. We had
+expected *added* to mean the slots new to the class, and wrote that.
+SBCL counts every local slot that is still unbound after the copy, a slot
+the instance kept but never set included, so that slot gets its new
+initform; CLHS 4.3.6.1 says it should stay unbound. SBCL also gives all
+three lists in reverse slot order. Our tests had used one slot at a time
+and could see neither. We followed SBCL, as we did for the discarded
+slots.
+
+The third concerned errors. The update installs the new layout and then
+calls the generic function, and if a program's method signalled an error,
+the instance was left with the new layout and its added slots never
+filled, for good, since nothing would try again. SBCL undoes the change,
+so the next touch retries, and in a world you never restart, fixing the
+method and carrying on is the normal way to work. Both the update and
+`change-class` now put the old wrapper and slot vector back when the
+generic function does not return normally.
 
 ## `change-class`
 

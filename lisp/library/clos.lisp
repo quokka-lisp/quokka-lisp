@@ -869,44 +869,60 @@
 ;;; made obsolete, still has the old wrapper and a slot vector laid out by
 ;;; it. The first time one of its slots is touched it is brought up to date
 ;;; (CLHS 4.3.6): a new slot vector in the class's current layout, keeping
-;;; the value of every slot that was local before or shared before; the
-;;; others are *added*. The local slots that go are *discarded*, and those
-;;; that had a value are listed with it in a property list (SBCL lists
-;;; only those in the discarded slots too). The instance gets its new
-;;; wrapper and vector first, so that `update-instance-for-redefined-class`,
-;;; the generic function a program can specialise, sees the new layout; its
-;;; standard method fills the added slots from their initforms. CLHS leaves
-;;; *when* the update happens to the implementation: SBCL also does it on a
-;;; generic function call, Quokka only here, keeping dispatch as cheap.
+;;; the value of every slot that was local before or shared before. The
+;;; update is then told, as SBCL tells it (measured):
+;;;
+;;; - added: every local slot still unbound after the copy, one that was
+;;;   kept but unbound included, so that it gets its initform (CLHS
+;;;   4.3.6.1 would leave that one unbound);
+;;; - discarded: every local slot that went and had a value;
+;;; - the property list: those slots' names and values;
+;;;
+;;; each in reverse slot order. The instance gets its new wrapper and
+;;; vector first, so that `update-instance-for-redefined-class`, the generic
+;;; function a program can specialise, sees the new layout; its standard
+;;; method fills the added slots from their initforms. If the update does
+;;; not finish, the instance gets its old wrapper and vector back, as in
+;;; SBCL, so the next touch tries again. CLHS leaves *when* the update
+;;; happens to the implementation: SBCL also does it on a generic function
+;;; call, Quokka only here, keeping dispatch as cheap.
+;;;
+;;; A class that is not finalized just now (a superclass was redefined to
+;;; one not defined yet) still has the wrapper and slots it was last
+;;; finalized with, and the instance is brought up to that.
 (defun %ensure-current-instance (instance)
   (let* ((wrapper (%instance-wrapper instance))
-         (class (%wrapper-class wrapper)))
-    (unless (or (eq wrapper (%class-wrapper class)) (not (%class-finalized-p class)))
+         (class (%wrapper-class wrapper))
+         (current (%class-wrapper class)))
+    (unless (or (eq wrapper current) (null current))
       (let* ((old-names (%wrapper-slot-names wrapper))
              (old-slots (%instance-slots instance))
              (old-cells (cdr (%wrapper-state wrapper)))
-             (new-wrapper (%class-wrapper class))
-             (new-names (%wrapper-slot-names new-wrapper))
+             (new-names (%wrapper-slot-names current))
              (new-slots (make-array (length new-names) :initial-element %slot-unbound-marker))
-             (added nil) (discarded nil) (plist nil))
+             (added nil) (discarded nil) (plist nil) (done nil))
         (dotimes (i (length new-names))
           (let* ((name (aref new-names i))
                  (at (position name old-names))
                  (old-cell (assoc name old-cells)))
             (cond (at (setf (aref new-slots i) (aref old-slots at)))
-                  (old-cell (setf (aref new-slots i) (cdr (cdr old-cell))))
-                  (t (push name added)))))
+                  (old-cell (setf (aref new-slots i) (cdr (cdr old-cell)))))
+            (when (eq (aref new-slots i) %slot-unbound-marker) (push name added))))
         (dotimes (i (length old-names))
           (let ((name (aref old-names i))
                 (value (aref old-slots i)))
             (unless (or (find name new-names) (eq value %slot-unbound-marker))
               (push name discarded)
-              (push name plist)
-              (push value plist))))
+              (push value plist)
+              (push name plist))))
         (%set-instance-slots instance new-slots)
-        (%set-instance-wrapper instance new-wrapper)
-        (update-instance-for-redefined-class instance (nreverse added) (nreverse discarded)
-                                             (nreverse plist))))
+        (%set-instance-wrapper instance current)
+        (unwind-protect
+             (progn (update-instance-for-redefined-class instance added discarded plist)
+                    (setq done t))
+          (unless done
+            (%set-instance-slots instance old-slots)
+            (%set-instance-wrapper instance wrapper)))))
     instance))
 
 ;;; What the standard methods of `change-class` do (CLHS 7.2): INSTANCE,
@@ -940,7 +956,14 @@
               (old-cell (setf (aref new-slots i) (cdr (cdr old-cell)))))))
     (%set-instance-slots instance new-slots)
     (%set-instance-wrapper instance new-wrapper)
-    (apply #'update-instance-for-different-class previous instance initargs)
+    ;; A change whose update does not finish is undone, as in SBCL.
+    (let ((done nil))
+      (unwind-protect
+           (progn (apply #'update-instance-for-different-class previous instance initargs)
+                  (setq done t))
+        (unless done
+          (%set-instance-slots instance old-slots)
+          (%set-instance-wrapper instance old-wrapper))))
     instance))
 
 ;;; The local slots of CURRENT's class that PREVIOUS's class had no slot of
