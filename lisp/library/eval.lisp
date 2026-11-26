@@ -138,7 +138,10 @@
                      (setf (fdefinition name) function)))
              (values name nil nil)))))
 
-(defun compiled-function-p (object) (functionp object))
+;;; A generic function is a funcallable instance, and SBCL says it is not a
+;;; compiled function (#124).
+(defun compiled-function-p (object)
+  (and (functionp object) (not (%funcallable-instance-p object))))
 
 ;;; The lambda expression a function was made from, whether it closes over
 ;;; anything, and its name. CLHS lets an implementation always answer that

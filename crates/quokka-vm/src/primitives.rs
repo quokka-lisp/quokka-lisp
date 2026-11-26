@@ -199,6 +199,14 @@ pub enum Prim {
     RatioNumerator = 139,
     RatioDenominator = 140,
     StringMismatch = 141,
+    AllocateStandardInstance = 142,
+    AllocateFuncallableInstance = 143,
+    InstanceWrapper = 144,
+    InstanceSlots = 145,
+    SetInstanceWrapper = 146,
+    SetInstanceSlots = 147,
+    FuncallableInstancep = 148,
+    SetFuncallableInstanceFunction = 149,
 }
 
 impl Prim {
@@ -649,6 +657,42 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         Arity::Exactly(1),
     ),
     (Prim::StringMismatch, "%STRING-MISMATCH", Arity::Exactly(7)),
+    (
+        Prim::AllocateStandardInstance,
+        "%ALLOCATE-STANDARD-INSTANCE",
+        Arity::Exactly(2),
+    ),
+    (
+        Prim::AllocateFuncallableInstance,
+        "%ALLOCATE-FUNCALLABLE-INSTANCE",
+        Arity::Exactly(2),
+    ),
+    (
+        Prim::InstanceWrapper,
+        "%INSTANCE-WRAPPER",
+        Arity::Exactly(1),
+    ),
+    (Prim::InstanceSlots, "%INSTANCE-SLOTS", Arity::Exactly(1)),
+    (
+        Prim::SetInstanceWrapper,
+        "%SET-INSTANCE-WRAPPER",
+        Arity::Exactly(2),
+    ),
+    (
+        Prim::SetInstanceSlots,
+        "%SET-INSTANCE-SLOTS",
+        Arity::Exactly(2),
+    ),
+    (
+        Prim::FuncallableInstancep,
+        "%FUNCALLABLE-INSTANCE-P",
+        Arity::Exactly(1),
+    ),
+    (
+        Prim::SetFuncallableInstanceFunction,
+        "%SET-FUNCALLABLE-INSTANCE-FUNCTION",
+        Arity::Exactly(2),
+    ),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1066,6 +1110,34 @@ pub fn call_slice<'h>(
             Ok(crate::ratio::make(mc, args[0], args[1]))
         }
         Prim::StringMismatch => Ok(string_mismatch(mc, args)),
+        // The two kinds of instance CLOS is built on (#124): see
+        // `crate::instance` for why they are Rust. Every one is O(1).
+        Prim::AllocateStandardInstance => Ok(crate::instance::make_standard(mc, args[0], args[1])),
+        Prim::AllocateFuncallableInstance => {
+            Ok(crate::instance::make_funcallable(mc, args[0], args[1]))
+        }
+        Prim::InstanceWrapper => Ok(crate::instance::wrapper(mc, args[0]).unwrap_or(Value::NIL)),
+        Prim::InstanceSlots => crate::instance::slots(mc, args[0]).ok_or(EvalError::WrongType {
+            name,
+            wanted: "an instance",
+        }),
+        Prim::SetInstanceWrapper | Prim::SetInstanceSlots => {
+            let done = if prim == Prim::SetInstanceWrapper {
+                crate::instance::set_wrapper(mc, args[0], args[1])
+            } else {
+                crate::instance::set_slots(mc, args[0], args[1])
+            };
+            if done {
+                Ok(args[1])
+            } else {
+                Err(EvalError::WrongType {
+                    name,
+                    wanted: "an instance",
+                })
+            }
+        }
+        Prim::FuncallableInstancep => Ok(boolean(crate::instance::is_funcallable(mc, args[0]))),
+        Prim::SetFuncallableInstanceFunction => crate::instance::set_function(mc, args[0], args[1]),
         Prim::Ratiop => Ok(boolean(crate::ratio::is(mc, args[0]))),
         Prim::RatioNumerator | Prim::RatioDenominator => {
             if !crate::ratio::is(mc, args[0]) {
@@ -1487,13 +1559,10 @@ pub fn call_slice<'h>(
         }
         // A closure, a compiled function or a primitive; not a macro, and not
         // a symbol, though a symbol can designate a function (#62).
+        // A funcallable instance is a function too (#124).
         Prim::Functionp => Ok(boolean(
-            args[0].as_primitive().is_some()
-                || (args[0].is_object()
-                    && matches!(
-                        mc.header(args[0]).object_type,
-                        ObjectType::Closure | ObjectType::Function
-                    )),
+            crate::instance::is_plain_function(mc, args[0])
+                || crate::instance::is_funcallable(mc, args[0]),
         )),
         Prim::SymbolFunction => {
             if !mc.is_symbol(args[0]) {

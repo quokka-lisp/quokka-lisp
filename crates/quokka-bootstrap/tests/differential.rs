@@ -176,6 +176,7 @@ tier1_cases! {
     review_fixes => "review-fixes",
     types => "types",
     subtypep => "subtypep",
+    classes => "classes",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -407,10 +408,54 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1464 :REPLACED 1193)".into())],
+        [Outcome::Value("(:FORMS 1575 :REPLACED 1290)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
+}
+
+/// A warm rebuild keeps every class (#124): it reloads `clos.lisp` while
+/// classes and instances are alive, so the bootstrap refills the classes it
+/// finds, a class whose slots did not change keeps its wrapper, and an
+/// instance made before the rebuild is still an instance of its class.
+#[test]
+fn a_rebuild_keeps_classes_and_their_instances() {
+    use quokka_vm::vm::{eval_source, Outcome};
+    let mut heap = quokka_vm::image::load(compiled_image(), 1 << 22).expect("the image loads");
+    let output = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let files: Vec<(&'static str, &'static str)> = embedded_sources()
+        .into_iter()
+        .map(|(name, text)| (&*Box::leak(name.into_boxed_str()), text))
+        .collect();
+    let mut host = SharedHost(output, files);
+    let mut said = Vec::new();
+    eval_source(
+        &mut heap,
+        "(defclass kept () ((a :initarg :a :reader kept-a))) \
+         (defvar *i* (make-instance 'kept :a 1)) \
+         (defvar *w* (quokka::%class-wrapper (find-class 'standard-object))) \
+         (defvar *sc* (find-class 'standard-class)) \
+         (defvar *ic* (find-class 'integer)) \
+         (quokka::%rebuild-world) \
+         (list (eq *w* (quokka::%class-wrapper (find-class 'standard-object))) \
+               (eq *sc* (find-class 'standard-class)) \
+               (eq *ic* (find-class 'integer)) \
+               (eq (class-of (find-class 'standard-class)) (find-class 'standard-class)) \
+               (kept-a *i*) (typep *i* 'kept) (slot-value (make-instance 'kept :a 2) 'a))",
+        BUDGET * 60,
+        SLICE,
+        &mut host,
+        |outcome| {
+            said.push(outcome);
+            true
+        },
+    )
+    .expect("the forms run");
+    assert_eq!(
+        said.last(),
+        Some(&Outcome::Value("(T T T T 1 T 2)".into())),
+        "{said:?}"
+    );
 }
 
 /// C2 in #39's terms: the cold-built world, rebuilt once by itself.
@@ -883,6 +928,46 @@ impl quokka_vm::host::Host for SharedHost {
 /// to test it, since SBCL's oracle would read a real file and Quokka's
 /// harness has none. The file defines a function, changes package, and a
 /// form after the `load` sees that the package change stayed inside it.
+/// A funcallable instance is called through the function it holds (#124);
+/// with none, or before one is set, calling it is an error. SBCL has no
+/// such primitives, so this cannot be a differential file.
+#[test]
+fn a_funcallable_instance_is_called_through_its_function() {
+    let out = run_compiled(
+        "(defvar *f* (quokka::%allocate-funcallable-instance :w (vector))) \
+         (handler-case (funcall *f* 1) (error () :no-function)) \
+         (progn (quokka::%set-funcallable-instance-function *f* (lambda (x) (* x 2))) :set) \
+         (funcall *f* 21) \
+         (apply *f* '(4)) \
+         (mapcar *f* '(1 2)) \
+         (list (functionp *f*) (compiled-function-p *f*) (quokka::%funcallable-instance-p *f*)) \
+         (quokka::%instance-wrapper *f*) \
+         (handler-case (quokka::%set-funcallable-instance-function *f* *f*) (error () :refused))",
+    );
+    assert_eq!(
+        out,
+        "=> *F*\n=> :NO-FUNCTION\n=> :SET\n=> 42\n=> 8\n=> (2 4)\n=> (T NIL T)\n=> :W\n=> :REFUSED\n"
+    );
+}
+
+/// An instance prints as `#<NAME>` and a class as `#<STANDARD-CLASS NAME>`
+/// (#124), and neither can be printed readably. SBCL adds an address, so
+/// this cannot be a differential file; `print-object` comes in sub-step 4.
+#[test]
+fn instances_and_classes_print_unreadably() {
+    let out = run_compiled(
+        "(defclass pp () ()) \
+         (prin1-to-string (make-instance 'pp)) \
+         (prin1-to-string (find-class 'integer)) \
+         (handler-case (let ((*print-readably* t)) (prin1-to-string (make-instance 'pp))) \
+           (print-not-readable () :refused))",
+    );
+    assert_eq!(
+        out,
+        "=> #<STANDARD-CLASS PP>\n=> \"#<PP>\"\n=> \"#<BUILT-IN-CLASS INTEGER>\"\n=> :REFUSED\n"
+    );
+}
+
 /// A chain of `deftype`s that never ends is an error, not a hang (#124).
 /// SBCL never returns from one, so this cannot be a differential file.
 #[test]

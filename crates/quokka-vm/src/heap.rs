@@ -354,6 +354,12 @@ pub enum ObjectType {
     /// An exact ratio of two integers, in lowest terms (#59): the numerator
     /// and the denominator, both traced. See `crate::ratio`.
     Ratio = 13,
+    /// An instance of a class (#124): its wrapper and its slot vector. See
+    /// `crate::instance`.
+    StandardInstance = 14,
+    /// An instance that can be called, as a generic function is: its
+    /// function, its wrapper and its slot vector. See `crate::instance`.
+    FuncallableInstance = 15,
     /// A macro: the same shape as a closure, and deliberately a different
     /// type.
     ///
@@ -478,6 +484,8 @@ impl ObjectType {
             11 => ArrayHeader,
             12 => Marker,
             13 => Ratio,
+            14 => StandardInstance,
+            15 => FuncallableInstance,
             64 => String,
             65 => Code,
             66 => Bignum,

@@ -31,6 +31,7 @@ pub mod hash;
 pub mod heap;
 pub mod host;
 pub mod image;
+pub mod instance;
 pub mod lambda_list;
 pub mod primitives;
 pub mod printer;

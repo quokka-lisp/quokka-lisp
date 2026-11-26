@@ -226,7 +226,15 @@
                (%typed-definitions description)
                (%structure-definitions description layout))
          ,layout)
+       (%note-structure-defined ',name)
        ',name)))
+
+;;; A structure's type is known as soon as its `defstruct` is expanded (see
+;;; above), but it is defined, and a class (`find-class`, #124), only once
+;;; the expansion has run: `(unless (find-class 'x nil) (defstruct x ...))`
+;;; must define X.
+(defun %note-structure-defined (name)
+  (setf (get name '%structure-defined) t))
 
 (defun %struct-printer-form (options)
   (let ((option (find-if (lambda (o) (and (consp o) (member (car o) '(:print-function :print-object))

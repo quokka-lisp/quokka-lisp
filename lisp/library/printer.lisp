@@ -473,6 +473,7 @@
         ((%string-output-stream-p object) (%print-unreadable object "#<STRING-OUTPUT-STREAM>" out))
         ((%console-stream-p object) (%print-unreadable object "#<CONSOLE-STREAM>" out))
         ((%readtable-p object) (%print-unreadable object "#<READTABLE>" out))
+        ((%instance-wrapper object) (%print-unreadable object (%instance-text object) out))
         ((%structure-layout object) (%print-structure object out level))
         ;; Not an array — a function, a condition, a hash table: nothing
         ;; reads them back, so CLHS lets each implementation print them its
@@ -496,6 +497,17 @@
          (dotimes (i (length object)) (write-char (if (eql (aref object i) 1) #\1 #\0) out)))
         ((vectorp object) (%print-vector object out level))
         (t (%print-array object out level))))
+
+;;; An instance of a class, as `#<POINT>`, and a class, as `#<STANDARD-CLASS
+;;; POINT>` (#124). SBCL adds the object's address, which Quokka cannot
+;;; show: objects move. `print-object` takes this over in sub-step 4.
+(defun %instance-text (object)
+  (let ((class (class-of object)))
+    (if (%class-object-p object)
+        (%string-append (%string-append (%string-append "#<" (prin1-to-string (class-name class)))
+                                        (%string-append " " (prin1-to-string (class-name object))))
+                        ">")
+        (%string-append (%string-append "#<" (prin1-to-string (class-name class))) ">"))))
 
 ;;; A structure: by its type's `:print-function` (object, stream, depth) or
 ;;; `:print-object` (object, stream), or as `#S(POINT :X 1 :Y 2)`, which

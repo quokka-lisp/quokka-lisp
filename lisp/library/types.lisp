@@ -197,7 +197,21 @@
            (%structure-is-a object (%structure-type-layout name)))
           ((%condition-type-name-p name)
            (and (%conditionp object) (%condition-subtype-p (%condition-type object) name)))
+          ((find-class name nil) (%class-typep object (find-class name nil)))
           (t (error "unknown type specifier" name)))))
+
+;;; A class is a type: the objects whose class has it in its precedence list
+;;; (CLHS 4.3.7). Every object has a class (`clos.lisp`), so this answers
+;;; for a built-in class as well as for one `defclass` made.
+(defun %class-typep (object class)
+  (if (member class (%class-precedence-list (class-of object))) t nil))
+
+;;; Is OBJECT a class? Classes are instances whose class is a metaclass,
+;;; that is, a subclass of `class`.
+(defun %class-object-p (object)
+  (and (%instance-wrapper object)
+       (member (find-class 'class) (%class-precedence-list (class-of object)))
+       t))
 
 ;;; ------------------------------------------------------------------------
 ;;; Compound type specifiers
@@ -336,9 +350,10 @@
 ;;; Is OBJECT of TYPE?
 (defun %typep (object type)
   (let ((type (%expand-type type)))
-    (if (consp type)
-        (%typep-compound object (car type) type)
-        (%typep-atom object type))))
+    (cond ((consp type) (%typep-compound object (car type) type))
+          ((symbolp type) (%typep-atom object type))
+          ((%class-object-p type) (%class-typep object type))
+          (t (error "malformed type specifier" type)))))
 
 (defun typep (object type-specifier &optional environment)
   environment
@@ -380,6 +395,13 @@
         ((functionp object) (if (compiled-function-p object) 'compiled-function 'function))
         ((hash-table-p object) 'hash-table)
         ((%conditionp object) (%condition-type object))
+        ;; An instance's type is its class's name, if that name still names
+        ;; the class; otherwise the class itself.
+        ((%instance-wrapper object)
+         (let ((class (class-of object)))
+           (if (and (%class-name class) (eq (find-class (%class-name class) nil) class))
+               (%class-name class)
+               class)))
         ((%standard-structure-name object))
         ((%structure-layout object) (%layout-name (%structure-layout object)))
         (t t)))

@@ -349,6 +349,8 @@ impl Heap {
             ObjectType::Closure | ObjectType::Macro => header.slots > crate::closure::ENV,
             ObjectType::Environment => header.slots >= crate::env::FIRST_PAIR,
             ObjectType::Ratio => header.slots == 2,
+            ObjectType::StandardInstance => header.slots == crate::instance::STANDARD_SLOTS,
+            ObjectType::FuncallableInstance => header.slots == crate::instance::FUNCALLABLE_SLOTS,
             ObjectType::DoubleFloat | ObjectType::NilVector => header.slots >= 1,
             ObjectType::PackedString => counted(8),
             ObjectType::BitVector => counted(64),

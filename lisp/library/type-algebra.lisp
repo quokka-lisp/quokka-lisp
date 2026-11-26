@@ -168,7 +168,7 @@
   '((:integer . :integers) (:ratio . :reals) (:float . :reals) (:negative-zero . :whole)
     (:complex . :parts)
     (:character . :codes) (:symbol . :symbols) (:keyword . :symbols) (:cons . :pairs)
-    (:array . :arrays) (:structure . :tree) (:condition . :tree)
+    (:array . :arrays) (:structure . :tree) (:condition . :tree) (:instance . :tree)
     (:compiled-function . :whole) (:function . :whole) (:hash-table . :whole)
     (:random-state . :whole) (:pathname . :whole) (:logical-pathname . :whole)
     (:other . :whole)))
@@ -185,6 +185,7 @@
         ((symbolp object) :symbol)
         ((consp object) :cons)
         ((arrayp object) :array)
+        ((%instance-wrapper object) :instance)
         ((%conditionp object) :condition)
         ((%structure-layout object) :structure)
         ((functionp object) (if (compiled-function-p object) :compiled-function :function))
@@ -532,14 +533,17 @@
 ;;; A structure has one parent, so two roots neither of which includes the
 ;;; other share no object. A condition type can have several parents, and
 ;;; programs will define more (phase 3, step B), so such a pair is a type
-;;; that may or may not have members: "don't know".
+;;; that may or may not have members: "don't know". The same holds for
+;;; classes, whose terms name class objects rather than names: a class may
+;;; have no name, or a name that now names another class.
 
 (defun %tree-subtype-p (kind a b)
-  (if (eq kind :structure)
-      (do ((layout (%find-layout a) (%layout-include layout)))
-          ((null layout) nil)
-        (when (eq (%layout-name layout) b) (return t)))
-      (%condition-subtype-p a b)))
+  (case kind
+    (:structure (do ((layout (%find-layout a) (%layout-include layout)))
+                    ((null layout) nil)
+                  (when (eq (%layout-name layout) b) (return t))))
+    (:instance (if (member b (%class-precedence-list a)) t nil))
+    (t (%condition-subtype-p a b))))
 
 ;;; ROOTS with every root that another root lies within dropped, or :none
 ;;; when two structure roots are unrelated.
@@ -551,13 +555,21 @@
                                                 kept))))))
     (if (and (eq kind :structure) (cdr kept)) :none kept)))
 
+;;; Terms that are surely empty are dropped as they are made, and a term
+;;; already present is not added twice. Without that, a long `and` of `or`s
+;;; of classes multiplies its terms at every step, and its complement
+;;; multiplies them again (ansi-test tac-3.17 ran out of steps).
 (defun %tree-and (kind a b)
   (let ((result nil))
     (dolist (x a (nreverse result))
       (dolist (y b)
         (let ((roots (%tree-roots kind (append (car x) (car y)))))
           (unless (eq roots :none)
-            (push (cons roots (union (cdr x) (cdr y))) result)))))))
+            (let ((term (cons roots (union (cdr x) (cdr y)))))
+              (unless (or (multiple-value-bind (empty certain) (%tree-term-empty-p kind term)
+                            (and empty certain))
+                          (member term result :test #'equal))
+                (push term result)))))))))
 
 (defun %tree-not (kind a)
   (let ((result (%full kind)))
@@ -584,9 +596,10 @@
               ((not sure) (setq certain nil)))))))
 
 (defun %tree-contains-p (kind terms object)
-  (let ((name (if (eq kind :structure)
-                  (%layout-name (%structure-layout object))
-                  (%condition-type object))))
+  (let ((name (case kind
+                (:structure (%layout-name (%structure-layout object)))
+                (:instance (class-of object))
+                (t (%condition-type object)))))
     (some (lambda (term)
             (and (every (lambda (root) (%tree-subtype-p kind name root)) (car term))
                  (notany (lambda (exception) (%tree-subtype-p kind name exception)) (cdr term))))
@@ -781,7 +794,11 @@
     ((bit-vector) (%array-ctype 'bit (list '*) nil))
     ((simple-bit-vector) (%array-ctype 'bit (list '*) t))
     ((sequence) (%ctype-or (%list-ctype) (%vectors-ctype)))
-    ((function) (%kinds-ctype '(:compiled-function :function)))
+    ;; A funcallable instance, such as a generic function, is a function:
+    ;; its class has `function` among its superclasses.
+    ((function) (%ctype-or (%kinds-ctype '(:compiled-function :function))
+                           (%kind-ctype :instance (list (list (list (find-class 'function)))))))
+    ((standard-object) (%class-ctype (find-class 'standard-object)))
     ((compiled-function) (%kinds-ctype '(:compiled-function)))
     ((hash-table) (%kinds-ctype '(:hash-table)))
     ((random-state) (%kinds-ctype '(:random-state)))
@@ -796,7 +813,18 @@
     (t (cond ((%structure-type-layout name) (%structure-names-ctype (list name)))
              ((%condition-entry name %condition-supertypes)
               (%kind-ctype :condition (list (list (list name)))))
+             ((find-class name nil) (%class-ctype (find-class name nil)))
              (t (throw '%unknown-type nil))))))
+
+;;; The type a class is. A class `defclass` made is a term of the `:instance`
+;;; kind, rooted at the class; any other class is the type its name names,
+;;; since every built-in, structure and condition class's name is one.
+(defun %class-ctype (class)
+  (if (member (class-of class) (list (find-class 'standard-class)
+                                     (find-class 'funcallable-standard-class)
+                                     (find-class 'forward-referenced-class)))
+      (%kind-ctype :instance (list (list (list class))))
+      (%parse-type (%class-name class))))
 
 (defun %parse-compound (head specifier)
   (case head
@@ -875,6 +903,7 @@
   (let ((specifier (%expand-type specifier)))
     (cond ((consp specifier) (%parse-compound (car specifier) specifier))
           ((symbolp specifier) (%parse-atom specifier))
+          ((%class-object-p specifier) (%class-ctype specifier))
           (t (error "malformed type specifier" specifier)))))
 
 ;;; ------------------------------------------------------------------------

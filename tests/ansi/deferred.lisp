@@ -11,11 +11,9 @@
 (%deferred "tier-2:loop" :loop :loop-finish)
 
 (%deferred "tier-2:clos"
-  :defclass :defgeneric :defmethod :make-instance :make-instances-obsolete :slot-value
-  :slot-boundp :slot-makunbound :slot-exists-p :slot-missing :slot-unbound :class-of
-  :find-class :class-name :call-next-method :next-method-p :call-method :make-method
+  :defgeneric :defmethod :make-instances-obsolete
+  :call-next-method :next-method-p :call-method :make-method
   :change-class
-  :reinitialize-instance :shared-initialize :initialize-instance :allocate-instance
   :update-instance-for-different-class :update-instance-for-redefined-class :with-slots
   :with-accessors :add-method :remove-method :find-method :compute-applicable-methods
   :ensure-generic-function :method-qualifiers :no-applicable-method :no-next-method

@@ -151,8 +151,12 @@ The existing `%of-type` in `sequences.lisp` becomes a use of `typep`.
 
 ### Objects in the heap
 
-A **standard object** is an `ObjectType::Instance`, the same heap type a
-structure is, with two slots: a **wrapper** and a **slot vector**. The wrapper
+A **standard object** is an `ObjectType::StandardInstance`, a heap type of
+its own, with two slots: a **wrapper** and a **slot vector**. (This document
+first said it would be an `Instance`, the type a structure is. Sub-step 2
+gave it a type of its own instead, because every structure path reads an
+`Instance`'s slot 0 as a structure layout, and a separate header type keeps
+those paths exactly as they were at no cost.) The wrapper
 belongs to the instance's class and says which slots the vector holds and in
 what order. This is PCL's representation, and the indirection is there for
 class redefinition and `change-class`: both give an existing instance a
@@ -166,9 +170,9 @@ An instance is brought up to date the next time any slot of it is touched
 (CLHS 4.3.6): `update-instance-for-redefined-class` runs then, with the added
 and discarded slots and the old values.
 
-How the code tells a structure's layout from a standard object's wrapper is
-left to the builder, with one requirement: a structure accessor's fast path,
-an `eq` test of the layout, must not get slower.
+A structure's layout and a standard object's wrapper are told apart by the
+object's header type, so a structure accessor's fast path, an `eq` test of
+the layout, is unchanged.
 
 ### The one piece of Rust: funcallable instances
 
@@ -176,7 +180,8 @@ A generic function is called like any function, `(area shape)`, and is also an
 instance with slots: its name, lambda list, methods, method class and
 discriminating function. The machine has to be able to call it. So Rust gets a
 new heap type, `ObjectType::FuncallableInstance`, whose first slot is a
-function and whose other slots are a wrapper and a slot vector as above. The
+function and whose other slots are a wrapper and a slot vector as above
+(`crates/quokka-vm/src/instance.rs`, with `StandardInstance`). The
 VM's `call_value` (through `closure::designated`) calls a funcallable
 instance's function with the arguments unchanged. A primitive sets that
 function (`%set-funcallable-instance-function`, AMOP's
@@ -401,7 +406,6 @@ under a debug setting (decided in #111); processes and per-process bindings
 
 ## Left to the builder
 
-- How a standard object's wrapper is told apart from a structure's layout.
 - The cache's shape (an `eq` hash table keyed on a list of classes, or one
   table per argument position), measured against the step budgets.
 - Whether `:type` on a slot is checked. Follow SBCL at its default policy, as

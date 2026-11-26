@@ -183,6 +183,8 @@ fn write_object<'h>(out: &mut String, mc: &Mutation<'h>, v: Value<'h>, depth: us
         }
         ObjectType::HashTable => out.push_str("#<hash-table>"),
         ObjectType::Instance => out.push_str("#<structure>"),
+        ObjectType::StandardInstance => out.push_str("#<instance>"),
+        ObjectType::FuncallableInstance => out.push_str("#<funcallable-instance>"),
         // Rust's shortest round-trip digits; the Lisp printer lays them out
         // as SBCL does, and is the one a world uses.
         ObjectType::Ratio => {

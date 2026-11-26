@@ -455,10 +455,30 @@ type; `-0.0` its own kind); no base strings (`base-char` upgrades to
 wrapped there to expand `deftype`s. ansi-test runs sixteen groups now
 (`types-and-classes` joined); the runner treats `defclass`,
 `define-condition` and `deftype` as defining their name. A rebuild
-reports `(:FORMS 1464 :REPLACED 1193)`. ansi-test: **9,919 of 15,984**,
-no plain failure. Rust 0.
-**Next: CLOS sub-step 2** — funcallable instances, the class bootstrap,
-`defclass`. Phase 2's scope was
+reported `(:FORMS 1464 :REPLACED 1193)` then. ansi-test: **9,919 of
+15,984**, no plain failure. Rust 0.
+**Sub-step 2, classes, is done** (chapter 73): two heap types of their own,
+`StandardInstance` (wrapper, slot vector) and `FuncallableInstance`
+(function, wrapper, slot vector), in `crates/quokka-vm/src/instance.rs`,
+eight primitives (`%allocate-standard-instance`, `%instance-wrapper`, ...);
+`call_value` calls a funcallable instance's function; image format 8.
+`lisp/library/clos.lisp` (after `type-algebra.lisp`): classes are standard
+instances with the twelve slots of class `class` at fixed places
+(`%class-…` readers), slot definitions likewise; **the bootstrap runs in
+idempotent stages and must stay safe to run twice** — a warm rebuild
+refills the classes it finds, and a class whose instance slots are
+unchanged keeps its wrapper (`a_rebuild_keeps_classes_and_their_instances`).
+`make-instance`, `shared-initialize`, slot functions and accessors are
+ordinary functions until sub-step 3. Every object has a class
+(`%built-in-class-name`); a structure's class is made lazily, and only once
+its `defstruct` has *run* (`%note-structure-defined` in the expansion —
+the layout exists at expansion time). Class names and class objects are
+types; the algebra's `:instance` kind names class objects, and `%tree-and`
+drops surely-empty terms (or a long and-of-ors explodes). MOP-only names
+are QUOKKA symbols until sub-step 7. Rebuild `(:FORMS 1575 :REPLACED
+1290)`; ansi-test **10,030**. Rust 242.
+**Next: CLOS sub-step 3** — generic functions, dispatch, method
+combination. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -530,10 +550,10 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**487 tests**; **55 differential files agree with SBCL** — 17 interpreted and
-compiled, plus thirty-eight tier-1 files, compiled only, and all 55 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
+**494 tests**; **56 differential files agree with SBCL** — 17 interpreted and
+compiled, plus thirty-nine tier-1 files, compiled only, and all 56 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
-**The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 7** (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
+**The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 
 ## How phase 1 ended
 

@@ -175,7 +175,15 @@ fn the_table_order_is_pinned() {
             "%RATIOP",
             "%RATIO-NUMERATOR",
             "%RATIO-DENOMINATOR",
-            "%STRING-MISMATCH"
+            "%STRING-MISMATCH",
+            "%ALLOCATE-STANDARD-INSTANCE",
+            "%ALLOCATE-FUNCALLABLE-INSTANCE",
+            "%INSTANCE-WRAPPER",
+            "%INSTANCE-SLOTS",
+            "%SET-INSTANCE-WRAPPER",
+            "%SET-INSTANCE-SLOTS",
+            "%FUNCALLABLE-INSTANCE-P",
+            "%SET-FUNCALLABLE-INSTANCE-FUNCTION"
         ]
     );
 }

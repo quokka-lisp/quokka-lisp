@@ -90,7 +90,10 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 /// in an older image has its entries in the wrong buckets; "no unwind
 /// record" is `u64::MAX` on every target; and the header says how many
 /// primitives and opcodes the image was built against.
-pub const FORMAT_VERSION: u64 = 7;
+///
+/// **Version 8** (#124): standard and funcallable instances, two new object
+/// types.
+pub const FORMAT_VERSION: u64 = 8;
 
 /// Words before the heap's own: magic, version, length, checksum, scalars,
 /// and how much machine the image needs.

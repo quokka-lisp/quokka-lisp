@@ -623,6 +623,21 @@ impl<'a, 'h> Vm<'a, 'h> {
             Ok(function) => function,
             Err(e) => return self.fail(e),
         };
+        // A funcallable instance, such as a generic function, is called
+        // through the function it holds, with the same arguments (#124). Its
+        // function is never another funcallable instance (the setter refuses
+        // one), so one replacement is enough.
+        let callee = if crate::instance::is_funcallable(self.mc, callee) {
+            let function = crate::instance::function(self.mc, callee);
+            if !crate::instance::is_plain_function(self.mc, function) {
+                return self.fail(EvalError::NotAFunction(String::from(
+                    "#<funcallable-instance with no function>",
+                )));
+            }
+            function
+        } else {
+            callee
+        };
         if let Some(index) = callee.as_primitive() {
             if let Some(transition) = self.intercept(index, args, tail) {
                 return transition;

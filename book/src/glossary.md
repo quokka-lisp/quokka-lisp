@@ -117,6 +117,12 @@ Pronounced "could-er". Read it as "rest".
 <a id="character-encoding"></a>
 **Character encoding.** A rule for writing characters' numbers as bytes. *UTF-32* uses four bytes for every character; *UTF-8* uses one for ASCII and two to four for the rest, which is compact but means finding the *n*th character takes a scan; [Latin-1](#latin-1) uses one byte and covers only 256 characters. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
 
+<a id="class"></a>
+**Class.** In CLOS, an object that names a kind of object and says what slots its instances have; every Lisp object has one, which `class-of` returns. A class is itself an instance of a [metaclass](#metaclass). ([73](part-7-objects/73-classes.md))
+
+<a id="class-precedence-list"></a>
+**Class precedence list.** One total order of a class and all its superclasses, keeping every class's request to come before its superclasses and those in the order it lists them: a topological sort (CLHS 4.3.5). It decides which superclass wins when two define the same slot or method. ([73](part-7-objects/73-classes.md))
+
 <a id="cheney-s-algorithm"></a>
 **Cheney's algorithm.** The [copying collector](#copying-collector) Quokka uses.
 Its distinguishing trick is needing no extra memory to keep track of its work:
@@ -319,6 +325,9 @@ a shared object being copied twice and a circular structure looping forever.
 <a id="funcall"></a>
 **funcall.** Applies whatever a variable *holds*, as opposed to whatever its name denotes as a function. A [Lisp-2](#lisp-2) cannot call a closure stored in a variable without it. ([9](part-2-reading-and-running/09-what-a-form-means.md))
 
+<a id="funcallable-instance"></a>
+**Funcallable instance.** An [instance](#instance) that can also be called as a function, which is what a generic function is: it has slots (its name, its methods) and the machine calls the function it holds. In Quokka a heap type of its own, and the one part of CLOS in Rust. ([73](part-7-objects/73-classes.md))
+
 <a id="function-designator"></a>
 **Function designator.** An object that stands for a function wherever one is wanted: the function itself, or a symbol, meaning its global function. Why `(funcall 'car x)` and `:test 'eql` work. ([50](part-6-self-hosting/50-first-gaps.md))
 
@@ -468,6 +477,9 @@ otherwise. ([18](part-2-reading-and-running/18-lambda-lists.md))
 <a id="kind"></a>
 **Kind (of object).** In Quokka's [canonical types](#canonical-type), one of the disjoint groups every object falls into: integers, ratios, floats, characters, symbols, keywords, conses, arrays, structures, conditions, functions and a few more. Because no object is of two kinds, `and`, `or` and `not` on types can be worked out one kind at a time. ([72](part-7-objects/72-what-is-a-type.md))
 
+<a id="instance"></a>
+**Instance.** An object of a class `defclass` made, created by `make-instance`. In Quokka a heap object of its own type, holding a [wrapper](#wrapper) and a vector of slot values. ([73](part-7-objects/73-classes.md))
+
 <a id="label"></a>
 **Label.** A name standing for a position in a function's instructions, so
 that the compiler can emit a jump before knowing how far it goes. The
@@ -561,6 +573,12 @@ surrounding variables, because at expansion time they do not have values yet.
 
 <a id="marker"></a>
 **Marker.** A zero-slot object, equal to nothing but itself, used as the identity of a `block` or `tagbody`. The name cannot serve, because two recursive entries to the same block must be two different targets. Markers have a header type of their own, so that nothing else can be mistaken for one. ([14](part-2-reading-and-running/14-leaving-early.md), [61](part-6-self-hosting/61-structures.md))
+
+<a id="metaclass"></a>
+**Metaclass.** A class whose instances are classes. `standard-class` is the metaclass of classes `defclass` makes, and is an instance of itself. ([73](part-7-objects/73-classes.md))
+
+<a id="metaobject-protocol"></a>
+**Metaobject protocol (MOP).** The design in which an object system's own parts (classes, slot definitions, generic functions, methods) are themselves objects of classes, so a program can ask them about themselves and change how they behave. Described in *The Art of the Metaobject Protocol* (1991). ([73](part-7-objects/73-classes.md))
 
 <a id="multiple-values"></a>
 **Multiple values.** A form may return any number of results, and a caller
@@ -1009,6 +1027,9 @@ must be able to stop and hand control back.
 
 <a id="whole-form-whole"></a>
 **Whole form (`&whole`).** In a macro lambda list, `&whole w` binds `w` to the entire macro form, head included: in `(defmacro show (&whole w arg) ...)`, the call `(show x)` binds `w` to `(show x)`. Inside a nested pattern, or in `destructuring-bind`, it binds the list that pattern matches. ([64](part-6-self-hosting/64-what-a-macro-is-given.md))
+
+<a id="wrapper"></a>
+**Wrapper.** The object an [instance](#instance) points to that belongs to its class and lists the names of its slots in the order its slot vector keeps them. Replacing an instance's wrapper and slot vector lets a redefined class give its old instances new slots while they stay the same objects; this is PCL's representation. ([73](part-7-objects/73-classes.md))
 
 <a id="write-barrier"></a>
 **Write barrier.** Machinery that notices when an old object is made to point at
