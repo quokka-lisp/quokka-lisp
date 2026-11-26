@@ -241,8 +241,14 @@
               ((null (cdr rest)) (funcall (car rest) args nil))
             (let ((value (funcall (car rest) args nil)))
               (when value (return value))))))
-    (t (lambda (args)
-         (apply operator (mapcar (lambda (function) (funcall function args nil)) functions))))))
+    ;; Any other macro or special operator, in a program's short form, is
+    ;; compiled into a form that applies it, once per cache miss.
+    (t (if (and (symbolp operator) (or (macro-function operator) (%special-operator-p operator)))
+           (compile nil `(lambda (%emf-args)
+                           (,operator ,@(mapcar (lambda (function) `(funcall ',function %emf-args nil))
+                                                functions))))
+           (lambda (args)
+             (apply operator (mapcar (lambda (function) (funcall function args nil)) functions)))))))
 
 (%define-operator-combination '+ '+ t)
 (%define-operator-combination 'and 'and t)
@@ -253,6 +259,219 @@
 (%define-operator-combination 'nconc 'nconc t)
 (%define-operator-combination 'or 'or t)
 (%define-operator-combination 'progn 'progn t)
+
+;;; ------------------------------------------------------------------------
+;;; define-method-combination (CLHS)
+
+;;; The short form, `(define-method-combination name [[:operator op |
+;;; :identity-with-one-argument flag | :documentation string]])`, defines
+;;; an operator combination; the operator is the name unless it says
+;;; otherwise. The long form says how to group the methods and returns,
+;;; from its body, a Lisp form, the *effective method form*, that says how
+;;; to call them; `%long-combination-definition` explains it.
+(defmacro define-method-combination (name &rest rest)
+  (if (or (null rest) (keywordp (car rest)))
+      `(progn
+         (%define-operator-combination ',name ',(getf rest :operator name)
+                                       ',(getf rest :identity-with-one-argument))
+         ',name)
+      `(progn
+         (setf (gethash ',name %combinations) ,(%long-combination-definition rest))
+         (%invalidate-dispatch)
+         ',name)))
+
+;;; A long form's definition: `(lambda-list (method-group-specifier*)
+;;; [(:arguments . lambda-list)] [(:generic-function symbol)] body)`. Its
+;;; combiner, given the generic function and its applicable methods:
+;;;
+;;; 1. binds LAMBDA-LIST to the `defgeneric`'s options; SBCL checks them
+;;;    only now, when the generic function is called;
+;;; 2. puts each method in the first group whose qualifier patterns, or
+;;;    predicate, take its qualifiers, and calls `invalid-method-error` for
+;;;    a method no group takes;
+;;; 3. checks each group: `:required` and empty is an error, and so are two
+;;;    methods with the same specializers (as SBCL, not when the only group
+;;;    takes every method); then orders it by `:order`;
+;;; 4. evaluates the body, with each group's name bound to its methods, the
+;;;    `:generic-function` symbol to the generic function and each
+;;;    `:arguments` variable to a symbol the effective method will bind to
+;;;    that argument;
+;;; 5. compiles the form the body returned into the effective method
+;;;    (`%form-effective-method`).
+;;;
+;;; This is the one place where dispatch compiles: the body returns code,
+;;; and only the compiler can run code. It happens once per cache miss.
+(defun %long-combination-definition (rest)
+  (let* ((lambda-list (pop rest))
+         (groups (mapcar #'%parse-method-group (pop rest)))
+         (arguments (if (and (consp (car rest)) (eq (car (car rest)) :arguments)) (cdr (pop rest)) nil))
+         (gf-symbol (if (and (consp (car rest)) (eq (car (car rest)) :generic-function))
+                        (second (pop rest))
+                        nil))
+         (body (if (and (stringp (car rest)) (cdr rest)) (cdr rest) rest))
+         (gf (gensym "GF")) (methods (gensym "METHODS")) (options (gensym "OPTIONS"))
+         (method (gensym "METHOD")) (qualifiers (gensym "QUALIFIERS"))
+         (spec (%arguments-spec arguments))
+         (only-every (and (null (cdr groups)) (equal (second (car groups)) '(*)))))
+    `(lambda (,options)
+       (lambda (,gf ,methods)
+         (apply
+          (lambda ,lambda-list
+            (let ,(mapcar #'car groups)
+              (dolist (,method ,methods)
+                (let ((,qualifiers (%method-qualifiers ,method)))
+                  (cond ,@(mapcar (lambda (group)
+                                    `(,(%group-test group qualifiers) (push ,method ,(car group))))
+                                  groups)
+                        (t (invalid-method-error ,method "no method group takes the qualifiers ~S"
+                                                 ,qualifiers)))))
+              ,@(mapcar (lambda (group)
+                          `(setq ,(car group)
+                                 (%finish-method-group ',(car group) ,(car group)
+                                                       ,(third group) ,(fourth group)
+                                                       ,(not only-every))))
+                        groups)
+              (%form-effective-method
+               ,gf ,methods ',spec
+               (let (,@(if gf-symbol `((,gf-symbol ,gf)) nil)
+                     ,@(mapcar (lambda (entry) `(,(second entry) ',(third entry))) spec))
+                 ,@body))))
+          ,options)))))
+
+;;; A method group specifier, `(name {pattern+ | predicate} [[:description
+;;; d | :order o | :required r]])`, as `(name tests order-form required-form)`;
+;;; TESTS is the list of patterns, or a predicate's name alone.
+(defun %parse-method-group (specifier)
+  (let ((name (car specifier)) (tests nil) (rest (cdr specifier)))
+    (do () ((or (null rest) (member (car rest) '(:description :order :required))))
+      (push (pop rest) tests))
+    (list name (nreverse tests) (getf rest :order :most-specific-first) (getf rest :required))))
+
+;;; The form that asks whether QUALIFIERS (a variable) belong to GROUP.
+(defun %group-test (group qualifiers)
+  (let ((tests (second group)))
+    (if (and (symbolp (car tests)) (car tests) (not (eq (car tests) '*)))
+        `(funcall #',(car tests) ,qualifiers)
+        `(or ,@(mapcar (lambda (pattern) `(%qualifiers-match-p ,qualifiers ',pattern)) tests)))))
+
+;;; Does a method's list of QUALIFIERS match PATTERN? `*` matches anything;
+;;; in a list, `*` matches one qualifier, and a dotted `*` tail any number
+;;; (CLHS `define-method-combination`).
+(defun %qualifiers-match-p (qualifiers pattern)
+  (cond ((eq pattern '*) t)
+        ((null pattern) (null qualifiers))
+        ((consp pattern)
+         (and (consp qualifiers)
+              (or (eq (car pattern) '*) (equal (car pattern) (car qualifiers)))
+              (%qualifiers-match-p (cdr qualifiers) (cdr pattern))))
+        (t nil)))
+
+;;; A group's METHODS, pushed while grouping and so least specific first,
+;;; checked and put in ORDER. SBCL's errors here are `simple-error`s.
+(defun %finish-method-group (name methods order required check-duplicates)
+  (when (and required (null methods))
+    (error "No ~S methods." name))
+  (when check-duplicates
+    (do ((rest methods (cdr rest)))
+        ((null rest))
+      (when (and (%method-specializers (car rest))
+                 (find (%method-specializers (car rest)) (cdr rest)
+                       :key #'%method-specializers :test #'%same-specializers-p))
+        (error "More than one method of type ~S with the same specializers." name))))
+  (ecase order
+    (:most-specific-first (reverse methods))
+    (:most-specific-last methods)))
+
+;;; An `:arguments` lambda list as a list of `(kind variable symbol
+;;; default)`, KIND one of `:whole`, `(:required i)`, `(:optional i)`,
+;;; `:rest`, `(:key keyword)`; SYMBOL is what the body sees and the effective
+;;; method binds.
+(defun %arguments-spec (lambda-list)
+  (let ((spec nil) (state :required) (required 0) (optional 0))
+    (dolist (item lambda-list (nreverse spec))
+      (cond ((member item '(&whole &optional &rest &key))
+             (setq state item))
+            ((member item '(&allow-other-keys &aux)))
+            (t (let ((variable (if (consp item) (car item) item))
+                     (default (if (consp item) (second item) nil)))
+                 (push (list (case state
+                               (&whole (setq state :required) :whole)
+                               (&optional (prog1 (list :optional optional) (setq optional (+ optional 1))))
+                               (&rest :rest)
+                               (&key (list :key (%keyword-of item)))
+                               (t (prog1 (list :required required) (setq required (+ required 1)))))
+                             (if (and (consp variable) (eq state '&key)) (second variable) variable)
+                             (gensym (symbol-name (if (consp variable) (second variable) variable)))
+                             default)
+                       spec)))))))
+
+;;; The binding of an `:arguments` variable, by its place among the generic
+;;; function's own parameters (CLHS 7.6.6.4 leaves the rest to SBCL's
+;;; example): a required variable past the generic function's required
+;;; parameters, or an optional one past its optional ones, is nil or its
+;;; default; `&rest` is what follows the generic function's positional
+;;; parameters.
+(defun %argument-binding (entry required optional)
+  (let ((kind (first entry)) (symbol (third entry)) (default (fourth entry))
+        (args '%emf-args))
+    (list symbol
+          (cond ((eq kind :whole) args)
+                ((eq kind :rest) `(nthcdr ,(+ required optional) ,args))
+                ((eq (car kind) :required)
+                 (if (< (second kind) required) `(nth ,(second kind) ,args) nil))
+                ((eq (car kind) :optional)
+                 (let ((place (+ required (second kind))))
+                   (if (< (second kind) optional)
+                       `(if (nthcdr ,place ,args) (nth ,place ,args) ,default)
+                       default)))
+                (t `(getf (nthcdr ,(+ required optional) ,args) ',(second kind) ,default))))))
+
+;;; The effective method for FORM: a compiled function of the argument list
+;;; in which `call-method` and `make-method` are local macros (CLHS
+;;; `call-method`). `%emf-args` is a symbol of package `QUOKKA`, so no form a
+;;; program writes can name it.
+(defun %form-effective-method (gf methods spec form)
+  (let* ((shape (%lambda-list-shape (%gf-lambda-list gf)))
+         (code `(lambda (%emf-args)
+                  (let* ,(mapcar (lambda (entry) (%argument-binding entry (first shape) (second shape)))
+                                 spec)
+                    (macrolet ((call-method (method &optional next-methods)
+                                 (%expand-call-method method next-methods))
+                               (make-method (form)
+                                 form
+                                 (error 'program-error "make-method is used outside call-method")))
+                      ,form)))))
+    (%with-keyword-check gf methods (compile nil code))))
+
+;;; `(call-method method next-methods)`: METHOD called with the arguments
+;;; and, for `call-next-method`, the chain of NEXT-METHODS, each a method or
+;;; a `(make-method form)`. A make-method is a function of the arguments
+;;; like a method's, so a `call-next-method` with other arguments reaches
+;;; its form with them.
+(defun %expand-call-method (method next-methods)
+  (if (%make-method-form-p method)
+      (second method)
+      `(funcall ',(%method-function method) %emf-args
+                ,(if next-methods
+                     `(%function-chain (list ,@(mapcar #'%next-method-form next-methods)))
+                     nil))))
+
+(defun %make-method-form-p (object)
+  (and (consp object) (eq (car object) 'make-method)))
+
+(defun %next-method-form (next)
+  (if (%make-method-form-p next)
+      `(lambda (%emf-args %next) %next ,(second next))
+      `',(%method-function next)))
+
+;;; FUNCTIONS, method functions, as an effective method, each one's next
+;;; being the rest.
+(defun %function-chain (functions)
+  (if (null functions)
+      nil
+      (let ((function (car functions))
+            (next (%function-chain (cdr functions))))
+        (lambda (args) (funcall function args next)))))
 
 ;;; ------------------------------------------------------------------------
 ;;; eql specializers
