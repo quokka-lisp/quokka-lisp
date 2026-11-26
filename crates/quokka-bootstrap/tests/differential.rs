@@ -411,7 +411,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1751 :REPLACED 1393)".into())],
+        [Outcome::Value("(:FORMS 1752 :REPLACED 1394)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -641,6 +641,33 @@ fn an_obsolete_instance_of_an_unfinalized_class() {
          (list (slot-value *ra* 'x) (slot-value *ra* 'y))",
     );
     assert_eq!(out, "=> :OK\n=> *RA*\n=> :OK\n=> :OK\n=> (:X :Y)\n");
+}
+
+/// `change-class` accepts a keyword that an `update-instance-for-different-class`
+/// method applicable to both the previous and the new class declares (CLHS
+/// 7.1.2); and the copy of a funcallable instance as it was is itself
+/// funcallable, calling what the instance calls (#124, found in review).
+/// SBCL 2.6.10 fails inside its own error reporting on both, so they are
+/// held to CLHS here.
+#[test]
+fn change_class_initargs_and_funcallable_copies() {
+    let out = run_compiled(
+        "(progn (defclass ic0 () ()) (defclass ic2 () ((v :initform 0))) \
+           (defmethod update-instance-for-different-class :after ((p ic0) (c ic2) &key extra) \
+             (setf (slot-value c 'v) extra)) :ok) \
+         (slot-value (change-class (make-instance 'ic0) 'ic2 :extra 3) 'v) \
+         (progn (defclass fa () ((n :initarg :n)) (:metaclass quokka::funcallable-standard-class)) \
+                (defclass fb () ((n :initarg :n)) (:metaclass quokka::funcallable-standard-class)) \
+                (defvar *seen* nil) \
+                (defmethod update-instance-for-different-class :before ((p fa) (c fb) &rest r) \
+                  r (setq *seen* (list (functionp p) (funcall p 2) (slot-value p 'n)))) \
+                :ok) \
+         (let ((f (make-instance 'fa :n 1))) \
+           (quokka::%set-funcallable-instance-function f (lambda (x) (* x 10))) \
+           (change-class f 'fb) \
+           (list *seen* (funcall f 3) (slot-value f 'n)))",
+    );
+    assert_eq!(out, "=> :OK\n=> 3\n=> :OK\n=> ((T 20 1) 30 1)\n");
 }
 
 /// C2 in #39's terms: the cold-built world, rebuilt once by itself.

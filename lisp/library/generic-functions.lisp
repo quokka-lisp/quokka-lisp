@@ -701,7 +701,8 @@
 (defmethod update-instance-for-different-class ((previous standard-object) (current standard-object)
                                                 &rest initargs)
   (%check-initargs (class-of current) initargs
-                   '(update-instance-for-different-class shared-initialize))
+                   '(update-instance-for-different-class shared-initialize)
+                   (class-of previous))
   (apply #'shared-initialize current (%slots-added-by-change previous current) initargs))
 
 (defgeneric change-class (instance new-class &rest initargs &key &allow-other-keys))
@@ -756,20 +757,24 @@
 ;;; of them accepts any. A method applies when its first specializer is in
 ;;; CLASS's precedence list (for `allocate-instance` and `make-instance`,
 ;;; whose first argument is the class itself, in its metaclass's).
-(defun %compute-method-initargs (class functions)
-  (let ((keys nil) (any nil))
+(defun %compute-method-initargs (class functions &optional previous)
+  (let ((keys nil) (any nil)
+        (previous-cpl (and previous (%class-precedence-list previous))))
     (dolist (name functions)
       (let ((gf (%defined-function name)))
         (when (%generic-function-p gf)
           (let ((cpl (%class-precedence-list
                       (if (member name '(allocate-instance make-instance)) (class-of class) class))))
             (dolist (method (%gf-methods gf))
-              ;; `update-instance-for-different-class` is applicable by its
-              ;; second argument, the instance whose class is CLASS.
+              ;; `update-instance-for-different-class` applies by both its
+              ;; arguments: the previous instance, of class PREVIOUS, and the
+              ;; current one, whose class is CLASS.
               (let ((first (if (eq name 'update-instance-for-different-class)
                                (second (%method-specializers method))
                                (car (%method-specializers method)))))
-                (when (member first cpl)
+                (when (and (member first cpl)
+                           (or (not (eq name 'update-instance-for-different-class))
+                               (member (car (%method-specializers method)) previous-cpl)))
                   (let ((shape (%lambda-list-shape (%method-lambda-list method))))
                     (when (fifth shape) (setq any t))
                     (setq keys (append (sixth shape) keys))))))))))

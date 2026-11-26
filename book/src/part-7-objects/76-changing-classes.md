@@ -134,6 +134,18 @@ method and carrying on is the normal way to work. Both the update and
 `change-class` now put the old wrapper and slot vector back when the
 generic function does not return normally.
 
+Three smaller findings were fixed after the step had been merged. A
+shared slot removed by one redefinition and added again by a later one
+came back with its old value, because the class kept the old cell; now a
+redefinition forgets the cells of shared slots the class no longer
+defines. `change-class` accepted a keyword declared by an
+`update-instance-for-different-class` method on some other previous
+class; now a method counts only if it applies to both instances. And the
+copy of a funcallable instance as it was is funcallable too, calling what
+the instance calls. SBCL 2.6.10 refuses both of the last two cases and
+fails inside its own error reporting, so those tests hold Quokka to CLHS
+alone.
+
 ## `change-class`
 
 The other way a class changes under an instance is on purpose:

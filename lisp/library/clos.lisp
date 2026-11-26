@@ -302,6 +302,24 @@
                                        (%remove-plist-key (%class-plist owner) '%shared-slots))))
       cell)))
 
+;;; Forget the shared slots CLASS no longer defines, so that one removed
+;;; and later defined again starts from its initform, as in SBCL. An
+;;; instance still laid out by an obsolete wrapper loses nothing: the
+;;; wrapper keeps its own list of the old cells.
+(defun %prune-shared-cells (class)
+  (let ((cells (getf (%class-plist class) '%shared-slots)))
+    (when cells
+      (%set-class-plist
+       class
+       (list* '%shared-slots
+              (remove-if-not (lambda (cell)
+                               (find-if (lambda (slot)
+                                          (and (eq (%slot-definition-name slot) (car cell))
+                                               (eq (%slot-definition-allocation slot) :class)))
+                                        (%class-direct-slots class)))
+                             cells)
+              (%remove-plist-key (%class-plist class) '%shared-slots))))))
+
 (defun %remove-plist-key (plist key)
   (cond ((null plist) nil)
         ((eq (car plist) key) (%remove-plist-key (cddr plist) key))
@@ -625,6 +643,7 @@
     (%set-class-name class name)
     (%set-class-documentation class documentation)
     (%set-class-direct-slots class (mapcar #'%make-direct-slot-definition direct-slots))
+    (%prune-shared-cells class)
     (%set-class-direct-default-initargs class direct-default-initargs)
     (%invalidate-dispatch)
     (unwind-protect
@@ -789,10 +808,15 @@
 ;;; initargs, `:allow-other-keys`, and the keywords the applicable methods
 ;;; of the generic functions named in FUNCTIONS accept, unless
 ;;; `:allow-other-keys` is true or one of those methods allows any.
-(defun %check-initargs (class initargs functions)
+(defun %check-initargs (class initargs functions &optional previous)
   (unless (and (listp initargs) (evenp (length initargs)))
     (error 'program-error "an odd number of initialization arguments" initargs))
-  (multiple-value-bind (method-keys any) (%method-initargs class functions)
+  (multiple-value-bind (method-keys any)
+      ;; `change-class` passes the previous class too: rare enough to need
+      ;; no cache.
+      (if previous
+          (%compute-method-initargs class functions previous)
+          (%method-initargs class functions))
    (unless (or any (getf initargs :allow-other-keys))
     (let ((valid (cons :allow-other-keys method-keys)))
       (dolist (slot (%class-slots class))
@@ -944,7 +968,14 @@
          (old-names (%wrapper-slot-names old-wrapper))
          (old-slots (%instance-slots instance))
          (old-cells (%class-shared-cells (%wrapper-class old-wrapper)))
-         (previous (%allocate-standard-instance old-wrapper (copy-seq old-slots)))
+         ;; A funcallable instance's copy is funcallable too, and calls
+         ;; what the instance calls.
+         (previous (if (%funcallable-instance-p instance)
+                       (let ((copy (%allocate-funcallable-instance old-wrapper (copy-seq old-slots))))
+                         (%set-funcallable-instance-function
+                          copy (lambda (&rest arguments) (apply instance arguments)))
+                         copy)
+                       (%allocate-standard-instance old-wrapper (copy-seq old-slots))))
          (new-wrapper (%class-wrapper new-class))
          (new-names (%wrapper-slot-names new-wrapper))
          (new-slots (make-array (length new-names) :initial-element %slot-unbound-marker)))

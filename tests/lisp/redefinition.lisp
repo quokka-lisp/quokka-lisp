@@ -179,3 +179,26 @@
 (handler-case (change-class *ce* 'ce2) (error () :error))
 (list (class-name (class-of *ce*)) (slot-exists-p *ce* 'b) (slot-value *ce* 'a))
 (setq *fail* nil)
+
+;; A shared slot removed and later added again starts afresh, from its
+;; initform, and so does one that went local and came back.
+(class-name (defclass sr () ((c :allocation :class :initform 1))))
+(setf (slot-value (make-instance 'sr) 'c) 5)
+(class-name (defclass sr () ()))
+(class-name (defclass sr () ((c :allocation :class :initform 1))))
+(slot-value (make-instance 'sr) 'c)
+(class-name (defclass st () ((c :allocation :class :initform 1))))
+(setf (slot-value (make-instance 'st) 'c) 5)
+(class-name (defclass st () ((c :initform :local))))
+(class-name (defclass st () ((c :allocation :class :initform 1))))
+(slot-value (make-instance 'st) 'c)
+
+;; change-class accepts only the keywords of update methods that apply to
+;; both the previous and the new class.
+(class-name (defclass ic0 () ()))
+(class-name (defclass ic1 () ()))
+(class-name (defclass ic2 () ((v :initform 0))))
+(progn (defmethod update-instance-for-different-class :after ((p ic0) (c ic2) &key extra)
+         (setf (slot-value c 'v) extra))
+       :ok)
+(handler-case (change-class (make-instance 'ic1) 'ic2 :extra 3) (program-error () :program-error))
