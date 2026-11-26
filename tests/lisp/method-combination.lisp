@@ -348,3 +348,33 @@
 (handler-case (lstdbad 1) (error (c) (condition-kind c)))
 (progn (defmethod lstdbad ((x integer)) 3) :ok)
 (handler-case (lstdbad 1) (error (c) (condition-kind c)))
+
+;; :required is not evaluated: any form there counts as true.
+(define-method-combination required-form (&optional (req t)) ((pri () :required req) (other *))
+  `(list ',(length pri) ',(length other)))
+(null (defgeneric lreqform (x) (:method-combination required-form nil)))
+(progn (defmethod lreqform :q ((x integer)) 0) :ok)
+(handler-case (lreqform 1) (error (c) (condition-kind c)))
+
+;; Qualifier patterns compare qualifiers with eql, as SBCL does: a string
+;; matches no pattern but *, a number, a character or a keyword its own.
+(define-method-combination eql-patterns ()
+    ((strings ("s")) (floats (1.5)) (characters (#\x)) (integers (2)) (keywords (:k)) (other *))
+  `(list ',(length strings) ',(length floats) ',(length characters) ',(length integers)
+         ',(length keywords) ',(length other)))
+(null (defgeneric leqlpat (x) (:method-combination eql-patterns)))
+(progn (defmethod leqlpat "s" ((x integer)) 0) (defmethod leqlpat 1.5 ((x number)) 0)
+       (defmethod leqlpat #\x ((x real)) 0) (defmethod leqlpat 2 ((x rational)) 0)
+       (defmethod leqlpat :k ((x t)) 0) :ok)
+(leqlpat 1)
+
+;; Something other than a method in a next-method list is an error only
+;; when it is called.
+(define-method-combination odd-next () ((ms *)) `(call-method ,(first ms) (5)))
+(null (defgeneric loddnext (x) (:method-combination odd-next)))
+(progn (defmethod loddnext ((x integer)) 1) :ok)
+(loddnext 1)
+(progn (defmethod loddnext ((x integer)) (next-method-p)) :ok)
+(loddnext 1)
+(progn (defmethod loddnext ((x integer)) (call-next-method)) :ok)
+(handler-case (loddnext 1) (error (c) (list (condition-kind c) (typep c 'type-error))))

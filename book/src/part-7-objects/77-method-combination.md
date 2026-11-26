@@ -311,6 +311,17 @@ and then left standard combination reporting a method with a qualifier it
 does not accept before it looked for a primary method. Both now ask for
 the primary method first.
 
+Three smaller differences from SBCL were fixed after the step had been
+merged. We had evaluated a group's `:required` value as a form, as
+`:order`'s is; CLHS and SBCL take it as it is written, so any form there
+counts as true. We compared qualifiers with patterns using `equal`, as
+the standard says; SBCL uses `eql`, so a string qualifier matches no
+string in a pattern, and we followed SBCL. And an entry in a
+`call-method` next-method list that is neither a method nor a
+`make-method` was an error as soon as the effective method was built;
+in SBCL it is an error only if `call-next-method` reaches it, and
+`next-method-p` still says there is a next method.
+
 ## What did it cost?
 
 No Rust. The table, the operator combinations, both forms of

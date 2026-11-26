@@ -328,7 +328,7 @@
               ,@(mapcar (lambda (group)
                           `(setq ,(car group)
                                  (%finish-method-group ',(car group) ,(car group)
-                                                       ,(third group) ,(fourth group)
+                                                       ,(third group) ',(if (fourth group) t nil)
                                                        ,(not only-every))))
                         groups)
               (%form-effective-method
@@ -339,8 +339,10 @@
           ,options)))))
 
 ;;; A method group specifier, `(name {pattern+ | predicate} [[:description
-;;; d | :order o | :required r]])`, as `(name tests order-form required-form)`;
-;;; TESTS is the list of patterns, or a predicate's name alone.
+;;; d | :order o | :required r]])`, as `(name tests order-form required)`;
+;;; TESTS is the list of patterns, or a predicate's name alone. `:order` is a
+;;; form; `:required` is not evaluated, so any form there counts as true
+;;; (CLHS, and SBCL).
 (defun %parse-method-group (specifier)
   (let ((name (car specifier)) (tests nil) (rest (cdr specifier)))
     (do () ((or (null rest) (member (car rest) '(:description :order :required))))
@@ -356,13 +358,15 @@
 
 ;;; Does a method's list of QUALIFIERS match PATTERN? `*` matches anything;
 ;;; in a list, `*` matches one qualifier, and a dotted `*` tail any number
-;;; (CLHS `define-method-combination`).
+;;; (CLHS `define-method-combination`). CLHS says the lists are compared with
+;;; `equal`, but SBCL compares each qualifier with `eql`, so a string
+;;; qualifier matches no string in a pattern; we follow SBCL.
 (defun %qualifiers-match-p (qualifiers pattern)
   (cond ((eq pattern '*) t)
         ((null pattern) (null qualifiers))
         ((consp pattern)
          (and (consp qualifiers)
-              (or (eq (car pattern) '*) (equal (car pattern) (car qualifiers)))
+              (or (eq (car pattern) '*) (eql (car pattern) (car qualifiers)))
               (%qualifiers-match-p (cdr qualifiers) (cdr pattern))))
         (t nil)))
 
@@ -487,10 +491,17 @@
 (defun %make-method-form-p (object)
   (and (consp object) (eq (car object) 'make-method)))
 
+;;; A next method that is neither a method nor a make-method is an error
+;;; only if `call-next-method` reaches it, as in SBCL; `next-method-p`
+;;; still says there is one.
 (defun %next-method-form (next)
-  (if (%make-method-form-p next)
-      `(lambda (%emf-args %next) %next ,(second next))
-      `',(%method-function next)))
+  (cond ((%make-method-form-p next)
+         `(lambda (%emf-args %next) %next ,(second next)))
+        ((and (%instance-wrapper next) (typep next 'method))
+         `',(%method-function next))
+        (t `(lambda (%emf-args %next)
+              %emf-args %next
+              (error 'type-error "a next method is neither a method nor a make-method" ',next)))))
 
 ;;; FUNCTIONS, method functions, as an effective method, each one's next
 ;;; being the rest.
