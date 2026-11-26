@@ -350,6 +350,16 @@ In package `QUOKKA-MOP`: `class-name`, `class-direct-superclasses`,
 `set-funcallable-instance-function`. The standard names among them
 (`class-name`, `find-class`) are in `COMMON-LISP` as CLHS lists them.
 
+Built in sub-step 7 (`lisp/library/mop.lisp`), with the metaobject classes
+and a few more of SBCL's `SB-MOP` names: `class-direct-default-initargs`,
+`class-prototype`, `generic-function-argument-precedence-order`,
+`-declarations`, `-method-class`, `method-lambda-list`,
+`accessor-method-slot-definition`, `specializer-direct-methods`,
+`specializer-direct-generic-functions`, `find-method-combination`,
+`extract-lambda-list`, `extract-specializer-names`, `ensure-class`,
+`standard-instance-access`. The readers are ordinary functions, since a
+program may look but not intercede.
+
 ## Testing
 
 - **Differential files** against SBCL, compiled only, in `tier1_cases!`

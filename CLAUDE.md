@@ -554,8 +554,30 @@ a group (not under a lone `*` group) are `simple-error`s; `defgeneric`
 without the option keeps the combination; `call-method` is also a global
 macro expanding into an error, as in SBCL. Rebuild `(:FORMS 1792 :REPLACED
 1421)`. Rust 0.
-**Next: CLOS sub-step 7** — MOP introspection in `QUOKKA-MOP`, ansi-test's
-`objects` group measured and its non-passing tests explained. Phase 2's scope was
+**Sub-step 7, MOP introspection, is done, and with it CLOS** (chapter 78):
+`lisp/library/mop.lisp` (after `generic-functions.lisp`) has the
+introspective MOP readers as **ordinary functions** over the `%` readers;
+`packages.lisp` makes **`QUOKKA-MOP`** before `QUOKKA` (which uses it) and
+adopts `%quokka-mop-symbol-names` into it as externals, as SBCL's are in
+`SB-MOP` — a test that runs on both uses `(:use :common-lisp #+sbcl :sb-mop
+#+quokka :quokka-mop)`. **A specializer keeps its own direct methods** (class
+plist `%direct-methods`, an `eql` specializer's second slot): an `eq` table
+keyed by specializer rehashed in address order and made C2 ≠ C3 — **nothing
+the rebuild runs may allocate in an order that depends on addresses**. The
+`objects` group joined ansi-test; what it found: `%with-arity-check` (too
+many arguments → `program-error`, around each cached effective method);
+`class-name` and `(setf class-name)` generic (in `generic-functions.lisp`;
+`clos.lisp` uses `%class-name`); a lost proper name makes `defclass` create
+a new class; options and default initargs given twice; `slot-value`'s
+single value from `slot-unbound`/`slot-missing`; `make-load-form` generic
+and `make-load-form-saving-slots`; `allocate-instance` of a structure
+class; readers/writers newest first. Rebuild `(:FORMS 1848 :REPLACED
+1466)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
+739 of 843; no plain failure, escape, timeout or tier-1 gap. Rust 0.
+**Next: phase 3 step B** (#123) — conditions as instances of CLOS classes:
+`define-condition`, `make-condition`, `handler-bind`, `signal` without
+unwinding, restarts, the machine's errors signalled through Lisp; its issue
+is opened with the options written out before it starts. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -627,8 +649,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**505 tests**; **60 differential files agree with SBCL** — 17 interpreted and
-compiled, plus forty-three tier-1 files, compiled only, and all 60 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
+**505 tests**; **62 differential files agree with SBCL** — 17 interpreted and
+compiled, plus forty-five tier-1 files, compiled only, and all 62 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
 **The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 

@@ -335,6 +335,7 @@ Each chapter answers one question.
 | 75 | [Printing objects](part-7-objects/75-printing-objects.md) | How can a program decide how its own objects print, without slowing the printing of everything else? |
 | 76 | [Changing classes](part-7-objects/76-changing-classes.md) | How do instances follow when their class is redefined, or when an instance is given another class? |
 | 77 | [Method combination](part-7-objects/77-method-combination.md) | How can a generic function add up, collect or chain what its methods return, in a way the program defines? |
+| 78 | [Looking inside objects](part-7-objects/78-looking-inside-objects.md) | How can a program ask a class or a generic function what it is made of, and how is a whole object system measured? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -365,8 +366,9 @@ Still to come, and deliberately so:
   tier 2 with the type system, `typep` and `subtypep`, and chapter 73 adds
   classes and instances, chapter 74 generic functions, chapter 75
   printing objects through `print-object`, chapter 76 what happens to
-  instances when their class changes, and chapter 77 the other ways of
-  combining a generic function's methods. Still to come are the rest of CLOS, `loop` and the rest, in phases 3 to 5.
+  instances when their class changes, chapter 77 the other ways of
+  combining a generic function's methods, and chapter 78 the metaobject
+  protocol's readers and the measurement of CLOS as a whole. Still to come are the rest of CLOS, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a
   **compiler**, written in Lisp, that translates source into those instructions.

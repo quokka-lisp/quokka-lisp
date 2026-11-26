@@ -25,7 +25,8 @@ A test can need several things.
 | hash-tables | 119 | 0 | 0 | 0 | 0 | 48 | 167 |
 | structures | 72 | 0 | 0 | 0 | 0 | 44 | 116 |
 | types-and-classes | 408 | 0 | 0 | 0 | 0 | 106 | 514 |
-| **all** | **10034** | **0** | **0** | **0** | **0** | **5952** | **15986** |
+| objects | 739 | 0 | 0 | 0 | 0 | 104 | 843 |
+| **all** | **10773** | **0** | **0** | **0** | **0** | **6056** | **16829** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -36,26 +37,26 @@ A test can need several things.
 
 | needs | tests |
 | --- | ---: |
-| `LOOP[tier-2:loop]` | 4386 |
-| `ASSERT[tier-2:conditions]` | 1394 |
+| `LOOP[tier-2:loop]` | 4435 |
+| `ASSERT[tier-2:conditions]` | 1405 |
 | `RANDOM[tier-2:random]` | 568 |
-| `reader[#C]` | 488 |
-| `MAKE-CONDITION[tier-2:conditions]` | 399 |
-| `MAKE-RANDOM-STATE[tier-2:random]` | 396 |
-| `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 390 |
-| `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 384 |
+| `reader[#C]` | 522 |
+| `MAKE-CONDITION[tier-2:conditions]` | 415 |
+| `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 407 |
+| `MAKE-RANDOM-STATE[tier-2:random]` | 406 |
+| `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 394 |
 | `HANDLER-BIND[tier-2:conditions]` | 285 |
 | `TYPE-ERROR-DATUM[tier-2:conditions]` | 280 |
 | `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 280 |
 | `MUFFLE-WARNING[tier-2:conditions]` | 270 |
-| `COMPLEX[deferred:complex-numbers]` | 183 |
+| `COMPLEX[deferred:complex-numbers]` | 190 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 141 |
 | `format-directive[tier-2:format]` | 126 |
 | `PPRINT-NEWLINE[tier-2:pretty-printer]` | 73 |
+| `DOCUMENTATION[tier-2:clos]` | 66 |
 | `note[NIL-VECTORS-ARE-STRINGS]` | 63 |
 | `REALPART[deferred:complex-numbers]` | 55 |
-| `DOCUMENTATION[tier-2:clos]` | 51 |
-| `PATHNAME[tier-2:pathnames-and-files]` | 40 |
+| `PATHNAME[tier-2:pathnames-and-files]` | 47 |
 | `WITH-OPEN-STREAM[tier-2:streams]` | 40 |
 | `PPRINT-TABULAR[tier-2:pretty-printer]` | 39 |
 | `PPRINT-INDENT[tier-2:pretty-printer]` | 38 |
@@ -66,15 +67,18 @@ A test can need several things.
 | `COMPLEXP[deferred:complex-numbers]` | 29 |
 | `PPRINT-LINEAR[tier-2:pretty-printer]` | 29 |
 | `PPRINT-TAB[tier-2:pretty-printer]` | 29 |
+| `WITH-OPEN-FILE[tier-2:streams]` | 28 |
 | `SET-PPRINT-DISPATCH[tier-2:pretty-printer]` | 26 |
+| `BREAK[tier-2:conditions]` | 25 |
+| `COMPILE-FILE[deferred:compile-file]` | 25 |
 | `MAKE-TWO-WAY-STREAM[tier-2:streams]` | 25 |
 | `PPRINT-POP[tier-2:pretty-printer]` | 23 |
-| `BREAK[tier-2:conditions]` | 21 |
 | `PHASE[deferred:complex-numbers]` | 21 |
 | `UPGRADED-COMPLEX-PART-TYPE[deferred:complex-numbers]` | 21 |
 | `COMPUTE-RESTARTS[tier-2:conditions]` | 19 |
 | `RANDOM-STATE-P[tier-2:random]` | 19 |
 | `ABORT[tier-2:conditions]` | 18 |
+| `DEFINE-CONDITION[tier-2:conditions]` | 18 |
 | `PPRINT-EXIT-IF-LIST-EXHAUSTED[tier-2:pretty-printer]` | 18 |
 | `RESTART-NAME[tier-2:conditions]` | 18 |
 | `reader[#P]` | 17 |
@@ -82,13 +86,11 @@ A test can need several things.
 | `PACKAGE-ERROR-PACKAGE[tier-2:conditions]` | 15 |
 | `ARITHMETIC-ERROR-OPERANDS[tier-2:conditions]` | 14 |
 | `ARITHMETIC-ERROR-OPERATION[tier-2:conditions]` | 14 |
+| `CELL-ERROR-NAME[tier-2:conditions]` | 14 |
 | `CIS[deferred:complex-numbers]` | 14 |
 | `CONJUGATE[deferred:complex-numbers]` | 13 |
 | `PPRINT[tier-2:pretty-printer]` | 13 |
 | `STEP[tier-2:environment]` | 13 |
-| `WITH-OPEN-FILE[tier-2:streams]` | 13 |
-| `CELL-ERROR-NAME[tier-2:conditions]` | 12 |
-| `DEFINE-CONDITION[tier-2:conditions]` | 12 |
 | `PPRINT-DISPATCH[tier-2:pretty-printer]` | 12 |
 | `RESTART-BIND[tier-2:conditions]` | 12 |
 | `RESTART-CASE[tier-2:conditions]` | 12 |
@@ -99,8 +101,8 @@ A test can need several things.
 | `WITH-CONDITION-RESTARTS[tier-2:conditions]` | 12 |
 | `WITH-SIMPLE-RESTART[tier-2:conditions]` | 12 |
 | `STORE-VALUE[tier-2:conditions]` | 11 |
+| `UNBOUND-SLOT-INSTANCE[tier-2:conditions]` | 11 |
 | `COMPILE-FILE-PATHNAME[deferred:compile-file]` | 10 |
-| `COMPILE-FILE[deferred:compile-file]` | 10 |
 | `CONTINUE[tier-2:conditions]` | 10 |
 | `DELETE-FILE[tier-2:pathnames-and-files]` | 10 |
 | `NAMESTRING[tier-2:pathnames-and-files]` | 10 |
@@ -150,8 +152,6 @@ A test can need several things.
 | `MACHINE-VERSION[tier-2:environment]` | 9 |
 | `MAKE-CONCATENATED-STREAM[tier-2:streams]` | 9 |
 | `MAKE-ECHO-STREAM[tier-2:streams]` | 9 |
-| `MAKE-LOAD-FORM-SAVING-SLOTS[tier-2:clos]` | 9 |
-| `MAKE-LOAD-FORM[tier-2:clos]` | 9 |
 | `MAKE-SYNONYM-STREAM[tier-2:streams]` | 9 |
 | `MERGE-PATHNAMES[tier-2:pathnames-and-files]` | 9 |
 | `OPEN-STREAM-P[tier-2:streams]` | 9 |
@@ -189,7 +189,6 @@ A test can need several things.
 | `TRUENAME[tier-2:pathnames-and-files]` | 9 |
 | `TWO-WAY-STREAM-INPUT-STREAM[tier-2:streams]` | 9 |
 | `TWO-WAY-STREAM-OUTPUT-STREAM[tier-2:streams]` | 9 |
-| `UNBOUND-SLOT-INSTANCE[tier-2:conditions]` | 9 |
 | `USE-VALUE[tier-2:conditions]` | 9 |
 | `USER-HOMEDIR-PATHNAME[tier-2:pathnames-and-files]` | 9 |
 | `WARN[tier-2:conditions]` | 9 |
@@ -200,4 +199,4 @@ A test can need several things.
 | `YES-OR-NO-P[tier-2:streams]` | 9 |
 | `ED[tier-2:environment]` | 8 |
 | `note[NO-FLOATING-POINT-UNDERFLOW-BY-DEFAULT]` | 8 |
-| `sbcl[same-as-sbcl]` | 2 |
+| `sbcl[same-as-sbcl]` | 6 |

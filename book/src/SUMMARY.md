@@ -101,6 +101,7 @@
 - [Printing objects](part-7-objects/75-printing-objects.md)
 - [Changing classes](part-7-objects/76-changing-classes.md)
 - [Method combination](part-7-objects/77-method-combination.md)
+- [Looking inside objects](part-7-objects/78-looking-inside-objects.md)
 
 ---
 

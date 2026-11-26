@@ -606,7 +606,7 @@ surrounding variables, because at expansion time they do not have values yet.
 **Metaclass.** A class whose instances are classes. `standard-class` is the metaclass of classes `defclass` makes, and is an instance of itself. ([73](part-7-objects/73-classes.md))
 
 <a id="metaobject-protocol"></a>
-**Metaobject protocol (MOP).** The design in which an object system's own parts (classes, slot definitions, generic functions, methods) are themselves objects of classes, so a program can ask them about themselves and change how they behave. Described in *The Art of the Metaobject Protocol* (1991). ([73](part-7-objects/73-classes.md))
+**Metaobject protocol (MOP).** The design in which an object system's own parts (classes, slot definitions, generic functions, methods) are themselves objects of classes, so a program can ask them about themselves and change how they behave. Described in *The Art of the Metaobject Protocol* (1991). Its *introspective* half lets a program read these objects (`class-slots`, `generic-function-methods`), its *intercessory* half change how they work; Quokka has the first, in package `QUOKKA-MOP`. ([73](part-7-objects/73-classes.md), [78](part-7-objects/78-looking-inside-objects.md))
 
 <a id="multiple-values"></a>
 **Multiple values.** A form may return any number of results, and a caller
@@ -749,6 +749,9 @@ once and finishes; when the answer comes, the browser runs a callback with it.
 The reason a browser host cannot answer a [host request](#host) on the spot.
 ([31](part-5-the-image/31-asking-the-outside-world.md))
 
+<a id="proper-name"></a>
+**Proper name.** A class's name when it is also what `find-class` finds for that name (CLHS 4.3.1). `(setf class-name)` can take it away, and then a `defclass` of the name makes a new class instead of redefining the old one. ([78](part-7-objects/78-looking-inside-objects.md))
+
 <a id="property-list-plist"></a>
 **Property list (plist).** A list of alternating keys and values,
 `(:colour red :size 3)`, read with `getf`. Adding a key puts it on the front,
@@ -790,6 +793,9 @@ This is the definition of "still wanted" that garbage collection uses.
 **Reader.** The part of a runtime that turns text into structure. In Lisp it is
 unusually small, because the structure it produces is ordinary lists.
 ([Preface](what-has-to-be-built.md))
+
+<a id="reader-conditional"></a>
+**Reader conditional.** `#+name form` and `#-name form`: the reader keeps FORM only when NAME is (or is not) among the Lisp's `*features*`, so one file can say different things to different Lisps. ([78](part-7-objects/78-looking-inside-objects.md))
 
 <a id="reader-macro"></a>
 **Reader macro.** A function the [readtable](#readtable) holds for a character, called by the reader when it meets that character, which expands syntax into ordinary code before the evaluator sees it: `'x` becomes `(quote x)`, and [backquote](#backquote) is the one that earns its keep. `(`, `'`, `"` and `;` are all reader macros in Common Lisp; a comment is one that returns no value at all. A *dispatching* macro character, such as `#`, reads one more character and looks that one up in a second table. ([15](part-2-reading-and-running/15-code-that-writes-code.md), [38](part-6-self-hosting/38-reading-in-lisp.md))
