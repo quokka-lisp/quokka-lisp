@@ -179,6 +179,7 @@ tier1_cases! {
     classes => "classes",
     generic_functions => "generic-functions",
     print_object => "print-object",
+    redefinition => "redefinition",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -410,7 +411,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1733 :REPLACED 1387)".into())],
+        [Outcome::Value("(:FORMS 1751 :REPLACED 1393)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -442,13 +443,17 @@ fn a_rebuild_keeps_classes_and_their_instances() {
          (defvar *w* (quokka::%class-wrapper (find-class 'standard-object))) \
          (defvar *sc* (find-class 'standard-class)) \
          (defvar *ic* (find-class 'integer)) \
+         (defclass moved () ((a :initform 1))) \
+         (defvar *m* (make-instance 'moved)) \
+         (defclass moved () ((a :initform 1) (b :initform 2))) \
          (quokka::%rebuild-world) \
          (list (eq *w* (quokka::%class-wrapper (find-class 'standard-object))) \
                (eq *sc* (find-class 'standard-class)) \
                (eq *ic* (find-class 'integer)) \
                (eq (class-of (find-class 'standard-class)) (find-class 'standard-class)) \
                (kept-a *i*) (typep *i* 'kept) (slot-value (make-instance 'kept :a 2) 'a) \
-               (eq *mi* #'make-instance) (area *i*) (prin1-to-string *i*))",
+               (eq *mi* #'make-instance) (area *i*) (prin1-to-string *i*) \
+               (list (slot-value *m* 'a) (slot-value *m* 'b)))",
         BUDGET * 60,
         SLICE,
         &mut host,
@@ -460,7 +465,9 @@ fn a_rebuild_keeps_classes_and_their_instances() {
     .expect("the forms run");
     assert_eq!(
         said.last(),
-        Some(&Outcome::Value("(T T T T 1 T 2 T 10 \"KEPT\")".into())),
+        Some(&Outcome::Value(
+            "(T T T T 1 T 2 T 10 \"KEPT\" (1 2))".into()
+        )),
         "{said:?}"
     );
 }

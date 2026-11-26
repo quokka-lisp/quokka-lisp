@@ -11,8 +11,7 @@
 (%deferred "tier-2:loop" :loop :loop-finish)
 
 (%deferred "tier-2:clos"
-  :make-instances-obsolete :call-method :make-method :change-class
-  :update-instance-for-different-class :update-instance-for-redefined-class
+  :call-method :make-method
   :invalid-method-error :method-combination-error :define-method-combination
   :make-load-form :make-load-form-saving-slots :function-keywords :documentation)
 

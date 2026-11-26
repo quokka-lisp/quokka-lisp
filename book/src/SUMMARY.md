@@ -99,6 +99,7 @@
 - [Classes](part-7-objects/73-classes.md)
 - [Generic functions](part-7-objects/74-generic-functions.md)
 - [Printing objects](part-7-objects/75-printing-objects.md)
+- [Changing classes](part-7-objects/76-changing-classes.md)
 
 ---
 

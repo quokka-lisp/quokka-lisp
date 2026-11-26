@@ -680,6 +680,48 @@
 (defmethod reinitialize-instance ((instance standard-object) &rest initargs)
   (apply #'%reinitialize-instance instance initargs))
 
+;;; Redefinition (sub-step 5, CLHS 4.3.6): `clos.lisp` brings an obsolete
+;;; instance up to date and calls this; the standard method checks the
+;;; initargs and fills the added slots.
+(defgeneric update-instance-for-redefined-class
+    (instance added-slots discarded-slots property-list &rest initargs &key &allow-other-keys))
+(defmethod update-instance-for-redefined-class ((instance standard-object) added-slots
+                                                discarded-slots property-list &rest initargs)
+  discarded-slots property-list
+  (%check-initargs (class-of instance) initargs
+                   '(update-instance-for-redefined-class shared-initialize))
+  (apply #'shared-initialize instance added-slots initargs))
+
+;;; `change-class` (CLHS 7.2): `clos.lisp` gives INSTANCE the new class's
+;;; slots and calls `update-instance-for-different-class` with a copy of
+;;; it as it was; the standard method checks the initargs and fills the
+;;; slots the instance gained.
+(defgeneric update-instance-for-different-class
+    (previous current &rest initargs &key &allow-other-keys))
+(defmethod update-instance-for-different-class ((previous standard-object) (current standard-object)
+                                                &rest initargs)
+  (%check-initargs (class-of current) initargs
+                   '(update-instance-for-different-class shared-initialize))
+  (apply #'shared-initialize current (%slots-added-by-change previous current) initargs))
+
+(defgeneric change-class (instance new-class &rest initargs &key &allow-other-keys))
+(defmethod change-class ((instance standard-object) (new-class standard-class) &rest initargs)
+  (%change-class instance new-class initargs))
+(defmethod change-class ((instance funcallable-standard-object)
+                         (new-class funcallable-standard-class) &rest initargs)
+  (%change-class instance new-class initargs))
+(defmethod change-class ((instance t) (new-class symbol) &rest initargs)
+  (apply #'change-class instance (find-class new-class) initargs))
+
+(defgeneric make-instances-obsolete (class))
+(defmethod make-instances-obsolete ((class standard-class))
+  (%make-instances-obsolete class))
+(defmethod make-instances-obsolete ((class funcallable-standard-class))
+  (%make-instances-obsolete class))
+(defmethod make-instances-obsolete ((class symbol))
+  (make-instances-obsolete (find-class class))
+  class)
+
 (defgeneric shared-initialize (instance slot-names &rest initargs &key &allow-other-keys))
 (defmethod shared-initialize ((instance standard-object) slot-names &rest initargs)
   (apply #'%shared-initialize instance slot-names initargs))
@@ -722,7 +764,11 @@
           (let ((cpl (%class-precedence-list
                       (if (member name '(allocate-instance make-instance)) (class-of class) class))))
             (dolist (method (%gf-methods gf))
-              (let ((first (car (%method-specializers method))))
+              ;; `update-instance-for-different-class` is applicable by its
+              ;; second argument, the instance whose class is CLASS.
+              (let ((first (if (eq name 'update-instance-for-different-class)
+                               (second (%method-specializers method))
+                               (car (%method-specializers method)))))
                 (when (member first cpl)
                   (let ((shape (%lambda-list-shape (%method-lambda-list method))))
                     (when (fifth shape) (setq any t))

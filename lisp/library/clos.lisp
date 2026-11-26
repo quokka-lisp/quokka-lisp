@@ -32,13 +32,28 @@
 ;;;
 ;;; A wrapper is a simple vector #(CLASS SLOT-NAMES STATE): the class whose
 ;;; instances it describes, a simple vector of the names of their slots in
-;;; the order the slot vector keeps them, and nil (sub-step 5 marks a wrapper
-;;; obsolete when its class is redefined).
+;;; the order the slot vector keeps them, and a state. The state is nil
+;;; while the class uses the wrapper. When the class is redefined with other
+;;; slots, or `make-instances-obsolete` is called, the class gets a new
+;;; wrapper and the old one becomes *obsolete*: its state is
+;;; `(:obsolete . cells)`, CELLS the old class's shared slots as `(name .
+;;; cell)`, which the update of an instance still laid out by it needs
+;;; (CLHS 4.3.6.1: a slot shared before and local now keeps its value).
 
 (defun %make-wrapper (class slot-names) (vector class slot-names nil))
 (defun %wrapper-class (wrapper) (aref wrapper 0))
 (defun %wrapper-slot-names (wrapper) (aref wrapper 1))
 (defun %wrapper-state (wrapper) (aref wrapper 2))
+
+;;; The shared slots of CLASS as it is now, as `(name . cell)`.
+(defun %class-shared-cells (class)
+  (let ((cells nil))
+    (dolist (slot (%class-slots class) (nreverse cells))
+      (let ((location (%slot-definition-location slot)))
+        (when (consp location) (push (cons (%slot-definition-name slot) location) cells))))))
+
+(defun %obsolete-wrapper (wrapper class)
+  (setf (aref wrapper 2) (cons :obsolete (%class-shared-cells class))))
 
 ;;; What an unbound slot holds: an object nothing else can be. A `defvar`,
 ;;; so that a warm rebuild keeps the same one and instances made before it
@@ -322,12 +337,40 @@
                         (when (integerp (%slot-definition-location slot))
                           (push (%slot-definition-name slot) found)))))
              (old (%class-wrapper class)))
+        ;; A wrapper whose slots differ from the new ones is replaced, and
+        ;; the instances laid out by it are updated when next touched
+        ;; (`%ensure-current-instance`). Unchanged slots keep the wrapper:
+        ;; nothing goes obsolete, as in SBCL, and a warm rebuild leaves
+        ;; every library instance as it was.
+        (unless (and old (equalp (%wrapper-slot-names old) names))
+          (when old (%obsolete-wrapper old class))
+          (%set-class-wrapper class (%make-wrapper class names)))
         (%set-class-slots class slots)
         (%set-class-default-initargs class (%compute-default-initargs cpl))
-        (unless (and old (equalp (%wrapper-slot-names old) names))
-          (%set-class-wrapper class (%make-wrapper class names)))
+        (%initialize-shared-slots slots)
         (%set-class-finalized-p class t)
         t)))
+
+;;; A shared slot gets its initform's value when its class is defined, as
+;;; SBCL does, rather than when the first instance is made; one that
+;;; already has a value keeps it when the class is redefined.
+(defun %initialize-shared-slots (slots)
+  (dolist (slot slots)
+    (let ((location (%slot-definition-location slot)))
+      (when (and (consp location)
+                 (eq (cdr location) %slot-unbound-marker)
+                 (%slot-definition-initfunction slot))
+        (setf (cdr location) (funcall (%slot-definition-initfunction slot)))))))
+
+;;; What the standard methods of `make-instances-obsolete` do: CLASS's
+;;; instances are updated when next touched, with no slots added or
+;;; discarded.
+(defun %make-instances-obsolete (class)
+  (let ((old (%class-wrapper class)))
+    (when (and old (%class-finalized-p class))
+      (%obsolete-wrapper old class)
+      (%set-class-wrapper class (%make-wrapper class (%wrapper-slot-names old)))))
+  class)
 
 ;;; Finalize CLASS, and every subclass that was finalized, again.
 (defun %refinalize (class)
@@ -822,31 +865,93 @@
              (find name (%class-slots (class-of object)) :key #'%slot-definition-name))
       nil))
 
-;;; An instance made before its class was redefined with other slots still
-;;; has the old wrapper and a slot vector laid out by it. The first time
-;;; one of its slots is touched it is brought up to date (CLHS 4.3.6): a
-;;; new slot vector in the class's current layout, keeping the value of
-;;; every slot whose name is in both, and the slots it gains filled from
-;;; their initforms. Sub-step 5 adds the generic function a program can
-;;; specialise, `update-instance-for-redefined-class`, around this.
+;;; An instance made before its class was redefined with other slots, or
+;;; made obsolete, still has the old wrapper and a slot vector laid out by
+;;; it. The first time one of its slots is touched it is brought up to date
+;;; (CLHS 4.3.6): a new slot vector in the class's current layout, keeping
+;;; the value of every slot that was local before or shared before; the
+;;; others are *added*. The local slots that go are *discarded*, and those
+;;; that had a value are listed with it in a property list (SBCL lists
+;;; only those in the discarded slots too). The instance gets its new
+;;; wrapper and vector first, so that `update-instance-for-redefined-class`,
+;;; the generic function a program can specialise, sees the new layout; its
+;;; standard method fills the added slots from their initforms. CLHS leaves
+;;; *when* the update happens to the implementation: SBCL also does it on a
+;;; generic function call, Quokka only here, keeping dispatch as cheap.
 (defun %ensure-current-instance (instance)
   (let* ((wrapper (%instance-wrapper instance))
          (class (%wrapper-class wrapper)))
     (unless (or (eq wrapper (%class-wrapper class)) (not (%class-finalized-p class)))
       (let* ((old-names (%wrapper-slot-names wrapper))
              (old-slots (%instance-slots instance))
-             (new-names (%wrapper-slot-names (%class-wrapper class)))
+             (old-cells (cdr (%wrapper-state wrapper)))
+             (new-wrapper (%class-wrapper class))
+             (new-names (%wrapper-slot-names new-wrapper))
              (new-slots (make-array (length new-names) :initial-element %slot-unbound-marker))
-             (added nil))
+             (added nil) (discarded nil) (plist nil))
         (dotimes (i (length new-names))
-          (let ((at (position (aref new-names i) old-names)))
-            (if at
-                (setf (aref new-slots i) (aref old-slots at))
-                (push (aref new-names i) added))))
+          (let* ((name (aref new-names i))
+                 (at (position name old-names))
+                 (old-cell (assoc name old-cells)))
+            (cond (at (setf (aref new-slots i) (aref old-slots at)))
+                  (old-cell (setf (aref new-slots i) (cdr (cdr old-cell))))
+                  (t (push name added)))))
+        (dotimes (i (length old-names))
+          (let ((name (aref old-names i))
+                (value (aref old-slots i)))
+            (unless (or (find name new-names) (eq value %slot-unbound-marker))
+              (push name discarded)
+              (push name plist)
+              (push value plist))))
         (%set-instance-slots instance new-slots)
-        (%set-instance-wrapper instance (%class-wrapper class))
-        (shared-initialize instance added)))
+        (%set-instance-wrapper instance new-wrapper)
+        (update-instance-for-redefined-class instance (nreverse added) (nreverse discarded)
+                                             (nreverse plist))))
     instance))
+
+;;; What the standard methods of `change-class` do (CLHS 7.2): INSTANCE,
+;;; brought up to date first, gets NEW-CLASS's wrapper and a slot vector in
+;;; its layout, keeping the value of every slot that was local before or
+;;; shared before, and stays the same object. PREVIOUS, a copy of it as it
+;;; was, with the old class and slots, is handed to
+;;; `update-instance-for-different-class` with it. A standard instance and
+;;; a funcallable one are different objects in the heap, so neither becomes
+;;; the other, as in SBCL.
+(defun %change-class (instance new-class initargs)
+  (%ensure-current-instance instance)
+  (unless (eq (if (%funcallable-instance-p instance) t nil)
+              (eq (class-of new-class) (find-class 'funcallable-standard-class)))
+    (error "change-class cannot make a funcallable instance of a standard class, or the reverse"
+           instance))
+  (let* ((new-class (%ensure-finalized new-class))
+         (old-wrapper (%instance-wrapper instance))
+         (old-names (%wrapper-slot-names old-wrapper))
+         (old-slots (%instance-slots instance))
+         (old-cells (%class-shared-cells (%wrapper-class old-wrapper)))
+         (previous (%allocate-standard-instance old-wrapper (copy-seq old-slots)))
+         (new-wrapper (%class-wrapper new-class))
+         (new-names (%wrapper-slot-names new-wrapper))
+         (new-slots (make-array (length new-names) :initial-element %slot-unbound-marker)))
+    (dotimes (i (length new-names))
+      (let* ((name (aref new-names i))
+             (at (position name old-names))
+             (old-cell (assoc name old-cells)))
+        (cond (at (setf (aref new-slots i) (aref old-slots at)))
+              (old-cell (setf (aref new-slots i) (cdr (cdr old-cell)))))))
+    (%set-instance-slots instance new-slots)
+    (%set-instance-wrapper instance new-wrapper)
+    (apply #'update-instance-for-different-class previous instance initargs)
+    instance))
+
+;;; The local slots of CURRENT's class that PREVIOUS's class had no slot of
+;;; the same name for: those `update-instance-for-different-class` fills.
+(defun %slots-added-by-change (previous current)
+  (let ((old (mapcar #'%slot-definition-name (%class-slots (class-of previous))))
+        (added nil))
+    (dolist (slot (%class-slots (class-of current)) (nreverse added))
+      (unless (or (consp (%slot-definition-location slot))
+                  (member (%slot-definition-name slot) old))
+        (push (%slot-definition-name slot) added)))))
 
 ;;; A structure's slot description named NAME, for `slot-value` on a
 ;;; structure, which SBCL allows.

@@ -109,7 +109,6 @@ A test can need several things.
 | `APROPOS[tier-2:environment]` | 9 |
 | `BROADCAST-STREAM-STREAMS[tier-2:streams]` | 9 |
 | `CERROR[tier-2:conditions]` | 9 |
-| `CHANGE-CLASS[tier-2:clos]` | 9 |
 | `CLEAR-INPUT[tier-2:streams]` | 9 |
 | `CLOSE[tier-2:streams]` | 9 |
 | `CONCATENATED-STREAM-STREAMS[tier-2:streams]` | 9 |
@@ -153,7 +152,6 @@ A test can need several things.
 | `MACHINE-VERSION[tier-2:environment]` | 9 |
 | `MAKE-CONCATENATED-STREAM[tier-2:streams]` | 9 |
 | `MAKE-ECHO-STREAM[tier-2:streams]` | 9 |
-| `MAKE-INSTANCES-OBSOLETE[tier-2:clos]` | 9 |
 | `MAKE-LOAD-FORM-SAVING-SLOTS[tier-2:clos]` | 9 |
 | `MAKE-LOAD-FORM[tier-2:clos]` | 9 |
 | `MAKE-SYNONYM-STREAM[tier-2:streams]` | 9 |
@@ -195,8 +193,6 @@ A test can need several things.
 | `TWO-WAY-STREAM-INPUT-STREAM[tier-2:streams]` | 9 |
 | `TWO-WAY-STREAM-OUTPUT-STREAM[tier-2:streams]` | 9 |
 | `UNBOUND-SLOT-INSTANCE[tier-2:conditions]` | 9 |
-| `UPDATE-INSTANCE-FOR-DIFFERENT-CLASS[tier-2:clos]` | 9 |
-| `UPDATE-INSTANCE-FOR-REDEFINED-CLASS[tier-2:clos]` | 9 |
 | `USE-VALUE[tier-2:conditions]` | 9 |
 | `USER-HOMEDIR-PATHNAME[tier-2:pathnames-and-files]` | 9 |
 | `WARN[tier-2:conditions]` | 9 |

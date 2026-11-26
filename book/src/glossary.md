@@ -124,6 +124,8 @@ Pronounced "could-er". Read it as "rest".
 **Class precedence list.** One total order of a class and all its superclasses, keeping every class's request to come before its superclasses and those in the order it lists them: a topological sort (CLHS 4.3.5). It decides which superclass wins when two define the same slot or method. ([73](part-7-objects/73-classes.md))
 
 <a id="cheney-s-algorithm"></a>
+**`change-class`.** The Common Lisp function that gives an existing instance another class, keeping it the same object: slots both classes have keep their values, and the generic function `update-instance-for-different-class` fills the rest. ([76](part-7-objects/76-changing-classes.md))
+
 **Cheney's algorithm.** The [copying collector](#copying-collector) Quokka uses.
 Its distinguishing trick is needing no extra memory to keep track of its work:
 the objects it has already copied *are* the list of things still to examine.
@@ -628,6 +630,8 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 **Not applicable (a test result).** A test that cannot say anything yet because it uses a feature that does not exist, as opposed to one that ran and got the wrong answer. Quokka's ansi-test runner reports these as *needs X*, so that a failure always means a wrong answer. pytest calls the same idea *skip*, JUnit an *assumption*. ([49](part-6-self-hosting/49-ansi-test.md))
 
 <a id="obarray"></a>
+**Obsolete instance.** An instance whose class has been redefined with other slots since it was made, so that its slot vector is still laid out by the old wrapper. It is updated, through `update-instance-for-redefined-class`, the next time one of its slots is touched. ([76](part-7-objects/76-changing-classes.md))
+
 **Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 <a id="opcode"></a>

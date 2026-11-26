@@ -375,7 +375,7 @@ several **legs**, and every leg must match the baseline:
 | compiled, rebuilt world | `a_rebuilt_world_passes_every_differential_file` | the same | the same |
 | SBCL | `./scripts/oracle.sh` | SBCL | SBCL |
 
-**Tier 0** files (17) run in every leg. **Tier 1** files (41) use the library,
+**Tier 0** files (17) run in every leg. **Tier 1** files (42) use the library,
 which the interpreter never learns, so they skip the interpreted leg.
 `tests/lisp/README.md` lists what a test file must not contain. In short: no
 bignums in a tier-0 file, no printed functions, nothing the standard leaves unspecified, and no
