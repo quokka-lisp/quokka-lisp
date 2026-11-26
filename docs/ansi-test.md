@@ -14,9 +14,9 @@ A test can need several things.
 | strings | 404 | 0 | 0 | 0 | 0 | 105 | 509 |
 | arrays | 1049 | 0 | 0 | 0 | 0 | 241 | 1290 |
 | characters | 143 | 0 | 0 | 0 | 0 | 116 | 259 |
-| symbols | 126 | 0 | 0 | 0 | 0 | 1019 | 1145 |
-| packages | 392 | 0 | 0 | 0 | 0 | 108 | 500 |
-| numbers | 598 | 0 | 0 | 0 | 0 | 846 | 1444 |
+| symbols | 126 | 1 | 0 | 0 | 0 | 1018 | 1145 |
+| packages | 401 | 0 | 0 | 0 | 0 | 99 | 500 |
+| numbers | 605 | 0 | 0 | 0 | 0 | 839 | 1444 |
 | reader | 423 | 0 | 0 | 0 | 0 | 152 | 575 |
 | printer | 419 | 0 | 0 | 0 | 0 | 1450 | 1869 |
 | data-and-control-flow | 1239 | 0 | 0 | 0 | 0 | 189 | 1428 |
@@ -24,9 +24,9 @@ A test can need several things.
 | iteration | 95 | 0 | 0 | 0 | 0 | 748 | 843 |
 | hash-tables | 119 | 0 | 0 | 0 | 0 | 48 | 167 |
 | structures | 72 | 0 | 0 | 0 | 0 | 44 | 116 |
-| types-and-classes | 408 | 0 | 0 | 0 | 0 | 106 | 514 |
-| objects | 739 | 0 | 0 | 0 | 0 | 104 | 843 |
-| **all** | **10773** | **0** | **0** | **0** | **0** | **6056** | **16829** |
+| types-and-classes | 415 | 1 | 0 | 0 | 0 | 98 | 514 |
+| objects | 745 | 2 | 0 | 0 | 0 | 96 | 843 |
+| **all** | **10802** | **4** | **0** | **0** | **0** | **6023** | **16829** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -41,13 +41,10 @@ A test can need several things.
 | `ASSERT[tier-2:conditions]` | 1405 |
 | `RANDOM[tier-2:random]` | 568 |
 | `reader[#C]` | 522 |
-| `MAKE-CONDITION[tier-2:conditions]` | 415 |
 | `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 407 |
 | `MAKE-RANDOM-STATE[tier-2:random]` | 406 |
 | `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 394 |
 | `HANDLER-BIND[tier-2:conditions]` | 285 |
-| `TYPE-ERROR-DATUM[tier-2:conditions]` | 280 |
-| `TYPE-ERROR-EXPECTED-TYPE[tier-2:conditions]` | 280 |
 | `MUFFLE-WARNING[tier-2:conditions]` | 270 |
 | `COMPLEX[deferred:complex-numbers]` | 190 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 141 |
@@ -78,15 +75,10 @@ A test can need several things.
 | `COMPUTE-RESTARTS[tier-2:conditions]` | 19 |
 | `RANDOM-STATE-P[tier-2:random]` | 19 |
 | `ABORT[tier-2:conditions]` | 18 |
-| `DEFINE-CONDITION[tier-2:conditions]` | 18 |
 | `PPRINT-EXIT-IF-LIST-EXHAUSTED[tier-2:pretty-printer]` | 18 |
 | `RESTART-NAME[tier-2:conditions]` | 18 |
 | `reader[#P]` | 17 |
 | `MAKE-BROADCAST-STREAM[tier-2:streams]` | 16 |
-| `PACKAGE-ERROR-PACKAGE[tier-2:conditions]` | 15 |
-| `ARITHMETIC-ERROR-OPERANDS[tier-2:conditions]` | 14 |
-| `ARITHMETIC-ERROR-OPERATION[tier-2:conditions]` | 14 |
-| `CELL-ERROR-NAME[tier-2:conditions]` | 14 |
 | `CIS[deferred:complex-numbers]` | 14 |
 | `CONJUGATE[deferred:complex-numbers]` | 13 |
 | `PPRINT[tier-2:pretty-printer]` | 13 |
@@ -101,7 +93,6 @@ A test can need several things.
 | `WITH-CONDITION-RESTARTS[tier-2:conditions]` | 12 |
 | `WITH-SIMPLE-RESTART[tier-2:conditions]` | 12 |
 | `STORE-VALUE[tier-2:conditions]` | 11 |
-| `UNBOUND-SLOT-INSTANCE[tier-2:conditions]` | 11 |
 | `COMPILE-FILE-PATHNAME[deferred:compile-file]` | 10 |
 | `CONTINUE[tier-2:conditions]` | 10 |
 | `DELETE-FILE[tier-2:pathnames-and-files]` | 10 |
@@ -123,7 +114,6 @@ A test can need several things.
 | `ENOUGH-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
 | `ENSURE-DIRECTORIES-EXIST[tier-2:pathnames-and-files]` | 9 |
 | `FILE-AUTHOR[tier-2:pathnames-and-files]` | 9 |
-| `FILE-ERROR-PATHNAME[tier-2:conditions]` | 9 |
 | `FILE-LENGTH[tier-2:streams]` | 9 |
 | `FILE-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
 | `FILE-POSITION[tier-2:streams]` | 9 |
@@ -165,7 +155,6 @@ A test can need several things.
 | `PATHNAME-TYPE[tier-2:pathnames-and-files]` | 9 |
 | `PATHNAME-VERSION[tier-2:pathnames-and-files]` | 9 |
 | `PATHNAMEP[tier-2:pathnames-and-files]` | 9 |
-| `PRINT-NOT-READABLE-OBJECT[tier-2:conditions]` | 9 |
 | `PROBE-FILE[tier-2:pathnames-and-files]` | 9 |
 | `READ-BYTE[tier-2:streams]` | 9 |
 | `READ-CHAR-NO-HANG[tier-2:streams]` | 9 |
@@ -175,13 +164,10 @@ A test can need several things.
 | `ROOM[tier-2:environment]` | 9 |
 | `SHORT-SITE-NAME[tier-2:environment]` | 9 |
 | `SIGNAL[tier-2:conditions]` | 9 |
-| `SIMPLE-CONDITION-FORMAT-ARGUMENTS[tier-2:conditions]` | 9 |
-| `SIMPLE-CONDITION-FORMAT-CONTROL[tier-2:conditions]` | 9 |
 | `SLEEP[tier-2:environment]` | 9 |
 | `SOFTWARE-TYPE[tier-2:environment]` | 9 |
 | `SOFTWARE-VERSION[tier-2:environment]` | 9 |
 | `STREAM-ELEMENT-TYPE[tier-2:streams]` | 9 |
-| `STREAM-ERROR-STREAM[tier-2:conditions]` | 9 |
 | `STREAM-EXTERNAL-FORMAT[tier-2:streams]` | 9 |
 | `SYNONYM-STREAM-SYMBOL[tier-2:streams]` | 9 |
 | `TRANSLATE-LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 9 |

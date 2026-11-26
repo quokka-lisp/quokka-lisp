@@ -585,13 +585,29 @@ of it (`%built-in-prototype`); `make-instance` of a structure class fills
 the initforms (by `eval`) and calls `initialize-instance`, as SBCL. Rebuild `(:FORMS 1859
 :REPLACED 1473)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
 739 of 843; no plain failure, escape, timeout or tier-1 gap. Rust 0.
-**Next: phase 3 step B** (#125, opened 26 Nov 2026 with seven decisions
-and a recommendation for each, awaiting Carsten) — conditions as instances
-of CLOS classes: `define-condition`, `make-condition`, `handler-bind`,
-`signal` without unwinding, restarts, the machine's errors signalled
-through Lisp. The fixpoint constrains it: the prelude's `handler-case`
-keeps its `HANDLER` records, and `signal` must walk them and the
-`handler-bind` clusters in their true dynamic order. Phase 2's scope was
+**Phase 3 step B, conditions, is under way** (#125; Carsten took all seven
+recommendations, 27 Nov 2026; the design and its five sub-steps are
+`docs/conditions.md`). The fixpoint constrains it: the prelude's
+`handler-case` keeps its `HANDLER` records, and `signal` must walk them and
+the `handler-bind` clusters in their true dynamic order. **Sub-step 1,
+condition objects, is done** (chapter 79): `lisp/library/conditions.lisp`
+(after `describe.lisp`) — a condition is an instance of a class of
+metaclass `condition-class` (not a `standard-object`); `ensure-class` makes
+condition classes (`%metaclass-kind`; default superclass `condition`);
+`define-condition`, `make-condition` (ignores unknown initargs, as SBCL),
+the standard types' CLHS slots (named in `QUOKKA`) and readers; **class
+`condition` has slots `%message` and `%data`** for the library's own
+`(error 'type "message" data...)`, which SBCL refuses and ~240 library
+calls use; reports on the class plist (`%report`), printed by a
+`print-object` method on `condition` when `*print-escape*` is false. The
+type algebra's `:condition` kind is gone: condition types are `:instance`
+terms, and the machine's condition objects are of their class by
+`class-of`. `%condition-text` moved from `eval.lisp` to `conditions.lisp`.
+`error` is still the Rust primitive until sub-step 2. Rebuild `(:FORMS 1888
+:REPLACED 1482)`. ansi-test **10,802**, with **4 plain failures, expected
+until sub-steps 2–3**: CLHS readers (`type-error-datum`, `cell-error-name`,
+`unbound-slot-instance`) called on the machine's old condition objects,
+which have no slots. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -663,8 +679,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**505 tests**; **62 differential files agree with SBCL** — 17 interpreted and
-compiled, plus forty-five tier-1 files, compiled only, and all 62 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
+**505 tests**; **63 differential files agree with SBCL** — 17 interpreted and
+compiled, plus forty-six tier-1 files, compiled only, and all 63 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
 **The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 

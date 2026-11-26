@@ -168,7 +168,7 @@
   '((:integer . :integers) (:ratio . :reals) (:float . :reals) (:negative-zero . :whole)
     (:complex . :parts)
     (:character . :codes) (:symbol . :symbols) (:keyword . :symbols) (:cons . :pairs)
-    (:array . :arrays) (:structure . :tree) (:condition . :tree) (:instance . :tree)
+    (:array . :arrays) (:structure . :tree) (:instance . :tree)
     (:compiled-function . :whole) (:function . :whole) (:hash-table . :whole)
     (:random-state . :whole) (:pathname . :whole) (:logical-pathname . :whole)
     (:other . :whole)))
@@ -185,8 +185,10 @@
         ((symbolp object) :symbol)
         ((consp object) :cons)
         ((arrayp object) :array)
+        ;; A condition is an instance of its class (step B, #125); one of
+        ;; the machine's own condition objects is of its class by `class-of`.
         ((%instance-wrapper object) :instance)
-        ((%conditionp object) :condition)
+        ((%conditionp object) :instance)
         ((%structure-layout object) :structure)
         ((functionp object) (if (compiled-function-p object) :compiled-function :function))
         ((hash-table-p object) :hash-table)
@@ -524,26 +526,26 @@
                  (notany (lambda (x) (%pattern-fits-p x dimensions)) (fourth term))))
           terms)))
 
-;;; Structures and conditions: a union of terms (ROOTS . EXCEPTIONS), the
+;;; Structures and instances: a union of terms (ROOTS . EXCEPTIONS), the
 ;;; objects of every type named in ROOTS (nil: every structure, or every
-;;; condition) that are of no type named in EXCEPTIONS. Every type here can
+;;; instance) that are of no type named in EXCEPTIONS. Every type here can
 ;;; have instances of its own, not of any subtype, so a term is empty only
 ;;; when one of its roots lies within one of its exceptions.
 ;;;
 ;;; A structure has one parent, so two roots neither of which includes the
-;;; other share no object. A condition type can have several parents, and
-;;; programs will define more (phase 3, step B), so such a pair is a type
-;;; that may or may not have members: "don't know". The same holds for
-;;; classes, whose terms name class objects rather than names: a class may
-;;; have no name, or a name that now names another class.
+;;; other share no object. A class can have several superclasses, and a
+;;; program may define a class with any two unrelated ones as its parents,
+;;; so such a pair is a type that may or may not have members: "don't know".
+;;; A class term names the class object rather than its name: a class may
+;;; have no name, or a name that now names another class. Condition types
+;;; are classes too (step B, #125), and their own kind until then.
 
 (defun %tree-subtype-p (kind a b)
   (case kind
     (:structure (do ((layout (%find-layout a) (%layout-include layout)))
                     ((null layout) nil)
                   (when (eq (%layout-name layout) b) (return t))))
-    (:instance (if (member b (%class-precedence-list a)) t nil))
-    (t (%condition-subtype-p a b))))
+    (t (if (member b (%class-precedence-list a)) t nil))))
 
 ;;; ROOTS with every root that another root lies within dropped, or :none
 ;;; when two structure roots are unrelated.
@@ -598,8 +600,7 @@
 (defun %tree-contains-p (kind terms object)
   (let ((name (case kind
                 (:structure (%layout-name (%structure-layout object)))
-                (:instance (class-of object))
-                (t (%condition-type object)))))
+                (t (class-of object)))))
     (some (lambda (term)
             (and (every (lambda (root) (%tree-subtype-p kind name root)) (car term))
                  (notany (lambda (exception) (%tree-subtype-p kind name exception)) (cdr term))))
@@ -809,20 +810,19 @@
     ((stream) (%structure-names-ctype '(%string-input-stream %string-output-stream %console-stream)))
     ((string-stream) (%structure-names-ctype '(%string-input-stream %string-output-stream)))
     ((structure-object) (%kinds-ctype '(:structure)))
-    ((condition) (%kinds-ctype '(:condition)))
     (t (cond ((%structure-type-layout name) (%structure-names-ctype (list name)))
-             ((%condition-entry name %condition-supertypes)
-              (%kind-ctype :condition (list (list (list name)))))
              ((find-class name nil) (%class-ctype (find-class name nil)))
              (t (throw '%unknown-type nil))))))
 
-;;; The type a class is. A class `defclass` made is a term of the `:instance`
-;;; kind, rooted at the class; any other class is the type its name names,
-;;; since every built-in, structure and condition class's name is one.
+;;; The type a class is. A class `defclass` or `define-condition` made is a
+;;; term of the `:instance` kind, rooted at the class; any other class is
+;;; the type its name names, since every built-in and structure class's
+;;; name is one.
 (defun %class-ctype (class)
   (if (member (class-of class) (list (find-class 'standard-class)
                                      (find-class 'funcallable-standard-class)
-                                     (find-class 'forward-referenced-class)))
+                                     (find-class 'forward-referenced-class)
+                                     (find-class 'condition-class)))
       (%kind-ctype :instance (list (list (list class))))
       (%parse-type (%class-name class))))
 

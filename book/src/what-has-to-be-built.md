@@ -252,7 +252,9 @@ rest of tier 1 and measure it against the standard's own test suite.
 Part VII is **phase 3**, which builds towards a debugger in which a
 function can be fixed from inside an error and the call retried. It starts
 with objects: first a type system, then CLOS, the object system that the
-condition system and every later tool dispatch through.
+condition system and every later tool dispatch through. Part VIII builds the
+condition system on it: conditions that are objects, handlers that run where
+the error happened, and restarts.
 
 Each chapter answers one question.
 
@@ -336,6 +338,7 @@ Each chapter answers one question.
 | 76 | [Changing classes](part-7-objects/76-changing-classes.md) | How do instances follow when their class is redefined, or when an instance is given another class? |
 | 77 | [Method combination](part-7-objects/77-method-combination.md) | How can a generic function add up, collect or chain what its methods return, in a way the program defines? |
 | 78 | [Looking inside objects](part-7-objects/78-looking-inside-objects.md) | How can a program ask a class or a generic function what it is made of, and how is a whole object system measured? |
+| 79 | [Conditions are objects](part-8-conditions/79-conditions-are-objects.md) | How does an error become an object with slots and a report of its own, and what does a program define to have one? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -368,7 +371,9 @@ Still to come, and deliberately so:
   printing objects through `print-object`, chapter 76 what happens to
   instances when their class changes, chapter 77 the other ways of
   combining a generic function's methods, and chapter 78 the metaobject
-  protocol's readers and the measurement of CLOS as a whole. Still to come are the rest of CLOS, `loop` and the rest, in phases 3 to 5.
+  protocol's readers and the measurement of CLOS as a whole. Chapter 79
+  makes conditions instances of condition classes. Still to come are the
+  rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a
   **compiler**, written in Lisp, that translates source into those instructions.

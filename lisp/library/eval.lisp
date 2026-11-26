@@ -308,11 +308,6 @@
       (end-of-file () nil)
       (error () t))))
 
-;;; A condition's message as text, for a person to read.
-(defun %condition-text (condition)
-  (let ((message (%condition-message condition)))
-    (if (stringp message) message (princ-to-string message))))
-
 ;;; ------------------------------------------------------------------------
 ;;; The implementation's limits (step Y, #72)
 

@@ -13,14 +13,11 @@
 (%deferred "tier-2:clos" :function-keywords :documentation)
 
 (%deferred "tier-2:conditions"
-  :handler-bind :signal :warn :define-condition :make-condition :restart-case
+  :handler-bind :signal :warn :restart-case
   :restart-bind :invoke-restart :invoke-restart-interactively :find-restart
   :compute-restarts :restart-name :with-simple-restart :with-condition-restarts
   :abort :continue :muffle-warning :store-value :use-value :break :invoke-debugger
-  :cerror :assert :simple-condition-format-control :simple-condition-format-arguments
-  :type-error-datum :type-error-expected-type :cell-error-name :package-error-package
-  :stream-error-stream :file-error-pathname :print-not-readable-object
-  :arithmetic-error-operation :arithmetic-error-operands :unbound-slot-instance)
+  :cerror :assert)
 
 (%deferred "tier-2:streams"
   :open :close :with-open-file :with-open-stream :read-line :read-byte :write-byte

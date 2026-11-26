@@ -653,23 +653,33 @@
                      ;; changed is left as it is, and a new class made.
                      (when (and found (not (eq (%class-name found) name)))
                        (setq found nil))
-                     ;; A built-in, structure or condition class is not
-                     ;; redefined by `defclass`, as in SBCL.
-                     (when (and found (not (%standard-metaclass-p (class-of found))))
+                     ;; A built-in or structure class is not redefined by
+                     ;; `defclass`, as in SBCL, nor is a class turned into
+                     ;; one of another kind: a condition class is redefined
+                     ;; only by `define-condition` (`conditions.lisp`). A
+                     ;; placeholder becomes whatever is defined in its name.
+                     (when (and found
+                                (not (eq (class-of found) (find-class 'forward-referenced-class)))
+                                (not (eq (%metaclass-kind (class-of found))
+                                         (%metaclass-kind metaclass))))
                        (error "defclass cannot redefine a class of this kind" name))
                      found))
          (class (or existing (%allocate-class-object (%class-wrapper metaclass))))
          (supers (mapcar #'%superclass-named
                          (or direct-superclasses
-                             (if (eq metaclass (find-class 'funcallable-standard-class))
-                                 '(funcallable-standard-object)
-                                 '(standard-object)))))
+                             (cond ((eq metaclass (find-class 'funcallable-standard-class))
+                                    '(funcallable-standard-object))
+                                   ((eq metaclass (find-class 'condition-class)) '(condition))
+                                   (t '(standard-object))))))
          (replaced nil)
          (done nil))
     (when (member class supers)
       (error "a class cannot be its own superclass" name))
     (dolist (super supers)
-      (unless (%valid-superclass-p metaclass super)
+      ;; `condition` itself is the one condition class whose superclass
+      ;; is `t` (`conditions.lisp`).
+      (unless (or (%valid-superclass-p metaclass super)
+                  (and (eq name 'condition) (eq super (find-class t))))
         (error "this class cannot be a superclass of a standard class" (%class-name super))))
     (%set-instance-wrapper class (%class-wrapper metaclass))
     (%set-class-name class name)
@@ -699,6 +709,14 @@
             (remhash name %class-table))))
     class))
 
+;;; What kind of class METACLASS makes: `:standard` for the classes
+;;; `defclass` makes, `:condition` for `define-condition`'s, nil for the
+;;; rest, which neither makes nor redefines.
+(defun %metaclass-kind (metaclass)
+  (cond ((%standard-metaclass-p metaclass) :standard)
+        ((eq metaclass (find-class 'condition-class)) :condition)
+        (t nil)))
+
 ;;; Is METACLASS one whose instances `defclass` makes and redefines?
 (defun %standard-metaclass-p (metaclass)
   (if (member metaclass (list (find-class 'standard-class)
@@ -713,10 +731,14 @@
 ;;; also `function`. A built-in or structure class may not be: its
 ;;; instances are not standard objects.
 (defun %valid-superclass-p (metaclass super)
-  (or (eq super (find-class t))
-      (%standard-metaclass-p (class-of super))
-      (and (eq metaclass (find-class 'funcallable-standard-class))
-           (eq super (find-class 'function)))))
+  (if (eq metaclass (find-class 'condition-class))
+      ;; A condition's superclasses are conditions (CLHS `define-condition`).
+      (or (eq (class-of super) metaclass)
+          (eq (class-of super) (find-class 'forward-referenced-class)))
+      (or (eq super (find-class t))
+          (%standard-metaclass-p (class-of super))
+          (and (eq metaclass (find-class 'funcallable-standard-class))
+               (eq super (find-class 'function))))))
 
 ;;; A reader, writer or accessor named in a slot is a method of a generic
 ;;; function of that name (`generic-functions.lisp`). The methods a class's

@@ -183,6 +183,7 @@ tier1_cases! {
     method_combination => "method-combination",
     mop => "mop",
     class_details => "class-details",
+    condition_objects => "condition-objects",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -414,7 +415,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1859 :REPLACED 1473)".into())],
+        [Outcome::Value("(:FORMS 1888 :REPLACED 1482)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

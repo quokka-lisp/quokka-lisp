@@ -103,6 +103,10 @@
 - [Method combination](part-7-objects/77-method-combination.md)
 - [Looking inside objects](part-7-objects/78-looking-inside-objects.md)
 
+# Part VIII · Conditions
+
+- [Conditions are objects](part-8-conditions/79-conditions-are-objects.md)
+
 ---
 
 [Glossary](glossary.md)

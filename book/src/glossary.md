@@ -161,10 +161,14 @@ time, is Quokka's [host](#host) interface. Also called the *proactor* pattern.
 <a id="condition"></a>
 **Condition.** An error, or any other noteworthy situation, as an *object* a
 program can catch rather than something that ends the computation. Quokka's
-has a type symbol, a message and some data; Common Lisp's are class instances
-matched by subtype. The word is not "exception" on purpose: a condition is
+first conditions had a type symbol, a message and some data; since phase 3 a
+condition is an instance of its [condition class](#condition-class), with slots,
+as in Common Lisp. The word is not "exception" on purpose: a condition is
 signalled before the stack unwinds, so a handler can in principle repair
-things and resume. ([20](part-2-reading-and-running/20-errors-you-can-catch.md))
+things and resume. ([20](part-2-reading-and-running/20-errors-you-can-catch.md), [79](part-8-conditions/79-conditions-are-objects.md))
+
+<a id="condition-class"></a>
+**Condition class.** A class whose instances are conditions, made by `define-condition` and of metaclass `condition-class`. It has slots, readers and superclasses as a standard class does, but a condition is not a `standard-object`, and a condition class can have only condition classes as superclasses. ([79](part-8-conditions/79-conditions-are-objects.md))
 
 <a id="conformance-test-suite"></a>
 **Conformance test suite.** A large collection of tests that checks an implementation against a standard rather than against its own intentions. Common Lisp's is *ansi-test*, some seventeen thousand tests written by Paul Dietz from 2002 on, organised by the chapters of the standard. Quokka runs fourteen of its groups. ([49](part-6-self-hosting/49-ansi-test.md))
@@ -494,7 +498,7 @@ first, and an unrecognised one is an error unless `&allow-other-keys` says
 otherwise. ([18](part-2-reading-and-running/18-lambda-lists.md))
 
 <a id="kind"></a>
-**Kind (of object).** In Quokka's [canonical types](#canonical-type), one of the disjoint groups every object falls into: integers, ratios, floats, characters, symbols, keywords, conses, arrays, structures, conditions, functions and a few more. Because no object is of two kinds, `and`, `or` and `not` on types can be worked out one kind at a time. ([72](part-7-objects/72-what-is-a-type.md))
+**Kind (of object).** In Quokka's [canonical types](#canonical-type), one of the disjoint groups every object falls into: integers, ratios, floats, characters, symbols, keywords, conses, arrays, structures, instances (conditions among them), functions and a few more. Because no object is of two kinds, `and`, `or` and `not` on types can be worked out one kind at a time. ([72](part-7-objects/72-what-is-a-type.md))
 
 <a id="instance"></a>
 **Instance.** An object of a class `defclass` made, created by `make-instance`. In Quokka a heap object of its own type, holding a [wrapper](#wrapper) and a vector of slot values. ([73](part-7-objects/73-classes.md))
@@ -819,6 +823,9 @@ because something must decide which value lives in which register. ([24](part-3-
 **REPL.** Read, Eval, Print, Loop — a prompt that reads what you type, runs it,
 prints the answer and comes back for more. Invented for Lisp in 1964; now in
 every language. ([Preface](what-has-to-be-built.md))
+
+<a id="report"></a>
+**Report (of a condition).** What a condition prints as for a person to read: what `princ` and `~A` show, and a host shows for an error nobody handled. `define-condition`'s `:report` option gives it, as a string or a function of the condition and a stream; a condition type without one reports as its parent does. ([79](part-8-conditions/79-conditions-are-objects.md))
 
 <a id="restart"></a>
 **Restart.** A way of carrying on from an error that the code signalling it offers, chosen by a handler or by the person at the keyboard: `ccase`'s `store-value` stores a new value and tries again. Part of Common Lisp's full condition system, which is tier 2 in Quokka; until then `ccase` signals its error like `ecase`. ([56](part-6-self-hosting/56-small-functions.md))

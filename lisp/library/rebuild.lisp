@@ -46,7 +46,7 @@
     "lisp/library/generic-functions.lisp" "lisp/library/mop.lisp"
     "lisp/library/char-names.lisp" "lisp/library/reader.lisp"
     "lisp/library/printer.lisp" "lisp/library/format.lisp" "lisp/library/describe.lisp"
-    "lisp/library/eval.lisp"
+    "lisp/library/conditions.lisp" "lisp/library/eval.lisp"
     "lisp/library/rebuild.lisp" "lisp/library/packages.lisp"))
 
 ;;; `(%rebuild-world)` — rebuild every function from source, and say how many

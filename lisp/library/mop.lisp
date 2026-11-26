@@ -56,8 +56,7 @@
 ;;; `defstruct` keeps, so its slot definitions are made from the layout when
 ;;; first asked for and kept on the class's property list until a
 ;;; redefinition replaces the layout's slots: the direct ones are those the
-;;; structure adds to the one it includes. A condition class has none until
-;;; conditions are instances (phase 3, step B).
+;;; structure adds to the one it includes.
 (defun class-direct-slots (class)
   (%check-metaobject class 'class 'class-direct-slots)
   (if (%structure-class-p class)

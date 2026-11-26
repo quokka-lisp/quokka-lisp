@@ -120,10 +120,6 @@
   (let ((layout (and (symbolp name) (%find-layout name))))
     (if (and layout (null (%layout-type layout))) layout nil)))
 
-;;; Is NAME a standard condition type's name?
-(defun %condition-type-name-p (name)
-  (or (eq name 'condition) (%condition-entry name %condition-supertypes)))
-
 ;;; ------------------------------------------------------------------------
 ;;; Atomic type specifiers
 
@@ -187,7 +183,15 @@
        (cons 'pathname (lambda (x) x nil))
        (cons 'logical-pathname (lambda (x) x nil))
        (cons 'structure-object (lambda (x) (if (%structure-layout x) t nil)))
-       (cons 'condition #'%conditionp)))
+       (cons 'condition (lambda (x) (%condition-object-p x)))))
+
+;;; Is OBJECT a condition? An instance of a condition class (step B, #125),
+;;; or one of the machine's own condition objects, which a world with the
+;;; library stops making in step B's third sub-step. `class-of` maps one of
+;;; those to the class its type names, so a class test answers for both.
+(defun %condition-object-p (object)
+  (or (%conditionp object)
+      (and (%instance-wrapper object) (%class-typep object (find-class 'condition)))))
 
 ;;; Is OBJECT of the type the symbol NAME names?
 (defun %typep-atom (object name)
@@ -195,8 +199,6 @@
     (cond (predicate (if (funcall predicate object) t nil))
           ((%structure-type-layout name)
            (%structure-is-a object (%structure-type-layout name)))
-          ((%condition-type-name-p name)
-           (and (%conditionp object) (%condition-subtype-p (%condition-type object) name)))
           ((find-class name nil) (%class-typep object (find-class name nil)))
           (t (error "unknown type specifier" name)))))
 
