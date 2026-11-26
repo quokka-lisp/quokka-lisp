@@ -161,9 +161,7 @@
 (defsetf find-class (symbol &optional errorp environment) (class)
   `(progn ,errorp ,environment (%set-find-class ,symbol ,class)))
 
-(defun class-name (class) (%class-name class))
 
-(defun (setf class-name) (new class) (%set-class-name class new))
 
 ;;; ------------------------------------------------------------------------
 ;;; The class precedence list (CLHS 4.3.5)
@@ -622,6 +620,11 @@
                                (metaclass 'standard-class) documentation &allow-other-keys)
   (let* ((metaclass (if (symbolp metaclass) (find-class metaclass) metaclass))
          (existing (let ((found (find-class name nil)))
+                     ;; A class is redefined only while NAME is its proper
+                     ;; name (CLHS 4.3.1): one whose `class-name` has been
+                     ;; changed is left as it is, and a new class made.
+                     (when (and found (not (eq (%class-name found) name)))
+                       (setq found nil))
                      ;; A built-in, structure or condition class is not
                      ;; redefined by `defclass`, as in SBCL.
                      (when (and found (not (%standard-metaclass-p (class-of found))))
@@ -633,6 +636,7 @@
                              (if (eq metaclass (find-class 'funcallable-standard-class))
                                  '(funcallable-standard-object)
                                  '(standard-object)))))
+         (replaced nil)
          (done nil))
     (when (member class supers)
       (error "a class cannot be its own superclass" name))
@@ -648,7 +652,9 @@
     (%invalidate-dispatch)
     (unwind-protect
          (progn
-           (unless existing (setf (gethash name %class-table) class))
+           (unless existing
+             (setq replaced (gethash name %class-table))
+             (setf (gethash name %class-table) class))
            (let ((old-supers (%class-direct-superclasses class)))
              (%set-superclasses class supers)
              (handler-case (%refinalize class)
@@ -660,7 +666,9 @@
            (%define-accessors class)
            (setq done t))
       (unless (or done existing)
-        (remhash name %class-table)))
+        (if replaced
+            (setf (gethash name %class-table) replaced)
+            (remhash name %class-table))))
     class))
 
 ;;; Is METACLASS one whose instances `defclass` makes and redefines?
@@ -740,13 +748,20 @@
 
 ;;; The class options of `defclass` as keywords for `ensure-class`.
 (defun %canonical-class-options (options)
-  (let ((result nil))
+  (let ((result nil) (seen nil))
     (dolist (option options (nreverse result))
+      ;; Each class option may be given once (CLHS `defclass`).
+      (when (member (car option) seen)
+        (error 'program-error "a defclass option given twice" (car option)))
+      (push (car option) seen)
       (case (car option)
         (:default-initargs
-         (let ((entries nil))
+         (let ((entries nil) (keys nil))
            (do ((rest (cdr option) (cddr rest)))
                ((null rest))
+             (when (member (car rest) keys)
+               (error 'program-error "a default initarg given twice" (car rest)))
+             (push (car rest) keys)
              (push `(list ',(car rest) ',(cadr rest) (lambda () ,(cadr rest))) entries))
            (push :direct-default-initargs result)
            (push `(list ,@(nreverse entries)) result)))
@@ -1018,12 +1033,14 @@
   (let ((slot (%find-slot object slot-name)))
     (cond (slot
            (let ((value (%slot-value-using-slot object slot)))
+             ;; Only the first value of `slot-unbound` and `slot-missing`
+             ;; (CLHS `slot-value`).
              (if (eq value %slot-unbound-marker)
-                 (slot-unbound (class-of object) object slot-name)
+                 (values (slot-unbound (class-of object) object slot-name))
                  value)))
           ((%structure-slot object slot-name)
            (%structure-ref object (second (%structure-slot object slot-name))))
-          (t (slot-missing (class-of object) object slot-name 'slot-value)))))
+          (t (values (slot-missing (class-of object) object slot-name 'slot-value))))))
 
 (defun (setf slot-value) (new object slot-name)
   (let ((slot (%find-slot object slot-name)))
@@ -1036,7 +1053,8 @@
   (let ((slot (%find-slot object slot-name)))
     (cond (slot (not (eq (%slot-value-using-slot object slot) %slot-unbound-marker)))
           ((%structure-slot object slot-name) t)
-          (t (slot-missing (class-of object) object slot-name 'slot-boundp) nil))))
+          ;; The truth of what `slot-missing` returns (CLHS `slot-boundp`).
+          (t (if (slot-missing (class-of object) object slot-name 'slot-boundp) t nil)))))
 
 (defun slot-makunbound (object slot-name)
   (let ((slot (%find-slot object slot-name)))

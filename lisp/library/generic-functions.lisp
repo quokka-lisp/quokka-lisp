@@ -681,6 +681,12 @@
 ;;; ones this one names (CLHS `defgeneric`).
 (defmacro defgeneric (name lambda-list &rest options)
   (let ((methods nil) (keys nil))
+    ;; These options may be given once (CLHS `defgeneric`); SBCL accepts a
+    ;; repeated `:argument-precedence-order` and `declare`, and so do we.
+    (dolist (once '(:documentation :method-combination :generic-function-class :method-class))
+      (when (cdr (member once options :key #'car))
+        (when (member once (cdr (member once options :key #'car)) :key #'car)
+          (error 'program-error "this defgeneric option may be given once" once))))
     (dolist (option options)
       (case (car option)
         (:method (push `(defmethod ,name ,@(cdr option)) methods))
@@ -997,10 +1003,26 @@
            (cached (assoc key (%gf-cache gf) :test #'%same-specializers-p)))
       (funcall (if cached
                    (cdr cached)
-                   (let ((emf (%compute-effective-method gf args)))
+                   (let ((emf (%with-arity-check gf (%compute-effective-method gf args))))
                      (%set-gf-cache gf (cons (cons key emf) (%gf-cache gf)))
                      emf))
                args))))
+
+;;; EMF, checking first that the call gives no more arguments than GF's
+;;; lambda list takes, when it has no `&rest` or `&key` (CLHS 3.5.1.3: a
+;;; `program-error`). Too few arguments are found before dispatch, which
+;;; needs the required ones; too many only here, around the cached
+;;; effective method, so the check costs a call nothing it did not cost
+;;; before when the generic function takes any number of arguments.
+(defun %with-arity-check (gf emf)
+  (let ((shape (%lambda-list-shape (%gf-lambda-list gf))))
+    (if (or (third shape) (fourth shape))
+        emf
+        (let ((most (+ (first shape) (second shape))))
+          (lambda (args)
+            (when (nthcdr most args)
+              (error 'program-error "too many arguments to a generic function" (%gf-name gf)))
+            (funcall emf args))))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Standard method combination (CLHS 7.6.6.2)
@@ -1104,6 +1126,13 @@
 (defmethod allocate-instance ((class funcallable-standard-class) &rest initargs)
   initargs
   (%allocate-instance class))
+
+(defmethod allocate-instance ((class structure-class) &rest initargs)
+  initargs
+  ;; A structure with every slot nil: SBCL fills its slots with zeros, a
+  ;; detail of its memory that no program should see.
+  (let ((layout (get (%class-name class) '%layout)))
+    (%make-structure layout (%layout-length layout))))
 
 (defgeneric make-instance (class &rest initargs &key &allow-other-keys))
 (defmethod make-instance ((class symbol) &rest initargs)
@@ -1221,6 +1250,65 @@
                     (when (fifth shape) (setq any t))
                     (setq keys (append (sixth shape) keys))))))))))
     (values keys any)))
+
+;;; `class-name` and its setf function are generic (CLHS), so a program can
+;;; define a method on them; `clos.lisp` uses `%class-name`. Setting the
+;;; name does not change what `find-class` finds: the class loses its
+;;; *proper name* (CLHS 4.3.1), and a `defclass` of the old name makes a new
+;;; class (`ensure-class`).
+(defgeneric class-name (class))
+(defmethod class-name ((class class)) (%class-name class))
+
+(defgeneric (setf class-name) (new-value class))
+(defmethod (setf class-name) (new-value (class class))
+  (%set-class-name class new-value)
+  new-value)
+
+;;; ------------------------------------------------------------------------
+;;; Load forms (CLHS `make-load-form`)
+
+;;; What `compile-file` asks of an object it must write into a compiled
+;;; file: forms that make it again. Quokka has no `compile-file` yet
+;;; (#55), but a program may define and call methods, and the defaults are
+;;; what CLHS says: a class is found again by its name, and an instance, a
+;;; structure or a condition has no load form until its class says how.
+(defgeneric make-load-form (object &optional environment))
+(defmethod make-load-form ((object standard-object) &optional environment)
+  environment
+  (error "there is no load form for this object without a make-load-form method" object))
+(defmethod make-load-form ((object structure-object) &optional environment)
+  environment
+  (error "there is no load form for this object without a make-load-form method" object))
+(defmethod make-load-form ((object condition) &optional environment)
+  environment
+  (error "there is no load form for this object without a make-load-form method" object))
+(defmethod make-load-form ((class class) &optional environment)
+  environment
+  `(find-class ',(class-name class)))
+
+;;; The two forms a `make-load-form` method usually wants: one that
+;;; allocates an object of OBJECT's class, and one that sets the slots
+;;; SLOT-NAMES (by default every slot an instance holds itself) to their
+;;; values, or makes them unbound, as SBCL writes them. The second form
+;;; names OBJECT itself; the file compiler replaces it with the new object.
+(defun make-load-form-saving-slots (object &key (slot-names nil slot-names-p) environment)
+  environment
+  (let* ((class (class-of object))
+         (layout (%structure-layout object))
+         (names (if layout
+                    (mapcar #'car (%layout-slots layout))
+                    (let ((found nil))
+                      (dolist (slot (%class-slots class) (nreverse found))
+                        (unless (consp (%slot-definition-location slot))
+                          (push (%slot-definition-name slot) found)))))))
+    (values `(allocate-instance (find-class ',(class-name class)))
+            `(progn
+               ,@(mapcan (lambda (name)
+                           (when (or (not slot-names-p) (member name slot-names))
+                             (list (if (slot-boundp object name)
+                                       `(setf (slot-value ,object ',name) ',(slot-value object name))
+                                       `(slot-makunbound ,object ',name)))))
+                         names)))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Accessors

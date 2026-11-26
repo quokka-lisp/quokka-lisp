@@ -10,8 +10,7 @@
 
 (%deferred "tier-2:loop" :loop :loop-finish)
 
-(%deferred "tier-2:clos"
-  :make-load-form :make-load-form-saving-slots :function-keywords :documentation)
+(%deferred "tier-2:clos" :function-keywords :documentation)
 
 (%deferred "tier-2:conditions"
   :handler-bind :signal :warn :define-condition :make-condition :restart-case
@@ -77,3 +76,21 @@
 ;;; refuses a function type specifier; SBCL refuses it only when the object
 ;;; is a function, and answers nil for nil (#124).
 (%follows-sbcl "same-as-sbcl" :typep.error.7)
+
+;;; From the objects group (#124, CLOS sub-step 7):
+;;;
+;;; class-04.error.3: `(s1-w)`, a function nothing defines, is expected to
+;;; signal a program-error; SBCL signals undefined-function, as Quokka does.
+(%follows-sbcl "same-as-sbcl" :class-04.error.3)
+
+;;; call-next-method.error.1 and .2: `call-next-method` with arguments for
+;;; which other methods would apply. CLHS says an error "should be
+;;; signaled"; SBCL does not check, and calls the next method of the
+;;; original arguments, as Quokka does.
+(%follows-sbcl "same-as-sbcl" :call-next-method.error.1 :call-next-method.error.2)
+
+;;; shared-initialize.error.4: `(shared-initialize obj nil '(a b c) nil)`,
+;;; a list where an initarg's name should be. SBCL's `shared-initialize`
+;;; does not check its initargs (`make-instance` does), and returns the
+;;; instance, as Quokka's does.
+(%follows-sbcl "same-as-sbcl" :shared-initialize.error.4)
