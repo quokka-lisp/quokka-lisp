@@ -180,6 +180,7 @@ tier1_cases! {
     generic_functions => "generic-functions",
     print_object => "print-object",
     redefinition => "redefinition",
+    method_combination => "method-combination",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -411,7 +412,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1752 :REPLACED 1394)".into())],
+        [Outcome::Value("(:FORMS 1776 :REPLACED 1405)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

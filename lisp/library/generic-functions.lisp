@@ -119,6 +119,142 @@
   (and (%instance-wrapper object) (eq (class-of object) (find-class 'eql-specializer))))
 
 ;;; ------------------------------------------------------------------------
+;;; Method combinations (CLHS 7.6.6, sub-step 6)
+
+;;; A method combination decides how a call's applicable methods become one
+;;; effective method. Standard combination is one (before, around, primary,
+;;; after); `+` adds up the values of every primary method; a program can
+;;; define its own with `define-method-combination`. A generic function
+;;; holds a *method combination object*, the combination's name with the
+;;; options its `defgeneric` gave, such as `(:method-combination list
+;;; :most-specific-last)`.
+;;;
+;;; `%combinations` maps each name to its definition: a function of the
+;;; options that returns a *combiner*, a function of the generic function
+;;; and its applicable methods (most specific first) that returns the
+;;; effective method. The definition checks the options, so a bad one is an
+;;; error when the generic function is defined, as in SBCL. The name is
+;;; looked up again on every cache miss, so a combination defined again
+;;; changes every generic function that uses it.
+(defvar %combinations (make-hash-table :test 'eq))
+
+(%check-slot-places 'standard-method-combination '(name options))
+
+(defun %method-combination (name options)
+  (let ((combination (%allocate-instance (find-class 'standard-method-combination))))
+    (%set-slot-at combination 0 name)
+    (%set-slot-at combination 1 options)
+    combination))
+
+(defun %combination-name (combination) (%slot-at combination 0))
+(defun %combination-options (combination) (%slot-at combination 1))
+
+;;; Every generic function made without a `:method-combination` shares
+;;; this one.
+(defvar %standard-method-combination (%method-combination 'standard nil))
+
+;;; The definition of the combination NAME, or an error.
+(defun %combination-definition (name)
+  (or (gethash name %combinations)
+      (error "there is no method combination of this name" name)))
+
+;;; The combiner of COMBINATION, its options checked.
+(defun %combiner (combination)
+  (funcall (%combination-definition (%combination-name combination))
+           (%combination-options combination)))
+
+;;; The two errors a combination signals (CLHS `invalid-method-error`,
+;;; `method-combination-error`); in SBCL both are `program-error`s.
+(defun invalid-method-error (method format-control &rest arguments)
+  (error 'program-error
+         (format nil "invalid method error for ~A method: ~?"
+                 (%gf-name (%method-generic-function method)) format-control arguments)))
+
+(defun method-combination-error (format-control &rest arguments)
+  (error 'program-error
+         (format nil "method combination error in CLOS dispatch: ~?" format-control arguments)))
+
+(setf (gethash 'standard %combinations)
+      (lambda (options)
+        (when options
+          (method-combination-error "standard method combination takes no options: ~S" options))
+        (lambda (gf methods) (%standard-effective-method gf methods))))
+
+;;; An *operator combination* (CLHS 7.6.6.4): every primary method is
+;;; qualified with the combination's name, and the effective method applies
+;;; OPERATOR to their values, most specific first unless the option
+;;; `:most-specific-last` says otherwise; `:around` methods wrap it as in
+;;; standard combination. With IDENTITY true, one primary method alone is
+;;; called as it is, its values passing through (`(+ x)` is `x`).
+(defun %define-operator-combination (name operator identity)
+  (setf (gethash name %combinations)
+        (lambda (options)
+          (unless (or (null options)
+                      (and (null (cdr options))
+                           (member (car options) '(:most-specific-first :most-specific-last))))
+            (method-combination-error "~S method combination takes one option, an order: ~S"
+                                      name options))
+          (let ((last (eq (car options) :most-specific-last)))
+            (lambda (gf methods)
+              (%operator-effective-method gf methods name operator identity last)))))
+  (%invalidate-dispatch)
+  name)
+
+(defun %operator-effective-method (gf methods name operator identity last)
+  (let ((around nil) (primary nil) (invalid nil))
+    (dolist (method methods)
+      (let ((qualifiers (%method-qualifiers method)))
+        (cond ((and qualifiers (null (cdr qualifiers)) (eq (car qualifiers) name))
+               (push method primary))
+              ((equal qualifiers '(:around)) (push method around))
+              ((null invalid) (setq invalid method)))))
+    (setq around (nreverse around) primary (nreverse primary))
+    ;; SBCL asks for a primary method before it looks at the others, and
+    ;; its error is neither a `program-error` nor a `simple-error`.
+    (when (null primary) (error 'error "no primary method applies" (%gf-name gf)))
+    (when invalid
+      (invalid-method-error invalid "the method combination ~S does not accept the qualifiers ~S"
+                            name (%method-qualifiers invalid)))
+    (when last (setq primary (reverse primary)))
+    (let* ((core (if (and identity (null (cdr primary)))
+                     (%method-chain primary nil)
+                     (%operator-closure operator (mapcar #'%method-function primary))))
+           (effective (if around (%method-chain around core) core)))
+      (%with-keyword-check gf methods effective))))
+
+;;; The effective method that applies OPERATOR to the values of FUNCTIONS,
+;;; method functions each called with no next method. `and`, `or` and
+;;; `progn` are not functions: they evaluate in order and stop as those
+;;; operators do, and the last form's values are the result.
+(defun %operator-closure (operator functions)
+  (case operator
+    (progn (lambda (args)
+             (do ((rest functions (cdr rest)))
+                 ((null (cdr rest)) (funcall (car rest) args nil))
+               (funcall (car rest) args nil))))
+    (and (lambda (args)
+           (do ((rest functions (cdr rest)))
+               ((null (cdr rest)) (funcall (car rest) args nil))
+             (unless (funcall (car rest) args nil) (return nil)))))
+    (or (lambda (args)
+          (do ((rest functions (cdr rest)))
+              ((null (cdr rest)) (funcall (car rest) args nil))
+            (let ((value (funcall (car rest) args nil)))
+              (when value (return value))))))
+    (t (lambda (args)
+         (apply operator (mapcar (lambda (function) (funcall function args nil)) functions))))))
+
+(%define-operator-combination '+ '+ t)
+(%define-operator-combination 'and 'and t)
+(%define-operator-combination 'append 'append t)
+(%define-operator-combination 'list 'list nil)
+(%define-operator-combination 'max 'max t)
+(%define-operator-combination 'min 'min t)
+(%define-operator-combination 'nconc 'nconc t)
+(%define-operator-combination 'or 'or t)
+(%define-operator-combination 'progn 'progn t)
+
+;;; ------------------------------------------------------------------------
 ;;; eql specializers
 
 ;;; One specializer per object, so that two methods on `(eql 7)` have the
@@ -215,7 +351,7 @@
     (%set-gf-name gf name)
     (%set-gf-lambda-list gf lambda-list)
     (%set-gf-methods gf nil)
-    (%set-gf-method-combination gf 'standard)
+    (%set-gf-method-combination gf %standard-method-combination)
     (%set-gf-epoch gf nil)
     (%set-gf-method-class gf (find-class 'standard-method))
     (%install-discriminator gf)
@@ -238,7 +374,8 @@
 (defun ensure-generic-function (name &key (lambda-list nil lambda-list-p) documentation
                                           (method-combination nil) argument-precedence-order
                                           declare &allow-other-keys)
-  (let ((existing (%defined-function name)))
+  (let ((existing (%defined-function name))
+        (combination (and method-combination (%method-combination-designated method-combination))))
     (when (and (symbolp name) (or (macro-function name) (%special-operator-p name)))
       (error 'program-error "a macro or special operator cannot become a generic function" name))
     (when (and existing (not (%generic-function-p existing)))
@@ -253,8 +390,7 @@
           (unless (%congruent-p lambda-list (%method-lambda-list method))
             (error "a method of this generic function does not fit the new lambda list" name)))
         (%set-gf-lambda-list gf lambda-list))
-      (when (and method-combination (not (member method-combination '(standard (standard)) :test #'equal)))
-        (error "only standard method combination exists yet (CLOS sub-step 6)" method-combination))
+      (when combination (%set-gf-method-combination gf combination))
       (when argument-precedence-order
         (%set-gf-argument-precedence-order
          gf (%precedence-positions (%gf-lambda-list gf) argument-precedence-order)))
@@ -262,6 +398,20 @@
       (when declare (%set-gf-declarations gf declare))
       (%invalidate-dispatch)
       gf)))
+
+;;; A method combination as `ensure-generic-function` is given one: an
+;;; object, or as `defgeneric` writes it, a name and its options. The
+;;; options are checked here, when the generic function is defined.
+(defun %method-combination-designated (designator)
+  (if (and (%instance-wrapper designator)
+           (eq (class-of designator) (find-class 'standard-method-combination)))
+      designator
+      (let ((name (if (consp designator) (car designator) designator))
+            (options (if (consp designator) (cdr designator) nil)))
+        (funcall (%combination-definition name) options)
+        (if (and (eq name 'standard) (null options))
+            %standard-method-combination
+            (%method-combination name options)))))
 
 ;;; ------------------------------------------------------------------------
 ;;; defgeneric
@@ -576,7 +726,7 @@
   (let ((methods (%compute-applicable-methods gf args)))
     (if (null methods)
         (lambda (args) (apply #'no-applicable-method gf args))
-        (%standard-effective-method gf methods))))
+        (funcall (%combiner (%gf-method-combination gf)) gf methods))))
 
 (defun %standard-effective-method (gf methods)
   (let ((around nil) (before nil) (primary nil) (after nil))
@@ -586,12 +736,12 @@
               ((equal qualifiers '(:around)) (push method around))
               ((equal qualifiers '(:before)) (push method before))
               ((equal qualifiers '(:after)) (push method after))
-              (t (error "standard method combination does not know these qualifiers"
-                        qualifiers)))))
+              (t (invalid-method-error method "standard method combination does not accept ~S"
+                                       qualifiers)))))
     (setq around (nreverse around) before (nreverse before) primary (nreverse primary))
     ;; AFTER is now least specific first, the order the after methods run.
     (if (null primary)
-        (lambda (args) args (error "no primary method applies" (%gf-name gf)))
+        (lambda (args) args (error 'error "no primary method applies" (%gf-name gf)))
         (let* ((primary-chain (%method-chain primary nil))
                (core (if (or before after)
                          (lambda (args)
@@ -645,7 +795,8 @@
 ;;; When no method applies
 
 (defmethod no-applicable-method ((gf t) &rest arguments)
-  (error "no method of this generic function applies to these arguments"
+  ;; In SBCL this error is neither a `program-error` nor a `simple-error`.
+  (error 'error "no method of this generic function applies to these arguments"
          (list (%gf-name gf) arguments)))
 
 (defmethod no-next-method ((gf t) (method t) &rest arguments)
