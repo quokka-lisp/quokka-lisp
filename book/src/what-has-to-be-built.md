@@ -341,6 +341,7 @@ Each chapter answers one question.
 | 79 | [Conditions are objects](part-8-conditions/79-conditions-are-objects.md) | How does an error become an object with slots and a report of its own, and what does a program define to have one? |
 | 80 | [Handlers that do not unwind](part-8-conditions/80-handlers-that-do-not-unwind.md) | How does a handler run where the error happened, and decline, and how do two kinds of handler find each other on one stack? |
 | 81 | [The machine's errors](part-8-conditions/81-the-machines-errors.md) | How does an error the machine finds become a condition that knows which value was wrong? |
+| — | [The environment, on paper](looking-ahead/the-environment-on-paper.md) | What will a person see and use once phases 4 to 6 are built, and what changes when a program is a live database of definitions instead of a pile of files? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -389,7 +390,8 @@ Still to come, and deliberately so:
   growing, and every further feature of the language is Lisp. See
   [The thing that builds itself](the-bootstrap.md).
 - **The environment**: editor, debugger and windows, all of them Lisp objects
-  inside the same running image.
+  inside the same running image. It is designed, not built: *The environment,
+  on paper*, after Part VIII, describes what phases 4 to 6 aim at and why.
 
 That last one is what Quokka is actually for. Everything in Part I is the floor
 it stands on.

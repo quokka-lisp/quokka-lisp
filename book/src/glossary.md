@@ -117,8 +117,14 @@ it as "first". ([Preface](what-has-to-be-built.md))
 Pronounced "could-er". Read it as "rest".
 ([Preface](what-has-to-be-built.md))
 
+<a id="change-set"></a>
+**Change set.** A named group of changes to definitions, made for one task and exported or shared as a unit. The idea is Smalltalk's; in Quokka's design a commit records one. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="character-encoding"></a>
 **Character encoding.** A rule for writing characters' numbers as bytes. *UTF-32* uses four bytes for every character; *UTF-8* uses one for ASCII and two to four for the rest, which is compact but means finding the *n*th character takes a scan; [Latin-1](#latin-1) uses one byte and covers only 256 characters. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
+
+<a id="checkpoint"></a>
+**Checkpoint.** Folding a [journal](#prevalence) into a new snapshot: write the snapshot, check it, switch to it, and only then delete the journal entries it contains, so that a crash at any moment leaves a world that can be recovered. The term is from databases. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
 
 <a id="class"></a>
 **Class.** In CLOS, an object that names a kind of object and says what slots its instances have; every Lisp object has one, which `class-of` returns. A class is itself an instance of a [metaclass](#metaclass). ([73](part-7-objects/73-classes.md))
@@ -224,6 +230,9 @@ them. ([21](part-2-reading-and-running/21-records.md), [61](part-6-self-hosting/
 function can accept either. A *string designator* is a string, a symbol (its
 name) or a character (a string of one); `string` turns any into a string.
 ([45](part-6-self-hosting/45-sequences.md))
+
+<a id="desktop"></a>
+**Desktop.** A named arrangement of viewers that you switch between, one per task. The idea is *Rooms*, built for Interlisp-D at Xerox PARC in 1986. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
 
 <a id="differential-testing"></a>
 **Differential testing.** Running the same test on several implementations and requiring them to agree. You need not know the right answer — only notice a disagreement, which takes your own understanding out of the loop. Quokka runs each Lisp file interpreted and compiled, natively and under WebAssembly, and on SBCL. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md), [33](part-5-the-image/33-two-evaluators-one-answer.md))
@@ -554,6 +563,9 @@ times a limb plus a carry still fits in a fixnum.
 <a id="lisp-2"></a>
 **Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
+<a id="listener"></a>
+**Listener.** The window where you type a form and see its value: the [REPL](#repl) as something on a screen. Quokka's is designed as live text, so an earlier form can be edited and run again. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="literal"></a>
 **Literal.** An object written directly in the source — `"hello"`, `#(1 2 3)`,
 a quoted list — as opposed to one a program builds. Common Lisp leaves the
@@ -606,6 +618,9 @@ surrounding variables, because at expansion time they do not have values yet.
 <a id="method-combination"></a>
 **Method combination.** The rule that turns a call's applicable methods into one effective method. *Standard method combination* runs the most specific primary method, which may call the next with `call-next-method`, inside any `:around` methods, between the `:before` and `:after` methods; the [operator method combinations](#operator-method-combination) and those a program defines with `define-method-combination` are the others. ([74](part-7-objects/74-generic-functions.md), [77](part-7-objects/77-method-combination.md))
 
+<a id="mock-up"></a>
+**Mock-up.** A picture of what a screen will look like at each step of a task, drawn before the thing is built, to find the questions a description leaves open. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="multiple-dispatch"></a>
 **Multiple dispatch.** Choosing a method by the classes of several arguments rather than the first alone. CLOS does; Smalltalk, Java and Python dispatch on the receiver only. ([74](part-7-objects/74-generic-functions.md))
 
@@ -646,6 +661,9 @@ value safe. ([4](part-1-substrate/04-rooting.md))
 **Obsolete instance.** An instance whose class has been redefined with other slots since it was made, so that its slot vector is still laid out by the old wrapper. It is updated, through `update-instance-for-redefined-class`, the next time one of its slots is touched. ([76](part-7-objects/76-changing-classes.md))
 
 **Obarray.** The table of every [interned](#interning) symbol. The name is from "object array" and is a 1960s MIT detail that stuck. Quokka's is a list for now, and a [root](#root) the collector must not forget. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
+
+<a id="object-capability"></a>
+**Object capability.** A security model in which a program can use only the objects it holds a reference to, so that what it may do is decided by what it is given. From Mark Miller's E language. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
 
 <a id="opcode"></a>
 **Opcode.** Short for *operation code*: the number at the start of an
@@ -711,6 +729,9 @@ the core VM has no filesystem, and interpreted at boot. `defun`, `when`,
 <a id="present-and-accessible"></a>
 **Present and accessible.** A symbol is *present* in a [package](#package) when the package's own tables hold it, and *accessible* when it is present or inherited from a package the package uses. ([54](part-6-self-hosting/54-packages-that-disagree.md))
 
+<a id="presentation"></a>
+**Presentation.** Output that remembers the object it stands for, so that clicking it gives you the object and not just text. From the Symbolics Lisp machines and CLIM. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="pretty-printer"></a>
 **Pretty printer.** The part of a Common Lisp printer that lays a long form out over several lines with indentation, controlled by `*print-pretty*`, `*print-right-margin*` and their kin. Tier 2 in Quokka: the variables exist and are not yet consulted. ([52](part-6-self-hosting/52-printing-for-another-lisp.md))
 
@@ -718,8 +739,9 @@ the core VM has no filesystem, and interpreted at boot. `defun`, `when`,
 **Prevalence.** Keeping a system's data as live objects in memory rather than
 in a separate database, and making it survive a restart with a log of every
 change plus periodic snapshots. Named after the Prevayler project; Common Lisp
-has `bknr.datastore`. Quokka's image save is the snapshot half, and it has no
-log — [#24](https://github.com/quokka-lisp/quokka-lisp/issues/24) is the open question. ([Further reading](further-reading.md))
+has `bknr.datastore`. Quokka's image save is the snapshot half; the design adds a *journal* of
+installed definitions and of the commands of journalled stores, folded into
+snapshots by [checkpoints](#checkpoint) ([#24](https://github.com/quokka-lisp/quokka-lisp/issues/24), not built). ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
 
 <a id="primitive"></a>
 **Primitive.** An operation the [VM](#vm) provides directly in Rust rather than
@@ -846,6 +868,9 @@ Garbage collection starts its search from these. A root is a *place*; a
 
 <a id="row-major-order"></a>
 **Row-major order.** Laying a grid out as a line, one row after another: element (i, j) of an array with three columns is element 3i + j of the line. How an array of several dimensions keeps its elements, and what `row-major-aref` indexes. ([55](part-6-self-hosting/55-arrays.md))
+
+<a id="save-point"></a>
+**Save point.** A snapshot of a whole world, data included, that can be restored. Kept apart from commits, which roll back definitions only. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
 
 <a id="sbcl"></a>
 **SBCL.** Steel Bank Common Lisp, a mature Common Lisp implementation, and Quokka's [oracle](#oracle). A reference to check answers against, never something Quokka needs in order to build. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
@@ -982,6 +1007,9 @@ shadows it. `define-symbol-macro` makes a global one, which any lexical binding 
 <a id="syntax-type"></a>
 **Syntax type.** What a character is to the reader: whitespace, a *constituent* (an ordinary character of a [token](#token)), a single escape `\`, a multiple escape `|`, or a [reader macro](#reader-macro) character. `set-syntax-from-char` gives one character another's type. ([58](part-6-self-hosting/58-the-readers-last-gaps.md))
 
+<a id="system-asdf"></a>
+**System.** A named group of packages that load and travel together, from ASDF's `defsystem` in Common Lisp practice. Common Lisp has no sub-packages, so a system is how related packages are kept together. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="system-call"></a>
 **System call.** How a program asks an operating system's kernel to do
 something it may not do itself, such as read a disk. The program hands over a
@@ -1039,6 +1067,9 @@ and delivered it again, which was *almost* right. ([23](part-2-reading-and-runni
 <a id="trap-floating-point"></a>
 **Trap (floating-point).** Stopping with an error when a float operation overflows, divides by zero or has no answer, instead of quietly producing an infinity or a [NaN](#nan). SBCL traps those three, and so does Quokka, by checking each result in Rust. ([48](part-6-self-hosting/48-floats.md))
 
+<a id="tree-shaking"></a>
+**Tree shaking.** Removing from a program everything not reachable from its starting point, as a [garbage collector](#garbage-collection) removes what is not reachable from its roots. It fails on code reached by a name computed at run time. LispWorks calls it *delivery*. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="two-s-complement"></a>
 **Two's complement.** How machines store signed integers: the top bit counts as a large negative value. A fixed width therefore holds one more negative number than positive, so negating the most negative one overflows. Common Lisp's bit operations behave as if every integer were stored this way, infinitely wide; Quokka stores bignums as sign and magnitude and converts for `logand` and its relatives. ([39](part-6-self-hosting/39-printing-in-lisp.md), [47](part-6-self-hosting/47-bignums.md))
 
@@ -1068,6 +1099,9 @@ type refers to it; only whoever holds the object does. See [gensym](#gensym).
 64-bit word, either the data itself or a reference to somewhere in the heap.
 ([1](part-1-substrate/01-one-word-for-everything.md))
 
+<a id="viewer"></a>
+**Viewer.** One tile of the screen in a tiling window system: a listener, an editor, an inspector, a running program. The name is Oberon's. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="vm"></a>
 **VM.** Virtual machine: a program that behaves like a computer for the language
 running on it, with its own memory and instructions. Quokka's is written in Rust
@@ -1079,11 +1113,17 @@ browser at close to native speed. Quokka compiles to it, which is why the VM
 must be able to stop and hand control back.
 ([2](part-1-substrate/02-why-the-interpreter-cannot-call-itself.md))
 
+<a id="who-calls-index"></a>
+**Who-calls index.** A table from each function to the functions that call it, kept up to date by the compiler, so that an environment can answer "used by" at once. SBCL and Genera keep one. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+
 <a id="whole-form-whole"></a>
 **Whole form (`&whole`).** In a macro lambda list, `&whole w` binds `w` to the entire macro form, head included: in `(defmacro show (&whole w arg) ...)`, the call `(show x)` binds `w` to `(show x)`. Inside a nested pattern, or in `destructuring-bind`, it binds the list that pattern matches. ([64](part-6-self-hosting/64-what-a-macro-is-given.md))
 
 <a id="wrapper"></a>
 **Wrapper.** The object an [instance](#instance) points to that belongs to its class and lists the names of its slots in the order its slot vector keeps them. Replacing an instance's wrapper and slot vector lets a redefined class give its old instances new slots while they stay the same objects; this is PCL's representation. ([73](part-7-objects/73-classes.md))
+
+<a id="write-ahead-logging"></a>
+**Write-ahead logging.** Recording a change in a log before making it, so that a crash between the two is repaired by replaying the log. The technique databases use, and the one Quokka's journalled stores are designed on. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
 
 <a id="write-barrier"></a>
 **Write barrier.** Machinery that notices when an old object is made to point at

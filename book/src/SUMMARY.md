@@ -109,6 +109,10 @@
 - [Handlers that do not unwind](part-8-conditions/80-handlers-that-do-not-unwind.md)
 - [The machine's errors](part-8-conditions/81-the-machines-errors.md)
 
+# Looking ahead
+
+- [The environment, on paper](looking-ahead/the-environment-on-paper.md)
+
 ---
 
 [Glossary](glossary.md)
