@@ -510,6 +510,9 @@ fn render<'h>(mc: &Mutation<'h>, f: Value<'h>, indent: usize, out: &mut String) 
     let name = mc.slot(f, function::NAME);
     let name = if mc.is_symbol(name) {
         mc.symbol_name(name)
+    } else if name.is_cons() {
+        // A local function's, `(flet f)` (#130).
+        crate::printer::print(mc, name)
     } else {
         String::from("(anonymous)")
     };

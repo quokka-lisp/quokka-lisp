@@ -116,6 +116,11 @@
 - [Definitions keep their source](part-9-definitions/84-definitions-keep-their-source.md)
 - [Who uses what](part-9-definitions/85-who-uses-what.md)
 
+# Part X · Frames
+
+- [Frames keep their calls](part-10-frames/86-frames-keep-their-calls.md)
+- [Retrying a frame](part-10-frames/87-retrying-a-frame.md)
+
 # Looking ahead
 
 - [The environment, on paper](looking-ahead/the-environment-on-paper.md)

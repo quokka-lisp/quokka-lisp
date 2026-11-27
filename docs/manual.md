@@ -122,6 +122,12 @@ quokka> (hello)
   structure's slots, what a symbol names. A program changes how its own
   objects print and are described with methods on `print-object` and
   `describe-object`.
+- **`(quokka-debug:print-backtrace)`** prints the calls in progress, one a
+  line, `0: (FOO 1 2)`, innermost first; inside a `handler-bind` handler it
+  shows how the error was reached. `quokka-debug:frames` returns them as
+  objects, and `quokka-debug:restart-frame` runs one again, calling the
+  current definition of its function, so a function redefined in the handler
+  runs fixed (`docs/frames.md`).
 - **A world reads files under the directory you started it in, and nowhere
   else.** Not through `..`, not by an absolute path, and not through a
   symbolic link that leads out: a name is judged by where it leads. So a
@@ -564,7 +570,7 @@ under each one.
 | symptom | cause | what to do |
 | --- | --- | --- |
 | *can't find crate for `core`* | a non-rustup `cargo` on your `PATH` (§1) | put `~/.cargo/bin` first |
-| *image format 5, but this build reads 6* | the image format changed since the file was saved | make a new one with `quokka build` |
+| *image format 8, but this build reads 9* | the image format changed since the file was saved | make a new one with `quokka build` |
 | `quokka rebuild` fails with *not found: lisp/prelude.lisp* | run from somewhere other than the repository's root | `cd` to the root |
 | *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | the budget is `EVAL_BUDGET` in `crates/quokka/src/world.rs` |
 | `quokka: no world to run` | `quokka` was started without a world | `quokka build world.qi` once, then `quokka world.qi` |

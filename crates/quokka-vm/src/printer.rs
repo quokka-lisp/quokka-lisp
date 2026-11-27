@@ -225,6 +225,9 @@ fn name_of_function<'h>(mc: &Mutation<'h>, f: Value<'h>) -> String {
     let name = mc.slot(f, crate::code::function::NAME);
     if mc.is_symbol(name) {
         mc.symbol_name(name)
+    } else if name.is_cons() {
+        // A local function's, `(flet f)` (#130).
+        print(mc, name)
     } else {
         String::from("(anonymous)")
     }

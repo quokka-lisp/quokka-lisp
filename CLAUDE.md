@@ -682,8 +682,34 @@ defining form (`%note-reference`: global functions named, global macros
 expanded; decides nothing, so the fixpoint holds); `who-calls`,
 `who-macroexpands`; defining a macro marks what used it stale;
 `recompile-definition`, `recompile-stale-definitions`. Rebuild `(:FORMS 1978
-:REPLACED 1551)`; ansi-test unchanged, 12,568. **Next: phase 3 step
-D**, frames keep their original arguments (decided in #111; issue to open). Phase 2's scope was
+:REPLACED 1551)`; ansi-test unchanged, 12,568.
+**Phase 3 step D, frames keep their calls, is done** (#130, chapters 86–87;
+the design is `docs/frames.md`). **Every call frame keeps its call**: the
+arguments as passed, their count and the callee lie on the operand stack
+below a seven-word header (`vm::frame`; `frame_bounds` for any reader,
+`open_frame` for `RET`/`TCALL`, which trust that `Heap::verify` keeps sp
+inside a stack vector); no debug setting, since it costs stores and no
+allocation (`fib` ~2.5%, the warm rebuild ~6%); image format 9. A tail call
+rewrites the kept call; **a call of `error` or `invoke-debugger` is never a
+tail call** (`%never-returns-p` in the compiler, as SBCL), so the signalling
+frame survives. Local functions are named `(flet f)`/`(labels f)` and setf
+functions `(setf f)` (`%setf-definition-p`). Primitives `%frames` (a list of
+`(place token callee . args)`, innermost first; **a frame's token is a cons
+made lazily the first time `%frames` reads it**, `nil` until then, since a
+place and callee are reused by a later call) and `%unwind-to-frame`
+(intercepted: checks the frame is open and holds that token, then unwinds to it — the
+target is a **three-slot vector**, `handler_target`'s has two — passing records
+as a `throw` does, and calls a thunk in its place). `lisp/library/frames.lisp`
+(after `definitions.lisp`): package **`QUOKKA-DEBUG`** (made in `packages.lisp`,
+used by `QUOKKA`), `frame` structure, `frames`, `frame-name`/`-call`,
+SBCL's `list-backtrace`, `print-backtrace`, `unwind-to-frame-and-call`;
+`restart-frame` calls the name's current global function if it has one
+(SLIME's rule; that is how a fix takes effect), else the frame's own;
+`return-from-frame`. `step_outcome` checks the shape of `%host-step`'s
+value, which the debugger can now return anything as. Left for F: method functions are anonymous, so a
+method's frame reads `(LAMBDA 4)`; locals; hiding the debugger's own frames.
+Rebuild `(:FORMS 1993 :REPLACED 1562)`. **Next: phase 3 step E**, processes
+(#34), or F, the terminal debugger. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -755,10 +781,10 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**505 tests**; **66 differential files agree with SBCL** — 17 interpreted and
+**512 tests**; **66 differential files agree with SBCL** — 17 interpreted and
 compiled, plus forty-nine tier-1 files, compiled only, and all 66 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
-**The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
+**The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 9** since #130 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 
 ## How phase 1 ended
 

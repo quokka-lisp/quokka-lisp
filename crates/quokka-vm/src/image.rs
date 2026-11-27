@@ -93,7 +93,11 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 ///
 /// **Version 8** (#124): standard and funcallable instances, two new object
 /// types.
-pub const FORMAT_VERSION: u64 = 8;
+///
+/// **Version 9** (#130): a call frame keeps the call that made it, its
+/// arguments, their count and the callee, below a six-word header; a world
+/// saved mid-computation has frames in the old shape.
+pub const FORMAT_VERSION: u64 = 9;
 
 /// Words before the heap's own: magic, version, length, checksum, scalars,
 /// and how much machine the image needs.

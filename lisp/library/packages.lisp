@@ -719,7 +719,11 @@
 ;;; Lisp's, have a package of their own, as SBCL's are in `SB-MOP`; `QUOKKA`
 ;;; uses it, so the library reads them without a prefix.
 (defvar %quokka-mop-package (make-package "QUOKKA-MOP" :use '("COMMON-LISP")))
-(defvar %quokka-package (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP")))
+;;; The debugger's names (`frames.lisp`), likewise, as SBCL's are in
+;;; `SB-DEBUG` (#130).
+(defvar %quokka-debug-package (make-package "QUOKKA-DEBUG" :use '("COMMON-LISP")))
+(defvar %quokka-package
+  (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP" "QUOKKA-DEBUG")))
 (defvar %cl-user-package
   (make-package "COMMON-LISP-USER" :nicknames '("CL-USER") :use '("COMMON-LISP")))
 
@@ -749,6 +753,12 @@
     "FIND-METHOD-COMBINATION" "EXTRACT-LAMBDA-LIST" "EXTRACT-SPECIALIZER-NAMES"
     "SET-FUNCALLABLE-INSTANCE-FUNCTION"))
 
+;;; The names `QUOKKA-DEBUG` exports: the frames of `frames.lisp`.
+(defvar %quokka-debug-symbol-names
+  '("FRAME" "FRAME-P" "FRAMES" "FRAME-FUNCTION" "FRAME-ARGUMENTS" "FRAME-NAME"
+    "FRAME-CALL" "LIST-BACKTRACE" "PRINT-BACKTRACE" "UNWIND-TO-FRAME-AND-CALL"
+    "RESTART-FRAME" "RETURN-FROM-FRAME"))
+
 ;;; Sort every symbol in the Rust system table into a package: each of the
 ;;; standard's 978 names into `COMMON-LISP`, as an external symbol — creating
 ;;; the ones nothing has used yet, such as `LOOP` — and everything else into
@@ -757,6 +767,8 @@
   (%adopt-common-lisp %common-lisp-symbol-names)
   (dolist (name %quokka-mop-symbol-names)
     (%adopt (%intern name) %quokka-mop-package t))
+  (dolist (name %quokka-debug-symbol-names)
+    (%adopt (%intern name) %quokka-debug-package t))
   (%adopt-the-rest (%system-symbols))
   ;; The names have done their job — each symbol has its own copy now — and a
   ;; list of 978 strings is not worth carrying in every image.

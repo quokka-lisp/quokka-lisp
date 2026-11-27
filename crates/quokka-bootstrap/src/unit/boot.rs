@@ -961,13 +961,14 @@ mod compiler {
     }
 
     /// A clause that does not take everything is followed by the re-signal,
-    /// which is a call to `error` — and in tail position too, so there are
-    /// two. After a catch-all there is no re-signal, because it could never
-    /// run; the test above is the other half.
+    /// which is a call to `error`, in tail position too — but never a tail
+    /// call, so that the frame that signalled stays for the debugger (#130):
+    /// one `TCALL`, the clause body's. After a catch-all there is no re-signal, because it
+    /// could never run; the test above is the other half.
     #[test]
     fn a_selective_handler_ends_in_a_re_signal() {
         let out = compile_instructions("(lambda (n) (handler-case (f n) (type-error () (g n))))");
-        assert_eq!(out.matches("TCALL").count(), 2, "{out}");
+        assert_eq!(out.matches("TCALL").count(), 1, "{out}");
     }
 
     // ---- #37: the special operators the compiler did not have -----------
@@ -2240,7 +2241,8 @@ fn errors_say_where_and_functions_say_who() {
         "; in DEFUN LOST: return-from names a block that is not here: NOWHERE"
     );
     assert_eq!(said[2], "; TWO wants 2 arguments and got 1");
-    assert_eq!(said[3], "; INNER wants 1 arguments and got 0");
+    // A local function is named as SBCL names it (#130).
+    assert_eq!(said[3], "; (FLET INNER) wants 1 arguments and got 0");
     assert_eq!(said[4], "; this function wants 1 arguments and got 0");
     assert_eq!(said[5], "\"#<function TWO>\"");
     assert!(

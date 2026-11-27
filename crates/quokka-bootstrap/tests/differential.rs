@@ -418,7 +418,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1978 :REPLACED 1551)".into())],
+        [Outcome::Value("(:FORMS 1993 :REPLACED 1562)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -607,6 +607,140 @@ fn the_debugger_hook_sees_an_unhandled_error() {
         out,
         "=> (:HOOKED SIMPLE-ERROR)\n=> (:REACHED NIL)\n!! error\n=> 3\n"
     );
+}
+
+/// Every frame keeps its call (#130, sub-step 1): `%frames` lists, innermost
+/// first, each frame's place, its token, the function called and the
+/// arguments as they were passed — before a `setq` of a parameter, and before `&key` parsing.
+/// A tail call reuses its caller's frame, so the caller is gone from the
+/// list; a local function is named `(flet f)` or `(labels f)`, as SBCL
+/// names it, so that it is never taken for the global function `f`.
+#[test]
+fn frames_keep_their_calls() {
+    let out = run_compiled(
+        "(defun fb (z w) (setq z 0) (let ((fs (quokka::%frames))) \
+           (list z (cdddr (first fs)) (cdddr (second fs)) (eq (caddr (first fs)) #'fb) \
+                 (eq (caddr (second fs)) #'fa) (> (car (first fs)) (car (second fs)))))) \
+         (defun fa (x y) (car (list (fb (+ x y) 'q)))) \
+         (fa 1 2) \
+         (defun tb (y) (car (list (mapcar #'cdddr (subseq (quokka::%frames) 0 2))))) \
+         (defun ta (x) (tb (* x 10))) \
+         (defun tc () (car (list (ta 1)))) \
+         (tc) \
+         (defun kf (a &key b) a b (cdddr (first (quokka::%frames)))) \
+         (kf 1 :b 2) \
+         (defun rf (&rest r) (setf (car r) :changed) (cdddr (first (quokka::%frames)))) \
+         (rf 1 2 3) \
+         (flet ((lf (x) x (quokka::%function-name (caddr (first (quokka::%frames)))))) (lf 1)) \
+         (labels ((lg (x) x (quokka::%function-name (caddr (first (quokka::%frames)))))) (lg 1)) \
+         (quokka::%function-name #'fa) \
+         (flet ((two (a b) (list a b))) (handler-case (funcall #'two 1) (error () :refused)))",
+    );
+    assert_eq!(
+        out,
+        "=> FB\n=> FA\n=> (0 (3 Q) (1 2) T T T)\n=> TB\n=> TA\n=> TC\n=> ((10) NIL)\n\
+         => KF\n=> (1 :B 2)\n=> RF\n=> (1 2 3)\n=> (FLET LF)\n=> (LABELS LG)\n=> FA\n=> :REFUSED\n"
+    );
+}
+
+/// Lisp reads frames (#130, sub-step 2): `QUOKKA-DEBUG`'s `frames`,
+/// `frame-name`, `frame-call`, and SBCL's `list-backtrace` and
+/// `print-backtrace`, each starting from its caller's frame.
+#[test]
+fn lisp_reads_frames() {
+    let out = run_compiled(
+        "(defun inner2 (a) a (car (list (quokka-debug:list-backtrace :count 2)))) \
+         (defun outer2 (b) (car (list (inner2 (* b 2))))) \
+         (outer2 4) \
+         (defun pb () (car (list (with-output-to-string (s) \
+                                   (quokka-debug:print-backtrace :count 2 :stream s))))) \
+         (defun pa (x) x (car (list (pb)))) \
+         (pa '(1 2)) \
+         (flet ((lf (x) x (car (list (quokka-debug:frame-name (first (quokka-debug:frames))))))) \
+           (car (list (lf 1)))) \
+         (defun (setf thing) (v x) v x \
+           (car (list (quokka-debug:frame-call (first (quokka-debug:frames)))))) \
+         (car (list (setf (thing 3) 4))) \
+         (defun pf (x) x (car (list (prin1-to-string (first (quokka-debug:frames)))))) \
+         (pf 9) \
+         (length (quokka-debug:frames 1))",
+    );
+    assert_eq!(
+        out,
+        "=> INNER2\n=> OUTER2\n=> ((INNER2 8) (OUTER2 4))\n=> PB\n=> PA\n\
+         => \"0: (PB)\n1: (PA (1 2))\n\"\n=> (FLET LF)\n=> (SETF THING)\n\
+         => ((SETF THING) 4 3)\n=> PF\n=> \"#<QUOKKA-DEBUG:FRAME (PF 9)>\"\n=> 1\n"
+    );
+}
+
+/// Retrying a frame (#130, sub-step 3), the gate's own scenario first: a
+/// function errs, the handler redefines it and restarts its frame, and the
+/// fixed function's value comes back to the caller. A frame is retried
+/// with the arguments as first passed; a local function by its own
+/// function, never the global one of the same name; returning from a frame
+/// runs its cleanups and undoes its special bindings; a frame that has
+/// returned cannot be unwound to, even when a later call of the same
+/// function has taken its place on the stack.
+#[test]
+fn a_frame_can_be_retried() {
+    let out = run_compiled(
+        "(defun find-frame (name) \
+           (find name (quokka-debug:frames) :key #'quokka-debug:frame-name :test #'equal)) \
+         (defun broken (x) (error \"broken ~a\" x)) \
+         (defun caller (y) (list :got (broken (* y 2)))) \
+         (handler-bind ((error (lambda (c) c (eval '(defun broken (x) (+ x 1))) \
+                                 (quokka-debug:restart-frame (find-frame 'broken))))) \
+           (caller 5)) \
+         (defvar *tries* 0) \
+         (defun again (x) (setq x (+ x 100)) (incf *tries*) (if (< *tries* 2) (error \"first\") x)) \
+         (handler-bind ((error (lambda (c) c (quokka-debug:restart-frame (find-frame 'again))))) \
+           (list (again 1) *tries*)) \
+         (defun lfn (x) x :global) \
+         (let ((k 0)) \
+           (flet ((lfn (x) (incf k) (if (= k 1) (error \"once\") (list :local x k)))) \
+             (handler-bind ((error (lambda (c) c (quokka-debug:restart-frame (find-frame '(flet lfn)))))) \
+               (car (list (lfn 7)))))) \
+         (defun r1 (x) x (error \"no\")) \
+         (defun r3 () (multiple-value-list (r1 1))) \
+         (handler-bind ((error (lambda (c) c (quokka-debug:return-from-frame (find-frame 'r1) 1 2)))) \
+           (r3)) \
+         (defvar *depth* :outer) \
+         (defvar *log* nil) \
+         (defun deep (x) x (let ((*depth* :inner)) \
+           (unwind-protect (error \"deep\") (push (list :cleanup *depth*) *log*)))) \
+         (defun shallow () (list (deep 1) *depth*)) \
+         (handler-bind ((error (lambda (c) c (quokka-debug:return-from-frame (find-frame 'deep) :ok)))) \
+           (list (shallow) *log*)) \
+         (defun keep-frame () (car (list (first (quokka-debug:frames))))) \
+         (handler-case (quokka-debug:return-from-frame (keep-frame) 1) (control-error () :gone)) \
+         (handler-case (quokka-debug:unwind-to-frame-and-call 5 (lambda () 1)) (type-error () :typed)) \
+         (defvar *saved* nil) \
+         (defun loopy (k) (if (= k 0) (setq *saved* (first (quokka-debug:frames))) \
+                            (if (= k 1) (quokka-debug:return-from-frame *saved* :hijack))) k) \
+         (defun twice () (list (progn (loopy 0) (loopy 1)))) \
+         (handler-case (twice) (control-error () :not-the-same-call)) \
+         (handler-case (quokka-debug:frames -1) (type-error () :bad-count))",
+    );
+    assert_eq!(
+        out,
+        "=> FIND-FRAME\n=> BROKEN\n=> CALLER\n=> (:GOT 11)\n=> *TRIES*\n=> AGAIN\n=> (101 2)\n\
+         => LFN\n=> (:LOCAL 7 2)\n=> R1\n=> R3\n=> (1 2)\n=> *DEPTH*\n=> *LOG*\n=> DEEP\n\
+         => SHALLOW\n=> ((:OK :OUTER) ((:CLEANUP :INNER)))\n=> KEEP-FRAME\n=> :GONE\n=> :TYPED\n\
+         => *SAVED*\n=> LOOPY\n=> TWICE\n=> :NOT-THE-SAME-CALL\n=> :BAD-COUNT\n"
+    );
+}
+
+/// The outermost frame is the host loop's, `%host-step`, whose value the
+/// host reads as a step's outcome. Returning something else from it with
+/// the debugger is reported, and the world carries on (#130, rule 10).
+#[test]
+fn returning_from_the_host_frame_does_not_panic() {
+    let out = run_compiled(
+        "(quokka-debug:return-from-frame (car (last (quokka-debug:frames))) :weird) \
+         (quokka-debug:return-from-frame (car (last (quokka-debug:frames))) 1 2 3) \
+         (+ 1 2)",
+    );
+    assert_eq!(out, "!! error\n!! error\n=> 3\n");
 }
 
 /// What only Quokka can be held to (#124): the default `#<...>` of an

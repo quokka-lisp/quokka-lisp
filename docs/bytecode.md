@@ -64,22 +64,34 @@ dead slot above the stack pointer would keep whatever it last held alive. One
 store per pop is cheaper than teaching the collector about a dynamic extent,
 and keeps "trace every slot" true.
 
-A call pushes four words, then the callee's operands grow above them:
+A call pushes the call itself and a seven-word header, then the callee's
+operands grow above them:
 
 ```
    ...caller's operands...
-   saved pc            <- frame pointer
+   argument 0 .. argument n-1   as the call passed them
+   n
+   nil, or the call's token (made when a debugger first reads the frame)
+   the callee
+   saved pc
    saved frame pointer
    saved function
    saved environment
-   ...callee's operands...
+   ...callee's operands...      <- frame pointer
 ```
 
-Arguments are **not** in the frame. `CALL` pops them, and the callee's
-environment is built from them before the frame is entered, because variables
-live in the environment chain rather than in frame slots. That is one
-allocation per call and it is the price of the chain; `docs/design.md` records
-why it is being paid for now.
+The callee does **not** read its arguments there. The callee's environment
+is built from them before the frame is entered, because variables live in
+the environment chain rather than in frame slots. That is one allocation per
+call and it is the price of the chain; `docs/design.md` records why it is
+being paid for now.
+
+The arguments and the callee are kept for the debugger (#130,
+`docs/frames.md`): a backtrace shows what each frame was called with, and a
+frame can be run again. Until then a frame was four words and the arguments
+were popped. Keeping them costs n + 3 stores on a call and as many clears on a
+return, and no allocation. `TCALL` rewrites them, since the frame now belongs
+to the tail callee, and `RET` pops them with the header.
 
 Markers for `block`, `catch`, `unwind-protect` and `handler-case` are records
 pushed on the same stack with a kind word, and an unwind walks downward
@@ -180,7 +192,7 @@ per scope and make every backtrace anonymous.
 | --- | --- | --- |
 | `CLOSURE k:u16` | 3 | make a closure of the `Function` `constants[k]` over the current environment |
 | `CALL n:u8` | 2 | pop *n* arguments and the callee beneath them, call it |
-| `TCALL n:u8` | 2 | the same, reusing the current frame |
+| `TCALL n:u8` | 2 | the same, reusing the current frame (its kept call replaced by this one) |
 | `PRIM p:u8 n:u8` | 3 | call primitive `p` with *n* arguments, with no lookup |
 | `RET` | 1 | pop the frame, leave the value on the caller's stack |
 
@@ -198,7 +210,7 @@ are Quokka's own and a program is told not to call them at all. When packages
 arrive in phase 2 and they become `quokka-internal::` symbols, the reason
 becomes the same one.
 
-The table holds **142** primitives today, against `PRIM`'s ceiling of 256.
+The table holds **156** primitives today, against `PRIM`'s ceiling of 256.
 
 `TCALL` is an instruction rather than an optimisation. The compiler knows at
 compile time which calls are in tail position, so it is a property of the

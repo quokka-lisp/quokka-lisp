@@ -671,13 +671,43 @@
       (%malformed "call"
                   "passes more than 255 arguments written out (call-arguments-limit); apply takes a list of any length"))
   ;; `(%set-symbol-function 'NAME (lambda ...))` is a definition: the
-  ;; function it stores is NAME's, and is told so.
+  ;; function it stores is NAME's, and is told so. A setf function's
+  ;; definition stores it under the symbol `%setf-function-symbol` keeps,
+  ;; and it is named `(setf NAME)`, as SBCL names it (#130).
   (if (eq (car form) '%set-symbol-function)
-      (if (%definition-p (cdr form))
-          (setq %pending-name (second (second form)))))
+      (cond ((%definition-p (cdr form))
+             (setq %pending-name (second (second form))))
+            ((%setf-definition-p (cdr form))
+             (setq %pending-name (list 'setf (second (second (second form))))))
+            (t nil)))
   (%compile-callee (car form) env)
   (%compile-arguments (cdr form) env)
-  (%emit (list (if tail 'TCALL 'CALL) (length (cdr form)))))
+  (%emit (list (if (if tail (not (%never-returns-p (car form) env)) nil) 'TCALL 'CALL)
+               (length (cdr form)))))
+
+;;; Is HEAD a global function that never returns, `error` or
+;;; `invoke-debugger`? A call of one in tail position is compiled as an
+;;; ordinary call, as SBCL compiles it, so the frame that called it is still
+;;; there for the debugger to show and retry (#130): a tail call would have
+;;; replaced it, and nothing is saved by reusing a frame for a call that
+;;; does not come back.
+(defun %never-returns-p (head env)
+  (if (if (eq head 'error) t (eq head 'invoke-debugger))
+      (not (%lookup head env 0 ':function))
+      nil))
+
+;;; Is ARGUMENTS `((%setf-function-symbol (quote NAME)) FUNCTION)`, the
+;;; definition `(defun (setf NAME) ...)` expands into?
+(defun %setf-definition-p (arguments)
+  (if (consp arguments)
+      (if (consp (car arguments))
+          (if (eq (car (car arguments)) '%setf-function-symbol)
+              (if (%definition-p (cons (second (car arguments)) (cdr arguments)))
+                  t
+                  nil)
+              nil)
+          nil)
+      nil))
 
 ;;; `(flet ((f (x) ...)) ...)`
 ;;;
@@ -712,11 +742,15 @@
              nil))
         (t nil)))
 
+;;; A local function is assembled under the name `(flet f)` or
+;;; `(labels f)`, as SBCL names it (without its `:in`), and not plain `f`:
+;;; a backtrace then says which `f` a frame is running, and a debugger
+;;; that retries a frame by calling its name's global function (#130) never
+;;; calls the global `f` for a local one.
 (defun %compile-local-functions (definitions env)
   (if (endp definitions)
       nil
-      (progn (if (symbolp (car (car definitions)))
-                 (setq %pending-name (car (car definitions))))
+      (progn (setq %pending-name (list 'flet (car (car definitions))))
              (%compile-lambda (%local-lambda (car definitions)) env)
              (%compile-local-functions (cdr definitions) env))))
 
@@ -773,7 +807,8 @@
 (defun %store-local-functions (definitions env index)
   (if (endp definitions)
       nil
-      (progn (%compile-lambda (%local-lambda (car definitions)) env)
+      (progn (setq %pending-name (list 'labels (car (car definitions))))
+             (%compile-lambda (%local-lambda (car definitions)) env)
              (%emit (list 'FSET 0 index))
              (%emit (list 'POP))
              (%store-local-functions (cdr definitions) env (+ index 1)))))

@@ -211,6 +211,8 @@ pub enum Prim {
     UnwindToHandler = 151,
     Signalled = 152,
     FunctionName = 153,
+    Frames = 154,
+    UnwindToFrame = 155,
 }
 
 impl Prim {
@@ -715,6 +717,14 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // The name a compiled function was assembled under (`%pending-name` in
     // the compiler), so that a function can find its definition (#55).
     (Prim::FunctionName, "%FUNCTION-NAME", Arity::Exactly(1)),
+    // ---- frames (phase 3 step D, #130) ----------------------------------
+    //
+    // Every frame keeps the call that made it, for the debugger: what the
+    // stack holds, read in one walk (`vm::frames`); and a way to unwind to
+    // one frame and call something in its place, which only the machine can
+    // do and so is intercepted.
+    (Prim::Frames, "%FRAMES", Arity::Exactly(0)),
+    (Prim::UnwindToFrame, "%UNWIND-TO-FRAME", Arity::Exactly(3)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -919,7 +929,12 @@ pub fn call_slice<'h>(
             operator: "%UNWIND-TO-HANDLER",
             detail: "is intercepted by the machine and should never be called here",
         }),
+        Prim::UnwindToFrame => Err(EvalError::Fault {
+            operator: "%UNWIND-TO-FRAME",
+            detail: "is intercepted by the machine and should never be called here",
+        }),
         Prim::HandlerMarks => crate::vm::handler_marks(mc, args[0], args[1]),
+        Prim::Frames => crate::vm::frames(mc),
         // A compiled function's name, through a closure to its body, or nil
         // for an interpreted closure or anything that is not a function. The
         // compiler assembles an anonymous function under the name LAMBDA.

@@ -187,7 +187,9 @@ fn the_table_order_is_pinned() {
             "%HANDLER-MARKS",
             "%UNWIND-TO-HANDLER",
             "%SIGNALLED",
-            "%FUNCTION-NAME"
+            "%FUNCTION-NAME",
+            "%FRAMES",
+            "%UNWIND-TO-FRAME"
         ]
     );
 }

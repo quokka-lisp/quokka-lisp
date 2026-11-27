@@ -30,14 +30,92 @@ use crate::{closure, env};
 /// nothing realistic grows more than a few times.
 const INITIAL_STACK: usize = 64;
 
-/// How many words a call frame's header takes: the saved program counter,
-/// frame pointer, function and environment.
+/// How many words a call frame's header takes: the argument count, the
+/// call's token, the callee, and the saved program counter, frame pointer,
+/// function and environment. The frame pointer points just above it.
 ///
-/// Arguments are not among them. They have become an `Environment` by the
-/// time the frame exists, because variables live on the chain rather than in
-/// frame slots — one allocation per call, which `docs/design.md` records as
-/// the price of keeping one environment representation for now.
-const FRAME: usize = 4;
+/// The arguments themselves sit below the header, as the call passed them
+/// (#130). The callee does not read them there: they have become an
+/// `Environment` by the time the frame exists, because variables live on the
+/// chain rather than in frame slots — one allocation per call, which
+/// `docs/design.md` records as the price of keeping one environment
+/// representation. They are kept for the debugger, which shows what a frame
+/// was called with and can call it again: kept on the stack, which a call
+/// writes anyway, rather than in a list, which would be an allocation per
+/// call. `frame` names the header's slots.
+const FRAME: usize = frame::SIZE;
+
+/// A call frame, from below:
+///
+/// ```text
+///    argument 0 .. argument n-1   as the call passed them
+///    n                            ARGUMENT_COUNT
+///    nil, or the call's token     TOKEN: made when the frame is first read
+///    the callee                   CALLEE: what was called, before a
+///                                 funcallable instance is opened
+///    saved pc                     PC
+///    saved frame pointer          FP
+///    saved function               FUNCTION: the caller's
+///    saved environment            ENV: the caller's
+///    ...the callee's operands     <- frame pointer
+/// ```
+///
+/// Offsets are from the header's base, `fp - SIZE`.
+pub mod frame {
+    /// How many arguments lie below the header.
+    pub const ARGUMENT_COUNT: usize = 0;
+    /// `nil` until something reads the frame: then a fresh cons that names
+    /// this call and no other (`vm::frames`). A place on the stack is
+    /// reused by every call made there, and a later call of the same
+    /// function at the same depth has the same place and callee, so the
+    /// token is what tells a debugger's old frame from a new one. Made only
+    /// when asked for, so that a call pays one store for it.
+    pub const TOKEN: usize = 1;
+    /// The function called, as the caller had it.
+    pub const CALLEE: usize = 2;
+    /// Where the caller carries on.
+    pub const PC: usize = 3;
+    /// The caller's frame pointer.
+    pub const FP: usize = 4;
+    /// The caller's function.
+    pub const FUNCTION: usize = 5;
+    /// The caller's environment.
+    pub const ENV: usize = 6;
+    /// How many slots the header takes.
+    pub const SIZE: usize = 7;
+}
+
+/// The frame whose pointer is FP: the base of its header and its argument
+/// count, or `None` if FP is not a frame's pointer that the stack can hold.
+///
+/// Every read of a frame goes through here, so that a damaged stack — one
+/// in an image made by hand — is an error and never an index out of range
+/// (rule 10).
+fn frame_bounds(mc: &Mutation<'_>, fp: usize) -> Option<(usize, usize)> {
+    let stack = mc.register(Register::Operands);
+    if !stack.is_object() || mc.header(stack).object_type != ObjectType::Vector {
+        return None;
+    }
+    if fp > mc.header(stack).slots {
+        return None;
+    }
+    open_frame(mc, fp)
+}
+
+/// `frame_bounds` for the machine itself, which always has a stack vector
+/// with the stack pointer inside it (`Heap::verify` checks that much of an
+/// image, and nothing moves either out of it): the checks a call and a
+/// return need, and no more, since they are the commonest things it does.
+fn open_frame(mc: &Mutation<'_>, fp: usize) -> Option<(usize, usize)> {
+    if fp < FRAME || fp > mc.sp() {
+        return None;
+    }
+    let stack = mc.register(Register::Operands);
+    let base = fp - FRAME;
+    let n = mc.slot(stack, base + frame::ARGUMENT_COUNT).as_fixnum()?;
+    let n = usize::try_from(n).ok()?;
+    (n <= base).then_some((base, n))
+}
 
 /// Unwind records: how a compiled `block`, `catch`, `tagbody`,
 /// `unwind-protect` or `handler-case` leaves something behind to be found.
@@ -459,7 +537,17 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// makes a tail call cost no stack — and, unlike the interpreter's
     /// version, is decided by the compiler rather than discovered by the
     /// frame still being there.
-    fn enter(&mut self, callee: Value<'h>, args: &[Value<'h>], tail: bool) -> Transition {
+    ///
+    /// CALLED is what the caller called, which the frame keeps: CALLEE
+    /// itself, or the funcallable instance (a generic function) whose
+    /// function CALLEE is.
+    fn enter(
+        &mut self,
+        called: Value<'h>,
+        callee: Value<'h>,
+        args: &[Value<'h>],
+        tail: bool,
+    ) -> Transition {
         let Some(code_object) = self.compiled_body(callee) else {
             if closure::is_callable(self.mc, callee) {
                 // An interpreted closure in a compiled program. Not a user
@@ -502,9 +590,12 @@ impl<'a, 'h> Vm<'a, 'h> {
                 // functions names none of them (#110).
                 Err(EvalError::WrongArgumentCount { wanted, got, .. }) => {
                     let name = self.mc.slot(code_object, function::NAME);
+                    // A local function's name is a list, `(flet f)` (#130).
                     let function = if self.mc.is_symbol(name) && !self.mc.symbol_is(name, "LAMBDA")
                     {
                         self.mc.symbol_name(name)
+                    } else if name.is_cons() {
+                        crate::printer::print(self.mc, name)
                     } else {
                         String::from("this function")
                     };
@@ -524,20 +615,55 @@ impl<'a, 'h> Vm<'a, 'h> {
             .unwrap_or(0)
             .max(0) as usize;
 
-        if tail {
-            let fp = self.mc.fp();
-            self.drop_to(fp);
+        let fp = self.mc.fp();
+        if tail && fp == 0 {
+            // The function the machine was started on has no frame of its
+            // own (`Vm::start`), so there is no call to replace: its tail
+            // callee runs frameless too, and returning from it halts.
+            self.drop_to(0);
         } else {
-            let pc = self.mc.pc();
-            let fp = self.mc.fp();
-            let current = self.mc.register(Register::Function);
-            let env = self.mc.register(Register::Env);
-            self.ensure(FRAME + wanted);
-            self.push(Value::fixnum(pc as i64).expect("a code offset is a fixnum"));
-            self.push(Value::fixnum(fp as i64).expect("a stack offset is a fixnum"));
-            self.push(current);
-            self.push(env);
-            let sp = self.mc.sp();
+            // The caller's state: the registers for a call, or for a tail
+            // call the header of the frame being reused, whose caller is the
+            // one the tail callee returns to.
+            let saved = if tail {
+                let Some((base, n)) = open_frame(self.mc, fp) else {
+                    return self.damaged_frame("TCALL");
+                };
+                let stack = self.mc.register(Register::Operands);
+                let header = [
+                    self.mc.slot(stack, base + frame::PC),
+                    self.mc.slot(stack, base + frame::FP),
+                    self.mc.slot(stack, base + frame::FUNCTION),
+                    self.mc.slot(stack, base + frame::ENV),
+                ];
+                self.drop_to(base - n);
+                header
+            } else {
+                let pc = self.mc.pc();
+                [
+                    Value::fixnum(pc as i64).expect("a code offset is a fixnum"),
+                    Value::fixnum(fp as i64).expect("a stack offset is a fixnum"),
+                    self.mc.register(Register::Function),
+                    self.mc.register(Register::Env),
+                ]
+            };
+            // Written in one go, after one check for room: a call is the
+            // commonest thing the machine does, and a push checks for room
+            // each time.
+            self.ensure(args.len() + FRAME + wanted);
+            let stack = self.mc.register(Register::Operands);
+            let mut sp = self.mc.sp();
+            let count = Value::fixnum(args.len() as i64).expect("an argument count is small");
+            for word in args
+                .iter()
+                .copied()
+                .chain([count, Value::NIL, called])
+                .chain(saved)
+            {
+                self.mc.set_slot(stack, sp, word);
+                sp += 1;
+            }
+            self.mc.set_sp(sp);
             self.mc.set_fp(sp);
         }
         self.ensure(wanted);
@@ -614,19 +740,39 @@ impl<'a, 'h> Vm<'a, 'h> {
         if fp == 0 {
             return self.halt_with(v);
         }
-        let base = fp - FRAME;
+        let Some((base, n)) = open_frame(self.mc, fp) else {
+            return self.damaged_frame("RET");
+        };
         let stack = self.mc.register(Register::Operands);
-        let pc = self.mc.slot(stack, base).as_fixnum().unwrap_or(0) as usize;
-        let caller_fp = self.mc.slot(stack, base + 1).as_fixnum().unwrap_or(0) as usize;
-        let function = self.mc.slot(stack, base + 2);
-        let env = self.mc.slot(stack, base + 3);
-        self.drop_to(base);
+        let pc = self
+            .mc
+            .slot(stack, base + frame::PC)
+            .as_fixnum()
+            .unwrap_or(0) as usize;
+        let caller_fp = self
+            .mc
+            .slot(stack, base + frame::FP)
+            .as_fixnum()
+            .unwrap_or(0) as usize;
+        let function = self.mc.slot(stack, base + frame::FUNCTION);
+        let env = self.mc.slot(stack, base + frame::ENV);
+        self.drop_to(base - n);
         self.mc.set_pc(pc);
         self.mc.set_fp(caller_fp);
         self.mc.set_register(Register::Function, function);
         self.mc.set_register(Register::Env, env);
         self.push(v);
         Transition::Continue
+    }
+
+    /// A frame pointer that does not point above a frame's header: only an
+    /// image made by hand can do it, and it is the machine's fault, not the
+    /// program's.
+    fn damaged_frame(&mut self, operator: &'static str) -> Transition {
+        self.fail(EvalError::Fault {
+            operator,
+            detail: "the frame pointer does not point at a frame",
+        })
     }
 
     fn call(&mut self, n: usize, tail: bool) -> Transition {
@@ -650,6 +796,7 @@ impl<'a, 'h> Vm<'a, 'h> {
         // through the function it holds, with the same arguments (#124). Its
         // function is never another funcallable instance (the setter refuses
         // one), so one replacement is enough.
+        let called = callee;
         let callee = if crate::instance::is_funcallable(self.mc, callee) {
             let function = crate::instance::function(self.mc, callee);
             if !crate::instance::is_plain_function(self.mc, function) {
@@ -681,7 +828,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 },
             };
         }
-        self.enter(callee, args, tail)
+        self.enter(called, callee, args, tail)
     }
 
     /// The Lisp function to call when an arithmetic primitive's fixnum fast
@@ -796,6 +943,9 @@ impl<'a, 'h> Vm<'a, 'h> {
         }
         if index == primitives::index(primitives::Prim::UnwindToHandler) {
             return Some(self.unwind_to_handler(args));
+        }
+        if index == primitives::index(primitives::Prim::UnwindToFrame) {
+            return Some(self.unwind_to_frame(args));
         }
         if index == primitives::index(primitives::Prim::Error) {
             let Some((datum, rest)) = args.split_first() else {
@@ -1031,6 +1181,15 @@ impl<'a, 'h> Vm<'a, 'h> {
     fn step_unwind(&mut self) -> Transition {
         let target = self.mc.register(Register::Unwind);
         let at = self.mc.mp();
+        // An unwind to a frame (#130) has arrived when no record is left
+        // that the frame or anything it called pushed: those all lie above
+        // its frame pointer. Until then it passes each record as a `throw`
+        // passes a record that is not its catch, below.
+        if let Some(place) = self.frame_target(target) {
+            if at == usize::MAX || at < place {
+                return self.arrive_at_frame(target, place);
+            }
+        }
         if at == usize::MAX {
             // Nothing wanted it. A throw to a tag nobody is catching, or a
             // condition nobody is handling.
@@ -1390,6 +1549,103 @@ impl<'a, 'h> Vm<'a, 'h> {
             }
         }
         None
+    }
+
+    /// `(%unwind-to-frame place token thunk)`: unwind to the frame at
+    /// PLACE, running every cleanup and undoing every special binding made
+    /// inside it, then call THUNK in the frame's place, so that its values
+    /// are the frame's, returned to the frame's caller (#130). SBCL's
+    /// `sb-debug:unwind-to-frame-and-call`, and how a frame is retried.
+    ///
+    /// The frame must still be open and still be the call `%frames` gave
+    /// TOKEN for: a place is only a stack index, and a frame that has
+    /// returned leaves its place to the next call made there, which has a
+    /// token of its own or none (`frame::TOKEN`). Checked by walking the
+    /// chain of frames, as `has_catch` walks the records for a `throw`,
+    /// linear in the frames open.
+    fn unwind_to_frame(&mut self, args: &[Value<'h>]) -> Transition {
+        if args.len() != 3 {
+            return self.fail(EvalError::WrongArgumentCount {
+                name: "%UNWIND-TO-FRAME",
+                wanted: 3,
+                got: args.len(),
+            });
+        }
+        let wanted = match args[0].as_fixnum() {
+            Some(n) if n > 0 => n as usize,
+            _ => usize::MAX,
+        };
+        let mut fp = self.mc.fp();
+        let mut open = false;
+        while let Some((base, _)) = frame_bounds(self.mc, fp) {
+            let stack = self.mc.register(Register::Operands);
+            if fp == wanted {
+                open = args[1].is_cons() && self.mc.slot(stack, base + frame::TOKEN) == args[1];
+                break;
+            }
+            match self.mc.slot(stack, base + frame::FP).as_fixnum() {
+                Some(caller) if caller >= 0 && (caller as usize) < fp => fp = caller as usize,
+                _ => break,
+            }
+        }
+        if !open {
+            return self.fail(EvalError::NoSuchExit(String::from(
+                "that frame, which has already returned",
+            )));
+        }
+        let target = self.mc.alloc(ObjectType::Vector, 3);
+        for (i, v) in args.iter().enumerate() {
+            self.mc.set_slot(target, i, *v);
+        }
+        self.start_unwind(target, Value::NIL)
+    }
+
+    /// The frame pointer an unwind towards TARGET is looking for, if it is
+    /// the target `unwind_to_frame` makes: a three-slot vector of place,
+    /// token and thunk. `handler_target`'s vectors have two slots, and
+    /// nothing else unwinds towards a vector.
+    fn frame_target(&self, target: Value<'h>) -> Option<usize> {
+        if target.is_object() {
+            let header = self.mc.header(target);
+            if header.object_type == ObjectType::Vector && header.slots == 3 {
+                return match self.mc.slot(target, 0).as_fixnum() {
+                    Some(n) if n > 0 => Some(n as usize),
+                    _ => None,
+                };
+            }
+        }
+        None
+    }
+
+    /// The unwind to the frame at PLACE has passed every record inside it:
+    /// pop the frame as a return would, and call the thunk where it was
+    /// called, so that the thunk returns to the frame's caller.
+    fn arrive_at_frame(&mut self, target: Value<'h>, place: usize) -> Transition {
+        let Some((base, n)) = frame_bounds(self.mc, place) else {
+            return self.damaged_frame("%UNWIND-TO-FRAME");
+        };
+        let stack = self.mc.register(Register::Operands);
+        let pc = self
+            .mc
+            .slot(stack, base + frame::PC)
+            .as_fixnum()
+            .unwrap_or(0) as usize;
+        let caller_fp = self
+            .mc
+            .slot(stack, base + frame::FP)
+            .as_fixnum()
+            .unwrap_or(0) as usize;
+        let function = self.mc.slot(stack, base + frame::FUNCTION);
+        let env = self.mc.slot(stack, base + frame::ENV);
+        let thunk = self.mc.slot(target, 2);
+        self.drop_to(base - n);
+        self.mc.set_pc(pc);
+        self.mc.set_fp(caller_fp);
+        self.mc.set_register(Register::Function, function);
+        self.mc.set_register(Register::Env, env);
+        self.mc.set_register(Register::Unwind, Value::UNBOUND);
+        self.mc.set_register(Register::Values, Value::UNBOUND);
+        self.call_value(thunk, &[], false)
     }
 
     /// Pick up the host's answer, or go on waiting for it.
@@ -2154,6 +2410,54 @@ pub fn handler_marks<'h>(
     Ok(list)
 }
 
+/// `(%frames)`: every open frame, innermost first, each as
+/// `(place token callee . arguments)` — where its frame pointer is, the
+/// token that names this call (made now if nothing has asked before; see
+/// `frame::TOKEN`), what was called, and the arguments as the call passed
+/// them (#130).
+///
+/// The innermost is the frame of the function that called `%frames`, since
+/// a primitive has no frame. The function the machine was started on has
+/// none either (`Vm::start`), so the walk ends above it.
+///
+/// A walk down the chain of saved frame pointers, linear in the frames open,
+/// as `handler_marks` is in the records; it allocates only what it returns.
+/// Each saved pointer must be below the one before, so a damaged stack ends
+/// the walk rather than looping.
+pub fn frames<'h>(mc: &mut Mutation<'h>) -> Result<Value<'h>, EvalError> {
+    let mut found: Vec<(usize, Value<'h>, Value<'h>, Vec<Value<'h>>)> = Vec::new();
+    let mut fp = mc.fp();
+    while let Some((base, n)) = frame_bounds(mc, fp) {
+        let mut token = mc.slot(mc.register(Register::Operands), base + frame::TOKEN);
+        if !token.is_cons() {
+            token = mc.cons(Value::NIL, Value::NIL);
+            let stack = mc.register(Register::Operands);
+            mc.set_slot(stack, base + frame::TOKEN, token);
+        }
+        let stack = mc.register(Register::Operands);
+        let callee = mc.slot(stack, base + frame::CALLEE);
+        let arguments = (base - n..base).map(|i| mc.slot(stack, i)).collect();
+        found.push((fp, token, callee, arguments));
+        match mc.slot(stack, base + frame::FP).as_fixnum() {
+            Some(caller) if caller >= 0 && (caller as usize) < fp => fp = caller as usize,
+            _ => break,
+        }
+    }
+    let mut list = Value::NIL;
+    for (place, token, callee, arguments) in found.into_iter().rev() {
+        let mut entry = Value::NIL;
+        for v in arguments.into_iter().rev() {
+            entry = mc.cons(v, entry);
+        }
+        entry = mc.cons(callee, entry);
+        entry = mc.cons(token, entry);
+        let place = Value::fixnum(place as i64).expect("a stack index is a fixnum");
+        entry = mc.cons(place, entry);
+        list = mc.cons(entry, list);
+    }
+    Ok(list)
+}
+
 fn begin(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
     heap.mutate(|mc| {
         let function = mc.register(Register::Value);
@@ -2224,18 +2528,35 @@ pub fn recover(heap: &mut crate::heap::Heap) {
 /// `None` when the input has run out.
 pub fn step_outcome(heap: &mut crate::heap::Heap) -> Option<Outcome> {
     heap.mutate(|mc| {
+        // What `%host-step` returned is the program's to decide, not the
+        // machine's to trust: a debugger can return anything from its frame
+        // (`return-from-frame`, #130), and a malformed outcome is reported,
+        // never read as a list it is not (rule 10).
+        let malformed = || {
+            Some(Outcome::Failed(EvalError::Fault {
+                operator: "%HOST-STEP",
+                detail: "returned something that is not a step's outcome",
+            }))
+        };
         let result = mc.register(Register::Value);
+        if !result.is_cons() {
+            return malformed();
+        }
         let kind = mc.car(result);
         if mc.symbol_is(kind, "EOF") {
             return None;
         }
-        let text = mc.string_to_rust(mc.car(mc.cdr(result)));
+        let rest = mc.cdr(result);
+        if !rest.is_cons() || !is_string(mc, mc.car(rest)) {
+            return malformed();
+        }
+        let text = mc.string_to_rust(mc.car(rest));
         Some(if mc.symbol_is(kind, "VALUE") {
             Outcome::Value(text)
         } else {
             // `(:error message type-name)`.
-            let named = mc.cdr(mc.cdr(result));
-            let condition = if named.is_cons() {
+            let named = mc.cdr(rest);
+            let condition = if named.is_cons() && is_string(mc, mc.car(named)) {
                 mc.string_to_rust(mc.car(named))
             } else {
                 String::from("ERROR")
@@ -2246,6 +2567,11 @@ pub fn step_outcome(heap: &mut crate::heap::Heap) -> Option<Outcome> {
             }
         })
     })
+}
+
+/// Is V a string, of either layout?
+fn is_string<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
+    v.is_object() && mc.header(v).object_type.is_string()
 }
 
 /// Hand `source` to the world's read-eval-print loop: `%host-source`, ready

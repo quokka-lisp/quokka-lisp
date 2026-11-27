@@ -50,6 +50,9 @@ turns it into ordinary `cons`, `append` and `quote` calls — so it is not a
 [special operator](#special-operator) and costs nothing at run time. Also
 called *quasiquotation*, after Quine's corner quotes. ([15](part-2-reading-and-running/15-code-that-writes-code.md))
 
+<a id="backtrace"></a>
+**Backtrace.** The calls in progress at some moment, innermost first, each with its function and the arguments it was called with: how a program got to where it failed. In Quokka every [call frame](#call-frame) keeps its call so that a backtrace can be read, and `quokka-debug:print-backtrace` prints one a line, `0: (FOO 1 2)`, as SBCL's does. ([86](part-10-frames/86-frames-keep-their-calls.md))
+
 <a id="bignum"></a>
 **Bignum.** An integer too large to fit in one machine word, stored in the heap
 as several. Contrast [fixnum](#fixnum). ([47](part-6-self-hosting/47-bignums.md))
@@ -94,6 +97,9 @@ uses one to make it impossible to hold a value across a garbage collection.
 
 <a id="byte-specifier"></a>
 **Byte specifier.** What `(byte size position)` returns: the name of a field of SIZE bits in an integer, starting POSITION bits from the least significant. Not eight bits, despite the name. `ldb` reads such a field and `dpb` replaces it; in Quokka, as in SBCL, a byte specifier is a cons of the two numbers. ([57](part-6-self-hosting/57-bit-fields.md))
+
+<a id="call-frame"></a>
+**Call frame.** The record the bytecode machine keeps on its stack for one call while it runs: where to return to and what the caller was doing, and since #130 the call itself, the callee and its arguments as passed. Not the interpreter's [frame](#frame), which is one pending step of an evaluation. ([25](part-3-compiling/25-a-machine-made-of-instructions.md), [86](part-10-frames/86-frames-keep-their-calls.md))
 
 <a id="call-method"></a>
 **Call-method.** An operator that exists only inside an [effective method form](#effective-method-form): `(call-method m next-methods)` calls the method `m`, whose `call-next-method` then reaches the first of NEXT-METHODS. Its companion `(make-method form)` stands for a method made of FORM. In Quokka both are local macros of the compiled effective method. ([77](part-7-objects/77-method-combination.md))
@@ -857,6 +863,9 @@ every language. ([Preface](what-has-to-be-built.md))
 
 <a id="restart"></a>
 **Restart.** A way of carrying on from an error that the code signalling it offers, chosen by a handler or by the person at the keyboard: `ccase`'s `store-value` stores a new value and tries again. `restart-case` establishes restarts for the extent of a form, and `invoke-restart` takes one. ([56](part-6-self-hosting/56-small-functions.md), [82](part-8-conditions/82-restarts.md))
+
+<a id="retrying-a-frame"></a>
+**Retrying a frame.** Leaving everything a [call frame](#call-frame) started, with its cleanups run and its special bindings undone, and making its call again in the same place, so that the caller receives the new call's values. With a function redefined in between, it is how a fix takes effect without starting the program again. Quokka's `restart-frame` calls the current definition of the frame's function's name. ([87](part-10-frames/87-retrying-a-frame.md))
 
 <a id="root"></a>
 **Root.** A location holding a value that is *not* inside the heap — a machine

@@ -371,7 +371,12 @@ impl Heap {
         let bad = |which| Err(Inconsistency::BadRegister { which });
         // No stack at all is `nil`: a world in which nothing compiled has
         // run yet. `Vm::start` makes one before anything is popped.
+        // Then nothing is on it, so the machine never has a stack pointer
+        // or a frame outside a stack vector (#130: a return trusts that).
         if Value::from_bits(s.operands).is_nil() {
+            if s.sp != 0 || s.fp != 0 || s.mp != usize::MAX {
+                return bad("stack-pointer");
+            }
         } else if let Some((_, stack)) = object(s.operands) {
             if stack.object_type != ObjectType::Vector {
                 return bad("operand-stack");
@@ -379,9 +384,13 @@ impl Heap {
             if s.sp > stack.slots || s.fp > s.sp {
                 return bad("stack-pointer");
             }
-            if s.mp != usize::MAX && s.mp > stack.slots {
+            // A record is read whole, from its first slot to its last.
+            if s.mp != usize::MAX && s.mp + crate::vm::mark::SIZE > s.sp {
                 return bad("mark-pointer");
             }
+        } else {
+            // Neither nil nor an object: nothing could push onto it.
+            return bad("operand-stack");
         }
         if let Some((at, function)) = object(s.function) {
             if function.object_type == ObjectType::Function {
