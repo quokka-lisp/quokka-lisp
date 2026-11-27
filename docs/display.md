@@ -318,6 +318,7 @@ them, applied in order.
 | `(:replace id node)` | put NODE where record ID is |
 | `(:remove id)` | take record ID away |
 | `(:set id property value...)` | change properties; nil removes one |
+| `(:append-text id string)` | add STRING to the end of text record ID's text |
 | `(:focus id)` | put the caret in editor ID |
 
 Where a new record goes is said by the sibling it goes in front of, worked

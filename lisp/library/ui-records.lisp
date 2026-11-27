@@ -49,7 +49,11 @@
 ;;; A run of text in one style. Its text grows as a stream writes to it.
 (defclass text-record (output-record)
   ((text :initform (make-array 16 :element-type 'character :adjustable t :fill-pointer 0)
-         :reader record-text)))
+         :reader record-text)
+   ;; How many characters of the text the page has, or nil when that is
+   ;; not known and the whole text must be sent: a flush sends what was
+   ;; written since the last one, not everything again (#166).
+   (%sent :initform nil :accessor %text-sent)))
 (defmethod record-kind ((record text-record)) :text)
 
 ;;; A record with children, kept in order in an adjustable vector.
@@ -291,13 +295,44 @@
     (remove-record child))
   container)
 
-;;; Text added to a text record.
+;;; Text added to a text record. The run is made long enough once and the
+;;; characters stored: `vector-push-extend` for each one cost 3,300 steps a
+;;; character (#166).
 (defun %extend-text (record string start end)
-  (let ((text (record-text record)))
-    (do ((i start (+ i 1)))
+  (let* ((text (record-text record))
+         (fill (fill-pointer text))
+         (needed (+ fill (- end start)))
+         (size (array-dimension text 0)))
+    (when (> needed size)
+      (adjust-array text (max needed (* 2 size))))
+    (%set-fill text needed)
+    (do ((i start (+ i 1))
+         (j fill (+ j 1)))
         ((>= i end))
-      (vector-push-extend (char string i) text)))
+      (setf (aref text j) (char string i))))
   (%note-change record '(:text)))
+
+;;; Give a text record other text: what redisplay does to a record it
+;;; keeps. The page is sent all of it, since what it has is no beginning of
+;;; this.
+(defun %replace-text (record string)
+  (%set-fill (record-text record) 0)
+  (setf (%text-sent record) nil)
+  (%extend-text record string 0 (length string)))
+
+;;; The message for a text record whose text changed: the characters the
+;;; page lacks, or all of them when what it has is not known.
+(defun %text-message (record)
+  (let* ((text (record-text record))
+         (sent (%text-sent record))
+         (count (length text)))
+    (setf (%text-sent record) count)
+    (cond ((null sent)
+           (list :set (record-id record) :text (coerce text 'simple-string)))
+          ((< sent count)
+           (list :append-text (record-id record)
+                 (coerce (subseq text sent count) 'simple-string)))
+          (t nil))))
 
 ;;; Replace an editor's text, as the world sees it: the page is told only
 ;;; when NOTIFY, since an edit the page reported is already on it.
@@ -354,6 +389,7 @@
 
 (defmethod record-node ((record text-record))
   (%now-shown record)
+  (setf (%text-sent record) (length (record-text record)))
   (list :text (record-id record) (%public-properties record)
         (coerce (record-text record) 'simple-string)))
 
@@ -388,9 +424,7 @@
            nil))
       (:remove (list :remove (record-id record)))
       (:text (setf (%record-noted record) nil)
-       (if (eq (%record-shown record) t)
-           (list :set (record-id record) :text (coerce (record-text record) 'simple-string))
-           nil))
+       (if (eq (%record-shown record) t) (%text-message record) nil))
       (:set (if (eq (%record-shown record) t)
                 (if (cddr note)
                     (if (cdddr note)

@@ -97,6 +97,15 @@ export class Model {
         this.notify("remove", node);
         break;
       }
+      case "append-text": {
+        // More of a text record's text: what was written since the world
+        // last told the page.
+        const node = this.nodes.get(args[0]);
+        if (!node || node.kind !== "text" || typeof args[1] !== "string") return;
+        node.text += args[1];
+        this.notify("append-text", node, args[1]);
+        break;
+      }
       case "set": {
         const node = this.nodes.get(args[0]);
         if (!node) return;
@@ -287,6 +296,11 @@ export class View {
         break;
       case "remove":
         if (node.dom) node.dom.remove();
+        break;
+      case "append-text":
+        // The element holds the text and nothing else, so the new
+        // characters are added to it; its look is in its classes.
+        if (node.dom) node.dom.append(other);
         break;
       case "set":
         this.update(node, other);

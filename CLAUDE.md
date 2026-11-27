@@ -868,7 +868,14 @@ class stops being plain); the valid initargs of a class are cached
 last child was), so a run of new children is walked once: 400 records flush
 in 4.6M steps, from 327M. A `:replace` or `:thunk` note drops the memos —
 **anything new that puts a record on the page during a flush must too**.
-Rebuild `(:FORMS 2428 :REPLACED 1757)`.
+**#166**: `adjust-array` copies a vector with a plain loop (the general walk
+cost 1,150 steps an element, and every `vector-push-extend` that grows pays
+it); `%extend-text` grows a run once per write; a text record remembers how
+many characters the page has (`%text-sent`) and a flush sends the rest as
+`(:append-text id string)` — **text given to a record any other way goes
+through `%replace-text`**, which says the page must be sent all of it. 100
+lines at the listener 0.48 s in wasm, from 3.75 s.
+Rebuild `(:FORMS 2430 :REPLACED 1759)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

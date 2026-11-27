@@ -290,11 +290,20 @@
                                        dimensions initial-contents))
                       (t (let ((simple (%make-simple (%element-kind element-type) size
                                                      initial-element initial-element-p)))
-                           (dotimes (i size simple)
-                             (let ((subscripts (%subscripts i dimensions)))
-                               (if (every #'< subscripts old-dimensions)
-                                   (setf (aref simple i)
-                                         (apply #'aref array subscripts)))))))))
+                           (if (eql (length dimensions) 1)
+                               ;; A vector: element i stays element i, and
+                               ;; there is nothing to work out. This is the
+                               ;; case `vector-push-extend` makes, for every
+                               ;; string and list of children that grows;
+                               ;; the general walk below cost it 1,150
+                               ;; steps an element (#166).
+                               (dotimes (i (min size (car old-dimensions)) simple)
+                                 (setf (aref simple i) (aref array i)))
+                               (dotimes (i size simple)
+                                 (let ((subscripts (%subscripts i dimensions)))
+                                   (if (every #'< subscripts old-dimensions)
+                                       (setf (aref simple i)
+                                             (apply #'aref array subscripts))))))))))
           (fill (cond (fill-pointer (%fill-pointer-value fill-pointer size))
                       ((array-has-fill-pointer-p array)
                        (if (> (fill-pointer array) size)

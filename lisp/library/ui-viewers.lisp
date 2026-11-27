@@ -240,8 +240,7 @@
   (typecase old
     (text-record
      (unless (string= (record-text old) (record-text fresh))
-       (setf (fill-pointer (record-text old)) 0)
-       (%extend-text old (record-text fresh) 0 (length (record-text fresh)))))
+       (%replace-text old (record-text fresh))))
     (editor-record
      (unless (string= (editor-text old) (editor-text fresh))
        (set-editor-text old (editor-text fresh))))
