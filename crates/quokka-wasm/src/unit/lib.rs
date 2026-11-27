@@ -265,7 +265,8 @@ fn a_record_stream_records_runs_and_flushes_what_changed() {
     );
     assert_eq!(
         q_ids(&mut seen, &messages),
-        "((:SET R4 :TEXT \" (dim) more\"))"
+        "((:APPEND-TEXT R4 \" more\"))",
+        "only what the page lacks is sent (#166)"
     );
     let (messages, _) = shown(&mut q, "(progn (flush-display) :done)");
     assert_eq!(messages, "", "nothing changed, nothing sent");
@@ -283,6 +284,7 @@ fn q_ids(seen: &mut Vec<String>, messages: &str) -> String {
         out.push_str(before);
         let is_id = before.ends_with(' ')
             && (before.trim_end().ends_with(":APPEND")
+                || before.trim_end().ends_with(":APPEND-TEXT")
                 || before.trim_end().ends_with(":TEXT")
                 || before.trim_end().ends_with(":BLOCK")
                 || before.trim_end().ends_with(":SET")
