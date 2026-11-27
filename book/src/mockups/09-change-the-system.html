@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change the system itself</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,56fr) minmax(0,44fr); min-height: 400px; }
+.qk-c { font-size: 11.5px; }
+.qk-warn { background: var(--bg-warning); color: var(--text-warning); border-radius: 8px; padding: 8px 10px; font-size: 12px; margin-top: 10px; }
+.qk-t { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+.qk-ok { color: var(--text-success); }
+.qk-run { color: var(--text-accent); }
+.qk-add { color: var(--text-success); }
+</style>
+</head>
+<body>
+<main>
+<h1>Use case 6 · Change the system itself</h1>
+<p class="lede">An advanced user changes the compiler. A definition in system <code>quokka</code> asks before it installs and can be tried in a copy of the world, which rebuilds and runs the checks; committing writes the package back to its file for Git.</p>
+<h2 class="sr-only">An advanced user changing Quokka's compiler: editing a compiler function, trying it in a copy of the world while the tests run, then writing the change out for Git.</h2>
+<div class="steps">
+<button>1 · Edit the compiler</button>
+<button>2 · Try it in a copy</button>
+<button>3 · Out to Git</button>
+</div>
+<div id="stage"><p class="caption">This mock-up is drawn by its script.</p></div>
+<p class="caption" id="cap"></p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+const code = `<div class="qk-c">(defun %compile-cons (form env tail)
+  (let ((op (car form)))
+    (cond ((%special-form-p op)
+           (%compile-special form env tail))
+          <span class="qk-ed">((%inline-primitive-p op env)
+           (%compile-inline form env tail))</span>
+          ...)))</div>`;
+const shell = (bar, lt, left, rt, right, foot) => `<div class="qk"><div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span>${bar}</div>
+<div class="qk-tracks"><div style="border-right:0.5px solid var(--border)"><div class="qk-vt">${lt}</div><div class="qk-body">${left}</div></div>
+<div><div class="qk-vt">${rt}</div><div class="qk-body">${right}</div></div></div><div class="qk-foot">${foot}</div></div>`;
+const S = [
+{stage: shell(`<span>· world: quokka-dev</span><span style="margin-left:auto">system quokka · package quokka</span>`,
+`<i class="ti ti-pencil" aria-hidden="true"></i>Editor · %compile-cons <span style="margin-left:auto;color:var(--text-warning)">not installed</span>`,
+code + `<div class="qk-warn"><i class="ti ti-alert-triangle" aria-hidden="true"></i> This is part of the compiler. Installing it here changes how everything is compiled from now on, including the compiler's next fix.</div>
+<div style="display:flex;gap:6px;margin-top:8px"><button style="font-size:12px;border-color:var(--border-accent)"><i class="ti ti-copy" aria-hidden="true"></i> Try in a copy</button><button style="font-size:12px">Install here</button></div>`,
+`<i class="ti ti-search" aria-hidden="true"></i>Inspector · %compile-cons`,
+`<div style="font-size:12px;color:var(--text-secondary)">function · system quokka · version 7</div>
+<div class="qk-k">used by</div><div class="qk-c">%compile-form · %compile-body · 11 more</div>
+<div class="qk-k">exported to</div><div class="qk-c">lisp/compiler/compile.lisp</div>
+<div class="qk-k">guarded by</div><div style="font-size:12px">the fixpoint · 62 differential files · ansi-test ratchet</div>`,
+`Definitions in system quokka ask before they install`),
+cap: `An advanced user edits the compiler like any other definition. But installing a compiler change in the world you work in changes how the next fix to the compiler is compiled, so Quokka asks first and suggests trying the change in a copy of the world. (%inline-primitive-p and %compile-inline are made up for the example.)`},
+{stage: shell(`<span>· world: quokka-dev</span><span style="margin-left:auto;color:var(--text-accent)">copy running: quokka-dev / try-inline</span>`,
+`<i class="ti ti-pencil" aria-hidden="true"></i>Editor · %compile-cons <span style="margin-left:auto">installed in the copy</span>`,
+code + `<div class="qk-k">Your world is unchanged. The copy has the new definition, and the copy rebuilds itself with it.</div>`,
+`<i class="ti ti-checklist" aria-hidden="true"></i>Tests · in the copy`,
+`<div class="qk-t"><i class="ti ti-check qk-ok" aria-hidden="true"></i><span style="flex:1">warm rebuild</span><span>18 s</span></div>
+<div class="qk-t"><i class="ti ti-check qk-ok" aria-hidden="true"></i><span style="flex:1">fixpoint: C2 = C3</span><span>word for word</span></div>
+<div class="qk-t"><i class="ti ti-check qk-ok" aria-hidden="true"></i><span style="flex:1">differential files</span><span>62 of 62</span></div>
+<div class="qk-t"><i class="ti ti-loader qk-run" aria-hidden="true"></i><span style="flex:1">ansi-test ratchet</span><span>running</span></div>
+<div class="qk-k">Each result is a presentation: a failing test opens its form, its expected output and what the copy printed.</div>
+<div style="display:flex;gap:6px;margin-top:8px"><button style="font-size:12px">Bring it into my world</button><button style="font-size:12px">Throw the copy away</button></div>`,
+`The copy is a second world in its own worker · the tests are the ones check.sh runs today`),
+cap: `The copy is a second world, started from a save point of yours, running beside it. It installs the change, rebuilds itself, and runs the checks that check.sh runs today: the fixpoint, the differential files and the ansi-test ratchet. Only when they pass do you bring the change into your own world.`},
+{stage: shell(`<span>· world: quokka-dev</span><span style="margin-left:auto">version 58</span>`,
+`<i class="ti ti-file-diff" aria-hidden="true"></i>Files · lisp/compiler/compile.lisp`,
+`<div class="qk-c" style="font-size:11px"><span style="color:var(--text-muted)">@@ %compile-cons @@</span>
+   (cond ((%special-form-p op)
+          (%compile-special form env tail))
+<span class="qk-add">+        ((%inline-primitive-p op env)
++         (%compile-inline form env tail))</span>
+         ...)</div>
+<div class="qk-k">The commit wrote the changed package to the system's home, so the file and the world agree again.</div>`,
+`<i class="ti ti-git-commit" aria-hidden="true"></i>Git · local:/quokka-lisp`,
+`<div style="font-size:12px;color:var(--text-secondary)">branch main · 1 file changed</div>
+<input value="Compile primitive calls inline" style="width:100%;margin-top:8px;font-size:12px;height:28px">
+<div style="display:flex;gap:6px;margin-top:8px"><button style="font-size:12px">Git commit</button><button style="font-size:12px">Push</button></div>
+<div class="qk-k">Natively, through the local: file host. A browser world has no home until the remote file host exists.</div>`,
+`World commit 58 written to lisp/ · ready for a Git commit`),
+cap: `Committing in the world writes the changed package to the system's home, lisp/ in a Git checkout. The Git diff is ordinary text that anyone can review, and the repository stays the place where Quokka's own history lives.`}];
+document.getElementById("stage").innerHTML = S[0].stage;
+document.getElementById("cap").innerHTML = S[0].cap;
+mockupSteps(S.slice(1));
+</script>
+</body>
+</html>

@@ -194,7 +194,7 @@ One interaction loop runs through everything: evaluate a form, get presentations
 - **Running programs are processes.** A game loop or an animation runs in its own process beside the listener, so the listener still answers. Clicking a drawing in a running program suspends that process and inspects the object, and continuing resumes it, which is the debugger stopping a process for a reason other than an error.
 - **Editor.** Text with structural (paredit-style) commands, editing one definition at a time; a whole package can be opened as text when many definitions change at once (see *The world is a database of definitions*).
 
-> **Status: worked out 27 Nov 2026, in a brainstorm with mock-ups; nothing below is built.** The decisions are [#126](https://github.com/quokka-lisp/quokka-lisp/issues/126) and, for the window model, [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21). The sections from here to the end of *Environment and UI* record what phases 4 to 6 aim at. The mock-ups were drawn for four use cases and live only in that conversation; the decisions they led to are written out here.
+> **Status: worked out 27 Nov 2026, in a brainstorm with mock-ups; nothing below is built.** The decisions are [#126](https://github.com/quokka-lisp/quokka-lisp/issues/126) and, for the window model, [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21). The sections from here to the end of *Environment and UI* record what phases 4 to 6 aim at. The mock-ups, one for each use case and one comparing window models, are in `book/src/mockups/` (start at `index.html`), each step also as a PNG made by `scripts/render-mockups.sh`; the decisions they led to are written out here.
 
 ### Who it is for
 

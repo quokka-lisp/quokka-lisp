@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A game, changed while it runs</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,58fr) minmax(0,42fr); min-height: 400px; }
+.qk-body { padding: 8px 10px; line-height: 1.5; }
+.qk-c { font-size: 11.5px; }
+.qk-l { padding: 0 5px; }
+.qk-sr { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+.qk-sr span:first-child { font-family: var(--font-mono); min-width: 72px; }
+.qk-full { border: 0.5px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+</style>
+</head>
+<body>
+<main>
+<h1>Use case 4 · A game, changed while it runs</h1>
+<p class="lede">A small platform game with graphics and sound. The game loop is a process; clicking a drawing pauses it and inspects the real object; a changed method takes effect on the next frame.</p>
+<h2 class="sr-only">A small platformer in Quokka: running in a viewer, paused and inspected by clicking the player, changed while running, and the rejected app mode.</h2>
+<div class="steps">
+<button>1 · Playing</button>
+<button>2 · Click the player</button>
+<button>3 · Change it, keep playing</button>
+<button>4 · App mode (rejected)</button>
+</div>
+<div id="stage"><p class="caption">This mock-up is drawn by its script.</p></div>
+<p class="caption" id="cap"></p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+const scene = (sel, hi) => `<svg viewBox="0 0 360 220" width="100%" role="img" aria-label="Game scene with platforms, coins and the player"><rect x="0" y="0" width="360" height="220" fill="var(--bg-accent)"/>
+<rect x="0" y="196" width="360" height="24" fill="var(--border-strong)"/>
+<rect x="60" y="150" width="80" height="10" rx="2" fill="var(--border-stronger)"/>
+<rect x="190" y="${hi ? 96 : 116}" width="90" height="10" rx="2" fill="var(--border-stronger)"/>
+<circle cx="100" cy="132" r="6" fill="#EF9F27"/><circle cx="235" cy="${hi ? 78 : 98}" r="6" fill="#EF9F27"/><circle cx="315" cy="176" r="6" fill="#EF9F27"/>
+<path d="M118 175 Q 160 ${hi ? 60 : 95} 205 ${hi ? 82 : 102}" fill="none" stroke="var(--text-muted)" stroke-dasharray="3 4"/>
+<rect x="104" y="172" width="18" height="24" rx="4" fill="#D85A30"/>
+${sel ? '<rect x="99" y="167" width="28" height="34" rx="5" fill="none" stroke="#378ADD" stroke-width="2"/>' : ''}
+<text x="10" y="18" font-size="12" fill="var(--text-primary)" font-family="var(--font-mono)">coins 2</text></svg>`;
+const shell = (left, lt, rt, right, foot, ver) => `<div class="qk"><div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-apps.qi</span><span style="margin-left:auto">${ver}</span></div>
+<div class="qk-tracks"><div style="border-right:0.5px solid var(--border)"><div class="qk-vt">${lt}</div><div>${left}</div></div>
+<div><div class="qk-vt">${rt}</div><div class="qk-body">${right}</div></div></div><div class="qk-foot">${foot}</div></div>`;
+const S = [
+{stage: shell(scene(false, false), `<i class="ti ti-device-gamepad-2" aria-hidden="true"></i>Viewer · hop <span style="margin-left:auto;color:var(--text-success)">running · 60 fps</span>`,
+`<i class="ti ti-terminal-2" aria-hidden="true"></i>Listener`,
+`<div class="qk-c"><span class="qk-cm">hop 4 › </span>(run-game 'hop)</div><span class="qk-l" style="margin-top:4px">#&lt;process HOP running&gt;</span>
+<div class="qk-k">The game loop is its own process. The listener stays usable while you play.</div>
+<div class="qk-c" style="margin-top:8px"><span class="qk-cm">hop 5 › </span>(play *jump-sound*)</div>
+<div style="display:flex;align-items:center;gap:8px;margin-top:4px"><i class="ti ti-player-play" aria-hidden="true"></i><svg width="140" height="22" viewBox="0 0 140 22" aria-hidden="true"><path d="M0 11 L6 3 L12 19 L18 5 L24 17 L30 7 L36 15 L42 9 L48 13 L60 11 L140 11" fill="none" stroke="var(--text-accent)" stroke-width="1.5"/></svg><span class="qk-c">jump-sound</span></div>`,
+`Arrow keys play the game while the viewer has focus · Esc pauses`, 'version 31'),
+cap: `The game runs in a viewer next to the listener. Its loop is a separate process (phase 3's green threads), so the listener still answers. A sound prints as a waveform you can click to hear.`},
+{stage: shell(scene(true, false), `<i class="ti ti-device-gamepad-2" aria-hidden="true"></i>Viewer · hop <span style="margin-left:auto;color:var(--text-warning)">paused</span>`,
+`<i class="ti ti-search" aria-hidden="true"></i>Inspector`,
+`<div class="qk-c" style="font-size:13px">#&lt;player at 104, 172&gt;</div><div style="font-size:12px;color:var(--text-secondary)">instance of <span class="qk-l">player</span></div>
+<div class="qk-k">slots</div>
+<div class="qk-sr"><span>x</span><span>104</span></div>
+<div class="qk-sr"><span>vy</span><span>0</span></div>
+<div class="qk-sr"><span>on-ground</span><span>T</span></div>
+<div class="qk-sr"><span>jump-speed</span><input type="range" min="4" max="14" value="8" style="flex:1;height:auto;padding:0;border:0"><span>8</span></div>
+<div class="qk-k">The dashed arc is the jump it would make now. Drag the slider and watch it change.</div>`,
+`Clicking a drawing pauses the game's process; the objects stay exactly where they were`, 'version 31'),
+cap: `Shapes are presentations too. Clicking the player pauses the game's process and inspects the real player object. A numeric slot gets a slider (a moldable inspector view), and the scene shows the jump you would get: the next platform is out of reach.`},
+{stage: shell(scene(false, true), `<i class="ti ti-device-gamepad-2" aria-hidden="true"></i>Viewer · hop <span style="margin-left:auto;color:var(--text-success)">running · 60 fps</span>`,
+`<i class="ti ti-pencil" aria-hidden="true"></i>Editor · method update-player`,
+`<div class="qk-c">(defmethod update-player ((p player) input)
+  (when (and (jump-pressed-p input)
+             (on-ground p))
+    (setf (vy p) (- <span class="qk-ed">(* 1.4 (jump-speed p))</span>))
+    <span class="qk-ed">(play *jump-sound* :pitch 1.2)</span>)
+  (incf (vy p) *gravity*)
+  ...)</div>
+<div class="qk-k">Installed with Cmd-Enter. The next frame calls the new method; the player, the coins and the score didn't move.</div>`,
+`Changed since commit 31 · the running game picked it up on its next frame`, 'version 31 · changed'),
+cap: `You change the jump in update-player, add a higher-pitched sound, and press Cmd-Enter. The game picks up the new method on its next frame. Nothing restarts, and you keep your place and your coins.`},
+{stage: `<div class="qk-full"><div style="position:relative">${scene(false, true)}
+<div style="position:absolute;right:10px;top:8px;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);background:var(--surface-2);border:0.5px solid var(--border);border-radius:8px;padding:3px 8px"><i class="ti ti-paw" aria-hidden="true"></i>Look inside</div></div>
+<div class="qk-foot">quokka.example/worlds/hop · opened from a link · arrow keys to play</div></div>`,
+cap: `App mode, as first proposed: a friend opens a link and the game fills the screen, with the environment one button away. It was rejected, because a world opened from a link runs someone else's code with too little deliberation. An application is exported as a web page instead, locked or open (see design.md, Exporting an application).`}];
+document.getElementById("stage").innerHTML = S[0].stage;
+document.getElementById("cap").innerHTML = S[0].cap;
+mockupSteps(S.slice(1));
+</script>
+</body>
+</html>

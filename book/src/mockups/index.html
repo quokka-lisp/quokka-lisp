@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Environment mock-ups</title>
+<link rel="stylesheet" href="mockups.css">
+<style>
+ol { padding-left: 20px; }
+li { margin: 10px 0; }
+li a { font-weight: 500; }
+.note { font-size: 13px; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<main>
+<h1>Environment mock-ups</h1>
+<p class="lede">Drawn on 27 Nov 2026 to work out how a person uses Quokka once phases 4 to 6 exist. They were made to decide the design, recorded in <code>docs/design.md</code> under <em>Environment and UI</em> (decisions <a href="https://github.com/quokka-lisp/quokka-lisp/issues/126">#126</a> and <a href="https://github.com/quokka-lisp/quokka-lisp/issues/21">#21</a>), and nothing in them is built. Where the design moved on after a mock-up was drawn, its caption says so.</p>
+<ol>
+<li><a href="01-follow-a-book.html">Follow a book chapter</a> <span class="note">· use case 1: a typo stops and asks, a restart resumes</span></li>
+<li><a href="02-listener.html">The listener as live text</a> <span class="note">· use case 1: an edited form runs again at the bottom</span></li>
+<li><a href="03-find-where-it-lives.html">Find where something lives</a> <span class="note">· use case 2: from the prompt to the code that drew it</span></li>
+<li><a href="04-browse-inspect-commit.html">Browse, inspect, edit, commit</a> <span class="note">· use case 2: the world as a database of definitions</span></li>
+<li><a href="05-package-first.html">Package-first development</a> <span class="note">· systems, packages, a package as text</span></li>
+<li><a href="06-rolodex.html">Build a small application</a> <span class="note">· use case 3: the Rolodex, changed while it runs</span></li>
+<li><a href="07-platformer.html">A game, changed while it runs</a> <span class="note">· use case 4: processes, drawings as presentations, the rejected app mode</span></li>
+<li><a href="08-save-and-come-back.html">Save and come back</a> <span class="note">· use case 5: no Save button</span></li>
+<li><a href="09-change-the-system.html">Change the system itself</a> <span class="note">· use case 6: try a compiler change in a copy of the world</span></li>
+<li><a href="10-window-models.html">Three window models</a> <span class="note">· #21: tracks, columns, or a tree of splits</span></li>
+</ol>
+<p class="note">Each page has buttons for its steps and opens at <code>#step=N</code> on step N. A PNG of every step is in <code>png/</code> for pages and print, made by <code>scripts/render-mockups.sh</code>; rerun it after changing a page. Colours and fonts are placeholders, not Quokka's theme.</p>
+</main>
+</body>
+</html>

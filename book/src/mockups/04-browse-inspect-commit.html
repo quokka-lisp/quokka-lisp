@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browse, inspect, commit</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,57fr) minmax(0,43fr); min-height: 460px; }
+.qk-body { padding: 8px 10px; line-height: 1.5; }
+.qk-cols { display: grid; grid-template-columns: 1fr 1.2fr 1fr; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+.qk-col { border-right: 0.5px solid var(--border); padding: 4px 0; min-height: 150px; }
+.qk-col:last-child { border-right: 0; }
+.qk-h { font-size: 11px; color: var(--text-muted); padding: 2px 8px; }
+.qk-i { padding: 2px 8px; font-family: var(--font-mono); font-size: 12px; }
+.qk-s { background: var(--bg-accent); color: var(--text-accent); }
+.qk-c { font-size: 11.5px; }
+.qk-l { padding: 0 5px; margin: 2px 2px 0 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Use case 2 · Browse, inspect, edit, commit</h1>
+<p class="lede">The world as a database of definitions: the browser goes from packages to definitions to live objects, the inspector shows a definition as an object, Cmd-Enter installs at once, and a commit names a state. Commits and save points are kept apart.</p>
+<h2 class="sr-only">Quokka's browser, inspector and editor: browsing packages and definitions, inspecting a function, editing it, committing, and the world's history with commits and save points kept apart.</h2>
+<div class="steps">
+<button>1 · Browse and inspect</button>
+<button>2 · Edit</button>
+<button>3 · Commit and history</button>
+</div>
+<div class="qk">
+<div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-lisp-book.qi</span><span id="ver" style="margin-left:auto">version 13</span></div>
+<div class="qk-tracks">
+<div style="border-right:0.5px solid var(--border);display:flex;flex-direction:column">
+<div class="qk-vt"><i class="ti ti-columns-3" aria-hidden="true"></i>Browser</div>
+<div class="qk-cols">
+<div class="qk-col"><div class="qk-h">packages</div><div class="qk-i qk-s">cds</div><div class="qk-i">cl-user</div><div class="qk-i">quokka-env</div><div class="qk-i">common-lisp</div><div class="qk-i" style="color:var(--text-muted)">12 more</div></div>
+<div class="qk-col"><div class="qk-h">functions</div><div class="qk-i">make-cd</div><div class="qk-i qk-s">add-record</div><div class="qk-i">select</div><div class="qk-i">where</div><div class="qk-h" style="margin-top:4px">variables</div><div class="qk-i">*db*</div></div>
+<div class="qk-col"><div class="qk-h">live objects</div><div class="qk-i">*db* · 2 cds</div><div class="qk-i">(:title "Fly" ..)</div><div class="qk-i">(:title "Roses" ..)</div></div>
+</div>
+<div class="qk-vt" id="et"><i class="ti ti-pencil" aria-hidden="true"></i>Editor</div>
+<div class="qk-body" id="ed" style="flex:1"><div style="color:var(--text-muted);font-size:12px">Choose Edit in the inspector to open a definition here.</div></div>
+</div>
+<div>
+<div class="qk-vt" id="tt"><i class="ti ti-search" aria-hidden="true"></i>Inspector</div>
+<div class="qk-body" id="tool">
+<div class="qk-c" style="font-size:13px">cds::add-record</div>
+<div style="font-size:12px;color:var(--text-secondary)">function · (cd) · version 2 of 2</div>
+<div class="qk-k">description</div><div style="font-size:12px">Push CD onto the database.</div>
+<div class="qk-k">uses</div><span class="qk-l">push</span><span class="qk-l">*db*</span>
+<div class="qk-k">used by</div><span class="qk-l">add-cds</span><span class="qk-l">load-db</span>
+<div class="qk-k">connections</div><div style="font-size:12px">writes <span class="qk-l">*db*</span> · in change set <span class="qk-l">chapter-3</span></div>
+<div class="qk-k">versions</div><div style="font-size:12px">v2 returns the cd · v1 first try</div>
+<div style="display:flex;gap:6px;margin-top:10px"><button style="font-size:12px"><i class="ti ti-pencil" aria-hidden="true"></i> Edit</button><button style="font-size:12px">Run it</button><button style="font-size:12px">Graph</button></div>
+</div>
+</div>
+</div>
+<div class="qk-foot" id="foot">Every name is a presentation: click it to inspect, drag it into the editor or the listener</div>
+</div>
+<p class="caption" id="cap">The browser's columns go from package to definitions to the live objects they hold. Selecting add-record shows the definition itself as an object in the inspector: what it is, what it uses, what uses it, and its versions.</p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+mockupSteps([
+{et:`<i class="ti ti-pencil" aria-hidden="true"></i>Editor · add-record <span style="margin-left:auto;color:var(--text-warning)">uncommitted</span>`,
+ed:`<div class="qk-c">(defun add-record (cd)
+  "Push CD onto the database<span class="qk-ed">, unless an equal
+one is already there</span>."
+  <span class="qk-ed">(pushnew cd *db* :test #'equal)</span>
+  cd)</div>
+<div class="qk-k">compared with version 2</div>
+<div class="qk-c" style="font-size:11px"><span class="qk-del">(push cd *db*)</span>  <span style="color:var(--text-success)">(pushnew cd *db* :test #'equal)</span></div>
+<div style="display:flex;gap:6px;align-items:center;margin-top:10px"><input value="Don't add the same CD twice" style="flex:1;font-size:12px;height:28px"><button style="font-size:12px"><i class="ti ti-check" aria-hidden="true"></i> Commit</button></div>`,
+foot:`Drawn before "install at once" was decided: in the design, Cmd-Enter installs, and Commit names the state`,
+cap:`Edit opens the definition in the editor, with the difference against the committed version. This step was drawn with Git's order, where nothing runs until you commit; the design chose Smalltalk's instead: Cmd-Enter installs at once and marks the definition as changed since the last commit.`},
+{et:`<i class="ti ti-pencil" aria-hidden="true"></i>Editor · add-record <span style="margin-left:auto;color:var(--text-success)">committed</span>`,
+ed:`<div class="qk-c">(defun add-record (cd)
+  "Push CD onto the database, unless an equal
+one is already there."
+  (pushnew cd *db* :test #'equal)
+  cd)</div>
+<span class="qk-l" style="margin-top:6px">ADD-RECORD · version 3</span>`,
+tt:`<i class="ti ti-history" aria-hidden="true"></i>World history`,
+tool:`<div class="qk-k" style="margin-top:0;display:flex;gap:6px;align-items:center"><i class="ti ti-git-commit" aria-hidden="true"></i>Commits · code only</div>
+<div class="qk-hr"><b style="font-weight:500">14</b><span style="flex:1">Don't add the same CD twice</span><span style="color:var(--text-muted)">now</span></div>
+<div class="qk-hr"><b style="font-weight:500">13</b><span style="flex:1">add-record returns the cd</span><button style="font-size:11px;padding:0 6px">Roll back to</button></div>
+<div class="qk-hr"><b style="font-weight:500">12</b><span style="flex:1">select and where</span><button style="font-size:11px;padding:0 6px">Roll back to</button></div>
+<div class="qk-k" style="margin-top:14px;display:flex;gap:6px;align-items:center"><i class="ti ti-device-floppy" aria-hidden="true"></i>Save points · whole world, data too</div>
+<div class="qk-hr"><span style="flex:1">This morning, 09:12</span><button style="font-size:11px;padding:0 6px">Restore</button></div>
+<div class="qk-hr"><span style="flex:1">Before chapter 3</span><button style="font-size:11px;padding:0 6px">Restore</button></div>
+<div style="font-size:11px;color:var(--text-muted);margin-top:6px">Rolling back changes definitions and keeps your data. Restoring a save point brings back everything as it was.</div>`,
+foot:`Commit 14 is in change set chapter-3 · the world is now version 14`,
+cap:`Commit makes version 14 of the world. The history viewer keeps the two kinds of going back apart. Commits roll back code only, and your *db* stays as it is. Save points restore the whole world, data included, and they look different on purpose.`,
+ver:`version 14`}
+]);
+</script>
+</body>
+</html>

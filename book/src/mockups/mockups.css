@@ -1,0 +1,116 @@
+/* Shared look for the environment mock-ups of 27 Nov 2026 (#126, #21).
+   They were drawn to decide the design, not to fix a visual style:
+   colours and fonts here are placeholders, not Quokka's theme. */
+
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 8px;
+  --page: #f6f5f1;
+  --surface-1: #fafaf8;
+  --surface-2: #ffffff;
+  --surface-popover: #ffffff;
+  --bg-neutral: #efeee9;
+  --bg-accent: #e6f1fb;
+  --bg-danger: #fcebeb;
+  --bg-warning: #faeeda;
+  --bg-success: #eaf3de;
+  --text-primary: #1f1f1d;
+  --text-secondary: #5f5e5a;
+  --text-muted: #888780;
+  --text-accent: #185fa5;
+  --text-danger: #a32d2d;
+  --text-warning: #854f0b;
+  --text-success: #3b6d11;
+  --border: #e2e0d8;
+  --border-strong: #c9c7be;
+  --border-stronger: #9c9a92;
+  --border-accent: #378add;
+  --border-danger: #e24b4a;
+  --border-warning: #ba7517;
+  --gray-fill: #f1efe8; --gray-stroke: #5f5e5a; --gray-text: #444441;
+  --teal-fill: #e1f5ee; --teal-stroke: #0f6e56; --teal-text: #085041;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #161615;
+    --surface-1: #1c1c1b;
+    --surface-2: #222221;
+    --surface-popover: #2c2c2b;
+    --bg-neutral: #2a2a28;
+    --bg-accent: #0c2a47;
+    --bg-danger: #3d1616;
+    --bg-warning: #3a2a10;
+    --bg-success: #1f3310;
+    --text-primary: #ecebe6;
+    --text-secondary: #b4b2a9;
+    --text-muted: #888780;
+    --text-accent: #85b7eb;
+    --text-danger: #f09595;
+    --text-warning: #fac775;
+    --text-success: #97c459;
+    --border: #353533;
+    --border-strong: #4a4a47;
+    --border-stronger: #6a6a66;
+    --gray-fill: #444441; --gray-stroke: #b4b2a9; --gray-text: #f1efe8;
+    --teal-fill: #085041; --teal-stroke: #5dcaa5; --teal-text: #e1f5ee;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px 16px 40px;
+  background: var(--page); color: var(--text-primary);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.5;
+}
+main { max-width: 720px; margin: 0 auto; }
+h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+.lede { color: var(--text-secondary); margin: 0 0 16px; }
+a { color: var(--text-accent); }
+button, input {
+  font: inherit; color: var(--text-primary);
+  background: transparent; border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius); padding: 4px 10px;
+}
+button { cursor: pointer; }
+input { background: var(--surface-2); height: 30px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.steps { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+.steps button.on { border-color: var(--border-accent); }
+.caption { font-size: 13px; color: var(--text-secondary); margin: 10px 0 0; }
+.back { display: inline-block; margin-top: 20px; font-size: 13px; }
+
+/* The frame every mock-up shares: a window, its top bar, viewer titles. */
+.qk { border: 0.5px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface-2); font-size: 13px; }
+.qk-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 0.5px solid var(--border); background: var(--surface-1); color: var(--text-secondary); font-size: 12px; }
+.qk-vt { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-bottom: 0.5px solid var(--border); background: var(--bg-neutral); font-size: 12px; color: var(--text-secondary); }
+.qk-body { padding: 10px 12px; line-height: 1.55; }
+.qk-foot { padding: 5px 12px; border-top: 0.5px solid var(--border); background: var(--surface-1); color: var(--text-muted); font-size: 12px; }
+.qk-c { font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; color: var(--text-primary); }
+.qk-pr, .qk-cm { color: var(--text-muted); }
+.qk-p { color: var(--text-secondary); margin: 6px 0; font-size: 13px; }
+.qk-k { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+.qk-r, .qk-l { display: inline-block; font-family: var(--font-mono); font-size: 12px; padding: 1px 6px; border-radius: 4px; border: 0.5px dashed var(--border-accent); color: var(--text-accent); background: var(--bg-accent); }
+.qk-r { margin: 2px 0 8px 0; }
+.qk-err { display: inline-block; font-family: var(--font-mono); font-size: 12px; margin: 2px 0 8px 0; padding: 1px 6px; border-radius: 4px; border: 0.5px dashed var(--border-danger); color: var(--text-danger); background: var(--bg-danger); }
+.qk-old { display: inline-block; font-family: var(--font-mono); font-size: 12px; margin: 2px 0 8px 0; padding: 1px 6px; border-radius: 4px; border: 0.5px dashed var(--border); color: var(--text-muted); text-decoration: line-through; }
+.qk-sel { outline: 1.5px solid var(--border-accent); outline-offset: 1px; }
+.qk-ed { background: var(--bg-warning); border-radius: 3px; }
+.qk-del { color: var(--text-danger); text-decoration: line-through; }
+.qk-cur { display: inline-block; width: 7px; height: 14px; background: var(--text-primary); vertical-align: -2px; }
+.qk-menu { margin: 6px 0 8px 40px; width: 230px; background: var(--surface-popover); border: 0.5px solid var(--border-strong); border-radius: 8px; padding: 4px; font-size: 12px; }
+.qk-mi { padding: 4px 8px; border-radius: 4px; display: flex; gap: 6px; align-items: center; }
+.qk-mh { background: var(--bg-accent); color: var(--text-accent); }
+.qk-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+.qk-hr { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+
+/* SVG diagram colours (the window-model comparison). */
+.c-gray > rect { fill: var(--gray-fill); stroke: var(--gray-stroke); }
+.c-gray > text { fill: var(--gray-text); }
+.c-teal > rect { fill: var(--teal-fill); stroke: var(--teal-stroke); }
+.c-teal > text { fill: var(--teal-text); }
+svg .t, svg .ts, svg .th { font-family: var(--font-sans); fill: var(--text-primary); }
+svg .ts { font-size: 12px; }
+svg .t, svg .th { font-size: 14px; }
+svg .th { font-weight: 500; }
+svg > .ts { fill: var(--text-secondary); }

@@ -521,6 +521,21 @@ covers it without being told.
 `scripts/check-book.sh` checks that every chapter listed exists. CLAUDE.md,
 *The book*, has the rules for writing one.
 
+### A mock-up of the environment
+
+The environment's mock-ups are plain HTML pages in `book/src/mockups/`,
+listed in its `index.html`, sharing `mockups.css` and `mockups.js`. A page's
+steps are its buttons; the first is what the HTML holds, and later ones are
+passed to `mockupSteps`. A book chapter can link a page or embed one of the
+PNGs in `book/src/mockups/png/`, which are made by
+
+```bash
+scripts/render-mockups.sh
+```
+
+from the repository root, with Chrome or Chromium installed. Run it again
+after changing a page, and commit the PNGs with it.
+
 ---
 
 ## 6. How work is done here

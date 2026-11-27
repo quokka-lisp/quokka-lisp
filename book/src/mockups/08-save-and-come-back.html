@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Save and come back</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,60fr) minmax(0,40fr); min-height: 360px; }
+.qk-w { display: flex; gap: 12px; align-items: center; padding: 10px; border: 0.5px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
+.qk-sep { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); margin: 6px 0 8px; }
+.qk-sep:before, .qk-sep:after { content: ""; flex: 1; border-top: 0.5px solid var(--border); }
+</style>
+</head>
+<body>
+<main>
+<h1>Use case 5 · Save and come back</h1>
+<p class="lede">There is no Save button. A world journals every change as it happens and takes snapshots now and then, so it opens the next day exactly as it was left.</p>
+<h2 class="sr-only">Coming back to Quokka the next day: a list of worlds with their state, then the chosen world reopened exactly as it was left.</h2>
+<div class="steps">
+<button>1 · Next morning</button>
+<button>2 · Where you left off</button>
+</div>
+<div id="stage">
+<div class="qk"><div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span style="margin-left:auto">in this browser</span></div>
+<div class="qk-body" style="min-height:300px">
+<div style="font-size:15px;font-weight:500;margin-bottom:10px">Your worlds</div>
+<div class="qk-w"><i class="ti ti-book" style="font-size:22px" aria-hidden="true"></i><div style="flex:1"><div style="font-weight:500">my-lisp-book</div><div style="font-size:12px;color:var(--text-secondary)">last used yesterday 22:40 · chapter 5 · 2 definitions changed since your last commit</div></div><button style="font-size:12px">Open</button></div>
+<div class="qk-w"><i class="ti ti-apps" style="font-size:22px" aria-hidden="true"></i><div style="flex:1"><div style="font-weight:500">my-apps</div><div style="font-size:12px;color:var(--text-secondary)">last used Monday · game hop paused · everything committed</div></div><button style="font-size:12px">Open</button></div>
+<div style="display:flex;gap:8px;margin-top:14px"><button style="font-size:12px"><i class="ti ti-plus" aria-hidden="true"></i> New world</button><button style="font-size:12px"><i class="ti ti-upload" aria-hidden="true"></i> Open a world file</button></div>
+<div class="qk-k" style="margin-top:14px">Worlds are kept in this browser's storage and saved as you work. Download a world to keep a copy elsewhere, or to move it to another computer.</div>
+</div><div class="qk-foot">Nothing to save before closing the tab</div></div>
+</div>
+<p class="caption" id="cap">There is no Save button and no "do you want to save?" when you close the tab. Every world saves itself as you work. The start page lists your worlds with what you'd want to know before opening one: where you were, and whether anything isn't committed yet.</p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+mockupSteps([
+{stage:`<div class="qk"><div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-lisp-book</span><span style="margin-left:auto">version 19 · 2 changed</span></div>
+<div class="qk-tracks"><div style="border-right:0.5px solid var(--border)"><div class="qk-vt"><i class="ti ti-terminal-2" aria-hidden="true"></i>Listener</div><div class="qk-body">
+<div class="qk-c"><span class="qk-pr">cl-user 41 › </span>(loop for x in '(1 2 3) collect (* x x))</div><span class="qk-r">(1 4 9)</span>
+<div class="qk-sep">yesterday 22:40 · today 08:15</div>
+<div class="qk-c"><span class="qk-pr">cl-user 42 › </span><span class="qk-cur"></span></div>
+</div></div>
+<div><div class="qk-vt"><i class="ti ti-pencil" aria-hidden="true"></i>Editor · format-row <span style="margin-left:auto;color:var(--text-warning)">changed</span></div><div class="qk-body">
+<div class="qk-c">(defun format-row (cd)
+  (format t "~{~a:~10t~a~%~}~%" cd))</div>
+<div class="qk-k">Open as you left it, cursor and all. Not committed yet; it has been installed since yesterday.</div>
+<div style="display:flex;gap:6px;margin-top:8px"><button style="font-size:12px">Commit</button><button style="font-size:12px">Compare</button></div>
+</div></div></div>
+<div class="qk-foot">Same tiles, same transcript, same objects · a line in the transcript marks the night</div></div>`,
+cap:`The world opens exactly as you left it: the same tiles, the same transcript with a line marking the gap, and the editor with your uncommitted change still installed. Your data is there because the world is: nothing was loaded from a file.`}
+]);
+</script>
+</body>
+</html>

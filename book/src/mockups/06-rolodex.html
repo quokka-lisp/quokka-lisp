@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build a small application</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,55fr) minmax(0,45fr); min-height: 440px; }
+.qk-body { padding: 8px 10px; line-height: 1.5; }
+.qk-c { font-size: 11.5px; }
+.qk-l { padding: 0 5px; }
+.qk-card { display: flex; gap: 8px; align-items: center; padding: 6px 4px; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+.qk-av { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-accent); color: var(--text-accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; flex: none; }
+.qk-sel { outline-offset: -1px; border-radius: 4px; }
+.qk-menu { width: 200px; margin: 4px 0 4px 40px; }
+.qk-mi { padding: 3px 8px; }
+.qk-bd { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--bg-success); color: var(--text-success); }
+</style>
+</head>
+<body>
+<main>
+<h1>Use case 3 · Build a small application</h1>
+<p class="lede">A Rolodex: a class for its data, a viewer that says what to show, and commands, in CLIM's vocabulary. The running application is one more viewer, and it changes while it runs.</p>
+<h2 class="sr-only">Building a Rolodex in Quokka: writing a class and a viewer, running it as a viewer among the others, and changing its display while it runs.</h2>
+<div class="steps">
+<button>1 · Write it</button>
+<button>2 · Run it</button>
+<button>3 · Change it while it runs</button>
+</div>
+<div class="qk">
+<div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-apps.qi</span><span style="margin-left:auto">package rolodex</span></div>
+<div class="qk-tracks">
+<div style="border-right:0.5px solid var(--border)">
+<div class="qk-vt" id="mt"><i class="ti ti-pencil" aria-hidden="true"></i>Editor · rolodex</div>
+<div class="qk-body" id="main">
+<div class="qk-c">(defclass card ()
+  ((name  :initarg :name  :accessor name)
+   (phone :initarg :phone :accessor phone)
+   (email :initarg :email :accessor email)))
+
+(defvar *cards* '())  <span class="qk-cm">; just objects in the world</span>
+
+(define-viewer rolodex ()
+  (formatting-table ()
+    (dolist (c (sort-cards *cards*))
+      (formatting-row ()
+        (formatting-cell () (present c 'card))
+        (formatting-cell () (princ (phone c)))))))
+
+(define-command (new-card :viewer rolodex) ()
+  (push (accept 'card) *cards*))</div>
+</div>
+</div>
+<div>
+<div class="qk-vt" id="tt"><i class="ti ti-terminal-2" aria-hidden="true"></i>Listener</div>
+<div class="qk-body" id="tool">
+<div class="qk-c"><span class="qk-cm">rolodex 1 › </span>(open-viewer 'rolodex)</div>
+<span class="qk-l" style="margin-top:4px">#&lt;viewer ROLODEX&gt;</span>
+<div class="qk-k">The app opens as one more viewer. There's no separate program and no window of its own.</div>
+</div>
+</div>
+</div>
+<div class="qk-foot" id="foot">Cmd-Enter on each form installs it at once</div>
+</div>
+<p class="caption" id="cap">An app is a class for its data, a viewer that says what to show, and commands. The vocabulary is CLIM's: present, accept, formatting-table. There's no HTML and no database: the cards are ordinary objects in the world. (Drawn before package-first development; in the design each of these forms is its own definition, and the cards would live in a private store.)</p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+const list = (birthday, menu) => `<div style="display:flex;gap:6px;margin-bottom:6px"><input placeholder="Search names" style="flex:1;height:28px;font-size:12px"><button style="font-size:12px"><i class="ti ti-plus" aria-hidden="true"></i> New card</button></div>
+<div class="qk-card"><div class="qk-av">AL</div><span style="flex:1">Ada Lovelace ${birthday ? '<span class="qk-bd">birthday today</span>' : ''}</span><span style="color:var(--text-secondary)">020 7946 0018</span></div>
+<div class="qk-card${menu ? ' qk-sel' : ''}"><div class="qk-av">JM</div><span style="flex:1">John McCarthy</span><span style="color:var(--text-secondary)">650 723 2273</span></div>
+${menu ? '<div class="qk-menu"><div class="qk-mi">Edit card</div><div class="qk-mi qk-mh">Inspect</div><div class="qk-mi">Show the code that drew this</div><div class="qk-mi">Delete card</div></div>' : ''}
+<div class="qk-card"><div class="qk-av">NW</div><span style="flex:1">Niklaus Wirth</span><span style="color:var(--text-secondary)">044 632 7311</span></div>`;
+mockupSteps([
+{mt:`<i class="ti ti-address-book" aria-hidden="true"></i>Rolodex <span style="margin-left:auto">3 cards</span>`, main:list(false, true),
+tt:`<i class="ti ti-search" aria-hidden="true"></i>Inspector`,
+tool:`<div class="qk-c" style="font-size:13px">#&lt;card John McCarthy&gt;</div>
+<div style="font-size:12px;color:var(--text-secondary)">instance of <span class="qk-l">card</span></div>
+<div class="qk-k">slots</div>
+<div class="qk-card"><span class="qk-c" style="min-width:52px">name</span>"John McCarthy"</div>
+<div class="qk-card"><span class="qk-c" style="min-width:52px">phone</span>"650 723 2273"</div>
+<div class="qk-card"><span class="qk-c" style="min-width:52px">email</span>"jmc@..."</div>
+<div class="qk-k">in</div><span class="qk-l">*cards*</span> <span style="font-size:12px;color:var(--text-secondary)">· element 2 of 3</span>`,
+foot:`Right-click a card: the app's own commands sit next to Inspect and Show the code`,
+cap:`The running app is a viewer like the listener. Each card on screen is a presentation of a real card object. Right-clicking one gives you the app's own commands (Edit, Delete) next to the system's (Inspect, Show the code). The app gets the debugging tools for free.`},
+{mt:`<i class="ti ti-address-book" aria-hidden="true"></i>Rolodex <span style="margin-left:auto">3 cards</span>`, main:list(true, false),
+tt:`<i class="ti ti-pencil" aria-hidden="true"></i>Editor · rolodex <span style="margin-left:auto;color:var(--text-warning)">changed since commit</span>`,
+tool:`<div class="qk-c">(defclass card ()
+  (... <span class="qk-ed">(birthday :initarg :birthday
+                :initform nil
+                :accessor birthday)</span>))
+
+(defmethod present-card ((c card))
+  (princ (name c))
+  <span class="qk-ed">(when (birthday-today-p c)
+    (with-ink (+success+)
+      (princ " birthday today")))</span>)</div>
+<div class="qk-k">The class gained a slot. The 3 existing cards were updated in place: same objects, new slot unbound until set.</div>`,
+foot:`Installed at once · the Rolodex redrew itself, and no card was lost`,
+cap:`You add a birthday slot and a line to the display method, then press Cmd-Enter. The class is redefined while the app runs: the three cards are the same objects with a new slot (update-instance-for-redefined-class, chapter 76). The viewer redraws only what changed.`}
+]);
+</script>
+</body>
+</html>

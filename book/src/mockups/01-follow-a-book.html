@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Follow a book chapter</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,62fr) minmax(0,38fr); min-height: 400px; }
+.qk-rs { display: block; width: 100%; text-align: left; margin: 4px 0; font-size: 12px; }
+.qk-kk { color: var(--text-secondary); min-width: 64px; font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<main>
+<h1>Use case 1 · Follow a book chapter</h1>
+<p class="lede">A beginner types the examples from chapter 3 of <em>Practical Common Lisp</em>, makes a typo, and fixes it without losing anything. The first version of the use case, before the listener became live text (see <a href="02-listener.html">the listener</a>).</p>
+<h2 class="sr-only">The Quokka screen while a beginner follows chapter three of a Lisp book: a live-text viewer on the left and a tool viewer on the right, in three steps.</h2>
+<div class="steps">
+<button>1 · Type an example</button>
+<button>2 · A typo</button>
+<button>3 · Fixed and resumed</button>
+</div>
+<div class="qk">
+<div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-lisp-book.qi</span><span style="margin-left:auto">package CL-USER</span></div>
+<div class="qk-tracks">
+<div style="border-right:0.5px solid var(--border)">
+<div class="qk-vt"><i class="ti ti-file-text" aria-hidden="true"></i>chapter-3.lisp <span style="margin-left:auto">live text</span></div>
+<div class="qk-body" id="main">
+<div class="qk-p">Chapter 3 · A simple database. A CD is a property list.</div>
+<div class="qk-c">(defun make-cd (title artist rating ripped)
+  (list :title title :artist artist
+        :rating rating :ripped ripped))</div>
+<span class="qk-r">MAKE-CD</span>
+<div class="qk-c">(defvar *db* nil)
+(defun add-record (cd) (push cd *db*))</div>
+<span class="qk-r">ADD-RECORD</span>
+<div class="qk-c">(add-record (make-cd "Roses" "Kathy Mattea" 7 t))</div>
+<span class="qk-r qk-sel">((:TITLE "Roses" :ARTIST "Kathy Mattea" ...))</span>
+<div class="qk-p">Try adding a few more of your own.</div>
+</div>
+</div>
+<div>
+<div class="qk-vt" id="tt"><i class="ti ti-search" aria-hidden="true"></i>Inspector</div>
+<div class="qk-body" id="tool">
+<div style="font-family:var(--font-mono);font-size:12px;margin-bottom:6px">a list, 1 element</div>
+<div class="qk-row"><span class="qk-kk">0</span><span class="qk-r" style="margin:0">(:TITLE "Roses" ...)</span></div>
+<div style="font-size:12px;color:var(--text-secondary);margin-top:10px">Views</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button style="font-size:12px">As list</button><button style="font-size:12px">As table</button><button style="font-size:12px">Who made this</button></div>
+</div>
+</div>
+</div>
+<div class="qk-foot" id="foot">Cmd-Enter evaluates the form under the cursor · click a result to inspect it</div>
+</div>
+<p class="caption" id="cap">You type the book's forms into a live-text file. Each result appears below its form, and you can click it. Here you clicked the last one, and the inspector shows the list.</p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+mockupSteps([
+{main:`<div class="qk-p">Chapter 3 · A simple database. A CD is a property list.</div>
+<div class="qk-c">(defun make-cd ...)</div><span class="qk-r">MAKE-CD</span>
+<div class="qk-c">(add-record (make-cd "Roses" "Kathy Mattea" 7 t))</div><span class="qk-r">((:TITLE "Roses" ...))</span>
+<div class="qk-c">(add-recrod (make-cd "Fly" "Dixie Chicks" 8 t))</div>
+<span class="qk-err qk-sel">stopped: ADD-RECROD is not a function</span>
+<div class="qk-p">Nothing was thrown away. The computation is waiting in the debugger.</div>`,
+tt:`<i class="ti ti-bug" aria-hidden="true"></i>Debugger <span style="margin-left:auto;color:var(--text-danger)">waiting</span>`,
+tool:`<div style="font-size:13px;margin-bottom:8px">The function <span style="font-family:var(--font-mono)">ADD-RECROD</span> is undefined.</div>
+<div style="font-size:12px;color:var(--text-secondary)">Did you mean</div>
+<span class="qk-r" style="margin:2px 0 8px">ADD-RECORD</span>
+<div style="font-size:12px;color:var(--text-secondary)">Ways to continue</div>
+<button class="qk-rs">1 · Use ADD-RECORD instead</button>
+<button class="qk-rs">2 · Define ADD-RECROD now</button>
+<button class="qk-rs">3 · Supply a value and go on</button>
+<button class="qk-rs">4 · Give up on this form</button>
+<div style="font-size:12px;color:var(--text-secondary);margin-top:8px">Where it stopped</div>
+<div class="qk-row"><span class="qk-kk">form</span><span style="font-family:var(--font-mono)">chapter-3.lisp, line 14</span></div>`,
+foot:`Press 1 to 4, or click a way to continue · the frame stays open until you choose`,
+cap:`A typo. The error doesn't print a message and return you to a prompt: it stops and asks. It suggests the name you probably meant and lists ways to continue (CL calls these restarts). The form that failed is still on screen, marked.`},
+{main:`<div class="qk-p">Chapter 3 · A simple database. A CD is a property list.</div>
+<div class="qk-c">(defun make-cd ...)</div><span class="qk-r">MAKE-CD</span>
+<div class="qk-c">(add-record (make-cd "Roses" "Kathy Mattea" 7 t))</div><span class="qk-r">((:TITLE "Roses" ...))</span>
+<div class="qk-c">(add-record (make-cd "Fly" "Dixie Chicks" 8 t))</div>
+<span class="qk-r qk-sel">((:TITLE "Fly" ...) (:TITLE "Roses" ...))</span>
+<div class="qk-c">(dump-db)</div>
+<div class="qk-p" style="font-family:var(--font-mono);font-size:12px;border-left:2px solid var(--border-strong);border-radius:0;padding-left:8px">TITLE:  Fly<br>ARTIST: Dixie Chicks<br>RATING: 8 ...</div>`,
+tt:`<i class="ti ti-search" aria-hidden="true"></i>Inspector`,
+tool:`<div style="font-family:var(--font-mono);font-size:12px;margin-bottom:6px">*db* · a list, 2 elements</div>
+<div class="qk-row"><span class="qk-kk">0</span><span class="qk-r" style="margin:0">(:TITLE "Fly" ...)</span></div>
+<div class="qk-row"><span class="qk-kk">1</span><span class="qk-r" style="margin:0">(:TITLE "Roses" ...)</span></div>
+<div style="font-size:12px;color:var(--text-secondary);margin-top:10px">As table</div>
+<div class="qk-row"><span class="qk-kk">Fly</span><span>Dixie Chicks · 8</span></div>
+<div class="qk-row"><span class="qk-kk">Roses</span><span>Kathy Mattea · 7</span></div>`,
+foot:`Fixed by choosing restart 1 · the text was corrected in place, and the form finished`,
+cap:`Choosing restart 1 corrected the text and finished the form, as if the typo had never happened. dump-db's printed output stays in the text too, set apart by a bar so you can tell it from a returned value.`}
+]);
+</script>
+</body>
+</html>

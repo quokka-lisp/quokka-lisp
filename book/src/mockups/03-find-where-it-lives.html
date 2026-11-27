@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Find where something lives</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,52fr) minmax(0,48fr); min-height: 420px; }
+.qk-hot { outline: 1.5px solid var(--border-accent); outline-offset: 2px; border-radius: 3px; }
+.qk-link { color: var(--text-accent); font-family: var(--font-mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Use case 2 · Find where something lives</h1>
+<p class="lede">A medium user points at the listener's prompt, follows it to the method that draws it, changes that method, and sees the prompt change at once.</p>
+<h2 class="sr-only">A user right-clicking the listener's prompt, following it to the method that draws it, editing that method, and seeing the prompt change.</h2>
+<div class="steps">
+<button>1 · Point at it</button>
+<button>2 · Follow it</button>
+<button>3 · Change it</button>
+</div>
+<div class="qk">
+<div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-lisp-book.qi</span><span style="margin-left:auto">package CL-USER</span></div>
+<div class="qk-tracks">
+<div style="border-right:0.5px solid var(--border)">
+<div class="qk-vt"><i class="ti ti-terminal-2" aria-hidden="true"></i>Listener</div>
+<div class="qk-body" id="main">
+<div class="qk-c"><span class="qk-pr">CL-USER&gt; </span>(length *db*)</div>
+<span class="qk-r">2</span>
+<div class="qk-c"><span class="qk-pr qk-hot">CL-USER&gt; </span><span class="qk-cur"></span></div>
+<div class="qk-menu">
+<div class="qk-k" style="padding:4px 8px;margin:0">a prompt · output record</div>
+<div class="qk-mi"><i class="ti ti-search" aria-hidden="true"></i>Inspect</div>
+<div class="qk-mi qk-mh"><i class="ti ti-code" aria-hidden="true"></i>Show the code that drew this</div>
+<div class="qk-mi"><i class="ti ti-palette" aria-hidden="true"></i>Its text style</div>
+<div class="qk-mi"><i class="ti ti-help" aria-hidden="true"></i>What is a listener?</div>
+</div>
+</div>
+</div>
+<div>
+<div class="qk-vt" id="tt"><i class="ti ti-list-details" aria-hidden="true"></i>This session</div>
+<div class="qk-body" id="tool"><div class="qk-k" style="margin:0">make-cd · *db* · add-record</div></div>
+</div>
+</div>
+<div class="qk-foot" id="foot">Right-click anything on screen: every piece of output knows what it is and which code drew it</div>
+</div>
+<p class="caption" id="cap">You're curious where the prompt comes from, so you right-click it. The prompt is a presentation like any result, so its menu fits what it is: a piece of output drawn by some code.</p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+mockupSteps([
+{main:`<div class="qk-c"><span class="qk-pr">CL-USER&gt; </span>(length *db*)</div><span class="qk-r">2</span>
+<div class="qk-c"><span class="qk-pr">CL-USER&gt; </span><span class="qk-cur"></span></div>`,
+tt:`<i class="ti ti-code" aria-hidden="true"></i>Browser <span style="margin-left:auto">listener-prompt</span>`,
+tool:`<div class="qk-k" style="margin:0">generic function in QUOKKA-ENV · 2 methods</div>
+<div class="qk-k" style="margin:6px 0 2px">the method that drew it</div>
+<div class="qk-c" style="background:var(--bg-neutral);padding:6px 8px;border-radius:6px">(defmethod listener-prompt
+    ((listener listener) stream)
+  (format stream "~A&gt; "
+          (package-name *package*)))</div>
+<div class="qk-k" style="margin:8px 0 2px">from</div><span class="qk-link">lisp/env/listener.lisp:88</span>
+<div class="qk-k" style="margin:8px 0 2px">called by</div><span class="qk-link">listener-read-form</span>
+<div class="qk-k" style="margin:8px 0 2px">other methods</div><span class="qk-link">(listener-prompt debugger-listener t)</span>`,
+foot:`Every name in the browser is a presentation too, so you can keep following the thread`,
+cap:`The browser opens in the tool viewer. It shows the method that drew this prompt, which generic function that method belongs to, the file it lives in, and who calls it. Every name in it is a link, so you keep clicking until you understand the connections.`},
+{main:`<div class="qk-c"><span class="qk-pr">CL-USER&gt; </span>(length *db*)</div><span class="qk-r">2</span>
+<div class="qk-c"><span class="qk-pr">cl-user 7 › </span><span class="qk-cur"></span></div>`,
+tt:`<i class="ti ti-code" aria-hidden="true"></i>Browser <span style="margin-left:auto;color:var(--text-warning)">changed</span>`,
+tool:`<div class="qk-c" style="background:var(--bg-neutral);padding:6px 8px;border-radius:6px">(defmethod listener-prompt
+    ((listener listener) stream)
+  (format stream <span class="qk-ed">"~(~A~) ~D › "</span>
+          (package-name *package*)
+          <span class="qk-ed">(listener-count listener)</span>))</div>
+<span class="qk-r" style="margin-top:6px">compiled · LISTENER-PROMPT</span>
+<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:8px">
+<div class="qk-k" style="display:flex;gap:6px;align-items:center;margin:0"><i class="ti ti-git-branch" aria-hidden="true"></i>Your changes to the system</div>
+<div class="qk-c" style="margin-top:4px">listener-prompt <span class="qk-pr">· 1 edit</span></div>
+<div style="display:flex;gap:6px;margin-top:8px"><button style="font-size:12px">Keep</button><button style="font-size:12px">Undo</button><button style="font-size:12px">Compare</button></div></div>`,
+foot:`Cmd-Enter compiled the method · the listener redrew its prompt at once`,
+cap:`You edit the method in the browser and press Cmd-Enter. The prompt changes at once: lowercase, with a form count. Nothing was restarted. Quokka notes that you changed a system function, so you can keep the change, undo it, or compare it with the original. (Drawn before the world became a database of definitions; the file name here is what a file view of the definition would show.)`}
+]);
+</script>
+</body>
+</html>

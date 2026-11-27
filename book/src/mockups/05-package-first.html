@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Package-first development</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-cols { display: grid; grid-template-columns: 0.9fr 1fr 1.3fr; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+.qk-col { border-right: 0.5px solid var(--border); padding: 4px 0; min-height: 140px; }
+.qk-col:last-child { border-right: 0; }
+.qk-h { font-size: 11px; color: var(--text-muted); padding: 2px 8px; }
+.qk-i { padding: 2px 8px; font-family: var(--font-mono); font-size: 12px; }
+.qk-s { background: var(--bg-accent); color: var(--text-accent); }
+.qk-body { padding: 8px 12px; min-height: 200px; }
+.qk-c { font-size: 11.5px; }
+.qk-def { border-left: 2px solid var(--border-strong); border-radius: 0; padding: 2px 0 2px 8px; margin: 6px 0; position: relative; }
+.qk-tag { position: absolute; right: 0; top: 2px; font-size: 11px; color: var(--text-muted); font-family: var(--font-sans); }
+.qk-chg { border-left-color: var(--border-warning); }
+</style>
+</head>
+<body>
+<main>
+<h1>Package-first development</h1>
+<p class="lede">An application starts as a system with an empty package, filled one definition at a time. A package opens as text, a view the world generates, when many definitions change at once; exporting a system writes one file per package.</p>
+<h2 class="sr-only">Creating an empty package inside a system, filling it with definitions edited one at a time, and viewing or exporting the whole package as text.</h2>
+<div class="steps">
+<button>1 · A new, empty package</button>
+<button>2 · One definition at a time</button>
+<button>3 · The package as text</button>
+</div>
+<div class="qk">
+<div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-apps.qi</span><span style="margin-left:auto" id="ver">version 20</span></div>
+<div class="qk-vt"><i class="ti ti-columns-3" aria-hidden="true"></i>Browser</div>
+<div class="qk-cols">
+<div class="qk-col"><div class="qk-h">systems</div><div class="qk-i qk-s">rolodex</div><div class="qk-i">cds</div><div class="qk-i">quokka-env</div><div class="qk-i" style="color:var(--text-muted)">+ new system</div></div>
+<div class="qk-col" id="pk"><div class="qk-h">packages in rolodex</div><div class="qk-i qk-s">rolodex</div><div class="qk-i" style="color:var(--text-muted)">+ new package</div></div>
+<div class="qk-col" id="df"><div class="qk-h">definitions</div><div class="qk-i" style="color:var(--text-muted);font-family:var(--font-sans)">None yet</div></div>
+</div>
+<div class="qk-vt" id="et"><i class="ti ti-package" aria-hidden="true"></i>Package rolodex</div>
+<div class="qk-body" id="ed">
+<div class="qk-c">(defpackage :rolodex
+  (:use :common-lisp :quokka-ui)
+  (:export #:card #:rolodex))</div>
+<div class="qk-k">This package has no definitions yet. Add one:</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button style="font-size:12px">Class</button><button style="font-size:12px">Function</button><button style="font-size:12px">Generic function</button><button style="font-size:12px">Variable</button><button style="font-size:12px">Macro</button><button style="font-size:12px">Viewer</button></div>
+</div>
+<div class="qk-foot" id="foot">A package is the unit you create, browse, version and export</div>
+</div>
+<p class="caption" id="cap">You start an app by making a system and an empty package in it. The package's own definition (what it uses, what it exports) is the first thing you edit. The listener and the inspector are left out of this drawing to give the browser room.</p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+const defs = sel => `<div class="qk-h">classes</div><div class="qk-i${sel ? " qk-s" : ""}">card</div><div class="qk-h">functions</div><div class="qk-i">sort-cards</div><div class="qk-i">birthday-today-p</div><div class="qk-h">viewers</div><div class="qk-i">rolodex</div><div class="qk-h">variables</div><div class="qk-i">*cards*</div>`;
+const pks = `<div class="qk-h">packages in rolodex</div><div class="qk-i qk-s">rolodex</div><div class="qk-i">rolodex.import</div><div class="qk-i" style="color:var(--text-muted)">+ new package</div>`;
+mockupSteps([
+{pk:pks, df:defs(true), et:`<i class="ti ti-pencil" aria-hidden="true"></i>Editor · class card <span style="margin-left:auto">version 2</span>`,
+ed:`<div class="qk-c">(defclass card ()
+  ((name     :initarg :name     :accessor name)
+   (phone    :initarg :phone    :accessor phone)
+   (email    :initarg :email    :accessor email)
+   (birthday :initarg :birthday :initform nil
+             :accessor birthday)))</div>
+<div class="qk-k">One definition, one editor. Cmd-Enter installs it. Its neighbours in the package aren't on screen and can't be broken by a stray parenthesis here.</div>`,
+foot:`Definitions are grouped by kind; the package remembers their order too`,
+cap:`The package fills up one definition at a time, each in its own small editor, as methods are in a Smalltalk browser. A second package, rolodex.import, joined the same system. Its dotted name is only a convention; the system lists it explicitly.`,
+ver:`version 23`},
+{pk:pks, df:defs(false), et:`<i class="ti ti-file-text" aria-hidden="true"></i>Package rolodex, as text <span style="margin-left:auto">a view, not a file</span>`,
+ed:`<div class="qk-def"><span class="qk-tag">package</span><div class="qk-c">(defpackage :rolodex (:use :common-lisp :quokka-ui) ...)</div></div>
+<div class="qk-def"><span class="qk-tag">v2</span><div class="qk-c">(defclass card () (... (birthday ...)))</div></div>
+<div class="qk-def"><span class="qk-tag">v1</span><div class="qk-c">(defvar *cards* '())</div></div>
+<div class="qk-def qk-chg"><span class="qk-tag" style="color:var(--text-warning)">changed here</span><div class="qk-c">(defun sort-cards (cards) (sort (copy-list cards) #'string&lt; :key #'name))</div></div>
+<div class="qk-def"><span class="qk-tag">v3</span><div class="qk-c">(define-viewer rolodex () ...)</div></div>
+<div style="display:flex;gap:6px;margin-top:10px"><button style="font-size:12px"><i class="ti ti-check" aria-hidden="true"></i> Install changed definitions</button><button style="font-size:12px"><i class="ti ti-file-export" aria-hidden="true"></i> Export system</button></div>
+<div class="qk-k">Export writes a folder: <span class="qk-c">rolodex/system.lisp</span>, <span class="qk-c">rolodex/rolodex.lisp</span>, <span class="qk-c">rolodex/rolodex.import.lisp</span>. One file per package, in the package's order.</div>`,
+foot:`Edit many definitions at once here · each bar is still its own versioned definition`,
+cap:`When you want to see or change many definitions at once, the package opens as text. It's a view the world generates, in the package's order, with a bar marking each definition. Edit any of them and install, and each changed definition gets its own new version. Exporting writes exactly this text, one file per package.`,
+ver:`version 23`}
+]);
+</script>
+</body>
+</html>
