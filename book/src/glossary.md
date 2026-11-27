@@ -853,7 +853,7 @@ every language. ([Preface](what-has-to-be-built.md))
 **Report (of a condition).** What a condition prints as for a person to read: what `princ` and `~A` show, and a host shows for an error nobody handled. `define-condition`'s `:report` option gives it, as a string or a function of the condition and a stream; a condition type without one reports as its parent does. ([79](part-8-conditions/79-conditions-are-objects.md))
 
 <a id="restart"></a>
-**Restart.** A way of carrying on from an error that the code signalling it offers, chosen by a handler or by the person at the keyboard: `ccase`'s `store-value` stores a new value and tries again. Part of Common Lisp's full condition system, which is tier 2 in Quokka; until then `ccase` signals its error like `ecase`. ([56](part-6-self-hosting/56-small-functions.md))
+**Restart.** A way of carrying on from an error that the code signalling it offers, chosen by a handler or by the person at the keyboard: `ccase`'s `store-value` stores a new value and tries again. `restart-case` establishes restarts for the extent of a form, and `invoke-restart` takes one. ([56](part-6-self-hosting/56-small-functions.md), [82](part-8-conditions/82-restarts.md))
 
 <a id="root"></a>
 **Root.** A location holding a value that is *not* inside the heap — a machine

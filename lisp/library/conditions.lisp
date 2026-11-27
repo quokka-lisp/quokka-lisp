@@ -325,6 +325,7 @@
 ;;; that fails, and that error must go outwards. Searched from the top
 ;;; again it would meet the same test and fail again, for ever.
 (defun %signal (condition)
+  (%break-on-signal condition)
   (dolist (entry (%handler-marks '%handler-clusters '%handler-floor) nil)
     (let ((%handler-floor (cadr entry)))
       (if (eql (car entry) 0)
@@ -362,12 +363,42 @@
   nil)
 
 ;;; `(error datum &rest arguments)`: signal, and if no handler takes the
-;;; condition, stop. CLHS has `error` call `invoke-debugger` then; until the
-;;; debugger exists (step F) the machine halts with the condition, as it
-;;; always has, and a host reports it.
+;;; condition, enter the debugger (CLHS), which does not return.
 (defun error (datum &rest arguments)
   (let ((condition (%designated-condition datum arguments 'simple-error)))
     (%signal condition)
+    (invoke-debugger condition)))
+
+;;; ------------------------------------------------------------------------
+;;; Entering the debugger (sub-step 4)
+;;;
+;;; The debugger itself is phase 3's step F. Until then, entering it means
+;;; what CLHS says before any debugger runs: `*debugger-hook*`, if a program
+;;; set one, is called with the condition and itself, bound to nil while it
+;;; runs. If it returns, or there is none, the innermost `abort` restart is
+;;; invoked, with the condition left in `%aborted-condition` for whoever
+;;; established the restart to report (the host loop, `%host-step`); and
+;;; with no `abort` restart either, the machine halts with the condition, as
+;;; an error nobody handled always has, and a host reports it.
+
+(defvar *debugger-hook* nil)
+
+;;; The condition the debugger gave up on, for the `abort` restart it then
+;;; invoked; bound by whoever establishes one that wants to say why.
+(defvar %aborted-condition nil)
+
+(defun invoke-debugger (condition)
+  (let ((hook *debugger-hook*))
+    (when hook
+      (let ((*debugger-hook* nil))
+        (funcall hook condition hook))))
+  (%without-a-debugger condition))
+
+(defun %without-a-debugger (condition)
+  (let ((abort (find-restart 'abort condition)))
+    (when abort
+      (setq %aborted-condition condition)
+      (invoke-restart abort))
     (%signalled (%condition-type-of condition) (%condition-text condition))))
 
 ;;; ------------------------------------------------------------------------
@@ -463,3 +494,322 @@
           (when (and type (not (typep operand type)))
             (return (cons operand type)))
           (unless every-other (setq types (cdr types))))))))
+
+;;; ------------------------------------------------------------------------
+;;; Restarts (sub-step 4)
+;;;
+;;; A restart is a way out that the code near an error offers and the code
+;;; far from it chooses (CLHS 9.1.4.2): `restart-case` around a computation
+;;; names its ways out, a handler further up finds one with `find-restart`
+;;; and takes it with `invoke-restart`. Restarts are a dynamic stack, kept
+;;; as handlers are, in a special variable, `%restart-clusters`, bound by
+;;; `restart-bind` to its cluster consed onto the ones outside it. Unlike
+;;; handlers they never meet the prelude's `handler-case` records, so the
+;;; binding is all there is to them.
+
+;;; A restart: a structure, as SBCL's is. CLHS names only `restart-name`.
+(defstruct (restart (:constructor %make-restart) (:conc-name %restart-)
+                    (:predicate %restartp) (:copier nil))
+  name function report-function interactive-function test-function
+  (conditions nil))
+
+(defun restart-name (restart) (%restart-name restart))
+
+;;; Escaped, `#<RESTART ABORT>`; otherwise its report, which is what a
+;;; debugger shows a person choosing among restarts.
+(defmethod print-object ((restart restart) stream)
+  (if *print-escape*
+      (print-unreadable-object (restart stream :type t)
+        (prin1 (%restart-name restart) stream))
+      (let ((report (%restart-report-function restart)))
+        (if report
+            (funcall report stream)
+            (prin1 (%restart-name restart) stream))))
+  restart)
+
+(defvar %restart-clusters nil)
+
+;;; `(restart-bind ((name function [:report-function f] [:interactive-function f]
+;;; [:test-function f])...) form...)`
+(defmacro restart-bind (bindings &body forms)
+  `(let ((%restart-clusters
+           (cons (list ,@(mapcar (lambda (binding)
+                                   `(%make-restart :name ',(car binding)
+                                                   :function ,(cadr binding)
+                                                   ,@(cddr binding)))
+                                 bindings))
+                 %restart-clusters)))
+     ,@forms))
+
+;;; The active restarts, innermost first. Given a condition, a restart that
+;;; `with-condition-restarts` associated with another condition is left
+;;; out (CLHS 9.1.4.2.2), and so is one whose test refuses the condition.
+(defun compute-restarts (&optional condition)
+  (let ((found nil))
+    (dolist (cluster %restart-clusters (nreverse found))
+      (dolist (restart cluster)
+        (when (%restart-visible-p restart condition)
+          (push restart found))))))
+
+(defun %restart-visible-p (restart condition)
+  (and (or (null condition)
+           (null (%restart-conditions restart))
+           (%member-eq condition (%restart-conditions restart)))
+       (let ((test (%restart-test-function restart)))
+         (or (null test) (funcall test condition)))))
+
+;;; The innermost active restart named IDENTIFIER, or IDENTIFIER itself if
+;;; it is an active restart.
+(defun find-restart (identifier &optional condition)
+  (dolist (restart (compute-restarts condition) nil)
+    (when (if (%restartp identifier)
+              (eq restart identifier)
+              (eq (%restart-name restart) identifier))
+      (return restart))))
+
+(defun %active-restart (identifier condition)
+  (or (find-restart identifier condition)
+      (error 'control-error "there is no active restart of that name" identifier)))
+
+(defun invoke-restart (restart &rest arguments)
+  (apply (%restart-function (%active-restart restart nil)) arguments))
+
+;;; As `invoke-restart`, with the arguments the restart's interactive
+;;; function asks a person for, or none.
+(defun invoke-restart-interactively (restart)
+  (let* ((found (%active-restart restart nil))
+         (interactive (%restart-interactive-function found)))
+    (apply (%restart-function found) (if interactive (funcall interactive) nil))))
+
+;;; Associate each of RESTARTS with CONDITION for the extent of the body.
+(defmacro with-condition-restarts (condition-form restarts-form &body forms)
+  (let ((condition (gensym "CONDITION")) (restarts (gensym "RESTARTS")))
+    `(let ((,condition ,condition-form) (,restarts ,restarts-form))
+       (dolist (restart ,restarts)
+         (setf (%restart-conditions restart) (cons ,condition (%restart-conditions restart))))
+       (unwind-protect (progn ,@forms)
+         (dolist (restart ,restarts)
+           (setf (%restart-conditions restart)
+                 (remove ,condition (%restart-conditions restart) :count 1)))))))
+
+;;; `(restart-case form (name lambda-list [:report r] [:interactive i]
+;;; [:test t] body...)...)`, as CLHS describes it: each clause a restart
+;;; whose function stores its arguments and leaves by `go` to the clause's
+;;; tag, where its body runs with them, outside the restart's extent. When
+;;; FORM is a call of `signal`, `error`, `cerror` or `warn`, the condition
+;;; is made first and the restarts are associated with it.
+(defmacro restart-case (restartable-form &rest clauses &environment environment)
+  (let* ((block (gensym "RESTART-CASE"))
+         (arguments (gensym "ARGUMENTS"))
+         (parsed (mapcar #'%parse-restart-clause clauses)))
+    `(block ,block
+       (let ((,arguments nil))
+         (tagbody
+            (restart-bind
+                ,(mapcar (lambda (clause)
+                           (let ((temp (gensym "ARGUMENTS")))
+                             `(,(second clause)
+                               (lambda (&rest ,temp) (setq ,arguments ,temp) (go ,(first clause)))
+                               ,@(%restart-clause-options clause))))
+                         parsed)
+              (return-from ,block
+                ,(%restartable-form restartable-form environment)))
+            ,@(mapcan (lambda (clause)
+                        (list (first clause)
+                              `(return-from ,block
+                                 (apply (lambda ,(third clause) ,@(seventh clause)) ,arguments))))
+                      parsed))))))
+
+;;; A clause as (tag name lambda-list report interactive test body).
+(defun %parse-restart-clause (clause)
+  (unless (and (consp clause) (symbolp (car clause)) (consp (cdr clause)) (listp (cadr clause)))
+    (error 'program-error "a restart-case clause is (name lambda-list ...)" clause))
+  (let ((rest (cddr clause)) (report nil) (interactive nil) (test nil))
+    (do () ((not (and (consp rest) (member (car rest) '(:report :interactive :test)) (consp (cdr rest)))))
+      (case (car rest)
+        (:report (setq report (cadr rest)))
+        (:interactive (setq interactive (cadr rest)))
+        (:test (setq test (cadr rest))))
+      (setq rest (cddr rest)))
+    (list (gensym "RESTART") (car clause) (cadr clause) report interactive test rest)))
+
+(defun %restart-clause-options (clause)
+  (let ((report (fourth clause)) (interactive (fifth clause)) (test (sixth clause)))
+    (append (cond ((null report) nil)
+                  ((stringp report)
+                   (let ((stream (gensym "STREAM")))
+                     `(:report-function (lambda (,stream) (write-string ,report ,stream)))))
+                  (t `(:report-function (function ,report))))
+            (if interactive `(:interactive-function (function ,interactive)) nil)
+            (if test `(:test-function (function ,test)) nil))))
+
+(defun %restartable-form (form environment)
+  (let ((expanded (macroexpand form environment)))
+    (if (and (consp expanded) (member (car expanded) '(signal error cerror warn)))
+        (let* ((operator (car expanded))
+               (temps (mapcar (lambda (argument) argument (gensym "ARGUMENT")) (cdr expanded)))
+               (condition (gensym "CONDITION")))
+          `(let ,(mapcar #'list temps (cdr expanded))
+             (let ((,condition
+                     ,(if (eq operator 'cerror)
+                          `(%designated-condition ,(second temps) (list ,@(cddr temps)) 'simple-error)
+                          `(%designated-condition ,(first temps) (list ,@(rest temps))
+                                                  ',(case operator
+                                                      (signal 'simple-condition)
+                                                      (warn 'simple-warning)
+                                                      (t 'simple-error))))))
+               (with-condition-restarts ,condition (car %restart-clusters)
+                 ,(if (eq operator 'cerror)
+                      `(cerror ,(first temps) ,condition)
+                      `(,operator ,condition))))))
+        form)))
+
+;;; `(with-simple-restart (name format-control argument...) form...)`
+(defmacro with-simple-restart ((name format-control &rest format-arguments) &body forms)
+  (let ((stream (gensym "STREAM")))
+    `(restart-case (progn ,@forms)
+       (,name ()
+         :report (lambda (,stream) (format ,stream ,format-control ,@format-arguments))
+         (values nil t)))))
+
+;;; The standard restarts' functions (CLHS 9.2). `abort` and
+;;; `muffle-warning` must find their restart; the others do nothing when
+;;; there is none.
+(defun abort (&optional condition)
+  (invoke-restart (%active-restart 'abort condition)))
+
+(defun muffle-warning (&optional condition)
+  (invoke-restart (%active-restart 'muffle-warning condition)))
+
+(defun continue (&optional condition)
+  (let ((restart (find-restart 'continue condition)))
+    (if restart (invoke-restart restart) nil)))
+
+(defun store-value (value &optional condition)
+  (let ((restart (find-restart 'store-value condition)))
+    (if restart (invoke-restart restart value) nil)))
+
+(defun use-value (value &optional condition)
+  (let ((restart (find-restart 'use-value condition)))
+    (if restart (invoke-restart restart value) nil)))
+
+;;; ------------------------------------------------------------------------
+;;; The operators that offer restarts
+
+;;; `(warn datum &rest arguments)`: signal a warning with a `muffle-warning`
+;;; restart, and if nobody muffles it, print it on `*error-output*`.
+(defun warn (datum &rest arguments)
+  (let ((condition (%designated-condition datum arguments 'simple-warning)))
+    (unless (typep condition 'warning)
+      (error 'type-error :datum condition :expected-type 'warning))
+    (restart-case (signal condition)
+      (muffle-warning () :report "Skip warning." (return-from warn nil)))
+    (format *error-output* "~&WARNING: ~A~%" condition)
+    nil))
+
+;;; `(cerror continue-format-control datum &rest arguments)`: an error with
+;;; a `continue` restart, which returns nil.
+(defun cerror (continue-format-control datum &rest arguments)
+  (let ((condition (%designated-condition datum arguments 'simple-error)))
+    (restart-case (error condition)
+      (continue ()
+        :report (lambda (stream) (apply #'format stream continue-format-control arguments))
+        nil))))
+
+;;; `(break &optional format-control &rest arguments)`: enter the debugger,
+;;; with a `continue` restart, not consulting `*debugger-hook*` (CLHS).
+(defun break (&optional (format-control "Break") &rest arguments)
+  (with-simple-restart (continue "Return from BREAK.")
+    (let ((*debugger-hook* nil))
+      (invoke-debugger (make-condition 'simple-condition :format-control format-control
+                                                         :format-arguments arguments))))
+  nil)
+
+;;; Called by `signal` first: if the condition is of `*break-on-signals*`'s
+;;; type, break. The variable is nil while its type is tested, so a type
+;;; that cannot be tested signals once and not for ever.
+(defun %break-on-signal (condition)
+  (let ((type *break-on-signals*))
+    (when type
+      (let ((*break-on-signals* nil))
+        (when (typep condition type)
+          (break "~A~%BREAK was entered because of *BREAK-ON-SIGNALS*." condition))))))
+
+;;; A new value for PLACE, from a person: what `store-value` and `assert`'s
+;;; `continue` ask for when invoked interactively.
+(defun %prompt-for-value (place)
+  (format *query-io* "~&Enter a form for a new value of ~S: " place)
+  (list (eval (read *query-io*))))
+
+;;; `(assert test-form [(place...) [datum argument...]])`: an error until
+;;; TEST-FORM is true, with a `continue` restart that tries again, asking
+;;; for new values of the places first.
+(defmacro assert (test-form &optional places datum &rest arguments)
+  (let ((again (gensym "AGAIN")) (stream (gensym "STREAM")))
+    `(tagbody
+        ,again
+        (unless ,test-form
+          (restart-case ,(if datum
+                             `(error ,datum ,@arguments)
+                             `(error 'simple-error :format-control "The assertion ~S failed."
+                                                   :format-arguments (list ',test-form)))
+            (continue ()
+              :report (lambda (,stream)
+                        (write-string ,(if places "Retry assertion with new values." "Retry assertion.")
+                                      ,stream))
+              ;; As SBCL's: a new value for each place is asked for when
+              ;; the restart is taken, however it is invoked.
+              ,@(mapcar (lambda (place) `(setf ,place (car (%prompt-for-value ',place))))
+                        places)
+              (go ,again)))))))
+
+;;; `(check-type place type [type-string])`: a `type-error` until PLACE's
+;;; value is of TYPE, with a `store-value` restart that stores a new value
+;;; in the place and checks again. Moved here from `types.lisp`, where it
+;;; had no restart to offer.
+(defmacro check-type (place type &optional type-string)
+  (let ((again (gensym "AGAIN")) (value (gensym "VALUE")) (new (gensym "NEW"))
+        (stream (gensym "STREAM")))
+    `(tagbody
+        ,again
+        (let ((,value ,place))
+          (unless (typep ,value ',type)
+            (restart-case (error 'simple-type-error :datum ,value :expected-type ',type
+                                 :format-control "The value of ~S is ~S, which is not ~A."
+                                 :format-arguments (list ',place ,value
+                                                         ,(or type-string
+                                                              (format nil "of type ~S" type))))
+              (store-value (,new)
+                :report (lambda (,stream) (format ,stream "Supply a new value for ~S." ',place))
+                :interactive (lambda () (%prompt-for-value ',place))
+                (setf ,place ,new)
+                (go ,again))))))))
+
+;;; `ccase` and `ctypecase`: as `ecase` and `etypecase`, with a
+;;; `store-value` restart that stores a new key in the place and tries
+;;; again. Moved here from `lists.lisp` and `types.lisp`.
+(defmacro ccase (keyplace &body clauses)
+  (%correctable-case keyplace
+                     (lambda (key) (%case-clauses key clauses nil))
+                     (cons 'member (%ecase-keys clauses))))
+
+(defmacro ctypecase (keyplace &body clauses)
+  (%correctable-case keyplace
+                     (lambda (key) (%typecase-clauses key clauses))
+                     (cons 'or (mapcar #'car clauses))))
+
+(defun %correctable-case (keyplace make-clauses expected-type)
+  (let ((again (gensym "AGAIN")) (block (gensym "CASE")) (key (gensym "KEY"))
+        (new (gensym "NEW")) (stream (gensym "STREAM")))
+    `(block ,block
+       (tagbody
+          ,again
+          (let ((,key ,keyplace))
+            (return-from ,block
+              (cond ,@(funcall make-clauses key)
+                    (t (restart-case (error 'type-error :datum ,key :expected-type ',expected-type)
+                         (store-value (,new)
+                           :report (lambda (,stream) (format ,stream "Supply a new value for ~S." ',keyplace))
+                           :interactive (lambda () (%prompt-for-value ',keyplace))
+                           (setf ,keyplace ,new)
+                           (go ,again)))))))))))

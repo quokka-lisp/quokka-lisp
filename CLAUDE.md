@@ -637,7 +637,19 @@ stands. **A machine `type-error`'s datum comes from
 primitive there when a test wants its datum). `%condition-text` binds
 `*print-level*`/`*print-length*` (a datum can be circular). Host failures go
 through Lisp too. Rebuild `(:FORMS 1907 :REPLACED 1496)`; ansi-test
-**10,824**, no plain failure. Phase 2's scope was
+**10,824**, no plain failure.
+**Sub-step 4, restarts, is done** (chapter 82): a `restart` structure,
+`%restart-clusters` (a special, no mark walking), `restart-case` (CLHS's
+`tagbody`/`go` expansion, implicit `with-condition-restarts` around
+`signal`/`error`/`cerror`/`warn` calls), the restart functions, `warn`,
+`cerror`, `break`, `assert`, and `check-type`/`ccase`/`ctypecase` with
+`store-value` (moved into `conditions.lisp`). `invoke-debugger` calls
+`*debugger-hook*`, then the innermost `abort`. **The host loop `%host-step`
+offers an `abort` restart rather than catching errors** (decision 5), so an
+unhandled error reaches the debugger and a program's hook; the condition
+comes back through `%aborted-condition`. Rebuild `(:FORMS 1941 :REPLACED
+1525)`; ansi-test **11,912**, with 426 newly visible plain failures (391
+`format`) for sub-step 5. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special
@@ -709,8 +721,8 @@ none of it (chapter 29 says why installing cannot happen in a running
 interpreter); `boot::build_image` does install it, in a heap that is saved and
 abandoned straight afterwards (chapter 32).
 
-**505 tests**; **65 differential files agree with SBCL** — 17 interpreted and
-compiled, plus forty-eight tier-1 files, compiled only, and all 65 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
+**505 tests**; **66 differential files agree with SBCL** — 17 interpreted and
+compiled, plus forty-nine tier-1 files, compiled only, and all 66 also pass in a rebuilt world. `scripts/check-test-placement.sh` prints how much Rust each crate holds; nothing limits it.
 
 **The November 2026 review** (#83): its 8 high findings are fixed, and all but a few items of its medium and low ones; what is left is listed on #83. What that changed for anyone working here: **image format 8** since #124 (older `.qi` files are refused — rebuild); `EvalError::Fault` is the machine's own error and never catchable, `BadSyntax` is the program's and a `program-error`; a throw's unwind target is its tag in a cons, so a record matches only its own kind of unwind; `Heap::verify` and `image::load` check everything the rest of the code trusts; the REPL reads whole forms and only `:save` is a command; a world reads only under the directory it was started in, `--root DIR` or `--allow-read PATH` (#87; `permitted` in `crates/quokka/src/host.rs` judges a name by where it leads, links and `..` followed); a function is assembled under its name (`%pending-name` in `compile.lisp`, set by whoever knows the name and consumed by `%assemble-lambda`); a compile error is re-signalled by `compile-form` with the form it is in; the SBCL the baselines come from is pinned in `scripts/sbcl.pin` and CI builds exactly that one; **a differential test prints the condition type** (`!! type-error`; `condition::REPORTED` and the same list in `scripts/oracle.lisp`), so a form that errs must signal the type SBCL does; the browser page is checked by `scripts/smoke-wasm.mjs` (Node) and `scripts/smoke-browser.sh` (headless Chrome), and a form after `#` in its address is evaluated on load. **Lisp sources are embedded with `include_str!`**: after editing a `.lisp` file, rebuild the `quokka` binary before `quokka build`, or the world is made from the old text.
 

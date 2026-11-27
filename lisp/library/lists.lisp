@@ -141,16 +141,19 @@
   (let ((key (gensym "KEY")))
     `(let ((,key ,keyform))
        (cond ,@(%case-clauses key clauses nil)
-             (t (error 'type-error "ECASE: no clause matches" ,key))))))
+             (t (error 'type-error :datum ,key
+                                   :expected-type '(member ,@(%ecase-keys clauses))))))))
 
-;;; `ccase`: CLHS makes its error correctable, with a `store-value` restart
-;;; that stores a new key in the place and tries again. Until tier 2 has
-;;; restarts it is `ecase` (#68, decision 1).
-(defmacro ccase (keyplace &body clauses)
-  (let ((key (gensym "KEY")))
-    `(let ((,key ,keyplace))
-       (cond ,@(%case-clauses key clauses nil)
-             (t (error 'type-error "CCASE: no clause matches" ,key))))))
+;;; Every key of CLAUSES, for the type an `ecase` error expects. Plain
+;;; recursion: `dolist` is defined further down this file.
+(defun %ecase-keys (clauses)
+  (if (null clauses)
+      nil
+      (append (if (listp (car (car clauses))) (car (car clauses)) (list (car (car clauses))))
+              (%ecase-keys (cdr clauses)))))
+
+;;; `ccase` is in `conditions.lisp`, with the `store-value` restart that
+;;; makes its error correctable (phase 3 step B).
 
 (defun %case-clauses (key clauses acc)
   (if (null clauses)

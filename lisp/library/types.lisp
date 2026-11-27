@@ -432,25 +432,10 @@
   (let ((key (gensym "KEY")))
     `(let ((,key ,keyform))
        (cond ,@(%typecase-clauses key clauses)
-             (t (error 'type-error "ETYPECASE: no clause matches" ,key))))))
+             (t (error 'type-error :datum ,key :expected-type '(or ,@(mapcar #'car clauses))))))))
 
-;;; `ctypecase` and `check-type`: CLHS makes their errors correctable, with
-;;; a `store-value` restart that stores a new value in the place and tries
-;;; again. Until conditions have restarts (phase 3, step B) they signal the
-;;; `type-error` and nothing more, as `ccase` does.
-(defmacro ctypecase (keyplace &body clauses)
-  (let ((key (gensym "KEY")))
-    `(let ((,key ,keyplace))
-       (cond ,@(%typecase-clauses key clauses)
-             (t (error 'type-error "CTYPECASE: no clause matches" ,key))))))
-
-(defmacro check-type (place type &optional type-string)
-  type-string
-  (let ((value (gensym "VALUE")))
-    `(let ((,value ,place))
-       (unless (typep ,value ',type)
-         (error 'type-error "the value is not of the expected type" ,value))
-       nil)))
+;;; `ctypecase` and `check-type` are in `conditions.lisp`, with the
+;;; `store-value` restart that makes their errors correctable (phase 3 step B).
 
 ;;; ------------------------------------------------------------------------
 ;;; The sequence functions, through deftype

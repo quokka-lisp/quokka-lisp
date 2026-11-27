@@ -186,6 +186,7 @@ tier1_cases! {
     condition_objects => "condition-objects",
     signalling => "signalling",
     machine_errors => "machine-errors",
+    restarts => "restarts",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -417,7 +418,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1907 :REPLACED 1496)".into())],
+        [Outcome::Value("(:FORMS 1941 :REPLACED 1525)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -494,6 +495,27 @@ fn a_rebuild_keeps_classes_and_their_instances() {
 }
 
 /// What only Quokka can be held to (#124): the default `#<...>` of an
+/// `*debugger-hook*` is called when an error reaches the debugger, with the
+/// condition and itself, and bound to nil while it runs (#125). SBCL cannot
+/// be the oracle here: under `--script` its own debugger hook runs first and
+/// ends the process. An unhandled error at the top level reaches the hook,
+/// since the host loop offers an `abort` restart instead of catching errors.
+#[test]
+fn the_debugger_hook_sees_an_unhandled_error() {
+    let out = run_compiled(
+        "(let ((*debugger-hook* (lambda (c hook) hook (throw :dbg (list :hooked (type-of c)))))) \
+           (catch :dbg (invoke-debugger (make-condition 'simple-error :format-control \"x\")))) \
+         (let ((*debugger-hook* (lambda (c hook) c hook (throw :dbg (list :reached *debugger-hook*))))) \
+           (catch :dbg (error \"unhandled\"))) \
+         (let ((*debugger-hook* (lambda (c hook) c hook :declined))) (error \"still unhandled\")) \
+         (+ 1 2)",
+    );
+    assert_eq!(
+        out,
+        "=> (:HOOKED SIMPLE-ERROR)\n=> (:REACHED NIL)\n!! error\n=> 3\n"
+    );
+}
+
 /// instance, a condition and the metaobjects, which SBCL writes with an
 /// address Quokka does not have.
 #[test]

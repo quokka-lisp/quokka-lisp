@@ -270,18 +270,29 @@
 ;;;   (:error "message")         a Lisp error, caught here
 ;;;   (:eof)                     nothing left to read
 ;;;
-;;; An error is caught so that the host can carry on with the next form, as a
-;;; REPL does. What cannot be caught here — the step budget running out — the
-;;; host sees as a failure of the call itself. The argument is ignored: the
-;;; host's trampoline always passes one.
+;;; Each form runs inside an `abort` restart, CLHS's way back to the top
+;;; level (#125, decision 5). An error nobody handles goes to the debugger,
+;;; which calls a program's `*debugger-hook*` and then, there being no
+;;; debugger yet (step F), invokes the innermost `abort` restart: this one,
+;;; which tells the host what went wrong so that it can carry on with the
+;;; next form, as a REPL does. Until step B the form ran inside a
+;;; `handler-case` that caught every error, so an error never reached the
+;;; debugger, nor a program's hook. What cannot be caught at all, the step
+;;; budget running out, the host sees as a failure of the call itself. The
+;;; argument is ignored: the host's trampoline always passes one.
 (defun %host-step (ignored)
-  (handler-case
-      (let ((form (read %host-input nil %end-of-input)))
-        (if (eq form %end-of-input)
-            (list :eof)
-            (list :value (prin1-to-string (eval form)))))
-    (error (condition)
-      (list :error (%condition-text condition) (%condition-type-name condition)))))
+  (let ((%aborted-condition nil))
+    (restart-case
+        (let ((form (read %host-input nil %end-of-input)))
+          (if (eq form %end-of-input)
+              (list :eof)
+              (list :value (prin1-to-string (eval form)))))
+      (abort ()
+        :report "Return to the top level."
+        (if %aborted-condition
+            (list :error (%condition-text %aborted-condition)
+                  (%condition-type-name %aborted-condition))
+            (list :error "Aborted." "ERROR"))))))
 
 ;;; A condition's type as text, for a host that wants to say which kind of
 ;;; error a form ended in (#103).

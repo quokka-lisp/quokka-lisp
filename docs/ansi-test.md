@@ -9,24 +9,24 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1577 | 0 | 0 | 0 | 0 | 145 | 1722 |
-| sequences | 2694 | 0 | 0 | 0 | 0 | 593 | 3287 |
-| strings | 404 | 0 | 0 | 0 | 0 | 105 | 509 |
-| arrays | 1049 | 0 | 0 | 0 | 0 | 241 | 1290 |
+| cons | 1581 | 8 | 0 | 0 | 0 | 133 | 1722 |
+| sequences | 2773 | 0 | 0 | 0 | 0 | 514 | 3287 |
+| strings | 408 | 0 | 0 | 0 | 0 | 101 | 509 |
+| arrays | 1117 | 7 | 0 | 0 | 0 | 166 | 1290 |
 | characters | 143 | 0 | 0 | 0 | 0 | 116 | 259 |
-| symbols | 131 | 0 | 0 | 0 | 0 | 1014 | 1145 |
-| packages | 401 | 0 | 0 | 0 | 0 | 99 | 500 |
+| symbols | 135 | 0 | 0 | 0 | 0 | 1010 | 1145 |
+| packages | 436 | 8 | 0 | 0 | 0 | 56 | 500 |
 | numbers | 605 | 0 | 0 | 0 | 0 | 839 | 1444 |
-| reader | 423 | 0 | 0 | 0 | 0 | 152 | 575 |
-| printer | 428 | 0 | 0 | 0 | 0 | 1441 | 1869 |
-| data-and-control-flow | 1240 | 0 | 0 | 0 | 0 | 188 | 1428 |
-| eval-and-compile | 280 | 0 | 0 | 0 | 0 | 38 | 318 |
-| iteration | 95 | 0 | 0 | 0 | 0 | 748 | 843 |
+| reader | 499 | 0 | 0 | 0 | 0 | 76 | 575 |
+| printer | 1200 | 391 | 0 | 0 | 0 | 855 | 2446 |
+| data-and-control-flow | 1268 | 12 | 0 | 0 | 0 | 148 | 1428 |
+| eval-and-compile | 284 | 0 | 0 | 0 | 0 | 34 | 318 |
+| iteration | 99 | 0 | 0 | 0 | 0 | 744 | 843 |
 | hash-tables | 119 | 0 | 0 | 0 | 0 | 48 | 167 |
-| structures | 72 | 0 | 0 | 0 | 0 | 44 | 116 |
+| structures | 75 | 0 | 0 | 0 | 0 | 41 | 116 |
 | types-and-classes | 416 | 0 | 0 | 0 | 0 | 98 | 514 |
-| objects | 747 | 0 | 0 | 0 | 0 | 96 | 843 |
-| **all** | **10824** | **0** | **0** | **0** | **0** | **6005** | **16829** |
+| objects | 754 | 0 | 0 | 0 | 0 | 89 | 843 |
+| **all** | **11912** | **426** | **0** | **0** | **0** | **5068** | **17406** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -38,16 +38,14 @@ A test can need several things.
 | needs | tests |
 | --- | ---: |
 | `LOOP[tier-2:loop]` | 4435 |
-| `ASSERT[tier-2:conditions]` | 1405 |
 | `RANDOM[tier-2:random]` | 568 |
 | `reader[#C]` | 522 |
 | `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 407 |
 | `MAKE-RANDOM-STATE[tier-2:random]` | 406 |
 | `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 394 |
-| `MUFFLE-WARNING[tier-2:conditions]` | 252 |
 | `COMPLEX[deferred:complex-numbers]` | 190 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 141 |
-| `format-directive[tier-2:format]` | 126 |
+| `format-directive[tier-2:format]` | 130 |
 | `PPRINT-NEWLINE[tier-2:pretty-printer]` | 73 |
 | `DOCUMENTATION[tier-2:clos]` | 66 |
 | `note[NIL-VECTORS-ARE-STRINGS]` | 63 |
@@ -65,17 +63,13 @@ A test can need several things.
 | `PPRINT-TAB[tier-2:pretty-printer]` | 29 |
 | `WITH-OPEN-FILE[tier-2:streams]` | 28 |
 | `SET-PPRINT-DISPATCH[tier-2:pretty-printer]` | 26 |
-| `BREAK[tier-2:conditions]` | 25 |
 | `COMPILE-FILE[deferred:compile-file]` | 25 |
 | `MAKE-TWO-WAY-STREAM[tier-2:streams]` | 25 |
 | `PPRINT-POP[tier-2:pretty-printer]` | 23 |
 | `PHASE[deferred:complex-numbers]` | 21 |
 | `UPGRADED-COMPLEX-PART-TYPE[deferred:complex-numbers]` | 21 |
-| `COMPUTE-RESTARTS[tier-2:conditions]` | 19 |
 | `RANDOM-STATE-P[tier-2:random]` | 19 |
-| `ABORT[tier-2:conditions]` | 18 |
 | `PPRINT-EXIT-IF-LIST-EXHAUSTED[tier-2:pretty-printer]` | 18 |
-| `RESTART-NAME[tier-2:conditions]` | 18 |
 | `reader[#P]` | 17 |
 | `MAKE-BROADCAST-STREAM[tier-2:streams]` | 16 |
 | `CIS[deferred:complex-numbers]` | 14 |
@@ -83,23 +77,16 @@ A test can need several things.
 | `PPRINT[tier-2:pretty-printer]` | 13 |
 | `STEP[tier-2:environment]` | 13 |
 | `PPRINT-DISPATCH[tier-2:pretty-printer]` | 12 |
-| `RESTART-BIND[tier-2:conditions]` | 12 |
-| `RESTART-CASE[tier-2:conditions]` | 12 |
 | `TIME[tier-2:environment]` | 12 |
 | `TRACE[tier-2:environment]` | 12 |
 | `UNTRACE[tier-2:environment]` | 12 |
 | `WITH-COMPILATION-UNIT[deferred:compile-file]` | 12 |
-| `WITH-CONDITION-RESTARTS[tier-2:conditions]` | 12 |
-| `WITH-SIMPLE-RESTART[tier-2:conditions]` | 12 |
-| `STORE-VALUE[tier-2:conditions]` | 11 |
 | `COMPILE-FILE-PATHNAME[deferred:compile-file]` | 10 |
-| `CONTINUE[tier-2:conditions]` | 10 |
 | `DELETE-FILE[tier-2:pathnames-and-files]` | 10 |
 | `NAMESTRING[tier-2:pathnames-and-files]` | 10 |
 | `APROPOS-LIST[tier-2:environment]` | 9 |
 | `APROPOS[tier-2:environment]` | 9 |
 | `BROADCAST-STREAM-STREAMS[tier-2:streams]` | 9 |
-| `CERROR[tier-2:conditions]` | 9 |
 | `CLEAR-INPUT[tier-2:streams]` | 9 |
 | `CLOSE[tier-2:streams]` | 9 |
 | `CONCATENATED-STREAM-STREAMS[tier-2:streams]` | 9 |
@@ -118,7 +105,6 @@ A test can need several things.
 | `FILE-POSITION[tier-2:streams]` | 9 |
 | `FILE-STRING-LENGTH[tier-2:streams]` | 9 |
 | `FILE-WRITE-DATE[tier-2:pathnames-and-files]` | 9 |
-| `FIND-RESTART[tier-2:conditions]` | 9 |
 | `FUNCTION-KEYWORDS[tier-2:clos]` | 9 |
 | `GET-DECODED-TIME[tier-2:environment]` | 9 |
 | `GET-INTERNAL-REAL-TIME[tier-2:environment]` | 9 |
@@ -127,9 +113,6 @@ A test can need several things.
 | `HOST-NAMESTRING[tier-2:pathnames-and-files]` | 9 |
 | `INSPECT[tier-2:environment]` | 9 |
 | `INTERACTIVE-STREAM-P[tier-2:streams]` | 9 |
-| `INVOKE-DEBUGGER[tier-2:conditions]` | 9 |
-| `INVOKE-RESTART-INTERACTIVELY[tier-2:conditions]` | 9 |
-| `INVOKE-RESTART[tier-2:conditions]` | 9 |
 | `LISP-IMPLEMENTATION-TYPE[tier-2:environment]` | 9 |
 | `LISP-IMPLEMENTATION-VERSION[tier-2:environment]` | 9 |
 | `LISTEN[tier-2:streams]` | 9 |
@@ -173,9 +156,7 @@ A test can need several things.
 | `TRUENAME[tier-2:pathnames-and-files]` | 9 |
 | `TWO-WAY-STREAM-INPUT-STREAM[tier-2:streams]` | 9 |
 | `TWO-WAY-STREAM-OUTPUT-STREAM[tier-2:streams]` | 9 |
-| `USE-VALUE[tier-2:conditions]` | 9 |
 | `USER-HOMEDIR-PATHNAME[tier-2:pathnames-and-files]` | 9 |
-| `WARN[tier-2:conditions]` | 9 |
 | `WILD-PATHNAME-P[tier-2:pathnames-and-files]` | 9 |
 | `WRITE-BYTE[tier-2:streams]` | 9 |
 | `WRITE-SEQUENCE[tier-2:streams]` | 9 |
