@@ -765,7 +765,18 @@
           (setq i (+ i 1)))))))
 
 (defun %same-specializers-p (a b)
-  (and (= (length a) (length b)) (every #'eq a b)))
+  (and (= (length a) (length b)) (%same-key-p a b)))
+
+;;; Are the elements of A, in order, `eq` to those of B? B is at least as
+;;; long as A. Written as a bare loop because `%dispatch` runs it on every
+;;; call of every generic function: `(every #'eq a b)` says the same and
+;;; cost 880 steps for two lists of one element, where this costs about 20
+;;; (#161).
+(defun %same-key-p (a b)
+  (do ((a a (cdr a))
+       (b b (cdr b)))
+      ((or (null a) (not (eq (car a) (car b))))
+       (null a))))
 
 ;;; The printer sends a cons, a symbol, a number, a string and the other
 ;;; built-in objects to `print-object` only once a program has defined a
@@ -1003,14 +1014,37 @@
 
 ;;; The key a call's effective method is cached under: the class of each
 ;;; required argument, or, where some method has an `eql` specializer and
-;;; the argument has one, that specializer.
+;;; the argument has one, that specializer. The list is built front to
+;;; back, a cell at a time, so that nothing has to reverse it.
 (defun %dispatch-key (gf args count)
-  (let ((key nil) (positions (%gf-eql-positions gf)))
-    (do ((i 0 (+ i 1)) (rest args (cdr rest)))
-        ((= i count) (nreverse key))
-      (push (or (and positions (member i positions) (gethash (car rest) %eql-specializers))
-                (class-of (car rest)))
-            key))))
+  (if (= count 0)
+      nil
+      (let* ((positions (%gf-eql-positions gf))
+             (key (list (%key-element positions 0 (car args))))
+             (last key))
+        (do ((i 1 (+ i 1))
+             (rest (cdr args) (cdr rest)))
+            ((= i count) key)
+          (let ((cell (list (%key-element positions i (car rest)))))
+            (setf (cdr last) cell)
+            (setq last cell))))))
+
+;;; What argument number I contributes to the key. POSITIONS are the
+;;; argument numbers at which some method has an `eql` specializer: nil for
+;;; nearly every generic function, and then the table is never asked.
+(defun %key-element (positions i argument)
+  (or (and positions (%member-eq i positions) (gethash argument %eql-specializers))
+      (class-of argument)))
+
+;;; The effective method CACHE holds for KEY, or nil. The cache is a list
+;;; of `(key . effective-method)`, newest first; every key in one generic
+;;; function's cache has as many elements as the function has required
+;;; arguments. A linear search: a call site that sees many classes pays for
+;;; each one in front of its own.
+(defun %cached-method (key cache)
+  (do ((entries cache (cdr entries)))
+      ((or (null entries) (%same-key-p key (car (car entries))))
+       (if entries (cdr (car entries)) nil))))
 
 (defun %dispatch (gf args)
   (let* ((arity (%gf-arity gf))
@@ -1033,10 +1067,8 @@
     (unless (eq (%gf-epoch gf) %dispatch-epoch)
       (%set-gf-cache gf nil)
       (%set-gf-epoch gf %dispatch-epoch))
-    (let* ((key (%dispatch-key gf args count))
-           (cached (assoc key (%gf-cache gf) :test #'%same-specializers-p)))
-      (funcall (if cached
-                   (cdr cached)
+    (let ((key (%dispatch-key gf args count)))
+      (funcall (or (%cached-method key (%gf-cache gf))
                    (let ((emf (%compute-effective-method gf args)))
                      (%set-gf-cache gf (cons (cons key emf) (%gf-cache gf)))
                      emf))

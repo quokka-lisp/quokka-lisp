@@ -840,6 +840,17 @@ renderer), so redisplay moves one rather than making it again; a ratio is
 sent as a double; `stream-record-stream` says where a stream's pictures go.
 **Next: phase 5**, presentations, commands and the inspector.
 Rebuild `(:FORMS 2416 :REPLACED 1749)`.
+**The review after phases 3 and 4 is #144** (28 Nov 2026; 54 findings, #145–#198).
+Its chief finding is cost: the system had been measured for being right and
+never for being fast. **#161, first part**: `%dispatch` compared cache keys
+with `(every #'eq a b)` under `assoc :test`, 1,000 of a generic call's 1,446
+steps; `%same-key-p`, `%cached-method` and `%key-element` are bare loops
+(a generic call 338 steps, an accessor 932, `make-instance` 5,245 from
+32,877). **On a path that runs per call, write the loop**: the sequence
+functions parse keywords and take the general path for two sequences. And
+**measure before rewriting**: replacing the arity walk's `return` with an end
+test, on a guess, made it slower. Steps are counted by bisecting a loop
+against the REPL's 5,000,000-step budget. Rebuild `(:FORMS 2419 :REPLACED 1752)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
