@@ -1970,8 +1970,8 @@ fn after_a_build_every_system_symbol_has_a_package() {
 /// ordinary Common Lisp, and each once ended the program that ran it: the
 /// first three overflowed the Rust stack in the printer that writes the error
 /// message, the next two panicked or asked the operating system for 800 GB,
-/// and the last three walked a circular list in one step, where the step
-/// budget cannot interrupt.
+/// the next three walked a circular list in one step, where the step
+/// budget cannot interrupt, and the last recursed in Rust without end.
 ///
 /// What they give now matters less than that they give something.
 #[test]
@@ -1987,10 +1987,11 @@ fn hostile_forms_end_in_an_error_and_not_the_process() {
          (let ((x (list 1 2))) (setf (cddr x) x) (apply #'list x)) \
          (let ((x (list 1 2))) (setf (cddr x) x) (values-list x)) \
          (let ((x (list 1 2))) (setf (cddr x) x) (append x (list 3))) \
+         (let ((l (list #'apply nil))) (setf (second l) l) (apply #'apply l)) \
          (+ 1 2)",
     );
-    assert_eq!(said.len(), 9);
-    for (i, line) in said[..8].iter().enumerate() {
+    assert_eq!(said.len(), 10);
+    for (i, line) in said[..9].iter().enumerate() {
         assert!(line.starts_with("; "), "form {i} gave {line}");
     }
     // Nesting past the printer's depth is written as `#`, as `*print-level*`
@@ -1998,8 +1999,11 @@ fn hostile_forms_end_in_an_error_and_not_the_process() {
     assert!(said[0].contains("(#)"), "{}", said[0]);
     assert!(said[3].contains("out of heap"), "{}", said[3]);
     assert!(said[5].contains("circular"), "{}", said[5]);
+    // `apply` of `apply` of a list that holds itself (#170): each one hands
+    // the call on in Rust, so it is the machine that has to stop.
+    assert!(said[8].contains("too many times"), "{}", said[8]);
     // And the world is still there.
-    assert_eq!(said[8], "3");
+    assert_eq!(said[9], "3");
 }
 
 /// The other half: the bounds refuse nothing a program may fairly ask for.

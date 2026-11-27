@@ -189,7 +189,18 @@ pub struct Vm<'a, 'h> {
     /// told to end (`terminate_process`), so its halt is that and not an
     /// error.
     terminating: bool,
+    /// How many `funcall`s and `apply`s deep the call being resolved is
+    /// (`Vm::redirect`); back to zero once a callee is entered.
+    redirections: u32,
 }
+
+/// How many times one call may be handed on by `funcall` or `apply` before
+/// something is entered. Each handing-on is a Rust call inside one step, so
+/// without a limit `(apply #'apply l)` on a list that holds itself ran off
+/// the end of the Rust stack and took the process with it (#170, rules 4
+/// and 10). Nothing written by hand comes near this: it is `funcall` of
+/// `funcall` of `funcall`, sixty-four times, with no function between.
+const REDIRECTIONS: u32 = 64;
 
 /// What a process told to end unwinds towards: a symbol, which no record
 /// matches — a `block` or `tag` wants its marker, a `catch` a cons, a
@@ -250,6 +261,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             halted: false,
             signalling: false,
             terminating: false,
+            redirections: 0,
         }
         .unbind_all();
         let wanted = mc
@@ -279,6 +291,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             halted: false,
             signalling: false,
             terminating: false,
+            redirections: 0,
         }
     }
 
@@ -301,6 +314,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             halted: false,
             signalling: false,
             terminating: false,
+            redirections: 0,
         }
     }
 
@@ -802,6 +816,22 @@ impl<'a, 'h> Vm<'a, 'h> {
         self.call_value(callee, &args, tail)
     }
 
+    /// What `funcall` and `apply` do with the function they were given:
+    /// call it, unless this call has been handed on too many times already
+    /// (`REDIRECTIONS`).
+    fn redirect(&mut self, callee: Value<'h>, args: &[Value<'h>], tail: bool) -> Transition {
+        if self.redirections >= REDIRECTIONS {
+            self.redirections = 0;
+            return self.fail(EvalError::BadCall(
+                "funcall or apply handed on to funcall or apply too many times",
+            ));
+        }
+        self.redirections += 1;
+        let transition = self.call_value(callee, args, tail);
+        self.redirections = self.redirections.saturating_sub(1);
+        transition
+    }
+
     /// Call `callee` with `args`, whatever kind of thing it is.
     ///
     /// Separate from [`Vm::call`] because `funcall` and `apply` need it too:
@@ -905,7 +935,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 }));
             };
             let (callee, rest) = (*callee, rest.to_vec());
-            return Some(self.call_value(callee, &rest, tail));
+            return Some(self.redirect(callee, &rest, tail));
         }
         if index == primitives::index(primitives::Prim::Apply) {
             // The last argument is a list and is spread; everything between
@@ -930,7 +960,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 return Some(self.fail(primitives::circular("APPLY")));
             };
             spread.append(&mut elements);
-            return Some(self.call_value(callee, &spread, tail));
+            return Some(self.redirect(callee, &spread, tail));
         }
         let asks_host = if index == primitives::index(primitives::Prim::ReadSource) {
             Some("%READ-SOURCE")
