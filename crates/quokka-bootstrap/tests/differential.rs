@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2431 :REPLACED 1760)".into())],
+        [Outcome::Value("(:FORMS 2433 :REPLACED 1761)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1906,6 +1906,29 @@ fn the_rebuild_reads_the_library_the_cold_build_loads() {
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
+}
+
+/// Two threads that intern the same new name get the same symbol (#179).
+/// Looking a name up and adding it are two steps, and a thread can be
+/// switched out between them; before `intern` took a lock to make a symbol,
+/// three threads interning sixty names each came back with eighteen pairs
+/// that were not `eq`. Slices are counted in steps, so the run is the same
+/// every time and this fails if the lock goes.
+#[test]
+fn threads_interning_one_name_get_one_symbol() {
+    let out = run_compiled(
+        "(defun names (k) \
+           (let (l) (dotimes (i k) (push (intern (format nil \"TYM~D\" i) :cl-user) l)) l)) \
+         (let* ((threads (list (quokka-thread:make-thread (lambda () (names 60))) \
+                               (quokka-thread:make-thread (lambda () (names 60))) \
+                               (quokka-thread:make-thread (lambda () (names 60))))) \
+                (lists (mapcar #'quokka-thread:join-thread threads)) \
+                (different 0)) \
+           (mapc (lambda (a b c) (unless (and (eq a b) (eq b c)) (setq different (+ different 1)))) \
+                 (first lists) (second lists) (third lists)) \
+           different)",
+    );
+    assert_eq!(out, "=> NAMES\n=> 0\n");
 }
 
 /// A read that fails without taking a character must not keep the host's

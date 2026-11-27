@@ -883,7 +883,14 @@ a read that fails without taking a character gives the input up
 **A commit goes in only on the check's exit status** (`if ./scripts/check.sh
 ...; then git commit`): on 28 Nov 2026 a log was read, the exit code was
 not, and a failing test was pushed (`444efe0`).
-Rebuild `(:FORMS 2431 :REPLACED 1760)`.
+`%host-step-reading` is in the debugger's `%host-loop-functions`: **a
+function added to the host loop must be, or backtraces grow a frame**.
+**#179**: `intern` makes a symbol under `%intern-lock`, a cell taken with
+`%compare-and-swap-svref`, after looking again; finding one takes no lock.
+**`%without-interrupts` puts off a thread's end, not a switch**: what must
+not be interleaved needs a lock, and a lock a form may be abandoned inside
+(#173) must let its owner take it again.
+Rebuild `(:FORMS 2433 :REPLACED 1761)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

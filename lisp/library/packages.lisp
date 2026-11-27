@@ -222,24 +222,57 @@
 ;;; `(intern name &optional package)` — `find-symbol`, and if there is no such
 ;;; symbol, a new one, internal to PACKAGE. The second value is the status of
 ;;; the symbol found, or `nil` if it had to be made.
+;;;
+;;; Nearly every call finds its symbol and is done. Making one is two steps,
+;;; looking and adding, and a process can be switched out between them: two
+;;; threads interning the same new name each found nothing and each made a
+;;; symbol, so one name had two symbols in one package (#179). So the making
+;;; is done by one process at a time, which looks again once it has the lock.
 (defun intern (string &optional (package *package*))
   (let ((package (%the-package package))
         ;; A string with a fill pointer is copied: the name is kept, and
         ;; Rust's symbol table takes simple strings only (#67).
         (string (%simple-string string)))
     (multiple-value-bind (symbol status) (find-symbol string package)
-      (cond (status (values symbol status))
-            ;; A keyword is made the Rust way, so that a keyword made by the
-            ;; reader and one made here are one object.
-            ((eq package %keyword-package) (values (%intern-keyword string) nil))
-            ;; In `COMMON-LISP-USER`, a new symbol is made in the system table
-            ;; too, for the same reason: the Rust reader, which the build and
-            ;; some tests still use, interns there, and must find the symbol
-            ;; this made — `defstruct`'s `point-x` (#62, part 2) — rather than
-            ;; make a second one. The other direction is `%find-unadopted`.
-            ((and (eq package %cl-user-package) (null (%find-system-symbol string nil)))
-             (values (%adopt (%intern string) package nil) nil))
-            (t (values (%adopt (make-symbol string) package nil) nil))))))
+      (if status
+          (values symbol status)
+          (%intern-new string package)))))
+
+;;; The process that is making a symbol, or nil: a lock, taken with the one
+;;; atomic operation the machine has. `%without-interrupts` would not do:
+;;; it puts off a thread's *end*, not a switch to another thread.
+;;;
+;;; A process that finds itself the owner takes the lock again. Nothing
+;;; here interns while it holds the lock, so that can only be a lock left
+;;; behind by a form that was abandoned at its step budget, which runs no
+;;; cleanup (#173); without this one such form would stop every later
+;;; `intern` in the world.
+(defvar %intern-lock (vector nil))
+
+(defun %intern-new (string package)
+  (let ((me (%current-process)))
+    (%without-interrupts
+      (do ()
+          ((let ((owner (%compare-and-swap-svref %intern-lock 0 nil me)))
+             (or (null owner) (eq owner me))))
+        (%process-yield))
+      (unwind-protect
+           (multiple-value-bind (symbol status) (find-symbol string package)
+             (cond (status (values symbol status))
+                   ;; A keyword is made the Rust way, so that a keyword made
+                   ;; by the reader and one made here are one object.
+                   ((eq package %keyword-package) (values (%intern-keyword string) nil))
+                   ;; In `COMMON-LISP-USER`, a new symbol is made in the
+                   ;; system table too, for the same reason: the Rust reader,
+                   ;; which the build and some tests still use, interns
+                   ;; there, and must find the symbol this made —
+                   ;; `defstruct`'s `point-x` (#62, part 2) — rather than
+                   ;; make a second one. The other direction is
+                   ;; `%find-unadopted`.
+                   ((and (eq package %cl-user-package) (null (%find-system-symbol string nil)))
+                    (values (%adopt (%intern string) package nil) nil))
+                   (t (values (%adopt (make-symbol string) package nil) nil))))
+        (setf (svref %intern-lock 0) nil)))))
 
 ;;; Make SYMBOLS external in PACKAGE. Each must be accessible there; an
 ;;; inherited one becomes present as it is exported, and its home does not
