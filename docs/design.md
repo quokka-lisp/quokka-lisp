@@ -390,6 +390,28 @@ The display protocol is the boundary between the VM and the screen, so the VM ca
 
 **`define-viewer`.** A viewer is a class whose superclass is `viewer`, with methods on the viewer protocol (*Viewers, desktops and layout*). `define-viewer` is a thin macro over exactly that: its expansion is a `defclass` and one method per option, and only options that map to a protocol function are allowed, so `macroexpand-1` in the listener shows a beginner the CLOS underneath. We chose this over a macro with a language of its own, the way CLIM's `define-application-frame` grew, and over `defclass` alone, which is too much ceremony for a first window. The browser lists a `define-viewer` form as one definition of kind viewer, since that is what is written and edited, and shows the class and methods as what it defines.
 
+### Platform, libraries and applications
+
+> **Status: decided 27 Nov 2026, while writing a second imagined tutorial, a Rolodex with a list, a search bar and an editor (`docs/tutorials/rolodex.md`, [#128](https://github.com/quokka-lisp/quokka-lisp/issues/128)); not built.**
+
+The second tutorial asked what the system should do about unsaved work, about deleting, and about changes to stored data, and each time the answer was that the system should not decide. The environment is built in three layers, and only the top one wires the others together.
+
+1. **The platform** provides mechanism: viewers, the window manager, drawing, presentations, fields, commands and their options (`:bar`, `:when`, `:confirm`), and the world's own journal and save points.
+2. **Libraries** are built on the platform and know nothing of commands: the stores of `quokka-stores` (journalled and private stores, `stored-class`, transactions, undo), sound, and whatever else is written later.
+3. **The application** decides policy, and is the only place where a command calls a library.
+
+This is the rule the X Window System was designed around, mechanism and not policy, and CLOS makes it cheap to follow: the platform offers a generic function with a plain default method, and a policy is a method someone else writes. When a question asks what the system should do in some situation, the first thing to ask is whether the answer is policy; if it is, the platform offers a hook and nothing more.
+
+**Unsaved work** is policy. The platform has no notion of a dirty viewer. The one place it acts on its own, closing or replacing a viewer (the close decoration, closing a desktop, `open-viewer` into an occupied slot), goes through the generic function `close-viewer`, whose default simply closes; an application that cares specialises it, or makes the commands that would replace a viewer not apply while it holds a draft, as the Rolodex does with `:when`.
+
+**Fields** are one mechanism. `text-field` is bound to a *place*, anything `setf` can write to, through `get-setf-expansion` (chapter 43), and typing runs one built-in command, *edit field*, that writes it; every edit therefore goes through the command loop and every visible viewer redraws. A search bar is `(text-field stream (search-text v))`, and a form field is `(text-field stream (getf (draft e) :email) :type 'email-address)`; `accepting-values` only lays fields out as a labelled form. We chose this over a second mechanism for forms, and over CLIM's `accept`, which waits for input: in a browser nothing may wait (rule 4), and a half-filled form held as a process stopped inside `accept` is far harder to save and inspect than a draft in a slot.
+
+**Validation** belongs to presentation types. A type's `parse-input` method turns text into a value and signals `input-not-of-required-type`, CLIM's condition, when it cannot, with a report the field shows under itself; parsing and checking are one step, so a date field yields a date. A rule of one application, such as a name that must be unique in its store, is given to the field with `:check`, a function of the parsed value. The platform offers `viewer-fields-valid-p`; whether a Save command's `:when` uses it is the application's choice.
+
+**Stored data** is the stores library's business. Its `stored-class` metaclass notices writes to the slots of its instances, through the metaobject protocol's `(setf slot-value-using-class)`, which makes it the first writable part of Quokka's MOP; instances of other classes keep the fast path. Inside `(with-transaction (store) ...)`, ordinary `setf`s on stored objects are journalled as one entry when the transaction ends, so a change to several slots is never half made after a crash; `store-update` is a shorthand for a transaction. A write outside a transaction signals an error with the restarts *Make this change through the store*, *Change it anyway, unjournalled*, and the usual abort. This is how bknr.datastore, Common Lisp's prevalence library, treats its `persistent-class`. We chose it over journalling every write (one entry per `setf`, so a crash can leave a change half made) and over allowing the write unjournalled (a trap that springs only after a crash). The private classes of *Private data* belong to the same library.
+
+**Undo** is offered by a journalled store, `store-undo`, because its journal already holds what each change overwrote. The store does not know commands exist; an application that wants an *Undo* button writes a command that calls it. Asking before a destructive command is the platform's `:confirm` option, used or not by each application.
+
 ## Sound
 
 > **Status: decided 27 Nov 2026 ([#126](https://github.com/quokka-lisp/quokka-lisp/issues/126)), while working out the environment; nothing here is built.**
