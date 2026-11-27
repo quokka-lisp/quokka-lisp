@@ -383,16 +383,21 @@
 ;;; gives its type, and signalled like any other, so a `handler-bind` sees
 ;;; it with the failing frames still on the stack.
 
-;;; How deep the machine's errors are nested: an error inside this very
-;;; function, which a bug could make happen every time, stops the machine
-;;; on the fourth instead of going round for ever.
+;;; How deep the machine's errors are nested *while their conditions are
+;;; being made*: an error in making one, which a bug could make happen
+;;; every time, stops the machine on the fourth instead of going round for
+;;; ever. Only the making counts. The handlers run outside the binding,
+;;; since a handler that meets a machine error of its own is an ordinary
+;;; program, however deeply it nests (the review found the first version
+;;; halting one).
 (defvar %machine-error-depth 0)
 
 (defun %signal-machine-error (type message context)
-  (if (> %machine-error-depth 3)
-      (%signalled type message)
-      (let ((%machine-error-depth (+ %machine-error-depth 1)))
-        (error (%machine-condition type message context)))))
+  (let ((depth (if (integerp %machine-error-depth) %machine-error-depth 0)))
+    (if (> depth 3)
+        (%signalled type message)
+        (error (let ((%machine-error-depth (+ depth 1)))
+                 (%machine-condition type message context))))))
 
 ;;; The condition: of TYPE, with the initargs the context gives, and the
 ;;; machine's message as its report when it gives none.
@@ -410,16 +415,16 @@
   (let ((precedence (%class-precedence-list class))
         (operation (getf context :operation))
         (operands (getf context :operands)))
-    (cond ((member (find-class 'cell-error) precedence)
+    (cond ((%member-eq (find-class 'cell-error) precedence)
            (cond ((%plist-has-key context :name) (list :name (getf context :name)))
                  (operation (list :name (first operands)))
                  (t nil)))
-          ((member (find-class 'type-error) precedence)
+          ((%member-eq (find-class 'type-error) precedence)
            (if (%plist-has-key context :datum)
                (list :datum (getf context :datum) :expected-type (getf context :expected-type))
                (let ((culprit (%primitive-type-culprit operation operands)))
                  (if culprit (list :datum (car culprit) :expected-type (cdr culprit)) nil))))
-          ((and operation (member (find-class 'arithmetic-error) precedence))
+          ((and operation (%member-eq (find-class 'arithmetic-error) precedence))
            (list :operation operation :operands operands))
           (t nil))))
 
@@ -439,12 +444,16 @@
     (+ &rest number) (- &rest number) (* &rest number) (/ &rest number) (= &rest number)
     (< &rest real) (> &rest real) (rem real real)
     (values-list list) (hash-table-count hash-table) (hash-table-test hash-table)
-    (remhash t hash-table)))
+    (remhash t hash-table) (%gethash t hash-table t) (%sequence-length sequence)
+    (aref array &rest integer)
+    (%fixnum-logand integer integer) (%fixnum-logior integer integer)
+    (%fixnum-logxor integer integer)))
 
 ;;; The first of OPERANDS that is not of the type OPERATION takes there, and
 ;;; that type, as (datum . type); nil if none can be named.
 (defun %primitive-type-culprit (operation operands)
-  (let ((types (cdr (assoc operation %primitive-argument-types)))
+  (let ((types (dolist (entry %primitive-argument-types nil)
+                 (when (eq (car entry) operation) (return (cdr entry)))))
         (every-other nil))
     (when types
       (dolist (operand operands nil)

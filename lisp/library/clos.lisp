@@ -864,8 +864,10 @@
 (defun %allocate-instance (class)
   (let* ((class (%ensure-finalized (%class-designated class)))
          (wrapper (%class-wrapper class))
-         (slots (make-array (length (%wrapper-slot-names wrapper))
-                            :initial-element %slot-unbound-marker)))
+         ;; `%make-vector`, the primitive under `make-array`: an instance is
+         ;; made on every `make-instance` and every condition signalled,
+         ;; and `make-array`'s keyword arguments cost more than the rest.
+         (slots (%make-vector (length (%wrapper-slot-names wrapper)) %slot-unbound-marker)))
     (if (eq (class-of class) (find-class 'funcallable-standard-class))
         (%allocate-funcallable-instance wrapper slots)
         (%allocate-standard-instance wrapper slots))))
@@ -936,7 +938,7 @@
           (found nil) (value nil))
       (do ((rest initargs (cddr rest)))
           ((null rest))
-        (when (member (car rest) (%slot-definition-initargs slot))
+        (when (%member-eq (car rest) (%slot-definition-initargs slot))
           (setq found t value (cadr rest))
           (return)))
       (cond (found (%set-slot-value-using-slot instance slot value))

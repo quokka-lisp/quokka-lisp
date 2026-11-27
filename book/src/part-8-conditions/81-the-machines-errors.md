@@ -100,10 +100,29 @@ could fall into. If `%signal-machine-error` itself fails, every time, with
 an error of the machine's, the machine calls it again for that error, and
 so on. Two guards stop that. In Rust, a call of the function that cannot
 even be started halts the machine. In Lisp, the function counts how deeply
-it is nested, and on the fourth level it stops the machine with the
-condition's type and message, without signalling.
+the *making* of conditions is nested, and on the fourth level it stops the
+machine with the condition's type and message, without signalling.
+
+Our first version counted the whole signal, handlers included, and the
+review of this step found a correct program it halted: a handler that
+meets a `(car 5)` of its own, inside a handler that met one, four deep.
+That is an ordinary program, and its error must be catchable. Only the
+making is counted now; the handlers run outside the count.
 
 ## What did it cost?
+
+A caught machine error costs more than it did. `(ignore-errors (car i))`
+took about a thousand steps when the machine made its own small condition
+and unwound; with a condition that is an instance of its class, initargs
+worked out in Lisp, and `signal` asking `typep` of each handler, our first
+version took about six and a half thousand. The review measured it, and a
+loop of a thousand caught errors no longer fitted a form's step budget.
+Most of it was `make-condition`, and most of that was `make-array` parsing
+its keyword arguments and `member` parsing its own, in code that every
+`make-instance` runs too; with the primitives under them called directly,
+a caught `(car i)` takes about three and a half thousand. A program that
+uses errors as ordinary control flow pays for that, as it does in most
+Lisps.
 
 The Rust is the machine's side of the call: `fail_with`, which takes what
 the machine knows about the error and calls the library's function, the

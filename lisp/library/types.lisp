@@ -206,7 +206,7 @@
 ;;; (CLHS 4.3.7). Every object has a class (`clos.lisp`), so this answers
 ;;; for a built-in class as well as for one `defclass` made.
 (defun %class-typep (object class)
-  (if (member class (%class-precedence-list (class-of object))) t nil))
+  (if (%member-eq class (%class-precedence-list (class-of object))) t nil))
 
 ;;; Is OBJECT a class? Classes are instances whose class is a metaclass,
 ;;; that is, a subclass of `class`.

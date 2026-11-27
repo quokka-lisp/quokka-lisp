@@ -10,6 +10,18 @@
 (handler-case (funcall 5) (type-error (c) (list (type-error-datum c) (type-error-expected-type c))))
 (handler-case (aref (vector 1 2) 5) (type-error (c) (list (type-error-datum c) (type-error-expected-type c))))
 
+(handler-case (gethash 1 5) (type-error (c) (list (type-error-datum c) (type-error-expected-type c))))
+(handler-case (length 5) (type-error (c) (list (type-error-datum c) (type-error-expected-type c))))
+(handler-case (logand 'mx-c 1) (type-error (c) (list (type-error-datum c) (type-error-expected-type c))))
+
+;; A machine error inside handlers nested four deep is an ordinary error.
+(defun mx-deep (n)
+  (if (= n 0)
+      (car 5)
+      (handler-bind ((type-error (lambda (c) c (mx-deep (- n 1)))))
+        (car n))))
+(handler-case (mx-deep 6) (type-error () :caught))
+
 ;; Cell errors know the name.
 (handler-case mx-unbound-variable (unbound-variable (c) (cell-error-name c)))
 (handler-case (mx-undefined-function 1) (undefined-function (c) (cell-error-name c)))
