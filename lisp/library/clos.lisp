@@ -977,6 +977,24 @@
         (setf (cdr location) value)
         (setf (aref (%instance-slots instance) location) value))))
 
+;;; Where the instance OBJECT keeps its local slot named NAME: an index
+;;; into its slot vector, or nil when it has no such local slot (a shared
+;;; slot, no slot of that name, or no instance at all). A wrapper lists the
+;;; names of the local slots in the order the slot vector keeps them, so a
+;;; name's place in that list is its slot's location, and nothing has to
+;;; find the slot definition. This is the path nearly every slot access
+;;; takes: finding the definition with `find` and `:key` cost 640 steps for
+;;; a first slot and 1,800 for a tenth (#162).
+(defun %local-slot-index (object name)
+  (and (%instance-wrapper object)
+       (progn
+         (%ensure-current-instance object)
+         (let* ((names (%wrapper-slot-names (%instance-wrapper object)))
+                (count (length names)))
+           (do ((i 0 (+ i 1)))
+               ((or (= i count) (eq name (aref names i)))
+                (if (= i count) nil i)))))))
+
 ;;; OBJECT's effective slot named NAME, or nil.
 (defun %find-slot (object name)
   (if (%instance-wrapper object)
@@ -1109,9 +1127,12 @@
     (and layout (find name (%layout-slots layout) :key #'car))))
 
 (defun slot-value (object slot-name)
-  (let ((slot (%find-slot object slot-name)))
-    (cond (slot
-           (let ((value (%slot-value-using-slot object slot)))
+  (let* ((index (%local-slot-index object slot-name))
+         (slot (if index nil (%find-slot object slot-name))))
+    (cond ((or index slot)
+           (let ((value (if index
+                            (aref (%instance-slots object) index)
+                            (%slot-value-using-slot object slot))))
              ;; Only the first value of `slot-unbound` and `slot-missing`
              ;; (CLHS `slot-value`).
              (if (eq value %slot-unbound-marker)
@@ -1122,15 +1143,19 @@
           (t (values (slot-missing (class-of object) object slot-name 'slot-value))))))
 
 (defun (setf slot-value) (new object slot-name)
-  (let ((slot (%find-slot object slot-name)))
-    (cond (slot (%set-slot-value-using-slot object slot new))
+  (let* ((index (%local-slot-index object slot-name))
+         (slot (if index nil (%find-slot object slot-name))))
+    (cond (index (setf (aref (%instance-slots object) index) new))
+          (slot (%set-slot-value-using-slot object slot new))
           ((%structure-slot object slot-name)
            (%set-structure-ref object (second (%structure-slot object slot-name)) new))
           (t (slot-missing (class-of object) object slot-name 'setf new) new))))
 
 (defun slot-boundp (object slot-name)
-  (let ((slot (%find-slot object slot-name)))
-    (cond (slot (not (eq (%slot-value-using-slot object slot) %slot-unbound-marker)))
+  (let* ((index (%local-slot-index object slot-name))
+         (slot (if index nil (%find-slot object slot-name))))
+    (cond (index (not (eq (aref (%instance-slots object) index) %slot-unbound-marker)))
+          (slot (not (eq (%slot-value-using-slot object slot) %slot-unbound-marker)))
           ((%structure-slot object slot-name) t)
           ;; The truth of what `slot-missing` returns (CLHS `slot-boundp`).
           (t (if (slot-missing (class-of object) object slot-name 'slot-boundp) t nil)))))

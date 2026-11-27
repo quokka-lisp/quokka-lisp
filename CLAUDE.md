@@ -850,7 +850,12 @@ steps; `%same-key-p`, `%cached-method` and `%key-element` are bare loops
 functions parse keywords and take the general path for two sequences. And
 **measure before rewriting**: replacing the arity walk's `return` with an end
 test, on a guess, made it slower. Steps are counted by bisecting a loop
-against the REPL's 5,000,000-step budget. Rebuild `(:FORMS 2419 :REPLACED 1752)`.
+against the REPL's 5,000,000-step budget. **#162**: `slot-value`,
+`(setf slot-value)` and `slot-boundp` find a local slot by its name's place
+in the wrapper's name vector (`%local-slot-index`), which is its location;
+only shared slots, structures and missing slots still look for the slot
+definition (`slot-value` 161 steps from 643, an accessor 496).
+Rebuild `(:FORMS 2420 :REPLACED 1753)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
