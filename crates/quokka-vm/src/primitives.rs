@@ -210,6 +210,7 @@ pub enum Prim {
     HandlerMarks = 150,
     UnwindToHandler = 151,
     Signalled = 152,
+    FunctionName = 153,
 }
 
 impl Prim {
@@ -711,6 +712,9 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         Arity::Exactly(2),
     ),
     (Prim::Signalled, "%SIGNALLED", Arity::Exactly(2)),
+    // The name a compiled function was assembled under (`%pending-name` in
+    // the compiler), so that a function can find its definition (#55).
+    (Prim::FunctionName, "%FUNCTION-NAME", Arity::Exactly(1)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -916,6 +920,25 @@ pub fn call_slice<'h>(
             detail: "is intercepted by the machine and should never be called here",
         }),
         Prim::HandlerMarks => crate::vm::handler_marks(mc, args[0], args[1]),
+        // A compiled function's name, through a closure to its body, or nil:
+        // for an anonymous function, an interpreted closure, or anything that
+        // is not a function.
+        Prim::FunctionName => {
+            let mut f = args[0];
+            if f.is_object() && mc.header(f).object_type == ObjectType::Closure {
+                f = mc.slot(f, crate::closure::BODY);
+            }
+            if f.is_object() && mc.header(f).object_type == ObjectType::Function {
+                let name = mc.slot(f, crate::code::function::NAME);
+                Ok(if name == Value::UNBOUND {
+                    Value::NIL
+                } else {
+                    name
+                })
+            } else {
+                Ok(Value::NIL)
+            }
+        }
         // An error that no handler took: the machine stops, carrying the
         // condition's type and report as `error` once carried them, so a host
         // reports it as it always has (`condition::report_error`).

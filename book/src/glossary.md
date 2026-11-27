@@ -225,6 +225,9 @@ them. ([21](part-2-reading-and-running/21-records.md), [61](part-6-self-hosting/
 <a id="defun"></a>
 **defun.** Makes a function and puts it in a [symbol](#symbol)'s *function* cell. In Common Lisp it is a macro over `setf symbol-function`; Quokka made it a special operator before it had [macros](#macro), and moving it up is now possible. ([10](part-2-reading-and-running/10-functions-and-scope.md))
 
+<a id="definition"></a>
+**Definition (object).** What a world keeps of a defining form evaluated at its top level: the kind and name, the form, the text it was written as with the comments directly above it, the file and position it came from, and the definitions it replaced, as versions. The first layer of the environment's database of definitions. ([84](part-9-definitions/84-definitions-keep-their-source.md))
+
 <a id="designator"></a>
 **Designator.** An object that stands for another of a given kind, so a
 function can accept either. A *string designator* is a string, a symbol (its

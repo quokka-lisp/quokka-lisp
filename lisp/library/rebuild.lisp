@@ -46,7 +46,8 @@
     "lisp/library/generic-functions.lisp" "lisp/library/mop.lisp"
     "lisp/library/char-names.lisp" "lisp/library/reader.lisp"
     "lisp/library/printer.lisp" "lisp/library/format.lisp" "lisp/library/describe.lisp"
-    "lisp/library/conditions.lisp" "lisp/library/eval.lisp"
+    "lisp/library/conditions.lisp" "lisp/library/definitions.lisp"
+    "lisp/library/eval.lisp"
     "lisp/library/rebuild.lisp" "lisp/library/packages.lisp"))
 
 ;;; `(%rebuild-world)` — rebuild every function from source, and say how many
@@ -56,6 +57,9 @@
         ;; Every rebuild numbers its gensyms alike, so that two generations
         ;; are the same size (step Y, #72; see `gensym`).
         (*gensym-counter* 0)
+        ;; The system's own definitions are its files', not recorded as
+        ;; the world's (#55; `definitions.lisp`).
+        (%recording-definitions nil)
         (old (%current-definitions))
         (defined nil)
         (forms 0))

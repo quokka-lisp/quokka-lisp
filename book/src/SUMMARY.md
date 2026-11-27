@@ -111,6 +111,10 @@
 - [Restarts](part-8-conditions/82-restarts.md)
 - [Measuring conditions](part-8-conditions/83-measuring-conditions.md)
 
+# Part IX · Definitions
+
+- [Definitions keep their source](part-9-definitions/84-definitions-keep-their-source.md)
+
 # Looking ahead
 
 - [The environment, on paper](looking-ahead/the-environment-on-paper.md)

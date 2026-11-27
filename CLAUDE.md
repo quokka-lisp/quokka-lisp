@@ -660,7 +660,21 @@ restarts in `make-package`, `defpackage`, `delete-package`. The runner knows
 `invoke-restart` of a restart object does not re-ask its `:test`; only the
 host's `abort` (`%host-abort-restart`) is told the condition. Rebuild
 `(:FORMS 1946 :REPLACED 1529)`; ansi-test **12,568 of 17,739**, no plain
-failure. **Next: phase 3 step C**, definitions keep their source (#55). Phase 2's scope was
+failure.
+**Phase 3 step C, definitions keep their source, is under way** (#55,
+decided 27 Nov 2026 with #126's environment decisions in hand; the design and
+its three sub-steps are `docs/definitions.md`). **Sub-step 1 is done**
+(chapter 84): `lisp/library/definitions.lisp` (after `conditions.lisp`) — a
+`definition` object (kind, name, form, text, source, position, package,
+object, versions) in `%definitions`, keyed by `(kind . name)`; recorded by
+`eval` of a defining form (`%record-definition`; `%definition-kinds` lists
+eighteen operators), with text and position from `load` and the host loop
+(`%eval-read-form`): the comments directly above and a comment ending the
+last line belong to it (#126). **The system's own definitions are not
+recorded**: `%rebuild-world` binds `%recording-definitions` nil.
+`%function-name` (a primitive) reads a compiled function's name;
+`function-lambda-expression` answers from a definition. Rebuild `(:FORMS
+1965 :REPLACED 1540)`. Next: sub-step 2, cross-reference. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

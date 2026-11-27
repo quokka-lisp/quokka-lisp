@@ -48,8 +48,17 @@
 ;;; error can say where it is: by the time anything is compiled, a `defun`
 ;;; has become a `%set-symbol-function` inside a `progn`, and "in
 ;;; %SET-SYMBOL-FUNCTION" would name nothing the programmer wrote (#110).
+;;;
+;;; A defining form evaluated here is recorded as a definition of the world
+;;; (`definitions.lisp`, #55), with the text `load` or the host loop found
+;;; for it. The text is taken for this form alone: an `eval` inside it, in a
+;;; macro's expander say, sees none.
 (defun eval (form)
-  (%eval-in form form))
+  (let ((text %definition-text) (source %definition-source) (position %definition-position))
+    (multiple-value-prog1
+        (let ((%definition-text nil) (%definition-source nil) (%definition-position nil))
+          (%eval-in form form))
+      (%record-definition form text source position))))
 
 (defun %eval-in (form context)
   (let ((form (macroexpand form)))
@@ -145,10 +154,19 @@
 
 ;;; The lambda expression a function was made from, whether it closes over
 ;;; anything, and its name. CLHS lets an implementation always answer that
-;;; the expression is unknown; definitions keep no source until #55 (#68).
+;;; the expression is unknown, which Quokka did until definitions kept
+;;; their source (#55): a global function whose `defun` the world recorded
+;;; answers with its lambda expression, if it is still the function that
+;;; `defun` made. It may close over the `defun`'s lexical environment, so
+;;; the second value is true.
 (defun function-lambda-expression (function)
-  (if (not (functionp function)) (error 'type-error "a function" function))
-  (values nil t nil))
+  (if (not (functionp function)) (error 'type-error :datum function :expected-type 'function))
+  (let* ((name (%function-name function))
+         (definition (and name (symbolp name) (find-definition name :function))))
+    (if (and definition (eq (definition-object definition) function))
+        (let ((form (definition-form definition)))
+          (values (list* 'lambda (third form) (cdddr form)) t name))
+        (values nil t name))))
 
 ;;; Compiler macros (decision 1): the compiler applies them, from its table
 ;;; `%compiler-macros` (compile.lisp); these are CL's ways of filling it.
@@ -248,10 +266,11 @@
     t))
 
 (defun %load-forms (stream)
-  (let ((form (read stream nil %end-of-input)))
+  (let* ((start (%stream-position stream))
+         (form (read stream nil %end-of-input)))
     (if (eq form %end-of-input)
         nil
-        (progn (eval form)
+        (progn (%eval-read-form form stream start *load-truename*)
                (%load-forms stream)))))
 
 ;;; ------------------------------------------------------------------------
@@ -283,11 +302,12 @@
 (defun %host-step (ignored)
   (let ((%aborted-condition nil))
     (restart-case
-        (let ((form (read %host-input nil %end-of-input))
-              (%host-abort-restart (find-restart 'abort)))
+        (let* ((start (%stream-position %host-input))
+               (form (read %host-input nil %end-of-input))
+               (%host-abort-restart (find-restart 'abort)))
           (if (eq form %end-of-input)
               (list :eof)
-              (list :value (prin1-to-string (eval form)))))
+              (list :value (prin1-to-string (%eval-read-form form %host-input start nil)))))
       (abort ()
         :report "Return to the top level."
         (if %aborted-condition

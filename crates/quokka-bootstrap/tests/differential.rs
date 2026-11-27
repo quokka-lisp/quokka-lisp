@@ -418,7 +418,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1946 :REPLACED 1529)".into())],
+        [Outcome::Value("(:FORMS 1965 :REPLACED 1540)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -491,6 +491,52 @@ fn a_rebuild_keeps_classes_and_their_instances() {
             "(T T T T 1 T 2 T 10 \"KEPT\" (1 2) 7 (:K :O) 5)".into()
         )),
         "{said:?}"
+    );
+}
+
+/// Definitions keep their source (#55, phase 3 step C): a defining form
+/// evaluated at the top level is recorded with its text, the comments
+/// directly above it and at the end of its line, where it came from, and
+/// the definition it replaced. Quokka's own, so not against SBCL: SBCL's
+/// `function-lambda-expression` answers nil for a compiled function.
+#[test]
+fn definitions_keep_their_source() {
+    let out = run_compiled(
+        "(defun sq (x) (* x x)) \
+         (quokka::definition-text (quokka::find-definition 'sq)) \
+         (function-lambda-expression #'sq) \
+         (quokka::%function-name #'sq) \
+         (defun sq (x) (* x x x)) \
+         (quokka::definition-text (first (quokka::definition-versions (quokka::find-definition 'sq)))) \
+         (length (quokka::definition-versions (quokka::find-definition 'sq))) \
+         (load (make-string-input-stream \";;; The file's own.
+
+;; Doubles.
+(defun twice (x) (* 2 x))
+(defvar *dc* 0)   ; a counter
+(defun after () 1)
+\")) \
+         (quokka::definition-text (quokka::find-definition 'twice)) \
+         (quokka::definition-text (quokka::find-definition '*dc* :variable)) \
+         (quokka::definition-text (quokka::find-definition 'after)) \
+         (defmethod dm ((s string)) s) \
+         (quokka::definition-kind (quokka::find-definition '(dm nil (string)) :method)) \
+         (eval '(defmacro dmm (x) x)) \
+         (list (quokka::definition-text (quokka::find-definition 'dmm :macro)) \
+               (quokka::definition-kind (quokka::find-definition 'dmm :macro))) \
+         (progn (defun in-progn-a () 1) (defun in-progn-b () 2)) \
+         (mapcar (lambda (n) (not (null (quokka::find-definition n)))) '(in-progn-a in-progn-b)) \
+         (function-lambda-expression #'car) \
+         (quokka::find-definition 'mapcar)",
+    );
+    assert_eq!(
+        out,
+        "=> SQ\n=> \"(defun sq (x) (* x x))\"\n=> (LAMBDA (X) (* X X))\n=> SQ\n=> SQ\n\
+         => \"(defun sq (x) (* x x))\"\n=> 1\n=> T\n\
+         => \";; Doubles.\n(defun twice (x) (* 2 x))\"\n\
+         => \"(defvar *dc* 0)   ; a counter\"\n=> \"(defun after () 1)\"\n\
+         => #<STANDARD-METHOD DM (STRING)>\n=> :METHOD\n=> DMM\n=> (NIL :MACRO)\n\
+         => IN-PROGN-B\n=> (T T)\n=> NIL\n=> NIL\n"
     );
 }
 

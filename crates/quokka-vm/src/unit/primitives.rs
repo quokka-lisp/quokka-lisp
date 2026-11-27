@@ -186,7 +186,8 @@ fn the_table_order_is_pinned() {
             "%SET-FUNCALLABLE-INSTANCE-FUNCTION",
             "%HANDLER-MARKS",
             "%UNWIND-TO-HANDLER",
-            "%SIGNALLED"
+            "%SIGNALLED",
+            "%FUNCTION-NAME"
         ]
     );
 }
