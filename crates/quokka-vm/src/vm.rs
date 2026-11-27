@@ -197,6 +197,10 @@ pub struct Vm<'a, 'h> {
 /// every cleanup and reaches the bottom of the process's stack (#34).
 const TERMINATE: &str = "%TERMINATE-PROCESS";
 
+/// The library's special that marks a region in which a process is not to
+/// be ended yet (`%without-interrupts` in `threads.lisp`).
+const DEFERRED: &str = "%INTERRUPTS-DEFERRED";
+
 /// What the machine knows about the error it is raising, beyond the error
 /// itself: the Lisp values a condition's initargs are made from (#125,
 /// sub-step 3), which an `EvalError` cannot hold since it outlives the heap.
@@ -2266,10 +2270,11 @@ impl Steppable for Vm<'_, '_> {
     /// computation is the one the host asked for. With no processes the
     /// step is exactly what it was.
     fn step(&mut self) -> Transition {
-        let transition = self.step_here();
         if self.mc.register(Register::Process) == Value::NIL {
-            return transition;
+            return self.step_here();
         }
+        self.deliver_termination();
+        let transition = self.step_here();
         match transition {
             Transition::Continue => Transition::Continue,
             Transition::Halt => {
@@ -2363,16 +2368,16 @@ impl<'h> Vm<'_, 'h> {
         }
         let told = self.mc.slot(target, crate::process::MAIN) == Value::NIL
             && crate::process::alive(self.mc, target);
-        if told && target == self.mc.register(Register::Process) {
-            self.mc.set_register(Register::Request, Value::NIL);
-            let end = self.mc.intern(TERMINATE);
-            return self.start_unwind(end, Value::NIL);
-        }
         if told {
-            let end = self.mc.intern(TERMINATE);
+            // Asked, not done: the machine ends it at its next step at which
+            // that is safe (`Vm::step`). A process waiting on the host is
+            // given up waiting, so that it runs again and can end.
             self.mc
-                .set_slot(target, crate::process::REQUEST, Value::NIL);
-            self.mc.set_slot(target, crate::process::UNWIND, end);
+                .set_slot(target, crate::process::TERMINATE, Value::T);
+            if target != self.mc.register(Register::Process) {
+                self.mc
+                    .set_slot(target, crate::process::REQUEST, Value::NIL);
+            }
         }
         let answer = if told { Value::T } else { Value::NIL };
         if tail {
@@ -2382,6 +2387,37 @@ impl<'h> Vm<'_, 'h> {
             self.push_fresh(answer);
             Transition::Continue
         }
+    }
+
+    /// Begin ending the running process if it has been told to and it is
+    /// safe now (#34): not while a cleanup an unwind is running has not
+    /// finished — the innermost record is the unwind's paused state — nor
+    /// inside a region the library marks with `%without-interrupts` (its
+    /// special `%interrupts-deferred` true), which it puts around taking and
+    /// letting go of a lock and around a channel's bookkeeping. Without
+    /// this, an end that fell in a cleanup skipped the rest of it, and a
+    /// mutex being let go stayed held by a thread that no longer existed;
+    /// the review of the channels found it. SBCL defers its interrupts in
+    /// the same way (`without-interrupts`).
+    fn deliver_termination(&mut self) {
+        let running = self.mc.register(Register::Process);
+        if self.mc.slot(running, crate::process::TERMINATE) == Value::NIL || self.is_unwinding() {
+            return;
+        }
+        let at = self.mc.mp();
+        if at != usize::MAX && self.mark_slot(at, mark::KIND).as_fixnum() == Some(mark::PAUSED) {
+            return;
+        }
+        let deferred = self.mc.intern(DEFERRED);
+        let value = self.mc.slot(deferred, crate::heap::symbol::VALUE);
+        if value != Value::NIL && value != Value::UNBOUND {
+            return;
+        }
+        self.mc
+            .set_slot(running, crate::process::TERMINATE, Value::NIL);
+        self.mc.set_register(Register::Request, Value::NIL);
+        let end = self.mc.intern(TERMINATE);
+        self.start_unwind(end, Value::NIL);
     }
 
     /// `(%process-yield)`: let the next process that can run have its turn

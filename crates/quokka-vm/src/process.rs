@@ -63,8 +63,12 @@ pub const SP: usize = 13;
 pub const FP: usize = 14;
 /// The mark pointer, a fixnum; -1 for no record.
 pub const MP: usize = 15;
+/// `t` when the process has been told to end and has not yet begun to:
+/// `%process-terminate` asks, and the machine acts at the process's next
+/// step at which ending is safe (`Vm::step`).
+pub const TERMINATE: usize = 16;
 /// How many slots.
-pub const SLOTS: usize = 16;
+pub const SLOTS: usize = 17;
 
 /// Running, or able to run.
 pub const ALIVE: i64 = 0;

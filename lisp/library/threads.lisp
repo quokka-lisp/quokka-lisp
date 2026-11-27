@@ -122,20 +122,40 @@
 (defun thread-alive-p (thread)
   (member (%process-state (thread-process thread)) '(:running :runnable :waiting)))
 
+;;; Where a thread may not be ended (#34). `terminate-thread` only asks; the
+;;; machine ends the thread at its next step outside such a region, and
+;;; outside a cleanup an unwind is running (`Vm::deliver_termination`).
+;;; The library marks the places where an end would leave the world
+;;; inconsistent: taking and letting go of a lock, a channel's bookkeeping,
+;;; and every `unwind-protect` cleanup around them, which an end falling in
+;;; the middle of would cut short. SBCL calls these `without-interrupts`
+;;; and `with-interrupts`. Waiting is always interruptible (`%wait-until`),
+;;; so a thread blocked in a deferred region can still be ended.
+(defvar %interrupts-deferred nil)
+
+(defmacro %without-interrupts (&body body)
+  `(let ((%interrupts-deferred t)) ,@body))
+
+(defmacro %with-interrupts (&body body)
+  `(let ((%interrupts-deferred nil)) ,@body))
+
 (defun thread-yield () (%process-yield))
 
 ;;; Yield until TEST, a function, says yes. While the main process waits
 ;;; like this, a background thread may read the console (`%await-console`):
 ;;; the main process is not reading it, and a thread it waits for may need
 ;;; to, as a thread stopped in the debugger does.
+;;; A thread may be ended while it waits, whatever region it waits in: the
+;;; yield is where the machine can end it, and the cleanups around the wait
+;;; then run whole.
 (defun %wait-until (test)
   (if (and %threads-made (%process-main-p (%current-process)))
       (let ((outer %main-waiting))
         (unwind-protect
              (progn (setq %main-waiting t)
-                    (do () ((funcall test)) (thread-yield)))
+                    (do () ((funcall test)) (%with-interrupts (thread-yield))))
           (setq %main-waiting outer)))
-      (do () ((funcall test)) (thread-yield))))
+      (do () ((funcall test)) (%with-interrupts (thread-yield)))))
 
 ;;; The console is the main process's. A background thread that wants a
 ;;; line waits until the main process is itself waiting, and the console is
@@ -212,15 +232,17 @@
           (error "~S is not held by this thread." mutex)
           nil)))
 
-;;; The mutex is taken inside the `unwind-protect`, and the cleanup lets it
-;;; go only if this thread holds it: a thread ended between taking it and
-;;; entering the body does not leave it held for ever.
+;;; Taking the mutex and letting it go are done where the thread cannot be
+;;; ended, and the body where it can, as SBCL's `with-mutex` does: ended in
+;;; the body, the cleanup lets the mutex go, whole; ended while it waits for
+;;; the mutex, it holds nothing to let go.
 (defmacro with-mutex ((mutex &key (wait-p t)) &body body)
   (let ((m (gensym "MUTEX")))
     `(let ((,m ,mutex))
-       (unwind-protect
-            (when (grab-mutex ,m :waitp ,wait-p) ,@body)
-         (when (eq (mutex-owner ,m) (current-thread)) (release-mutex ,m))))))
+       (%without-interrupts
+         (unwind-protect
+              (when (grab-mutex ,m :waitp ,wait-p) (%with-interrupts ,@body))
+           (when (eq (mutex-owner ,m) (current-thread)) (release-mutex ,m)))))))
 
 ;;; A wait queue: threads waiting to be told that something has changed,
 ;;; each with a token the notifier sets. The mutex given to `condition-wait`
@@ -236,12 +258,13 @@
 (defun condition-wait (queue mutex &key timeout)
   (declare (ignore timeout))
   (let ((token (vector nil)))
-    (setf (waitqueue-waiters queue) (append (waitqueue-waiters queue) (list token)))
-    (release-mutex mutex)
-    (unwind-protect (%wait-until (lambda () (svref token 0)))
-      (unless (svref token 0)
-        (setf (waitqueue-waiters queue) (remove token (waitqueue-waiters queue)))))
-    (grab-mutex mutex)
+    (%without-interrupts
+      (setf (waitqueue-waiters queue) (append (waitqueue-waiters queue) (list token)))
+      (release-mutex mutex)
+      (unwind-protect (%wait-until (lambda () (svref token 0)))
+        (unless (svref token 0)
+          (setf (waitqueue-waiters queue) (remove token (waitqueue-waiters queue)))))
+      (grab-mutex mutex))
     t))
 
 ;;; Wake N of the threads waiting on QUEUE, the longest-waiting first.

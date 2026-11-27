@@ -100,7 +100,9 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 ///
 /// **Version 10** (#34): processes, a new object type, and a register for
 /// the running one, appended to the scalars.
-pub const FORMAT_VERSION: u64 = 10;
+///
+/// **Version 11** (#34): a process has a slot more, the request to end it.
+pub const FORMAT_VERSION: u64 = 11;
 
 /// Words before the heap's own: magic, version, length, checksum, scalars,
 /// and how much machine the image needs.

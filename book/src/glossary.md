@@ -126,6 +126,9 @@ Pronounced "could-er". Read it as "rest".
 <a id="change-set"></a>
 **Change set.** A named group of changes to definitions, made for one task and exported or shared as a unit. The idea is Smalltalk's; in Quokka's design a commit records one. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
 
+<a id="channel"></a>
+**Channel.** A queue between threads, through which one thread sends values and another receives them, so that they communicate instead of sharing variables under a lock: Go's model, after Hoare's *Communicating Sequential Processes*. An unbuffered channel is a meeting place, where a sender waits until a receiver has taken the value; a buffered one holds a few. ([92](part-11-processes/92-channels.md))
+
 <a id="character-encoding"></a>
 **Character encoding.** A rule for writing characters' numbers as bytes. *UTF-32* uses four bytes for every character; *UTF-8* uses one for ASCII and two to four for the rest, which is compact but means finding the *n*th character takes a scan; [Latin-1](#latin-1) uses one byte and covers only 256 characters. ([37](part-6-self-hosting/37-eight-characters-to-a-word.md))
 
@@ -377,6 +380,9 @@ a shared object being copied twice and a circular structure looping forever.
 
 <a id="function-designator"></a>
 **Function designator.** An object that stands for a function wherever one is wanted: the function itself, or a symbol, meaning its global function. Why `(funcall 'car x)` and `:test 'eql` work. ([50](part-6-self-hosting/50-first-gaps.md))
+
+<a id="future"></a>
+**Future.** A value that is still being computed: an object you get at once, which gives the value when you ask for it, waiting if it is not ready. Quokka's `spawn-task` answers with a [channel](#channel) that receives the task's value, which is how Go writes a future. ([92](part-11-processes/92-channels.md))
 
 <a id="garbage-collection"></a>
 **Garbage collection.** Working out automatically, while a program runs, which

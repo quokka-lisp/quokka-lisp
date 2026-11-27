@@ -155,6 +155,19 @@ unwinds through every record it has, running every cleanup in its own
 context and undoing every binding, and when it reaches the bottom of its
 stack with nothing found, it ends. Genera's `process-kill` does the same.
 
+Our first version set the register straight away, and a review of the
+channels in chapter 92 showed why that is not enough. A thread may be
+stopped in the middle of a cleanup: the one that lets a lock go, say. An
+unwind that begins there leaves the rest of that cleanup undone, and the
+lock stays held by a thread that no longer exists, so every other thread
+that wants it waits for ever. So ending a process is now a request, which
+the machine acts on at the process's next step at which it is safe. That
+rules out a cleanup that an unwind is running and has not finished, and any
+region the library has marked as not to be interrupted, which is where it
+takes and lets go of locks. Waiting is always interruptible, so a thread
+stuck waiting can still be ended. SBCL has the same two regions, under the
+names `without-interrupts` and `with-interrupts`.
+
 What we could not do the same way is *interrupt* a process: run a function
 inside it and then let it carry on where it was. That is what Ctrl-C into
 the debugger needs. A function called at an arbitrary point returns a

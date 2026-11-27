@@ -62,13 +62,32 @@ has no clock) are not built.
 
 ## Ending a process
 
-`%process-terminate` sets the target's unwind register to a symbol no
-record matches, `%TERMINATE-PROCESS`, and withdraws its host request. When
-the target next runs, the ordinary unwinder passes every record. It runs
-each `unwind-protect` cleanup in the process's own context and undoes each
-binding, and at the bottom of the stack the process ends as terminated. That
-works at any instruction boundary, because unwinding is a mode of the
-machine rather than a call. The main process cannot be ended.
+`%process-terminate` only **asks**: it sets the target's `TERMINATE` slot
+and withdraws its host request. The machine acts at the target's next step
+at which ending is safe (`Vm::deliver_termination`). It then sets the unwind
+register to a symbol no record matches, `%TERMINATE-PROCESS`, and the
+ordinary unwinder passes every record, running each `unwind-protect` cleanup
+in the process's own context and undoing each binding. At the bottom of the
+stack the process ends as terminated. Unwinding is a mode of the machine
+rather than a call, so this works at any instruction boundary. The main
+process cannot be ended.
+
+A step is **not safe**, and the end waits, in two cases:
+1. The innermost record is a `PAUSED` one: a cleanup that an unwind is
+   running has not finished.
+2. The library's special `%interrupts-deferred` is true. The library sets
+   it around taking and letting go of a lock and around a channel's
+   bookkeeping (`%without-interrupts`), and clears it again while a thread
+   waits (`%with-interrupts` in `%wait-until`), so a waiting thread can
+   always be ended.
+
+These are SBCL's `without-interrupts` and `with-interrupts`. The first
+version ended a process at once. The second review of the channels found
+the consequence: a thread ended while letting go of a mutex skipped the rest
+of the cleanup, and the mutex stayed held by a thread that no longer
+existed. `ending_a_thread_waits_until_it_is_safe` sweeps eighty moments;
+with the old `with-mutex`, 29 of them left the mutex held. Image format 11
+(the slot).
 
 ## The compiler's state
 
@@ -153,6 +172,64 @@ It also found some minor faults, fixed:
 - `with-mutex` took the mutex before entering its `unwind-protect`.
 - A background thread reading lines renewed the main form's step budget.
 - This file said `progv` where the code binds with a `let`.
+
+## Channels (layer 1 of the plan for item 5)
+
+`lisp/library/channels.lisp`, in `QUOKKA-THREAD`: Go's model with Lisp
+names, built on the threads above.
+
+- `make-channel &key capacity`: 0, the default, is a meeting place; with a
+  capacity it is a buffer.
+- `send` waits while the channel is full, and on an unbuffered channel until
+  a receiver has taken the value.
+- `receive` returns the value and t, or nil and nil once the channel is
+  closed and empty.
+- `try-send` and `try-receive` never wait.
+- `close-channel`; sending on a closed channel is a `closed-channel-error`.
+- `select` takes the first clause that can go, *in the order written*.
+  Go chooses at random; Quokka keeps its programs deterministic.
+- `spawn-task function &rest arguments` returns a channel that receives the
+  function's value and is then closed: a future. An error in the task is
+  carried to `receive` and signalled there, as Clojure's futures do, and so
+  is a task ended without a value (a `thread-error`). `function` may be a
+  name, which layer 2 will require, since a closure cannot cross into
+  another heap.
+
+**The algorithm is Go's runtime's** (`runtime/chan.go`):
+- Every operation is one critical section, under one lock for all channels.
+  A `select` therefore takes the lock once for all its channels and cannot
+  deadlock with another.
+- An operation completes at once, through a waiting partner or the buffer,
+  or else queues a *waiter* on the channel and waits.
+- Only a partner completes a waiter, under the lock, so a waiting thread
+  reads one flag that goes from nil to t once.
+- A select's waiters share a *selection*: the first partner to complete
+  one completes the select, and the others are passed over.
+- An operation and its cleanup are one region in which the thread cannot
+  be ended. Only its waiting can be interrupted, and the cleanup then
+  cancels the waiter whole.
+- Arguments are checked before the lock is taken, so a handler for the
+  error can use a channel.
+- Closing a closed channel is an error, as in Go.
+
+**What the review found.** The first version matched partners less
+directly, and the review reproduced six faults, each now a test
+(`channels_review_findings`):
+1. A sender waiting when the channel was closed could both deliver its value
+   and be told it failed.
+2. A select that sends and a select that receives deadlocked.
+3. `try-send` could wait, after a receiver was terminated.
+4. A terminated sender left its value in the channel.
+5. A task ended without a value left its receiver waiting for ever.
+6. A select clause whose body returned `:none` was taken for no clause.
+
+The plan, proposed on #34 for item 5:
+- one OS thread per world for good;
+- a pool of worker worlds, one per core, sharing nothing, with copying
+  channels and code fetched from the main world on demand;
+- the same names on both layers.
+
+Layer 2 is not built.
 
 ## Left for later
 

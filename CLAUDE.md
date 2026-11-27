@@ -747,8 +747,12 @@ machine. **Every host entry point calls `process::focus_main` before
 touching a register** (`Vm::start`, `begin_source`, `eval_source`, ... and
 `run_world`): a new one must too. `host::pending`/`complete` find a parked
 request (`process::waiting_request`); `vm::drive` answers one after any
-slice. Termination unwinds to `%TERMINATE-PROCESS`, which no record
-matches. Primitives `%make-process` ... `%compare-and-swap-svref`.
+slice. **Termination is a request** (`process::TERMINATE` slot, image format 11)
+that `Vm::deliver_termination` acts on at a safe step: not while the
+innermost record is `PAUSED`, nor while the library's `%interrupts-deferred`
+is true (`%without-interrupts` around locks and channel bookkeeping;
+`%wait-until` re-enables it while yielding); it then unwinds to
+`%TERMINATE-PROCESS`, which no record matches. Primitives `%make-process` ... `%compare-and-swap-svref`.
 `lisp/library/threads.lisp` (after `debugger.lisp`), package
 **`QUOKKA-THREAD`** with SBCL's `sb-thread` names; **`%thread-run` binds the
 compiler's globals at every thread's base** (#111's decision, revised: no
@@ -757,8 +761,15 @@ process's**: a background thread's console read waits (`%await-console`)
 until the main process waits on threads (`%wait-until` sets `%main-waiting`)
 and takes `%console-owner` by CAS; each thread binds its own `%console-input`
 buffer. Rebuild
-`(:FORMS 2086 :REPLACED 1613)`. **Next: phase 3 step G**, the gate; #34 item 5 (one OS
-thread for good?) is Carsten's call. Phase 2's scope was
+`(:FORMS 2086 :REPLACED 1613)`. **Channels** (#34, layer 1 of the two-layer plan proposed there for item
+5): `lisp/library/channels.lisp` (after `threads.lisp`), Go's model —
+`make-channel`, `send`, `receive`, `select` (first ready clause in written
+order), `spawn-task` (a future; re-signals a task's error at `receive`); all
+Lisp, **Go's runtime algorithm**: one lock for all channels, waiters
+completed only by a partner, each operation one `%without-interrupts`
+region. Layer 2, a pool of share-nothing worker worlds, is proposed, not built.
+Rebuild `(:FORMS 2118 :REPLACED 1638)`. **Next: phase 3 step G**, the gate;
+#34 item 5 awaits Carsten's acceptance of the two-layer plan. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

@@ -134,7 +134,9 @@ quokka> (hello)
   terminal too.
 - **Threads** (`docs/processes.md`): `(quokka-thread:make-thread fn :name
   "worker")` runs FN beside everything else, and `join-thread` waits for its
-  values; `with-mutex` and wait queues as in SBCL's `sb-thread`. Threads run
+  values; `with-mutex` and wait queues as in SBCL's `sb-thread`; Go-style
+  channels (`make-channel`, `send`, `receive`, `select`) and
+  `(spawn-task 'f args...)`, whose channel receives F's value. Threads run
   while the world is running something; at the `quokka>` prompt, waiting
   for your next line, they wait too.
 - **`(quokka-debug:print-backtrace)`** prints the calls in progress, one a
@@ -585,7 +587,7 @@ under each one.
 | symptom | cause | what to do |
 | --- | --- | --- |
 | *can't find crate for `core`* | a non-rustup `cargo` on your `PATH` (§1) | put `~/.cargo/bin` first |
-| *image format 8, but this build reads 9* | the image format changed since the file was saved | make a new one with `quokka build` |
+| *image format 10, but this build reads 11* | the image format changed since the file was saved | make a new one with `quokka build` |
 | `quokka rebuild` fails with *not found: lisp/prelude.lisp* | run from somewhere other than the repository's root | `cd` to the root |
 | *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | the budget is `EVAL_BUDGET` in `crates/quokka/src/world.rs` |
 | `quokka: no world to run` | `quokka` was started without a world | `quokka build world.qi` once, then `quokka world.qi` |

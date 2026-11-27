@@ -201,6 +201,10 @@ pub const LIBRARY: &[(&str, &str)] = &[
         "threads.lisp",
         include_str!("../../../lisp/library/threads.lisp"),
     ),
+    (
+        "channels.lisp",
+        include_str!("../../../lisp/library/channels.lisp"),
+    ),
     ("eval.lisp", include_str!("../../../lisp/library/eval.lisp")),
     (
         "rebuild.lisp",

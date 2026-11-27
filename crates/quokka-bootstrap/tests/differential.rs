@@ -419,7 +419,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2086 :REPLACED 1613)".into())],
+        [Outcome::Value("(:FORMS 2118 :REPLACED 1638)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1071,6 +1071,182 @@ fn a_thread_waits_for_the_console() {
     assert_eq!(
         out,
         "for the thread\n=> (T \"for the thread\")\nfor the main process\n=> \"for the main process\"\n"
+    );
+}
+
+/// Channels between green threads (#34, layer 1), Go's model with Lisp
+/// names: an unbuffered `send` waits until a receiver takes the value; a
+/// buffered one waits only when the buffer is full; a closed channel gives
+/// what it still holds and then nil and a false second value, and refuses a
+/// `send`; `select` takes the first clause that can go, in the order
+/// written, or its `otherwise`; `spawn-task` runs a function in a thread
+/// and answers with a channel that receives its value, or re-signals its
+/// error where the value is received. A Mandelbrot computed as one task a
+/// row is the same as one computed row by row.
+#[test]
+fn channels_connect_threads() {
+    let out = run_compiled(
+        "(use-package :quokka-thread) \
+         (let* ((ch (make-channel)) \
+                (th (make-thread (lambda () (send ch :hello) :sent)))) \
+           (dotimes (i 5) (thread-yield)) \
+           (let ((waiting (not (null (thread-alive-p th))))) \
+             (list waiting (receive ch) (join-thread th)))) \
+         (let* ((ch (make-channel :capacity 2)) \
+                (th (make-thread (lambda () (send ch 1) (send ch 2) (send ch 3) :done)))) \
+           (dotimes (i 5) (thread-yield)) \
+           (let ((waiting (not (null (thread-alive-p th))))) \
+             (list waiting (receive ch) (receive ch) (receive ch) (join-thread th)))) \
+         (let ((ch (make-channel :capacity 3))) \
+           (send ch :a) \
+           (close-channel ch) \
+           (list (multiple-value-list (receive ch)) (multiple-value-list (receive ch)) \
+                 (channel-closed-p ch) \
+                 (handler-case (send ch :b) (error () :refused)))) \
+         (let ((a (make-channel :capacity 1)) (b (make-channel :capacity 1))) \
+           (send b :from-b) \
+           (list (select ((receive a v) (list :a v)) ((receive b v) (list :b v))) \
+                 (select ((receive a v) (list :a v)) (otherwise :nothing-ready)) \
+                 (select ((send a :into-a) :sent-to-a) ((receive b v) (list :b v))) \
+                 (receive a))) \
+         (let ((ch (make-channel))) \
+           (make-thread (lambda () (send ch :late))) \
+           (select ((receive ch v ok) (list v ok)))) \
+         (list (receive (spawn-task #'+ 1 2)) \
+               (receive (spawn-task 'list :a :b)) \
+               (handler-case (receive (spawn-task (lambda () (error \"bad task\")))) \
+                 (error (c) (princ-to-string c)))) \
+         (defun mandel-point (cr ci limit) \
+           (do ((zr 0.0d0) (zi 0.0d0) (n 0 (+ n 1))) \
+               ((or (= n limit) (> (+ (* zr zr) (* zi zi)) 4.0d0)) n) \
+             (let ((next (+ (- (* zr zr) (* zi zi)) cr))) \
+               (setq zi (+ (* 2.0d0 zr zi) ci)) \
+               (setq zr next)))) \
+         (defun mandel-row (y width height limit) \
+           (let ((row (make-array width))) \
+             (dotimes (x width row) \
+               (setf (aref row x) \
+                     (mandel-point (- (* 3.0d0 (/ x (float width 1.0d0))) 2.2d0) \
+                                   (- (* 2.4d0 (/ y (float height 1.0d0))) 1.2d0) limit))))) \
+         (let ((rows nil) (tasks nil)) \
+           (dotimes (y 12) (push (mandel-row y 32 12 30) rows)) \
+           (dotimes (y 12) (push (spawn-task 'mandel-row y 32 12 30) tasks)) \
+           (equalp (reverse rows) (mapcar #'receive (reverse tasks))))",
+    );
+    assert_eq!(
+        out,
+        "=> T\n=> (T :HELLO :SENT)\n=> (T 1 2 3 :DONE)\n\
+         => ((:A T) (NIL NIL) T :REFUSED)\n\
+         => ((:B :FROM-B) :NOTHING-READY :SENT-TO-A :INTO-A)\n\
+         => (:LATE T)\n\
+         => (3 (:A :B) \"bad task\")\n\
+         => MANDEL-POINT\n=> MANDEL-ROW\n=> T\n"
+    );
+}
+
+/// What the review of the channels found, each a test (#34): a sender
+/// waiting on an unbuffered channel that is closed either delivers or is
+/// refused, never both, whenever the close falls; a select that sends and a
+/// select that receives meet; `try-send` never waits, not even after a
+/// receiver was terminated; a terminated sender leaves no value behind; a
+/// task that ends without a value is a `thread-error` at `receive`; a body's
+/// value, even `:none`, is the select's, with all its values; a task's
+/// channel answers nil the second time.
+#[test]
+fn channels_review_findings() {
+    let out = run_compiled(
+        "(use-package :quokka-thread) \
+         (let ((both 0) (ok 0) (refused 0)) \
+           (dotimes (k 60) \
+             (let* ((c (make-channel)) \
+                    (th (make-thread (lambda () (handler-case (progn (send c :v) :ok) \
+                                                    (closed-channel-error () :err)))))) \
+               (thread-yield) \
+               (dotimes (i k) nil) \
+               (close-channel c) \
+               (let ((got (receive c)) (sender (join-thread th))) \
+                 (cond ((and (eq sender :err) got) (setq both (+ both 1))) \
+                       ((eq sender :ok) (setq ok (+ ok 1))) \
+                       (t (setq refused (+ refused 1))))))) \
+           (list both (+ ok refused))) \
+         (let ((c (make-channel))) \
+           (make-thread (lambda () (select ((send c 1) :sent)))) \
+           (select ((receive c v) v))) \
+         (let* ((c (make-channel)) \
+                (r (make-thread (lambda () (receive c))))) \
+           (dotimes (i 3) (thread-yield)) \
+           (terminate-thread r) \
+           (join-thread r :default nil) \
+           (list (try-send c :x) (multiple-value-list (try-receive c)))) \
+         (let* ((c (make-channel)) \
+                (s (make-thread (lambda () (send c :ghost))))) \
+           (dotimes (i 3) (thread-yield)) \
+           (terminate-thread s) \
+           (join-thread s :default nil) \
+           (multiple-value-list (try-receive c))) \
+         (list (handler-case (receive (spawn-task (lambda () (abort)))) (thread-error () :ended)) \
+               (let ((task (spawn-task #'+ 1 2))) \
+                 (list (receive task) (multiple-value-list (receive task))))) \
+         (let ((c (make-channel :capacity 3))) \
+           (send c 1) (send c 2) \
+           (list (select ((receive c v) v :none) (otherwise :other)) \
+                 (multiple-value-list (select ((receive c v) (values v :second)))) \
+                 (multiple-value-list (try-receive c))))",
+    );
+    assert_eq!(
+        out,
+        "=> T\n=> (0 60)\n=> 1\n=> (NIL (NIL NIL))\n=> (NIL NIL)\n\
+         => (:ENDED (3 (NIL NIL)))\n=> (:NONE (2 :SECOND) (NIL NIL))\n"
+    );
+}
+
+/// What the second review of the channels found (#34): ending a thread must
+/// wait until it is safe. A thread ended at any of eighty moments while it
+/// takes and lets go of a mutex never leaves the mutex held; a receiver ended
+/// at any of forty moments while it starts to wait never takes a value with
+/// it; the channels still work afterwards. An error in an operation is
+/// signalled before the channels' lock is taken, so a handler may use a
+/// channel; closing a channel twice is an error, as in Go; a task whose
+/// channel its caller closed ends quietly.
+#[test]
+fn ending_a_thread_waits_until_it_is_safe() {
+    let out = run_compiled(
+        "(use-package :quokka-thread) \
+         (let ((m (make-mutex)) (held 0)) \
+           (dotimes (k 80) \
+             (let ((th (make-thread (lambda () (do () (nil) (with-mutex (m) (list 1))))))) \
+               (thread-yield) \
+               (dotimes (i k) nil) \
+               (terminate-thread th) \
+               (join-thread th :default nil) \
+               (when (mutex-owner m) (setq held (+ held 1)) \
+                 (setf (svref (quokka::mutex-cell m) 0) nil)))) \
+           held) \
+         (let ((lost 0)) \
+           (dotimes (k 40) \
+             (let* ((c (make-channel)) \
+                    (r (make-thread (lambda () (receive c))))) \
+               (thread-yield) \
+               (dotimes (i k) nil) \
+               (terminate-thread r) \
+               (join-thread r :default nil) \
+               (when (try-send c :v) (setq lost (+ lost 1))))) \
+           lost) \
+         (let ((c (make-channel :capacity 1))) (send c 1) (receive c)) \
+         (let ((log (make-channel :capacity 1))) \
+           (handler-case (handler-bind ((error (lambda (c) c (try-send log :seen)))) (receive 5)) \
+             (type-error () (list :typed (receive log))))) \
+         (let ((c (make-channel))) \
+           (close-channel c) \
+           (handler-case (close-channel c) (closed-channel-error () :closed-twice))) \
+         (let ((ch (spawn-task (lambda () (dotimes (i 50) (thread-yield)) 1)))) \
+           (close-channel ch) \
+           (dotimes (i 200) (thread-yield)) \
+           :quiet)",
+    );
+    assert_eq!(
+        out,
+        "=> T\n=> 0\n=> 0\n=> 1\n=> (:TYPED :SEEN)\n=> :CLOSED-TWICE\n=> :QUIET\n"
     );
 }
 

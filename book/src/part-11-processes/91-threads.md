@@ -122,6 +122,11 @@ after a yield if someone else got there first:
       (thread-yield))))
 ```
 
+Taking the mutex and letting it go are each done where the thread cannot
+be ended (chapter 90), and the body where it can. A thread ended in the
+body still lets the mutex go, and one ended while it waits for the mutex
+has nothing to let go.
+
 The test runs three threads that each add one to a shared counter forty
 times. Each reads the counter, yields deliberately, and writes it back,
 inside `with-mutex`, and the counter ends at 120. Wait queues
