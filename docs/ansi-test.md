@@ -24,9 +24,9 @@ A test can need several things.
 | iteration | 95 | 0 | 0 | 0 | 0 | 748 | 843 |
 | hash-tables | 119 | 0 | 0 | 0 | 0 | 48 | 167 |
 | structures | 72 | 0 | 0 | 0 | 0 | 44 | 116 |
-| types-and-classes | 415 | 1 | 0 | 0 | 0 | 98 | 514 |
-| objects | 745 | 2 | 0 | 0 | 0 | 96 | 843 |
-| **all** | **10802** | **4** | **0** | **0** | **0** | **6023** | **16829** |
+| types-and-classes | 416 | 0 | 0 | 0 | 0 | 98 | 514 |
+| objects | 747 | 0 | 0 | 0 | 0 | 96 | 843 |
+| **all** | **10805** | **1** | **0** | **0** | **0** | **6023** | **16829** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -44,7 +44,6 @@ A test can need several things.
 | `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 407 |
 | `MAKE-RANDOM-STATE[tier-2:random]` | 406 |
 | `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 394 |
-| `HANDLER-BIND[tier-2:conditions]` | 285 |
 | `MUFFLE-WARNING[tier-2:conditions]` | 270 |
 | `COMPLEX[deferred:complex-numbers]` | 190 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 141 |
@@ -163,7 +162,6 @@ A test can need several things.
 | `RENAME-FILE[tier-2:pathnames-and-files]` | 9 |
 | `ROOM[tier-2:environment]` | 9 |
 | `SHORT-SITE-NAME[tier-2:environment]` | 9 |
-| `SIGNAL[tier-2:conditions]` | 9 |
 | `SLEEP[tier-2:environment]` | 9 |
 | `SOFTWARE-TYPE[tier-2:environment]` | 9 |
 | `SOFTWARE-VERSION[tier-2:environment]` | 9 |

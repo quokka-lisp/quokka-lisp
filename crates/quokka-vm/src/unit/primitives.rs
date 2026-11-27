@@ -183,7 +183,10 @@ fn the_table_order_is_pinned() {
             "%SET-INSTANCE-WRAPPER",
             "%SET-INSTANCE-SLOTS",
             "%FUNCALLABLE-INSTANCE-P",
-            "%SET-FUNCALLABLE-INSTANCE-FUNCTION"
+            "%SET-FUNCALLABLE-INSTANCE-FUNCTION",
+            "%HANDLER-MARKS",
+            "%UNWIND-TO-HANDLER",
+            "%SIGNALLED"
         ]
     );
 }

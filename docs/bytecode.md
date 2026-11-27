@@ -322,6 +322,15 @@ if not. The alternative was teaching the VM what a `handler-case` clause
 looks like, which rule 1 puts above the primitive table, not below it. The
 datum is kept for the debugger and is not consulted.
 
+Since phase 3's step B (#125) that holds only for the machine's own
+condition objects. A world with the library signals in Lisp: `signal`
+reads the open `HANDLER` records and `handler-bind`'s bindings off the
+mark chain in order (`%handler-marks`), asks a record's clause list, its
+datum, whether a clause wants the condition, and unwinds to that record
+alone with `%unwind-to-handler`, whose target is a two-slot vector of the
+record's place and the condition. The clause dispatch then runs as before,
+its tests asking `typep`, as `signal` does, so it picks the clause `signal` saw.
+
 **`unwind-protect` compiles its cleanup twice.** Once inline for the normal
 path, once as the fragment the unwinder jumps to. When an unwind meets a
 `PROTECT` record it puts everything it is carrying — target, value, values —

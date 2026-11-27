@@ -389,6 +389,9 @@ hands it to the first clause whose type matches. A [catch](#non-local-exit)
 that matches on type instead of identity — the same unwinding, asking a
 different question of each frame. ([20](part-2-reading-and-running/20-errors-you-can-catch.md))
 
+<a id="handler-bind"></a>
+**handler-bind.** Establishes handlers for the extent of a form that run *where* a condition is signalled, with the frames that signalled it still on the stack, and may decline by returning. A handler that wants to stop the computation leaves with a non-local exit of its own. `handler-case` is the special case whose handler unwinds at once. ([80](part-8-conditions/80-handlers-that-do-not-unwind.md))
+
 <a id="hash-consing"></a>
 **Hash consing.** Canonicalising structures so that two structurally equal
 objects are also the *same* object, and can therefore be compared by pointer.
@@ -899,6 +902,9 @@ code and data. `(* 6 7)` is a list of three things, not special syntax.
 
 <a id="shortest-round-trip-printing"></a>
 **Shortest round-trip printing.** Printing a float as the fewest decimal digits that read back as exactly the same float: `0.1`, though the double nearest 0.1 is 0.1000000000000000055511151231257827.... Solved by Steele and White (1990); made fast by Grisu (2010) and Ryu (2018). The reverse problem, reading a decimal into the nearest float, is Clinger's (1990). ([48](part-6-self-hosting/48-floats.md))
+
+<a id="signal"></a>
+**Signal.** To offer a [condition](#condition) to the active handlers, innermost first. A handler may take it, with a non-local exit, or decline; `signal` returns nil if none took it, and `error` stops the program. ([80](part-8-conditions/80-handlers-that-do-not-unwind.md))
 
 <a id="significand"></a>
 **Significand.** The digits of a [float](#float-floating-point-number), as a whole number, before the power of two scales them; also called the *mantissa*. `integer-decode-float` returns it with the exponent and the sign. ([48](part-6-self-hosting/48-floats.md))

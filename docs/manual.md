@@ -259,8 +259,10 @@ What to expect today:
 - C1 is 976,856 bytes; C2 and C3 are 978,464 each. A rebuild takes about
   seventeen seconds.
 - Every rebuild reports `(:FORMS 1332 :REPLACED 1072)`. It runs as one form
-  with sixty times an ordinary form's step budget (300 million steps) and
-  needs about 201 million; a rebuild that runs out says `BudgetExhausted`.
+  with a hundred times an ordinary form's step budget (500 million steps;
+  sixty until #125) and needed about 201 million then, a little over 300
+  million at phase 3's step B; a rebuild that runs out says
+  `BudgetExhausted`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. The
   library's `gensym` starts from `*gensym-counter*` = 0 in every rebuild, so
   its names repeat exactly (#72), but the machine still makes a few gensyms of
@@ -375,7 +377,7 @@ several **legs**, and every leg must match the baseline:
 | compiled, rebuilt world | `a_rebuilt_world_passes_every_differential_file` | the same | the same |
 | SBCL | `./scripts/oracle.sh` | SBCL | SBCL |
 
-**Tier 0** files (17) run in every leg. **Tier 1** files (46) use the library,
+**Tier 0** files (17) run in every leg. **Tier 1** files (47) use the library,
 which the interpreter never learns, so they skip the interpreted leg.
 `tests/lisp/README.md` lists what a test file must not contain. In short: no
 bignums in a tier-0 file, no printed functions, nothing the standard leaves unspecified, and no

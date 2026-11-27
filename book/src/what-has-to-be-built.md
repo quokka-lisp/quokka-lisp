@@ -339,6 +339,7 @@ Each chapter answers one question.
 | 77 | [Method combination](part-7-objects/77-method-combination.md) | How can a generic function add up, collect or chain what its methods return, in a way the program defines? |
 | 78 | [Looking inside objects](part-7-objects/78-looking-inside-objects.md) | How can a program ask a class or a generic function what it is made of, and how is a whole object system measured? |
 | 79 | [Conditions are objects](part-8-conditions/79-conditions-are-objects.md) | How does an error become an object with slots and a report of its own, and what does a program define to have one? |
+| 80 | [Handlers that do not unwind](part-8-conditions/80-handlers-that-do-not-unwind.md) | How does a handler run where the error happened, and decline, and how do two kinds of handler find each other on one stack? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
 explains what garbage collection needs, 4 settles the contract that follows from
@@ -372,7 +373,8 @@ Still to come, and deliberately so:
   instances when their class changes, chapter 77 the other ways of
   combining a generic function's methods, and chapter 78 the metaobject
   protocol's readers and the measurement of CLOS as a whole. Chapter 79
-  makes conditions instances of condition classes. Still to come are the
+  makes conditions instances of condition classes, and chapter 80 adds
+  handlers that run where a condition is signalled. Still to come are the
   rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a

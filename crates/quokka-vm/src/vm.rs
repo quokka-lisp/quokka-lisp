@@ -771,6 +771,9 @@ impl<'a, 'h> Vm<'a, 'h> {
             self.mc.set_register(Register::Request, request);
             return Some(Transition::Block);
         }
+        if index == primitives::index(primitives::Prim::UnwindToHandler) {
+            return Some(self.unwind_to_handler(args));
+        }
         if index == primitives::index(primitives::Prim::Error) {
             let Some((datum, rest)) = args.split_first() else {
                 return Some(self.fail(EvalError::WrongArgumentCount {
@@ -986,9 +989,16 @@ impl<'a, 'h> Vm<'a, 'h> {
             // Which keeps the judgement in Lisp. Deciding here would mean
             // the VM knowing what a `handler-case` clause looks like, and
             // rule 1 says that belongs above the primitive table.
+            //
+            // Since step B (#125) a world with the library signals in Lisp,
+            // and `signal` itself chooses the `handler-case` whose clauses
+            // want the condition, then unwinds to that record alone: the
+            // target is a vector of the record's place and the condition
+            // (`Vm::unwind_to_handler`).
             mark::HANDLER => {
                 let _ = datum;
                 crate::condition::is_condition(self.mc, target)
+                    || self.handler_target(target) == Some(at)
             }
             _ => false,
         }
@@ -1097,7 +1107,12 @@ impl<'a, 'h> Vm<'a, 'h> {
                 // receives and which `error` leaves as `nil` — so until #36 a
                 // compiled handler was handed `nil` and could not dispatch at
                 // all. One value, so `push_fresh`.
-                self.push_fresh(target);
+                let condition = if self.handler_target(target).is_some() {
+                    self.mc.slot(target, 1)
+                } else {
+                    target
+                };
+                self.push_fresh(condition);
             } else {
                 // `push`, not `push_fresh`: a `(return-from b (values 1 2))`
                 // carries both values out with it, exactly as chapter 23 says
@@ -1193,6 +1208,55 @@ impl<'a, 'h> Vm<'a, 'h> {
             at = self.read_index(at, mark::PREV);
         }
         false
+    }
+
+    /// `(%unwind-to-handler place condition)`: unwind to the `handler-case`
+    /// record at PLACE, which `signal` has found wants CONDITION, running
+    /// every cleanup on the way, as any unwind does. The record is checked
+    /// to be open first: a place `%handler-marks` did not give is the
+    /// program's mistake, and an unwind that found nothing would halt.
+    fn unwind_to_handler(&mut self, args: &[Value<'h>]) -> Transition {
+        if args.len() != 2 {
+            return self.fail(EvalError::WrongArgumentCount {
+                name: "%UNWIND-TO-HANDLER",
+                wanted: 2,
+                got: args.len(),
+            });
+        }
+        let place = match args[0].as_fixnum() {
+            Some(n) if n >= 0 => n as usize,
+            _ => usize::MAX,
+        };
+        let mut at = self.mc.mp();
+        while at != usize::MAX && at != place {
+            at = self.read_index(at, mark::PREV);
+        }
+        if at == usize::MAX || self.mark_slot(at, mark::KIND).as_fixnum() != Some(mark::HANDLER) {
+            return self.fail(EvalError::WrongType {
+                name: "%UNWIND-TO-HANDLER",
+                wanted: "the place of an open handler-case",
+            });
+        }
+        let target = self.mc.alloc(ObjectType::Vector, 2);
+        self.mc.set_slot(target, 0, args[0]);
+        self.mc.set_slot(target, 1, args[1]);
+        self.start_unwind(target, Value::NIL)
+    }
+
+    /// The place of the `handler-case` record TARGET is unwinding to, if it
+    /// is the target `unwind_to_handler` makes: a two-slot vector holding a
+    /// place and a condition. Nothing else unwinds towards a vector.
+    fn handler_target(&self, target: Value<'h>) -> Option<usize> {
+        if target.is_object() {
+            let header = self.mc.header(target);
+            if header.object_type == ObjectType::Vector && header.slots == 2 {
+                return match self.mc.slot(target, 0).as_fixnum() {
+                    Some(n) if n >= 0 => Some(n as usize),
+                    _ => None,
+                };
+            }
+        }
+        None
     }
 
     /// Pick up the host's answer, or go on waiting for it.
@@ -1865,6 +1929,82 @@ pub fn call_global(
 }
 
 /// Verify the function in the `Value` register and make it the computation.
+/// `(%handler-marks clusters floor)`: what `signal` must search, innermost
+/// first. Each entry is `(0 place . clauses)` for a `handler-case` record and
+/// `(1 place . cluster)` for a binding of the symbol CLUSTERS, which
+/// `handler-bind` binds to one cluster of handlers (`conditions.lisp`).
+///
+/// Both kinds are records on the one mark chain, so one walk gives them in
+/// their true dynamic order, which is what lets a `handler-case` compiled by
+/// tier 0 and a `handler-bind` of the library nest as CLHS says (#125,
+/// decision 2). The value a binding established is read from the binding
+/// above it, which saved it, or from the symbol for the innermost.
+///
+/// While a handler runs, only the handlers outside its cluster are active
+/// (CLHS 9.1.4.1). `signal` binds the symbol FLOOR to the place of the
+/// cluster around each handler call; a binding of FLOOR hides every record
+/// at or above that place, except those pushed after the binding itself,
+/// which belong to the handler. A hidden binding still passes on its saved
+/// value, so the walk knows what the visible bindings below it established.
+///
+/// A walk of the whole chain, as `Vm::has_handler` makes, linear in the
+/// records open; it allocates only for the entries it returns.
+pub fn handler_marks<'h>(
+    mc: &mut Mutation<'h>,
+    clusters: Value<'h>,
+    floor: Value<'h>,
+) -> Result<Value<'h>, EvalError> {
+    if !mc.is_symbol(clusters) || !mc.is_symbol(floor) {
+        return Err(EvalError::WrongType {
+            name: "%HANDLER-MARKS",
+            wanted: "two symbols",
+        });
+    }
+    let stack = mc.register(Register::Operands);
+    let read = |mc: &Mutation<'h>, at: usize, slot: usize| mc.slot(stack, at + slot);
+    let place = |v: Value<'h>| match v.as_fixnum() {
+        Some(n) if n >= 0 => n as usize,
+        _ => usize::MAX,
+    };
+    let mut cluster = mc.slot(clusters, symbol::VALUE);
+    let mut floor_value = mc.slot(floor, symbol::VALUE);
+    let mut hidden_from = usize::MAX;
+    let mut found: Vec<(i64, usize, Value<'h>)> = Vec::new();
+    let mut at = mc.mp();
+    while at != usize::MAX {
+        let visible = at < hidden_from;
+        match read(mc, at, mark::KIND).as_fixnum() {
+            Some(mark::HANDLER) if visible => found.push((0, at, read(mc, at, mark::DATUM))),
+            Some(mark::SPECIAL) => {
+                let bound = read(mc, at, mark::DATUM);
+                let saved = read(mc, at, mark::SAVED);
+                if bound == clusters {
+                    if visible && cluster != Value::UNBOUND {
+                        found.push((1, at, cluster));
+                    }
+                    cluster = saved;
+                } else if bound == floor {
+                    if visible && place(floor_value) != usize::MAX {
+                        hidden_from = place(floor_value);
+                    }
+                    floor_value = saved;
+                }
+            }
+            _ => {}
+        }
+        at = place(read(mc, at, mark::PREV));
+    }
+    let mut list = Value::NIL;
+    for (kind, at, datum) in found.into_iter().rev() {
+        let at = Value::fixnum(at as i64).expect("a stack index is a fixnum");
+        let rest = mc.cons(at, datum);
+        let kind = Value::fixnum(kind).expect("small");
+        let entry = mc.cons(kind, rest);
+        list = mc.cons(entry, list);
+    }
+    Ok(list)
+}
+
 fn begin(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
     heap.mutate(|mc| {
         let function = mc.register(Register::Value);

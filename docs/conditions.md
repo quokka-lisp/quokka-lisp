@@ -91,9 +91,10 @@ of their class by `class-of`.
 a clause's subtypes from the prelude's lattice when it compiled the clause,
 and took `error` to mean everything. Neither holds once a program can define
 condition types and signal conditions that are not errors. A clause's test
-becomes a call of `%handler-clause-p`, which the prelude defines over its
-lattice and the library redefines as `typep`; `t` and `condition` still
-compile to no test. Only `compile.lisp`'s code generation changes, so C1, C2
+becomes `(if (%fboundp 'class-of) (typep c 'type) <the old lattice test>)`:
+`typep` once the library is loaded, the lattice before; inline, because the
+bootstrap's tests run compiled code against the interpreted prelude, which
+compiled code cannot call. `t` and `condition` still compile to no test. Only `compile.lisp`'s code generation changes, so C1, C2
 and C3 are still equal, and the library's macros expand the compiler's own
 source exactly as the prelude's do.
 
@@ -123,7 +124,7 @@ comes with the debugger (step F), where it has something to choose between.
    condition types become classes in `typep` and `subtypep`. Conditions are
    still signalled the old way.
 2. **`signal` in Lisp.** The walk primitive and `%unwind-to-handler`;
-   `handler-bind`, `signal`, `error`, `%handler-clause-p`, and the library's
+   `handler-bind`, `signal`, `error`, the run-time clause test, and the library's
    `%condition-type` and `%condition-message` for compiled code that reads a
    condition.
 3. **The machine's errors through Lisp** (Rust): `fail` calls

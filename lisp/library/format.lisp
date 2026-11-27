@@ -189,7 +189,7 @@
       ((char= c #\R)
        (if (%format-directive-params directive)
            (%format-integer directive stream args nil t)
-           (error "format: ~R without a radix (English and Roman numerals) is not supported")))
+           (error "format: ~~R without a radix (English and Roman numerals) is not supported")))
       ((char= c #\C) (%format-character (%next-arg args) stream colon at))
       ((char= c #\F) (%format-fixed directive stream args))
       ((char= c #\E) (%format-exponential directive stream args))

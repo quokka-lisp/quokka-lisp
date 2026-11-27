@@ -1137,7 +1137,8 @@
   (error "the object has no slot of this name" (list object slot-name)))
 
 (defun %slot-unbound (object slot-name)
-  (error 'unbound-slot "the slot is unbound" (list object slot-name)))
+  ;; With CLHS's initargs, so a handler can ask which slot of what.
+  (error 'unbound-slot :name slot-name :instance object))
 
 ;;; ------------------------------------------------------------------------
 ;;; with-slots, with-accessors (sub-step 4)

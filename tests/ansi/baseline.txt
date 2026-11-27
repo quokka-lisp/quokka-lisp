@@ -5808,6 +5808,8 @@ objects SLOT-VALUE.ERROR.3
 objects SLOT-VALUE.ERROR.4
 objects SLOT-VALUE.ORDER.1
 objects SLOT-VALUE.ORDER.2
+objects UNBOUND-SLOT.1
+objects UNBOUND-SLOT.2
 objects UPDATE-INSTANCE-FOR-DIFFERENT-CLASS.5
 objects UPDATE-INSTANCE-FOR-DIFFERENT-CLASS.6
 objects UPDATE-INSTANCE-FOR-DIFFERENT-CLASS.7
@@ -10405,6 +10407,7 @@ types-and-classes COERCE.10
 types-and-classes COERCE.16
 types-and-classes COERCE.21
 types-and-classes COERCE.22
+types-and-classes COERCE.ERROR.10
 types-and-classes COERCE.ERROR.2
 types-and-classes COERCE.ERROR.3
 types-and-classes COERCE.ERROR.4

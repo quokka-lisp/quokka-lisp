@@ -156,9 +156,24 @@
          (if (or *print-escape* (not (stringp (%condition-message condition))))
              (call-next-method)
              (write-string (%condition-message condition) stream)))
-        (*print-escape* (print-unreadable-object (condition stream :type t)))
+        (*print-escape*
+         (print-unreadable-object (condition stream :type t)
+           (%print-condition-inside condition stream)))
         (t (%report-condition condition stream)))
   condition)
+
+;;; What SBCL shows inside `#<...>` for a condition: a simple condition's
+;;; format control, a type error's expected type and datum. The library's
+;;; own conditions show their message.
+(defun %print-condition-inside (condition stream)
+  (cond ((slot-value condition '%message) (prin1 (slot-value condition '%message) stream))
+        ((and (typep condition 'simple-condition)
+              (stringp (simple-condition-format-control condition)))
+         (prin1 (simple-condition-format-control condition) stream))
+        ((and (typep condition 'type-error)
+              (slot-boundp condition 'datum) (slot-boundp condition 'expected-type))
+         (format stream "expected-type: ~S datum: ~S"
+                 (type-error-expected-type condition) (type-error-datum condition)))))
 
 (defun %report-condition (condition stream)
   (let ((message (slot-value condition '%message)))
@@ -246,3 +261,93 @@
  (find-class 'end-of-file)
  (lambda (condition stream)
    (format stream "end of file on ~S" (stream-error-stream condition))))
+
+;;; ------------------------------------------------------------------------
+;;; Signalling (sub-step 2)
+;;;
+;;; A handler that `handler-bind` establishes runs where the condition is
+;;; signalled, on top of the frames that signalled it, and may decline by
+;;; returning (CLHS 9.1.4). The handlers are a *dynamic* stack: each
+;;; `handler-bind` binds `%handler-clusters`, a special variable, to its
+;;; cluster of handlers for the extent of its body, the textbook technique
+;;; (SBCL's `*handler-clusters*`), and an unwind takes the binding off with
+;;; everything else.
+;;;
+;;; The prelude's `handler-case` cannot become a macro over `handler-bind`:
+;;; the compiler uses it and the fixpoint needs it compiled as it is, so it
+;;; keeps its `HANDLER` records. Both are records on the machine's one mark
+;;; chain, and `%handler-marks` reads them off it in their true order, so a
+;;; `handler-case` and a `handler-bind` nest as CLHS says whichever was
+;;; established first (`docs/conditions.md`).
+
+;;; The cluster the innermost `handler-bind` established; the walk reads
+;;; every binding of it, not only this value.
+(defvar %handler-clusters nil)
+
+;;; While a handler runs, the place of its cluster: the walk hides that
+;;; cluster and everything established between it and the signal, so a
+;;; handler sees only the handlers outside its own (CLHS 9.1.4.1).
+(defvar %handler-floor nil)
+
+;;; `(handler-bind ((type handler)...) form...)`: each HANDLER is a form
+;;; whose value is a function designator, evaluated now, in order.
+(defmacro handler-bind (bindings &body forms)
+  (dolist (binding bindings)
+    (unless (and (consp binding) (consp (cdr binding)) (null (cddr binding)))
+      (error 'program-error "a handler-bind binding is (type handler)" binding)))
+  `(let ((%handler-clusters
+           (list ,@(mapcar (lambda (binding) `(cons ',(car binding) ,(cadr binding))) bindings))))
+     ,@forms))
+
+;;; Offer CONDITION to every active handler, innermost first. A
+;;; `handler-case` whose clause wants it is unwound to, and that is the end
+;;; of the signal; a `handler-bind` handler that wants it is called, with
+;;; the floor set, and if it returns, the search goes on: first through the
+;;; rest of its own cluster, in order, then outwards. Returns nil when no
+;;; handler took a non-local exit.
+(defun %signal (condition)
+  (dolist (entry (%handler-marks '%handler-clusters '%handler-floor) nil)
+    (let ((place (cadr entry)))
+      (if (eql (car entry) 0)
+          (dolist (clause (cddr entry))
+            (when (typep condition (car clause))
+              (%unwind-to-handler place condition)))
+          (dolist (handler (cddr entry))
+            (when (typep condition (car handler))
+              (let ((%handler-floor place))
+                (funcall (cdr handler) condition))))))))
+
+;;; The condition DATUM and ARGUMENTS designate (CLHS 9.1.2.1): a condition
+;;; as it is; a condition type and its initargs; a format control and its
+;;; arguments, as a condition of DEFAULT-TYPE. And the library's own form, a
+;;; type then a message and data, whose condition reports the message.
+(defun %designated-condition (datum arguments default-type)
+  (cond ((%condition-object-p datum)
+         (when arguments
+           (error 'type-error "a condition was given with arguments" arguments))
+         datum)
+        ((and (symbolp datum) arguments (stringp (car arguments)))
+         (let ((condition (make-condition datum)))
+           (setf (slot-value condition '%message) (car arguments)
+                 (slot-value condition '%data) (cdr arguments))
+           condition))
+        ((symbolp datum) (apply #'make-condition datum arguments))
+        ((or (stringp datum) (functionp datum))
+         (make-condition default-type :format-control datum :format-arguments arguments))
+        (t (error 'type-error "a condition designator is a condition, a symbol or a format control"
+                  datum))))
+
+;;; `(signal datum &rest arguments)`: offer the condition to the handlers,
+;;; and return nil if none took it.
+(defun signal (datum &rest arguments)
+  (%signal (%designated-condition datum arguments 'simple-condition))
+  nil)
+
+;;; `(error datum &rest arguments)`: signal, and if no handler takes the
+;;; condition, stop. CLHS has `error` call `invoke-debugger` then; until the
+;;; debugger exists (step F) the machine halts with the condition, as it
+;;; always has, and a host reports it.
+(defun error (datum &rest arguments)
+  (let ((condition (%designated-condition datum arguments 'simple-error)))
+    (%signal condition)
+    (%signalled (%condition-type-of condition) (%condition-text condition))))

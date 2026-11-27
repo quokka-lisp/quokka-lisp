@@ -503,7 +503,7 @@
 ;;; coerce
 
 (defun %coerce-error (object type)
-  (error 'type-error "cannot coerce the object to that type" (list object type)))
+  (error 'type-error :datum object :expected-type type))
 
 (defun coerce (object result-type)
   (let* ((type (%expand-type result-type))

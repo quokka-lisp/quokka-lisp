@@ -949,10 +949,12 @@ mod compiler {
 
     /// The protected form is not in tail position, because the record must
     /// outlive what it calls; a clause body is, because the record is gone by
-    /// the time it runs.
+    /// the time it runs. The clause takes everything, so there is no
+    /// re-signal after it: `condition`, since `error` no longer means
+    /// everything once a condition need not be an error (#125).
     #[test]
     fn only_a_clause_body_is_in_tail_position() {
-        let out = compile_instructions("(lambda (n) (handler-case (f n) (error () (g n))))");
+        let out = compile_instructions("(lambda (n) (handler-case (f n) (condition () (g n))))");
         assert_eq!(out.matches("TCALL").count(), 1, "{out}");
         assert_eq!(out.matches("(CALL").count(), 1, "{out}");
         assert!(out.contains("HANDLER"), "{out}");

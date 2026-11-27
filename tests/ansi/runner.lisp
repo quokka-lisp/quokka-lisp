@@ -346,7 +346,7 @@
             (%break (list (intern (subseq head from to))) (list reason)))))))
 
 (defun %condition-text (condition)
-  (let ((message (quokka::%condition-message condition)))
+  (let ((message (quokka::%condition-message-of condition)))
     (if (stringp message) message (princ-to-string message))))
 
 (defun %peek () (if (< (%position) (length (%text))) (char (%text) (%position)) nil))

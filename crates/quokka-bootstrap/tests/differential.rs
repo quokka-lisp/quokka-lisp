@@ -184,6 +184,7 @@ tier1_cases! {
     mop => "mop",
     class_details => "class-details",
     condition_objects => "condition-objects",
+    signalling => "signalling",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -404,7 +405,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
         &mut heap,
         "(quokka::%rebuild-world)",
         // As `quokka rebuild` gives it (`crates/quokka/src/main.rs`, #75).
-        BUDGET * 60,
+        BUDGET * 100,
         SLICE,
         &mut host,
         |outcome| {
@@ -415,7 +416,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1889 :REPLACED 1483)".into())],
+        [Outcome::Value("(:FORMS 1900 :REPLACED 1492)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -473,7 +474,7 @@ fn a_rebuild_keeps_classes_and_their_instances() {
                (eq *mi* #'make-instance) (area *i*) (prin1-to-string *i*) \
                (list (slot-value *m* 'a) (slot-value *m* 'b)) \
                (tallied *i*) (collected *i*) (summed *i*))",
-        BUDGET * 60,
+        BUDGET * 100,
         SLICE,
         &mut host,
         |outcome| {
@@ -525,7 +526,7 @@ fn print_object_prints_metaobjects() {
          => \"#<STANDARD-METHOD AREA (CIRCLE)>\"\n\
          => \"#<STANDARD-METHOD AREA :AROUND (POINT)>\"\n\
          => \"#<QUOKKA-MOP:STANDARD-EFFECTIVE-SLOT-DEFINITION X>\"\n\
-         => \"#<SIMPLE-ERROR: x>\"\n=> :NR\n=> :OK\n=> \"[#<SIMPLE-ERROR: y>]\"\n"
+         => \"#<SIMPLE-ERROR \\\"x\\\">\"\n=> :NR\n=> :OK\n=> \"[#<SIMPLE-ERROR \\\"y\\\">]\"\n"
     );
 }
 

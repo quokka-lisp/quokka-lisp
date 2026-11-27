@@ -85,8 +85,9 @@ pub(crate) fn rebuild(args: &[String]) {
         &mut heap,
         "(quokka::%rebuild-world)",
         // As `differential.rs` gives it: a rebuild compiles every form of the
-        // system. 20 ran out at floats (#17), 40 at step AB (#75, ~201M steps).
-        EVAL_BUDGET * 60,
+        // system. 20 ran out at floats (#17), 40 at step AB (#75, ~201M steps),
+        // 60 at conditions' sub-step 2 (#125, just over 300M steps).
+        EVAL_BUDGET * 100,
         2_000,
         &mut NativeHost,
         |came| {

@@ -730,7 +730,9 @@
       nil))
 
 ;; TYPE and every standard condition type below it: what a compiled
-;; `handler-case` clause naming TYPE tests the condition's type against.
+;; `handler-case` clause naming TYPE tests the machine's own conditions
+;; against, in a world without the library (`%handler-test` in the
+;; compiler).
 (defun %condition-subtypes (type)
   (cons type (%condition-subtypes-in type %condition-supertypes)))
 
@@ -740,6 +742,22 @@
           (cons (car (car entries)) (%condition-subtypes-in type (cdr entries)))
           (%condition-subtypes-in type (cdr entries)))
       nil))
+
+;; A condition's type and message, for code that reads one: the compiler,
+;; when it signals a compile error again with the form it was in, and the
+;; host loop. The machine's own conditions have both; since step B a
+;; condition may be an instance of its class, which `conditions.lisp`
+;; reports. Functions of their own, so that the primitives `%condition-type`
+;; and `%condition-message` never have to be redefined.
+(defun %condition-type-of (condition)
+  (if (%conditionp condition)
+      (%condition-type condition)
+      (class-name (class-of condition))))
+
+(defun %condition-message-of (condition)
+  (if (%conditionp condition)
+      (%condition-message condition)
+      (%condition-text condition)))
 
 ;; Run a form; if it signals, yield nil and the condition — two values, so a
 ;; caller can tell "it failed" from "it returned nil".

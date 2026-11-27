@@ -1357,7 +1357,8 @@
 ;;; One `cond` clause per `handler-case` clause, and a last one that
 ;;; re-signals.
 ;;;
-;;; Except after a catch-all. A clause for `error` takes everything, so
+;;; Except after a catch-all. A clause for `t` or `condition` takes
+;;; everything (`error` did too until step B, #125), so
 ;;; nothing written after it can run — including the re-signal, which the
 ;;; first version emitted anyway and a test counting tail calls found. The
 ;;; verifier would have accepted the dead code; a reader of the disassembly
@@ -1380,38 +1381,46 @@
 
 ;;; Does a clause for TYPE want CONDITION?
 ;;;
-;;; `t`, `error` and `condition` take everything; any other type takes
-;;; itself and its subtypes (#81) — which is more than `condition::matches`
-;;; does for the interpreter, whose matching is still flat. Decided at
-;;; **compile time** where it can be: the clause's type is in the source,
-;;; so a catch-all clause compiles to no test at all.
+;;; `t` and `condition` take everything. Any other type is asked when the
+;;; clause is tried, in one of two ways, chosen then. Once the library's
+;;; type system is loaded, which `class-of` being defined marks, by
+;;; `typep`: a program can define condition types and signal conditions
+;;; that are not errors (step B, #125), and the library's `signal` asks
+;;; `typep` too when it chooses which `handler-case` to unwind to, so the
+;;; two agree on the clause. Before then, in a world being built, every
+;;; condition is the machine's own and an error, and the test is the one
+;;; this compiler made before step B: `eq` on the condition's type against
+;;; the type and its subtypes, listed now from the prelude's lattice (#81),
+;;; and `error` takes everything. That test is inline, calling only
+;;; primitives, because the bootstrap's own tests run compiled code
+;;; against the interpreted prelude, which compiled code cannot call.
 ;;;
-;;; A clause may name several types as `(or a b)`, which is the one compound
-;;; type specifier worth having before `typep` exists: the tests of each. Any
-;;; other compound specifier is refused here, when the clause is compiled.
-;;; It used to compile into a test that was never true, so the clause never
-;;; ran and the error it was written for went past it (#106).
+;;; A clause may name several types as `(or a b)`. Any other compound type
+;;; is `typep`'s alone; without the library such a clause is refused when
+;;; it is tried. It used to compile into a test that was never true, so the
+;;; clause never ran and the error it was written for went past it (#106).
 (defun %handler-test (condition type)
-  (cond ((or (eq type t) (eq type 'error) (eq type 'condition)) t)
-        ;; A subtype is caught too: `stream-error` catches `end-of-file` (#81).
-        ;; The subtypes are listed now, from the prelude's table, so that the
-        ;; test is still `eq` on the type, which compiled code can do before
-        ;; the prelude is compiled (the bootstrap's own tests run it so).
+  (if (or (eq type t) (eq type 'condition))
+      t
+      (list 'if (list '%fboundp (list 'quote 'class-of))
+            (list 'typep condition (list 'quote type))
+            (%lattice-test condition type))))
+
+;;; The test without the library: the machine's conditions, all errors.
+(defun %lattice-test (condition type)
+  (cond ((eq type 'error) t)
         ((symbolp type)
          (cons 'or (%condition-type-tests condition (%condition-subtypes type))))
         ((and (consp type) (eq (car type) 'or))
-         (%handler-any-test condition (cdr type)))
-        (t (%malformed "handler-case"
-                       "a clause's type is a symbol or (or type...); other compound types need typep, which is phase 3"))))
+         (cons 'or (%lattice-tests condition (cdr type))))
+        (t (list 'error (list 'quote 'program-error)
+                 "a handler-case clause names a compound type, which needs the library's typep"
+                 (list 'quote type)))))
 
-(defun %handler-any-test (condition types)
+(defun %lattice-tests (condition types)
   (if (endp types)
       nil
-      (let ((first (%handler-test condition (car types)))
-            (rest (%handler-any-test condition (cdr types))))
-        (cond ((eq first t) t)
-              ((eq rest t) t)
-              (t (list 'or first rest))))))
+      (cons (%lattice-test condition (car types)) (%lattice-tests condition (cdr types)))))
 
 (defun %condition-type-tests (condition types)
   (if (endp types)
@@ -1672,15 +1681,15 @@
 (defun compile-form (form)
   (handler-case (%compile-form form)
     (error (condition)
-      (error (%condition-type condition)
+      (error (%condition-type-of condition)
              (%string-append
               "in "
               (%string-append
                (%form-description (if %toplevel-form %toplevel-form form))
                (%string-append
                 ": "
-                (if (stringp (%condition-message condition))
-                    (%condition-message condition)
+                (if (stringp (%condition-message-of condition))
+                    (%condition-message-of condition)
                     "it cannot be compiled"))))))))
 
 ;;; What a person would call FORM: its operator, and for a definition the

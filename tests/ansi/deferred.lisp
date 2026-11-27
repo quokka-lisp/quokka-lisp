@@ -13,7 +13,7 @@
 (%deferred "tier-2:clos" :function-keywords :documentation)
 
 (%deferred "tier-2:conditions"
-  :handler-bind :signal :warn :restart-case
+  :warn :restart-case
   :restart-bind :invoke-restart :invoke-restart-interactively :find-restart
   :compute-restarts :restart-name :with-simple-restart :with-condition-restarts
   :abort :continue :muffle-warning :store-value :use-value :break :invoke-debugger

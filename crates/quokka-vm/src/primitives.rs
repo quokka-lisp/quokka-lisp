@@ -207,6 +207,9 @@ pub enum Prim {
     SetInstanceSlots = 147,
     FuncallableInstancep = 148,
     SetFuncallableInstanceFunction = 149,
+    HandlerMarks = 150,
+    UnwindToHandler = 151,
+    Signalled = 152,
 }
 
 impl Prim {
@@ -693,6 +696,21 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         "%SET-FUNCALLABLE-INSTANCE-FUNCTION",
         Arity::Exactly(2),
     ),
+    // ---- signalling in Lisp (phase 3 step B, #125) ----------------------
+    //
+    // `signal` is Lisp (`conditions.lisp`), and needs from the machine what
+    // only the machine has: the open `handler-case` records and the
+    // bindings of `handler-bind`'s variable, in the order they are on the
+    // stack (`vm::handler_marks`); a way to unwind to one chosen record,
+    // which only the machine can do and so is intercepted; and a way to
+    // stop with an error nothing handled.
+    (Prim::HandlerMarks, "%HANDLER-MARKS", Arity::Exactly(2)),
+    (
+        Prim::UnwindToHandler,
+        "%UNWIND-TO-HANDLER",
+        Arity::Exactly(2),
+    ),
+    (Prim::Signalled, "%SIGNALLED", Arity::Exactly(2)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -893,6 +911,32 @@ pub fn call_slice<'h>(
             operator: "ERROR",
             detail: "is intercepted by the evaluator and should never be called here",
         }),
+        Prim::UnwindToHandler => Err(EvalError::Fault {
+            operator: "%UNWIND-TO-HANDLER",
+            detail: "is intercepted by the machine and should never be called here",
+        }),
+        Prim::HandlerMarks => crate::vm::handler_marks(mc, args[0], args[1]),
+        // An error that no handler took: the machine stops, carrying the
+        // condition's type and report as `error` once carried them, so a host
+        // reports it as it always has (`condition::report_error`).
+        Prim::Signalled => {
+            let type_name = if mc.is_symbol(args[0]) {
+                mc.symbol_name(args[0])
+            } else {
+                return Err(EvalError::WrongType {
+                    name: "%SIGNALLED",
+                    wanted: "a symbol",
+                });
+            };
+            if !(args[1].is_object() && mc.header(args[1]).object_type.is_string()) {
+                return Err(EvalError::WrongType {
+                    name: "%SIGNALLED",
+                    wanted: "a string",
+                });
+            }
+            let text = mc.string_to_rust(args[1]);
+            Err(EvalError::Signalled(format!("{type_name}: {text}")))
+        }
         Prim::Intern => {
             if !(args[0].is_object() && mc.header(args[0]).object_type.is_string()) {
                 return Err(EvalError::WrongType {

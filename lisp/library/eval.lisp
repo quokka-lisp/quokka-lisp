@@ -286,7 +286,7 @@
 ;;; A condition's type as text, for a host that wants to say which kind of
 ;;; error a form ended in (#103).
 (defun %condition-type-name (condition)
-  (let ((type (%condition-type condition)))
+  (let ((type (%condition-type-of condition)))
     (if (symbolp type) (symbol-name type) "ERROR")))
 
 ;;; Does TEXT end outside every form? A terminal REPL asks before it
