@@ -185,7 +185,7 @@ The screen is a set of tiled viewers holding live text: any form can be run wher
 
 One interaction loop runs through everything: evaluate a form, get presentations back, pick a command that fits the object's type, and land in another viewer with the object itself.
 
-- **Tiled viewers.** Oberon-style tracks: a wide main track and a narrow tool track. Viewers split and resize but never overlap. Rooms-style workspaces come later, as named sets of viewers per task. This is a want, not a default — overlapping windows are what a system grows if nobody decides otherwise, and Oberon's own reason for rejecting them (too much complication for too small an advantage, 1987) is rule 7 in other words. What is still open is the *model*: fixed tracks or a tree of splits, keyboard-driven or mouse-driven, and whether the display protocol can express layout at all — because if it cannot, the window manager ends up in the renderer where Lisp cannot change it. See [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21).
+- **Tiled viewers.** Viewers split and resize but never overlap, in a tree of splits on named desktops (see *Viewers, desktops and layout*). This is a want, not a default: overlapping windows are what a system grows if nobody decides otherwise, and Oberon's own reason for rejecting them (too much complication for too small an advantage, 1987) is rule 7 in other words.
 - **Live text.** Every viewer is a rich-text document mixing prose, code and embedded results. Evaluating a form inserts its result below it as a presentation, so notes, scratch code and the command line are the same thing.
 - **Presentations.** Each printed object keeps a reference to the object and its presentation type. When a command needs an argument, clicking any matching presentation on screen supplies it, as Genera's `accept` did. Drawings are presentations too: a shape on a canvas knows the object it draws.
 - **Point at anything.** Right-clicking any output gives the commands that fit what it is, and always *Inspect* and *Show the code that drew this*. For the second, every output record remembers the function that produced it, which is a requirement on the display protocol of phase 4.
@@ -194,7 +194,7 @@ One interaction loop runs through everything: evaluate a form, get presentations
 - **Running programs are processes.** A game loop or an animation runs in its own process beside the listener, so the listener still answers. Clicking a drawing in a running program suspends that process and inspects the object, and continuing resumes it, which is the debugger stopping a process for a reason other than an error.
 - **Editor.** Text with structural (paredit-style) commands, editing one definition at a time; a whole package can be opened as text when many definitions change at once (see *The world is a database of definitions*).
 
-> **Status: worked out 27 Nov 2026, in a brainstorm with mock-ups; nothing below is built.** The decision is [#126](https://github.com/quokka-lisp/quokka-lisp/issues/126). The sections from here to the end of *Environment and UI* record what phases 4 to 6 aim at. The mock-ups were drawn for four use cases and live only in that conversation; the decisions they led to are written out here.
+> **Status: worked out 27 Nov 2026, in a brainstorm with mock-ups; nothing below is built.** The decisions are [#126](https://github.com/quokka-lisp/quokka-lisp/issues/126) and, for the window model, [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21). The sections from here to the end of *Environment and UI* record what phases 4 to 6 aim at. The mock-ups were drawn for four use cases and live only in that conversation; the decisions they led to are written out here.
 
 ### Who it is for
 
@@ -252,7 +252,7 @@ You start an application by creating a **system** and an empty package in it, an
 
 Common Lisp has no sub-packages: package names are flat strings, and `rolodex.import` is a different package from `rolodex` that only looks related. Dotted names are a convention, and package-local nicknames only shorten names. The grouping that CL practice uses is the system, from ASDF's `defsystem`, a named set of components that load and travel together. A Quokka system is an object in the world that **lists its packages explicitly**. The browser suggests dotted names and puts a new `rolodex.something` package into the `rolodex` system by default, but membership is stored, never inferred from a prefix. Systems are a Quokka extension and live in a Quokka package (rule 6).
 
-A package can be opened as text, a view the world generates with a bar marking each definition and its version. Editing several definitions there and installing gives each changed definition its own new version. Exporting a system writes exactly this text, one file per package plus a `system.lisp` naming the packages and, for an application, its main view.
+A package can be opened as text, a view the world generates with a bar marking each definition and its version. Editing several definitions there and installing gives each changed definition its own new version. Exporting a system writes exactly this text, one file per package plus a `system.lisp` naming the packages and, for an application, its main view and its layout template.
 
 Two consequences follow. A package must remember the **order** of its definitions, because a `defmacro` has to come before its first use and a `defclass` before the methods on it; we proposed creation order, which the text view can change. And a text export is **code, not data**: `*cards*` is written as its `defvar`, not with the cards in it, because in Lisp a `defvar` in source deliberately leaves an existing value alone, and a commit that wrote every variable's current value would fill Quokka's own `lisp/` with the compiler's tables and caches. A variable can be marked **saved with its value** (the cards a tutorial starts with, a game's levels designed while it runs); its export then writes a form that rebuilds the value, through `make-load-form` for objects and the printer, with `*print-circle*`, for lists and strings. A value that cannot be written, such as a closure, fails the export with the path to it, and is never half written.
 
@@ -310,9 +310,36 @@ A copy is a second world started from one of your save points and running beside
 
 Committing the change writes its package to the system's home, `lisp/` in a Git checkout on the `local:` host, so Git sees ordinary text and Quokka's own history stays in the repository. A browser world has no home, so working on Quokka itself from the browser waits for the remote file host and an answer to *Git in the browser*, an open question in *Decisions and open questions*.
 
-### Open questions
+### Viewers, desktops and layout
 
-- The window model of [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21). Every mock-up so far fitted fixed tracks, a track holding a column of viewers, and none needed a general tree of splits; that is evidence for tracks, not yet a decision.
+The window model was the open question of [#21](https://github.com/quokka-lisp/quokka-lisp/issues/21), decided on 27 Nov 2026 after the use cases above had been drawn. Three models were on the table. Oberon divides the screen into two fixed tracks, a wide one and a narrow one, each holding a column of viewers. Acme, which Rob Pike built for Plan 9 around 1993, keeps the columns and lets you add as many as you like. A tiling window manager such as i3 keeps a tree of splits, in which any area can be divided again, side by side or one above the other. We chose the tree. Columns would have been simpler to build and to explain, and every mock-up could be drawn with them, but some viewers only make sense wide: a package browser with its columns, an editor with long lines. A tree can give such a viewer a whole row and let the others share what is left, and columns cannot.
+
+A split has a direction and any number of children, each with a weight, as in i3. A tree with exactly two children per split would make three equal columns a split inside a split, weighted a third and a half. The window manager is Lisp, in the world, by rule 1, so the display protocol of phase 4 must describe layout (splits, weights, viewers) and not only drawing; otherwise the window manager would end up in the renderer, where Lisp cannot change it. And it is one surface, in the browser and in the desktop shell alike, never the operating system's windows, which would need a second implementation.
+
+Any viewer can be **zoomed** to fill the whole surface for a while, and then returns to exactly where it was, because the tree underneath does not change. A game, a large drawing or a long text wants this; floating windows answer the same need by overlapping, and a mode does it without giving up tiling.
+
+A **desktop** is a named tree with its zoom, and you switch between desktops as between tasks. This is the idea of *Rooms*, which Austin Henderson and Stuart Card built for Interlisp-D at Xerox PARC in 1986. Rooms also let one window appear in several rooms; we left that out, because it was the part of Rooms that made it hard to reason about. A viewer lives on one desktop, while an object can be shown in viewers on as many desktops as you like.
+
+A **layout template** is a tree with named, empty slots, such as `:main`, `:tools` and `:listener`, defined in Lisp. A new desktop can start from a template, and a system names one beside its main view, so that starting an application opens a desktop of its own with the main view in `:main`; an exported application carries its template with it. This is CLIM's *application frame*, which declares its panes and their layout, put into the system definition. The templates also answer the question every tree of splits has to answer, where a new viewer goes: into the slot for its kind if the desktop has one (an inspector into `:tools`), and otherwise by splitting the viewer that has the focus along its longer side.
+
+Input follows three rules:
+
+1. Every window operation is a command, an ordinary Lisp function (split, zoom, close, next desktop). Keys and mouse gestures are bindings to commands, so either can do everything, and both can be rebound.
+2. There are no mouse chords. Oberon used three buttons pressed in combination; trackpads and touch screens do not have three buttons, and a system that runs in a browser cannot depend on them.
+3. There is a command line in the style of Genera's command processor: type a command's name, and when it needs an argument, click any presentation of the right type anywhere on the screen (type *Inspect*, click a card).
+
+The window manager knows one class, `viewer`, and only through a small protocol; what a viewer shows and how it reacts comes from its subclass. The listener and the editor share a live-text subclass, a game a drawing subclass, and `define-viewer` defines a subclass with a `display-viewer` method. The protocol, in proposed names:
+
+```lisp
+(defgeneric viewer-title (viewer))                 ; shown in its title bar
+(defgeneric display-viewer (viewer stream))        ; draw the contents as output records
+(defgeneric viewer-input (viewer event))           ; a key or a click
+(defgeneric viewer-commands (viewer))              ; its commands, for menus and the command line
+(defgeneric viewer-minimum-size (viewer))          ; how small it can usefully be
+(defgeneric viewer-state (viewer))                 ; what restores it, as plain data
+```
+
+`viewer-minimum-size` is how a browser that needs width tells the tree so, and the layout respects it when it splits or resizes. `viewer-state` is what *Saving and coming back* needs: a desktop is restored by making each viewer again from its class and a property list (which object it inspects, which definition it edits), and the same data fills a template's slot. Oberon divided the work in the same place, with its `Viewers` module knowing rectangles and messages and `TextFrames` knowing text; Quokka gets the division from generic functions where Oberon used message records. It also gives the medium user two short paths: changing how tiles look is a method on the window manager's drawing of a viewer's frame, and making a new kind of viewer is a subclass and one method.
 
 ## Display: hybrid renderer
 
@@ -346,7 +373,7 @@ The display protocol is the boundary between the VM and the screen, so the VM ca
 
 - **Output records.** Every piece of output becomes a record in a tree that Lisp owns. Redisplay compares records, not DOM nodes, as CLIM's incremental redisplay does.
 - **Styles, not CSS.** Text styles (family, face, size) and named inks are Lisp objects. A theme maps them to light and dark colours; the renderer turns them into CSS internally.
-- **Layout in Lisp terms.** Tracks, viewers, tables and indentation. No box model, margins or tags are exposed to Lisp.
+- **Layout in Lisp terms.** Splits, viewers, tables and indentation. No box model, margins or tags are exposed to Lisp.
 - **Graphics where needed.** A drawing record renders to canvas or SVG; everything else renders to the DOM, so the browser handles text, selection, input methods and accessibility.
 
 ## Sound
@@ -422,7 +449,7 @@ The work runs in seven phases, each ending at a gate we can demonstrate, so the 
 | 3 · Conditions and processes | Restarts, reified frames, green threads, a terminal debugger | Fix a function from inside an error and retry the frame |
 | 4 · Renderer and live text | Display protocol, browser renderer, one live-text viewer | Edit and evaluate a form in the browser |
 | 5 · Presentations and inspector | Presentation types, commands, a moldable inspector | Click a result to inspect it or pass it to a command |
-| 6 · The environment | Tiled tracks, browser, debugger viewer, file sync | Daily work on the system happens inside the system |
+| 6 · The environment | Tiled viewers and desktops, browser, debugger viewer, file sync | Daily work on the system happens inside the system |
 
 > **Phase 1 finished** (#23): the compiled world is built by `boot::build_image`, the gate holds in it, and every differential file agrees interpreted, compiled and with SBCL (#38).
 
