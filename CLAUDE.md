@@ -875,7 +875,15 @@ many characters the page has (`%text-sent`) and a flush sends the rest as
 `(:append-text id string)` — **text given to a record any other way goes
 through `%replace-text`**, which says the page must be sent all of it. 100
 lines at the listener 0.48 s in wasm, from 3.75 s.
-Rebuild `(:FORMS 2430 :REPLACED 1759)`.
+**#170**: `funcall` and `apply` hand one call on at most 64 times
+(`Vm::redirect`). **#180, #182**: `%host-step` tells the host's abort
+restart before it reads, so a reader's error is reported in its own words;
+a read that fails without taking a character gives the input up
+(`%host-input` nil, `(:eof)`) until the host brings more.
+**A commit goes in only on the check's exit status** (`if ./scripts/check.sh
+...; then git commit`): on 28 Nov 2026 a log was read, the exit code was
+not, and a failing test was pushed (`444efe0`).
+Rebuild `(:FORMS 2431 :REPLACED 1760)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2430 :REPLACED 1759)".into())],
+        [Outcome::Value("(:FORMS 2431 :REPLACED 1760)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1906,6 +1906,26 @@ fn the_rebuild_reads_the_library_the_cold_build_loads() {
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
+}
+
+/// A read that fails without taking a character must not keep the host's
+/// loop turning for ever (#180): with no readtable every read fails, at the
+/// end of the input too, so the loop was never told the input had ended and
+/// the terminal hung. The world gives the input up after such a read; a
+/// reader's error is also reported in its own words now, not as "Aborted."
+/// (#182).
+#[test]
+fn a_read_that_cannot_advance_ends_the_input() {
+    let out = run_compiled("(setq *readtable* nil) (+ 1 1) (+ 2 2)");
+    assert!(!out.contains("=> 2") && !out.contains("=> 4"), "{out}");
+    assert!(out.contains("!! "), "{out}");
+    assert!(out.lines().count() <= 3, "the loop went on: {out}");
+
+    let out = run_compiled(") (+ 1 2)");
+    assert_eq!(
+        out, "!! reader-error\n=> 3\n",
+        "a reader error that took its character goes on"
+    );
 }
 
 /// `run_compiled`, with LINES typed at the console, each ending in a

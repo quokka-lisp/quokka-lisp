@@ -47,7 +47,8 @@
 
 ;;; The host loop's own frames, at the bottom of every stack a person's
 ;;; form makes, and those `eval` makes for a form typed at the debugger.
-(defvar %host-loop-functions '(%host-step %eval-read-form eval compiled-form %thread-run))
+(defvar %host-loop-functions
+  '(%host-step %host-step-reading %eval-read-form eval compiled-form %thread-run))
 
 ;;; Where a form typed at a debugger is evaluated: a debugger opened by an
 ;;; error in it shows the frames above this, the typed form's own, and not

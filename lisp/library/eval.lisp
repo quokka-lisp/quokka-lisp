@@ -323,16 +323,33 @@
 ;;; budget running out, the host sees as a failure of the call itself. The
 ;;; argument is ignored: the host's trampoline always passes one.
 (defun %host-step (ignored)
-  (let ((%aborted-condition nil))
+  (if (null %host-input)
+      ;; The input was given up (below): the host is told it has ended.
+      (list :eof)
+      (%host-step-reading)))
+
+(defun %host-step-reading ()
+  (let ((%aborted-condition nil)
+        (start (%stream-position %host-input))
+        (reading t))
     (restart-case
-        (let* ((start (%stream-position %host-input))
-               (form (read %host-input nil %end-of-input))
-               (%host-abort-restart (find-restart 'abort)))
+        ;; The restart is told to the host loop before anything is read, so
+        ;; that a reader's error is reported like any other (#182).
+        (let* ((%host-abort-restart (find-restart 'abort))
+               (form (read %host-input nil %end-of-input)))
+          (setq reading nil)
           (if (eq form %end-of-input)
               (list :eof)
               (list :value (prin1-to-string (%eval-read-form form %host-input start nil)))))
       (abort ()
         :report "Return to the top level."
+        ;; A read that failed without taking a character would fail the
+        ;; same way for ever, at the end of the input too, and the host
+        ;; would never be told `(:eof)`: `(setq *readtable* nil)` hung the
+        ;; terminal (#180). The input is given up, until the host brings
+        ;; more (`%host-source`).
+        (when (and reading (eql (%stream-position %host-input) start))
+          (setq %host-input nil))
         (if %aborted-condition
             (list :error (%condition-text %aborted-condition)
                   (%condition-type-name %aborted-condition))
