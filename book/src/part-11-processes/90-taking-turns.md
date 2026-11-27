@@ -193,5 +193,6 @@ runs. A world's processes run only while the host is running something, and
 the listener of phase 4, which waits for input as a process like any other,
 will be the first to keep them running. There are no priorities, and no
 sleeping, since the machine has no clock to wake by. And whether a world
-should ever use more than one processor, #34's last question, is still
-open; nothing here decides it.
+should ever use more than one processor, #34's last question, chapter 92
+answers: never one world on several processors, but several worlds, one per
+processor, which share nothing.

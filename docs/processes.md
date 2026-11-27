@@ -223,13 +223,13 @@ directly, and the review reproduced six faults, each now a test
 5. A task ended without a value left its receiver waiting for ever.
 6. A select clause whose body returned `:none` was taken for no clause.
 
-The plan, proposed on #34 for item 5:
+The plan, decided on #34 for item 5 (27 Nov 2026):
 - one OS thread per world for good;
 - a pool of worker worlds, one per core, sharing nothing, with copying
   channels and code fetched from the main world on demand;
 - the same names on both layers.
 
-Layer 2 is not built.
+Layer 2 is not built; #132 holds its design.
 
 ## Left for later
 
@@ -243,7 +243,7 @@ Layer 2 is not built.
   plan is an *interrupt frame*: a frame whose return restores the saved
   `Values` register and pushes nothing, marked in its header. It is not
   built.
-- **One OS thread for good?** #34 item 5, Carsten's decision; nothing here
-  forecloses either answer.
+- **Layer 2**, the worker pool (#132). One OS thread per world is decided
+  (#34 item 5).
 - **Timeouts and sleeping**, which need a clock from the host.
 - **Locking the system's shared tables.**

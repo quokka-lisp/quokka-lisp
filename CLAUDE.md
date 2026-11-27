@@ -767,9 +767,12 @@ buffer. Rebuild
 order), `spawn-task` (a future; re-signals a task's error at `receive`); all
 Lisp, **Go's runtime algorithm**: one lock for all channels, waiters
 completed only by a partner, each operation one `%without-interrupts`
-region. Layer 2, a pool of share-nothing worker worlds, is proposed, not built.
-Rebuild `(:FORMS 2118 :REPLACED 1638)`. **Next: phase 3 step G**, the gate;
-#34 item 5 awaits Carsten's acceptance of the two-layer plan. Phase 2's scope was
+region. **#34 item 5 is decided (27 Nov 2026): one OS thread per world for
+good; parallelism by a pool of share-nothing worker worlds** (named-function
+tasks over copying channels, code fetched on demand; #132), the same
+`spawn-task`/`receive` on both layers; layer 2 is not built yet.
+Rebuild `(:FORMS 2118 :REPLACED 1638)`. **Next: phase 3 step G**, the gate.
+Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

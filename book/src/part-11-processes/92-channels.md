@@ -8,8 +8,8 @@
 > which the end of the chapter describes, and which keeps the same names
 > when a channel's other end moves to another core.
 
-*Status: done, issue #34 (layer 1 of the plan there). Layer 2, the worker
-pool, is designed and not built.*
+*Status: done, issue #34 (layer 1 of the plan decided there). Layer 2, the
+worker pool, is designed and not built (#132).*
 
 ## Concurrency is not parallelism
 
@@ -136,8 +136,8 @@ and its names differ from these only in `recv`.
 
 ## The second layer
 
-The plan on #34 uses the same names across processors. One world stays on
-one operating-system thread for good, so its collector never has to deal
+The plan we decided on #34 uses the same names across processors. One
+world stays on one operating-system thread for good, so its collector never has to deal
 with another thread touching its heap; that is what makes Go's runtime
 large. For parallel work there would be a *pool of worker worlds*, one per
 core, each a heap of its own with its own green threads and its own
