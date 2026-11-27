@@ -81,3 +81,20 @@
 *break-on-signals*
 ;; *debugger-hook* is tested in differential.rs: SBCL under --script calls
 ;; its own hook first, which ends the process.
+
+;; A restart object found with its condition is invoked without its test
+;; being asked again.
+(restart-case (handler-bind ((error (lambda (c) (invoke-restart (find-restart 'rs-tested c)))))
+                (error "x"))
+  (rs-tested () :test (lambda (c) c) 42))
+;; abort and muffle-warning do not return.
+(restart-bind ((abort (lambda () 7))) (handler-case (abort) (control-error () :control-error)))
+;; ecase and etypecase have no catch-all clause.
+(handler-case (ecase (read-from-string "5") (t :k))
+  (type-error (c) (list (type-error-datum c) (type-error-expected-type c))))
+(ecase (read-from-string "t") (t :t-key))
+(handler-case (etypecase (read-from-string "5") (otherwise :o)) (error () :error))
+;; assert's report names its places.
+(let ((x 1))
+  (handler-bind ((error (lambda (c) (throw :rs (princ-to-string (find-restart 'continue c))))))
+    (catch :rs (assert (> x 2) (x)))))

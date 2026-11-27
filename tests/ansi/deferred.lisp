@@ -84,3 +84,14 @@
 ;;; does not check its initargs (`make-instance` does), and returns the
 ;;; instance, as Quokka's does.
 (%follows-sbcl "same-as-sbcl" :shared-initialize.error.4)
+
+;;; make-condition.3 and .4: `make-condition` of a compound type, `(or
+;;; program-error type-error)`, which the suite notes as an ANSI spec
+;;; problem. SBCL signals a type-error, wanting a condition class, and so
+;;; does Quokka (#125).
+(%follows-sbcl "same-as-sbcl" :make-condition.3 :make-condition.4)
+
+;;; format.f.45 and .46b: `~2F` of 1.1 and `~0,0F` of 0.01. The suite wants
+;;; "1.0" and "0."; SBCL prints "1." and "." (fill the width with digits
+;;; before a leading zero), and so does Quokka (#125).
+(%follows-sbcl "same-as-sbcl" :format.f.45 :formatter.f.45 :format.f.46b :formatter.f.46b)

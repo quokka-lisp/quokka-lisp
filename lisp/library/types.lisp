@@ -428,10 +428,16 @@
     `(let ((,key ,keyform))
        (cond ,@(%typecase-clauses key clauses)))))
 
+;;; `etypecase` and `ctypecase` have no catch-all clause: `otherwise` is a
+;;; type name there like any other, as SBCL takes it (and no type), and `t`
+;;; the type of every object.
+(defun %etypecase-clauses (key clauses)
+  (mapcar (lambda (clause) `((typep ,key ',(car clause)) nil ,@(cdr clause))) clauses))
+
 (defmacro etypecase (keyform &body clauses)
   (let ((key (gensym "KEY")))
     `(let ((,key ,keyform))
-       (cond ,@(%typecase-clauses key clauses)
+       (cond ,@(%etypecase-clauses key clauses)
              (t (error 'type-error :datum ,key :expected-type '(or ,@(mapcar #'car clauses))))))))
 
 ;;; `ctypecase` and `check-type` are in `conditions.lisp`, with the

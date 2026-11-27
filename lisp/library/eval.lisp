@@ -283,7 +283,8 @@
 (defun %host-step (ignored)
   (let ((%aborted-condition nil))
     (restart-case
-        (let ((form (read %host-input nil %end-of-input)))
+        (let ((form (read %host-input nil %end-of-input))
+              (%host-abort-restart (find-restart 'abort)))
           (if (eq form %end-of-input)
               (list :eof)
               (list :value (prin1-to-string (eval form)))))

@@ -383,9 +383,12 @@
 
 (defvar *debugger-hook* nil)
 
-;;; The condition the debugger gave up on, for the `abort` restart it then
-;;; invoked; bound by whoever establishes one that wants to say why.
+;;; The condition the debugger gave up on, for the host loop's `abort`
+;;; restart, `%host-abort-restart`, which `%host-step` binds, as the place
+;;; to say why. A program's own `abort` restart is told nothing: the
+;;; condition would be left behind for a later `(abort)` of the host's.
 (defvar %aborted-condition nil)
+(defvar %host-abort-restart nil)
 
 (defun invoke-debugger (condition)
   (let ((hook *debugger-hook*))
@@ -397,7 +400,7 @@
 (defun %without-a-debugger (condition)
   (let ((abort (find-restart 'abort condition)))
     (when abort
-      (setq %aborted-condition condition)
+      (if (eq abort %host-abort-restart) (setq %aborted-condition condition))
       (invoke-restart abort))
     (%signalled (%condition-type-of condition) (%condition-text condition))))
 
@@ -567,8 +570,16 @@
               (eq (%restart-name restart) identifier))
       (return restart))))
 
+;;; The restart IDENTIFIER designates, if it is active. A restart object is
+;;; active while its `restart-bind` is: its test is not asked again, since
+;;; the code that found it, with the condition, has asked it already
+;;; (SBCL; the review found `(invoke-restart (find-restart 'foo c))`
+;;; failing for a restart with a :test).
 (defun %active-restart (identifier condition)
-  (or (find-restart identifier condition)
+  (or (if (%restartp identifier)
+          (dolist (cluster %restart-clusters nil)
+            (when (%member-eq identifier cluster) (return identifier)))
+          (find-restart identifier condition))
       (error 'control-error "there is no active restart of that name" identifier)))
 
 (defun invoke-restart (restart &rest arguments)
@@ -675,11 +686,15 @@
 ;;; The standard restarts' functions (CLHS 9.2). `abort` and
 ;;; `muffle-warning` must find their restart; the others do nothing when
 ;;; there is none.
+;;; `abort` and `muffle-warning` do not return: a restart of theirs that
+;;; does is a `control-error`, as SBCL's are.
 (defun abort (&optional condition)
-  (invoke-restart (%active-restart 'abort condition)))
+  (invoke-restart (%active-restart 'abort condition))
+  (error 'control-error "the ABORT restart returned"))
 
 (defun muffle-warning (&optional condition)
-  (invoke-restart (%active-restart 'muffle-warning condition)))
+  (invoke-restart (%active-restart 'muffle-warning condition))
+  (error 'control-error "the MUFFLE-WARNING restart returned"))
 
 (defun continue (&optional condition)
   (let ((restart (find-restart 'continue condition)))
@@ -755,8 +770,10 @@
                                                    :format-arguments (list ',test-form)))
             (continue ()
               :report (lambda (,stream)
-                        (write-string ,(if places "Retry assertion with new values." "Retry assertion.")
-                                      ,stream))
+                        ,(if places
+                             `(format ,stream "Retry assertion with new value~P for ~{~S~^, ~}."
+                                      ,(length places) ',places)
+                             `(write-string "Retry assertion." ,stream)))
               ;; As SBCL's: a new value for each place is asked for when
               ;; the restart is taken, however it is invoked.
               ,@(mapcar (lambda (place) `(setf ,place (car (%prompt-for-value ',place))))
@@ -790,12 +807,12 @@
 ;;; again. Moved here from `lists.lisp` and `types.lisp`.
 (defmacro ccase (keyplace &body clauses)
   (%correctable-case keyplace
-                     (lambda (key) (%case-clauses key clauses nil))
+                     (lambda (key) (%case-clauses key (%literal-keys clauses) nil))
                      (cons 'member (%ecase-keys clauses))))
 
 (defmacro ctypecase (keyplace &body clauses)
   (%correctable-case keyplace
-                     (lambda (key) (%typecase-clauses key clauses))
+                     (lambda (key) (%etypecase-clauses key clauses))
                      (cons 'or (mapcar #'car clauses))))
 
 (defun %correctable-case (keyplace make-clauses expected-type)

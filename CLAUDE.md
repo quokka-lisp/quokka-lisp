@@ -586,7 +586,7 @@ of it (`%built-in-prototype`); `make-instance` of a structure class fills
 the initforms (by `eval`) and calls `initialize-instance`, as SBCL. Rebuild `(:FORMS 1859
 :REPLACED 1473)`. ansi-test, seventeen groups: **10,773 of 16,829 pass**; `objects`
 739 of 843; no plain failure, escape, timeout or tier-1 gap. Rust 0.
-**Phase 3 step B, conditions, is under way** (#125; Carsten took all seven
+**Phase 3 step B, conditions, is done** (#125; Carsten took all seven
 recommendations, 27 Nov 2026; the design and its five sub-steps are
 `docs/conditions.md`). The fixpoint constrains it: the prelude's
 `handler-case` keeps its `HANDLER` records, and `signal` must walk them and
@@ -649,7 +649,18 @@ offers an `abort` restart rather than catching errors** (decision 5), so an
 unhandled error reaches the debugger and a program's hook; the condition
 comes back through `%aborted-condition`. Rebuild `(:FORMS 1941 :REPLACED
 1525)`; ansi-test **11,912**, with 426 newly visible plain failures (391
-`format`) for sub-step 5. Phase 2's scope was
+`format`) for sub-step 5.
+**Sub-step 5, the `conditions` group measured, is done** (chapter 83):
+ansi-test runs eighteen groups (`conditions` joined). Fixed: `format`'s `~^`
+with parameters, `~^` in `~?`/`~(`, `~?` with a function, a `~{` body of a
+tilde-newline (`%format-directive-empty`), `~F` rounding to zeros; library
+errors with initargs; `ecase` takes `t`/`otherwise` as keys; `continue`
+restarts in `make-package`, `defpackage`, `delete-package`. The runner knows
+`define-condition-with-tests` defines names. The sub-step 4 review:
+`invoke-restart` of a restart object does not re-ask its `:test`; only the
+host's `abort` (`%host-abort-restart`) is told the condition. Rebuild
+`(:FORMS 1946 :REPLACED 1529)`; ansi-test **12,568 of 17,739**, no plain
+failure. **Next: phase 3 step C**, definitions keep their source (#55). Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

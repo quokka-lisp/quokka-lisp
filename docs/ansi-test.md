@@ -9,24 +9,25 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1581 | 8 | 0 | 0 | 0 | 133 | 1722 |
+| cons | 1589 | 0 | 0 | 0 | 0 | 133 | 1722 |
 | sequences | 2773 | 0 | 0 | 0 | 0 | 514 | 3287 |
 | strings | 408 | 0 | 0 | 0 | 0 | 101 | 509 |
-| arrays | 1117 | 7 | 0 | 0 | 0 | 166 | 1290 |
+| arrays | 1124 | 0 | 0 | 0 | 0 | 166 | 1290 |
 | characters | 143 | 0 | 0 | 0 | 0 | 116 | 259 |
 | symbols | 135 | 0 | 0 | 0 | 0 | 1010 | 1145 |
-| packages | 436 | 8 | 0 | 0 | 0 | 56 | 500 |
+| packages | 444 | 0 | 0 | 0 | 0 | 56 | 500 |
 | numbers | 605 | 0 | 0 | 0 | 0 | 839 | 1444 |
 | reader | 499 | 0 | 0 | 0 | 0 | 76 | 575 |
-| printer | 1200 | 391 | 0 | 0 | 0 | 855 | 2446 |
-| data-and-control-flow | 1268 | 12 | 0 | 0 | 0 | 148 | 1428 |
+| printer | 1585 | 0 | 0 | 0 | 0 | 861 | 2446 |
+| data-and-control-flow | 1280 | 0 | 0 | 0 | 0 | 148 | 1428 |
 | eval-and-compile | 284 | 0 | 0 | 0 | 0 | 34 | 318 |
 | iteration | 99 | 0 | 0 | 0 | 0 | 744 | 843 |
 | hash-tables | 119 | 0 | 0 | 0 | 0 | 48 | 167 |
 | structures | 75 | 0 | 0 | 0 | 0 | 41 | 116 |
 | types-and-classes | 416 | 0 | 0 | 0 | 0 | 98 | 514 |
 | objects | 754 | 0 | 0 | 0 | 0 | 89 | 843 |
-| **all** | **11912** | **426** | **0** | **0** | **0** | **5068** | **17406** |
+| conditions | 236 | 0 | 0 | 0 | 0 | 97 | 333 |
+| **all** | **12568** | **0** | **0** | **0** | **0** | **5171** | **17739** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -37,7 +38,7 @@ A test can need several things.
 
 | needs | tests |
 | --- | ---: |
-| `LOOP[tier-2:loop]` | 4435 |
+| `LOOP[tier-2:loop]` | 4530 |
 | `RANDOM[tier-2:random]` | 568 |
 | `reader[#C]` | 522 |
 | `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 407 |
@@ -45,7 +46,7 @@ A test can need several things.
 | `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 394 |
 | `COMPLEX[deferred:complex-numbers]` | 190 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 141 |
-| `format-directive[tier-2:format]` | 130 |
+| `format-directive[tier-2:format]` | 132 |
 | `PPRINT-NEWLINE[tier-2:pretty-printer]` | 73 |
 | `DOCUMENTATION[tier-2:clos]` | 66 |
 | `note[NIL-VECTORS-ARE-STRINGS]` | 63 |
@@ -81,6 +82,7 @@ A test can need several things.
 | `TRACE[tier-2:environment]` | 12 |
 | `UNTRACE[tier-2:environment]` | 12 |
 | `WITH-COMPILATION-UNIT[deferred:compile-file]` | 12 |
+| `sbcl[same-as-sbcl]` | 12 |
 | `COMPILE-FILE-PATHNAME[deferred:compile-file]` | 10 |
 | `DELETE-FILE[tier-2:pathnames-and-files]` | 10 |
 | `NAMESTRING[tier-2:pathnames-and-files]` | 10 |
@@ -164,4 +166,3 @@ A test can need several things.
 | `YES-OR-NO-P[tier-2:streams]` | 9 |
 | `ED[tier-2:environment]` | 8 |
 | `note[NO-FLOATING-POINT-UNDERFLOW-BY-DEFAULT]` | 8 |
-| `sbcl[same-as-sbcl]` | 6 |

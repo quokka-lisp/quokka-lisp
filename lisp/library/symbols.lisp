@@ -72,7 +72,8 @@
 ;;; all, a `type-error` (#75).
 (defun %check-function-name (name)
   (if (not (or (symbolp name) (%setf-function-name-p name)))
-      (error 'type-error "a function name is a symbol or (setf symbol)" name))
+      (error 'type-error :datum name
+                         :expected-type '(or symbol (cons (eql setf) (cons symbol null)))))
   name)
 
 ;;; The symbol whose function cell holds NAME's definition, or nil for a

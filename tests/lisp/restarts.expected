@@ -35,3 +35,9 @@
 => :FAILED
 => :TYPED
 => NIL
+=> 42
+=> :CONTROL-ERROR
+=> (5 (MEMBER T))
+=> :T-KEY
+=> :ERROR
+=> "Retry assertion with new value for X."

@@ -102,10 +102,17 @@
 ;;; ------------------------------------------------------------------------
 ;;; Making and using packages
 
+;;; A name already taken is a correctable error, as in SBCL: its `continue`
+;;; restart returns the package that has it (step B, #125).
 (defun make-package (name &key nicknames use)
   (let ((name (%designator-name name))
         (nicknames (%designator-names nicknames)))
-    (%check-names-free name nicknames nil)
+    (let ((taken (%package-with-a-name (cons name nicknames) nil)))
+      (when taken
+        (restart-case (%package-error taken "a package with that name already exists")
+          (continue ()
+            :report "Return the package that has the name."
+            (return-from make-package taken)))))
     (let ((package (make-%package :name name
                                   :nicknames nicknames
                                   :internals (make-hash-table :test 'equal)
@@ -117,10 +124,14 @@
 
 ;;; NAME and NICKNAMES name no package, other than PACKAGE itself.
 (defun %check-names-free (name nicknames package)
-  (dolist (each (cons name nicknames))
+  (let ((other (%package-with-a-name (cons name nicknames) package)))
+    (if other (%package-error other "a package with that name already exists"))))
+
+;;; A package other than PACKAGE that one of NAMES names, or nil.
+(defun %package-with-a-name (names package)
+  (dolist (each names nil)
     (let ((other (find-package each)))
-      (if (and other (not (eq other package)))
-          (%package-error other "a package with that name already exists")))))
+      (if (and other (not (eq other package))) (return other)))))
 
 ;;; Make each package in PACKAGES used by PACKAGE: its external symbols become
 ;;; visible in PACKAGE without a prefix. Each is checked for name conflicts
@@ -380,13 +391,22 @@
 ;;; itself lives in are refused.
 (defun delete-package (designator)
   (let ((package (if (%package-p designator) designator (find-package designator))))
+    ;; No such package is a correctable error (CLHS): continued, nothing
+    ;; is deleted and the answer is nil.
     (cond ((null package)
-           (%package-error designator "there is no package with that name"))
+           (restart-case (%package-error designator "there is no package with that name")
+             (continue () :report "Return nil, deleting nothing." nil)))
           ((null (%package-name package)) nil)
           ((member package (list %common-lisp-package %keyword-package %quokka-package))
            (%package-error package "a package the system needs cannot be deleted"))
+          ;; A correctable error (CLHS): continued, the package is no
+          ;; longer used by those that used it, and then deleted.
           ((%package-used-by package)
-           (%package-error package "a package used by another cannot be deleted"))
+           (restart-case (%package-error package "a package used by another cannot be deleted")
+             (continue ()
+               :report "Stop the packages that use it from using it, and delete it."
+               (dolist (user (%package-used-by package)) (unuse-package package user))
+               (delete-package package))))
           (t (unuse-package (%package-uses package) package)
              (setq %all-packages (remove package %all-packages))
              (dolist (symbol (%present-symbols package))
@@ -672,13 +692,17 @@
       (if (eq (car option) :export) (export (%intern-all (cdr option) package) package)))
     package))
 
-;;; The symbols named NAMES accessible in package FROM; each must exist.
+;;; The symbols named NAMES accessible in package FROM; each must exist. One
+;;; that does not is a correctable error, as in SBCL: its `continue`
+;;; restart leaves the name out.
 (defun %symbols-from (from names)
-  (let ((package (%the-package from)))
-    (mapcar (lambda (designator)
-              (multiple-value-bind (symbol status) (find-symbol (%designator-name designator) package)
-                (if status symbol (%package-error package "defpackage names a symbol that does not exist"))))
-            names)))
+  (let ((package (%the-package from)) (found nil))
+    (dolist (designator names (nreverse found))
+      (multiple-value-bind (symbol status) (find-symbol (%designator-name designator) package)
+        (if status
+            (push symbol found)
+            (restart-case (%package-error package "defpackage names a symbol that does not exist")
+              (continue () :report "Leave the name out." nil)))))))
 
 (defun %intern-all (designators package)
   (if (endp designators)

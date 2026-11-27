@@ -109,6 +109,7 @@
 - [Handlers that do not unwind](part-8-conditions/80-handlers-that-do-not-unwind.md)
 - [The machine's errors](part-8-conditions/81-the-machines-errors.md)
 - [Restarts](part-8-conditions/82-restarts.md)
+- [Measuring conditions](part-8-conditions/83-measuring-conditions.md)
 
 # Looking ahead
 

@@ -418,7 +418,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1941 :REPLACED 1525)".into())],
+        [Outcome::Value("(:FORMS 1946 :REPLACED 1529)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -494,7 +494,6 @@ fn a_rebuild_keeps_classes_and_their_instances() {
     );
 }
 
-/// What only Quokka can be held to (#124): the default `#<...>` of an
 /// `*debugger-hook*` is called when an error reaches the debugger, with the
 /// condition and itself, and bound to nil while it runs (#125). SBCL cannot
 /// be the oracle here: under `--script` its own debugger hook runs first and
@@ -516,6 +515,7 @@ fn the_debugger_hook_sees_an_unhandled_error() {
     );
 }
 
+/// What only Quokka can be held to (#124): the default `#<...>` of an
 /// instance, a condition and the metaobjects, which SBCL writes with an
 /// address Quokka does not have.
 #[test]

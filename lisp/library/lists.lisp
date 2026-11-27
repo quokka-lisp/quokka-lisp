@@ -140,9 +140,21 @@
 (defmacro ecase (keyform &body clauses)
   (let ((key (gensym "KEY")))
     `(let ((,key ,keyform))
-       (cond ,@(%case-clauses key clauses nil)
+       (cond ,@(%case-clauses key (%literal-keys clauses) nil)
              (t (error 'type-error :datum ,key
                                    :expected-type '(member ,@(%ecase-keys clauses))))))))
+
+;;; An `ecase` or `ccase` has no catch-all clause: `t` and `otherwise` are
+;;; keys there like any other symbol, as SBCL takes them, so `(ecase 1 (t
+;;; nil))` signals. `%case-clauses` takes them as `case`'s catch-alls, so
+;;; they are put in a list of one first.
+(defun %literal-keys (clauses)
+  (if (null clauses)
+      nil
+      (cons (if (member (car (car clauses)) '(t otherwise))
+                (cons (list (car (car clauses))) (cdr (car clauses)))
+                (car clauses))
+            (%literal-keys (cdr clauses)))))
 
 ;;; Every key of CLAUSES, for the type an `ecase` error expects. Plain
 ;;; recursion: `dolist` is defined further down this file.
@@ -425,7 +437,7 @@
 (defun endp (object)
   (cond ((consp object) nil)
         ((null object) t)
-        (t (error 'type-error "endp wants a list" object))))
+        (t (error 'type-error :datum object :expected-type 'list))))
 
 ;;; A count that is not a non-negative integer is a `type-error`, here and
 ;;; in `last`, `butlast` and `nbutlast`, which check through this (#75).
@@ -560,6 +572,9 @@
 
 ;;; LIST up to OBJECT, copied; a dotted end that OBJECT is not stays on.
 (defun ldiff (list object)
+  ;; A list, possibly dotted; an atom alone is not one (SBCL, ansi-test).
+  (unless (listp list)
+    (error 'type-error :datum list :expected-type 'list))
   (do ((tail list (cdr tail))
        (out nil (cons (car tail) out)))
       ((or (eql tail object) (atom tail))

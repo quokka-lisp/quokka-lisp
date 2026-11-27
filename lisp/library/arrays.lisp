@@ -28,7 +28,7 @@
 (defun bit-vector-p (object) (and (vectorp object) (eql (%array-kind (%storage object)) 3)))
 
 (defun %check-array (object)
-  (if (not (arrayp object)) (error 'type-error "not an array" object))
+  (if (not (arrayp object)) (error 'type-error :datum object :expected-type 'array))
   object)
 
 ;;; The simple array an array's elements are in, and the index there of its

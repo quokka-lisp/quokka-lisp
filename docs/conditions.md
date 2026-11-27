@@ -1,6 +1,6 @@
 # Conditions in Quokka: design
 
-*Status: decided 27 Nov 2026 (#125), being built. Phase 3, step B.*
+*Status: built, 27 Nov 2026 (#125), in five sub-steps, book chapters 79 to 83. Phase 3, step B.*
 
 This document says how Quokka's condition system is built, and in what order,
 closely enough that it can be built from. As for CLOS (`docs/clos.md`), a
@@ -51,9 +51,11 @@ The seven decisions argued on #125, taken as recommended:
    `restart-case` expands into `restart-bind` and a non-local exit, as
    SBCL's does.
 5. **An error nobody handles** goes to `invoke-debugger`, which runs
-   `*debugger-hook*`, and with no hook reports the condition on
-   `*error-output*` and invokes the innermost `abort` restart; with none,
-   the machine halts as it does today. The debugger itself is step F.
+   `*debugger-hook*`, and if that returns or there is none, invokes the
+   innermost `abort` restart; the host loop's is told the condition, through
+   `%aborted-condition`, and reports it. With no `abort` restart, the machine
+   halts as it always has. The debugger itself is step F; until then `break`
+   and `*break-on-signals*` end the form as an unhandled error would.
 6. **Reports**: `define-condition`'s `:report` becomes what `print-object`
    prints when `*print-escape*` is false; `simple-condition`'s format
    control is formatted when the condition is reported.
@@ -112,10 +114,11 @@ call to the place of the handler's cluster, and the walk, meeting that
 binding, jumps below it. Handlers a handler establishes itself are above the
 binding and stay visible.
 
-**The REPL.** `%host-step` already catches every error with a
-`handler-case` and returns it to the host, which prints it and reads the next
-form. It keeps doing that in this step; an `abort` restart around each form
-comes with the debugger (step F), where it has something to choose between.
+**The REPL.** `%host-step` caught every error with a `handler-case` and
+returned it to the host. Since sub-step 4 it offers an `abort` restart around
+each form instead, as decision 5 asked, so that an unhandled error reaches the
+debugger and a program's `*debugger-hook*`, as at SBCL's top level; the
+restart tells the host what went wrong.
 
 ## Order of work
 

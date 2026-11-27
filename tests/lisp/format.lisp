@@ -100,3 +100,21 @@
 ;; Errors in the control string or the arguments.
 (handler-case (format nil "~A") (error () 'too-few-arguments))
 (handler-case (format nil "~{~A") (error () 'unclosed))
+
+;; ~^ with parameters (CLHS 22.3.9.2), numbers and characters (#125).
+(format nil "~{~#,3^~A~}" '(1 2 3 4 5 6 7 8 9 10))
+(format nil "~{~2,#^~A~}~A" '(1 2 3 4 5 6 7 8 9 10) 0)
+(format nil "~{~1,#,3^~A~}" '(1 2 3 4 5))
+(format nil "~{~'X^~A~}" '(1 2 3))
+(format nil "~{~'X,'X^~A~}" '(1 2 3))
+(format nil "~{~'a,'b,'c^~A~}" '(1 2 3))
+;; ~^ inside ~? ends only the ~?, inside ~( the case conversion.
+(format nil "~AY~?X~A" 1 "~A~0^~A" '(2 4) 3)
+(format nil "~(~A~^~A~)" 'ABC)
+;; ~? takes a function as its control; a ~{ whose body is a tilde-newline
+;; has a body.
+(format nil "~?" (formatter "<~A>") '(5))
+(format nil "~@?~A" (formatter "<~A>") 5 6)
+(format nil (concatenate 'string "~{~" (string #\Newline) "~}") nil)
+;; ~F of a value that rounds to zeros.
+(format nil "~3F|~4F|~5F" 0.000001d0 0.000001d0 0.000001d0)

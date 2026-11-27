@@ -25,7 +25,7 @@
 ;;; one left empty), its modifiers, and for `~[ ~{ ~(` the clauses inside it,
 ;;; each itself a list of items. DEFAULT is true when `~[`'s last clause
 ;;; follows `~:;`; ONCE when `~{` was closed by `~:}`.
-(defstruct %format-directive char params colon at clauses default once)
+(defstruct %format-directive char params colon at clauses default once empty)
 
 ;;; The items of CONTROL, a list of strings and directives.
 (defun %parse-control (control)
@@ -79,6 +79,14 @@
 ;;; Read the clauses of a `~[`, `~{` or `~(` that ends at I, into DIRECTIVE,
 ;;; and return the index after its closing directive.
 (defun %parse-nested (control i directive)
+  ;; `~{~}` with nothing at all between takes its control from the
+  ;; arguments; a body of only a tilde-newline is a body that prints
+  ;; nothing, so the text, not the items, decides.
+  (if (and (< (+ i 1) (length control)) (char= (char control i) #\~)
+           (or (char= (char control (+ i 1)) #\})
+               (and (< (+ i 2) (length control)) (char= (char control (+ i 1)) #\:)
+                    (char= (char control (+ i 2)) #\}))))
+      (setf (%format-directive-empty directive) t))
   (let ((close (cdr (assoc (%format-directive-char directive)
                            '((#\[ . #\]) (#\{ . #\}) (#\( . #\))))))
         (clauses nil))
@@ -186,10 +194,13 @@
       ((char= c #\B) (%format-integer directive stream args 2 nil))
       ((char= c #\O) (%format-integer directive stream args 8 nil))
       ((char= c #\X) (%format-integer directive stream args 16 nil))
+      ;; With no radix, or a `V` radix that is nil, ~R prints English or
+      ;; Roman numerals, which basic format does not have.
       ((char= c #\R)
-       (if (%format-directive-params directive)
+       (if (let ((radix (car (%format-directive-params directive))))
+             (if (eq radix :v) (car (%format-args-rest args)) radix))
            (%format-integer directive stream args nil t)
-           (error "format: ~~R without a radix (English and Roman numerals) is not supported")))
+           (error "format: ~~R without a radix (English and Roman numerals) is a directive basic format does not have")))
       ((char= c #\C) (%format-character (%next-arg args) stream colon at))
       ((char= c #\F) (%format-fixed directive stream args))
       ((char= c #\E) (%format-exponential directive stream args))
@@ -329,7 +340,7 @@
 (defun %format-iteration (directive stream args colon at)
   (let* ((body (first (%format-directive-clauses directive)))
          (limit (car (%params directive args '(nil))))
-         (control (if body nil (%next-arg args)))
+         (control (if (%format-directive-empty directive) (%next-arg args) nil))
          (body (if (stringp control) (%parse-control control) body))
          (function (if (stringp control) nil control))
          (source (if at nil (%next-arg args)))
@@ -356,23 +367,47 @@
 
 ;;; ~^: stop if nothing is left. Inside ~:{ it ends the step, and ~:^ the
 ;;; whole iteration; elsewhere it ends the innermost ~{, or the whole format.
+;;;
+;;; With parameters it stops on a comparison instead (CLHS 22.3.9.2): one
+;;; parameter, when it is zero; two, when they are equal; three, when they
+;;; are in order, the first no greater than the second and the second no
+;;; greater than the third. Each may be `V` or `#`, the arguments left.
+;;; A parameter left out between two given ones is absent, not zero.
 (defun %format-escape (directive args colon)
-  (let ((given (%format-directive-params directive)))
-    (if (cond (given (zerop (car (%params directive args '(0)))))
-              (colon (zerop (%args-left %format-steps)))
-              (t (zerop (%args-left args))))
+  (let* ((given (remove nil (%params directive args '(nil nil nil))))
+         (stop (case (length given)
+                 (0 (if colon
+                        (zerop (%args-left %format-steps))
+                        (zerop (%args-left args))))
+                 ;; The parameters may be characters, `~'a,'a^`: two are
+                 ;; compared with `eql`, and a character is never zero.
+                 ;; Three are numbers, as SBCL requires: characters there
+                 ;; are a `type-error`.
+                 (1 (and (numberp (first given)) (zerop (first given))))
+                 (2 (if (and (numberp (first given)) (numberp (second given)))
+                        (= (first given) (second given))
+                        (eql (first given) (second given))))
+                 (t (<= (first given) (second given) (third given))))))
+    (if stop
         (throw (if colon 'format-iteration %format-escape-tag) nil))))
 
 ;;; ~(…~): the clause's output in lower case; `:` capitalises every word,
-;;; `@` only the first, `:@` upper case.
+;;; `@` only the first, `:@` upper case. A ~^ inside ends the clause and the
+;;; construct around it, and what the clause printed before it is still
+;;; printed, converted.
 (defun %format-case (directive stream args colon at)
-  (let ((text (with-output-to-string (out)
-                (%run-items (first (%format-directive-clauses directive)) out args))))
+  (let* ((tag %format-escape-tag)
+         (escaped t)
+         (text (with-output-to-string (out)
+                 (catch tag
+                   (%run-items (first (%format-directive-clauses directive)) out args)
+                   (setq escaped nil)))))
     (write-string (cond ((and colon at) (string-upcase text))
                         (colon (string-capitalize text))
                         (at (%capitalize-first text))
                         (t (string-downcase text)))
-                  stream)))
+                  stream)
+    (if escaped (throw tag nil))))
 
 (defun %capitalize-first (text)
   (let ((out (string-downcase text)))
@@ -381,14 +416,23 @@
         (setf (char out i) (char-upcase (char out i)))
         (return out)))))
 
-;;; ~?: a control string from the arguments, with a list of arguments after
-;;; it — or, with `@`, using the arguments that remain.
+;;; ~?: a format control from the arguments, with a list of arguments after
+;;; it — or, with `@`, using the arguments that remain. The control may be
+;;; a string or a function, as `formatter` makes. A ~^ inside ends only the
+;;; ~? (CLHS 22.3.7.6).
 (defun %format-indirect (stream args at)
-  (let ((control (%parse-control (%next-arg args))))
+  (let ((control (%next-arg args)))
     (if at
-        (%run-items control stream args)
+        (%format-indirect-run control stream args)
         (let ((list (%next-arg args)))
-          (%run-items control stream (make-%format-args :all list :rest list))))))
+          (%format-indirect-run control stream (make-%format-args :all list :rest list))))))
+
+(defun %format-indirect-run (control stream state)
+  (catch 'format-indirect
+    (let ((%format-escape-tag 'format-indirect))
+      (if (functionp control)
+          (setf (%format-args-rest state) (apply control stream (%format-args-rest state)))
+          (%run-items (%parse-control control) stream state)))))
 
 ;;; ------------------------------------------------------------------------
 ;;; format and formatter
@@ -510,12 +554,18 @@
                  ;; one digit at least: (format nil "~1F" 0.5) is ".5". It
                  ;; was "1.", rounded to no digits to make room for a zero
                  ;; that was not going to be printed (#114).
-                 (%fixed-body x nil
-                              (if (and (> (length shortest) 1)
-                                       (string= (subseq shortest 0 2) "0."))
-                                  (max 1 (- room 1))
-                                  (max 0 (- room point 1)))
-                              k sign-length))))))
+                 (let ((rounded (%fixed-body x nil
+                                             (if (and (> (length shortest) 1)
+                                                      (string= (subseq shortest 0 2) "0."))
+                                                 (max 1 (- room 1))
+                                                 (max 0 (- room point 1)))
+                                             k sign-length)))
+                   ;; A value that rounds to nothing but zeros is printed
+                   ;; as zero is, `0.0` where it fits, as SBCL prints it:
+                   ;; (format nil "~3F" 0.000001) is "0.0", not ".00".
+                   (if (and (not (zerop x)) (every (lambda (c) (member c '(#\0 #\.))) rounded))
+                       (%fixed-body (float 0 x) w nil k sign-length)
+                       rounded)))))))
 
 ;;; ~w,d,e,k,overflowchar,padchar,exptcharE — a mantissa and a power of
 ;;; ten. K digits before the point (default 1); with D, D-K+1 after it, or

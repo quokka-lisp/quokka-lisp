@@ -342,6 +342,7 @@ Each chapter answers one question.
 | 80 | [Handlers that do not unwind](part-8-conditions/80-handlers-that-do-not-unwind.md) | How does a handler run where the error happened, and decline, and how do two kinds of handler find each other on one stack? |
 | 81 | [The machine's errors](part-8-conditions/81-the-machines-errors.md) | How does an error the machine finds become a condition that knows which value was wrong? |
 | 82 | [Restarts](part-8-conditions/82-restarts.md) | How does the code that found an error offer ways out, and the code that knows what it wants choose one? |
+| 83 | [Measuring conditions](part-8-conditions/83-measuring-conditions.md) | What did ansi-test find once `assert` and the condition system existed, and how was each failure explained? |
 | — | [The environment, on paper](looking-ahead/the-environment-on-paper.md) | What will a person see and use once phases 4 to 6 are built, and what changes when a program is a live database of definitions instead of a pile of files? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
@@ -378,8 +379,8 @@ Still to come, and deliberately so:
   protocol's readers and the measurement of CLOS as a whole. Chapter 79
   makes conditions instances of condition classes, and chapter 80 adds
   handlers that run where a condition is signalled, and chapter 81 sends
-  the machine's own errors through them; chapter 82 adds restarts. Still
-  to come are the
+  the machine's own errors through them; chapter 82 adds restarts, and
+  chapter 83 measures the whole. Still to come are the
   rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a

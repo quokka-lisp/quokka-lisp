@@ -48,6 +48,7 @@ const GROUPS: &[&str] = &[
     "structures",
     "types-and-classes",
     "objects",
+    "conditions",
 ];
 
 /// What ansi-test's own loader (`gclload1.lsp`) loads before any group:

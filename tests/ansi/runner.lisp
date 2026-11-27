@@ -610,6 +610,11 @@
                               defsetf define-modify-macro defclass define-condition deftype))
                (let ((name (second form)))
                  (if (and (consp name) (eq (car name) 'setf)) nil (list name))))
+              ;; The suite's DEFINE-CONDITION-WITH-TESTS takes
+              ;; `define-condition`'s syntax, and its expansion uses LOOP:
+              ;; the condition and its readers and writers are what it defines.
+              ((and (symbolp head) (string= (symbol-name head) "DEFINE-CONDITION-WITH-TESTS"))
+               (cons (second form) (%slot-function-names (fourth form))))
               ;; The suite's DEFSTRUCT-WITH-TESTS takes `defstruct`'s syntax.
               ((or (eq head 'defstruct)
                    (and (symbolp head) (string= (symbol-name head) "DEFSTRUCT-WITH-TESTS")))
@@ -625,6 +630,17 @@
                  (dolist (sub (cdr form) names)
                    (setq names (append (%defined-names sub) names)))))
               (t nil)))))
+
+;;; The readers, writers and accessors named in SLOT-SPECS, `defclass`'s or
+;;; `define-condition`'s; a `(setf name)` writer names no symbol of its own.
+(defun %slot-function-names (slot-specs)
+  (let ((names nil))
+    (dolist (spec slot-specs names)
+      (when (consp spec)
+        (do ((rest (cdr spec) (cddr rest)))
+            ((not (consp (cdr rest))))
+          (when (and (member (car rest) '(:reader :writer :accessor)) (symbolp (cadr rest)))
+            (push (cadr rest) names)))))))
 
 (defun %struct-names (spec slots)
   (let* ((name (if (consp spec) (car spec) spec))
@@ -664,6 +680,10 @@
              (cond
                (lost
                 (let ((needs (%needs form)))
+                  ;; A form that makes tests may define things as well, as
+                  ;; DEFINE-CONDITION-WITH-TESTS defines a condition: the
+                  ;; tests that use them need what it needed.
+                  (if needs (%break names needs))
                   (if needs
                       (format nil "NEEDS ~A ~{~A~^ ~}" lost needs)
                       (format nil "FAIL ~A expansion: ~A" lost (%one-line failure)))))
