@@ -1277,21 +1277,64 @@
 (defmethod slot-unbound ((class t) instance slot-name)
   (%slot-unbound instance slot-name))
 
-;;; `%method-initargs`' answers, by class and list of functions, each with
-;;; the epoch it was computed in: it depends only on those, and
-;;; `make-instance` asks on every call.
+;;; `%valid-initargs`' answers, by class and list of functions, each with
+;;; the epoch it was computed in: an answer depends only on the class, its
+;;; slots and the methods, and `make-instance` asks on every call. The list
+;;; of functions is a constant of its caller, so `eq` finds it.
 (defvar %method-initargs-cache (make-hash-table :test 'eq))
 
-(defun %method-initargs (class functions)
+(defun %valid-initargs (class functions)
   (let* ((entries (gethash class %method-initargs-cache))
-         (entry (assoc functions entries)))
+         (entry (%assoc-eq functions entries)))
     (if (and entry (eq (second entry) %dispatch-epoch))
-        (values (third entry) (fourth entry))
-        (multiple-value-bind (keys any) (%compute-method-initargs class functions)
+        (third entry)
+        (let ((valid (%compute-valid-initargs class functions nil)))
           (setf (gethash class %method-initargs-cache)
-                (cons (list functions %dispatch-epoch keys any)
+                (cons (list functions %dispatch-epoch valid)
                       (remove functions entries :key #'car)))
-          (values keys any)))))
+          valid))))
+
+;;; The methods this file defines on `allocate-instance`,
+;;; `initialize-instance` and `shared-initialize` for standard objects. A
+;;; class to which no other method of the three applies is *plain*, and
+;;; `%make-instance` makes its instances without calling them. They are
+;;; found right after their `defmethod`s, so that a rebuild, which runs
+;;; this file in a world that may hold a program's own methods, takes the
+;;; ones just defined.
+(defvar %standard-initialization-methods nil)
+(setq %standard-initialization-methods
+      (list (find-method #'allocate-instance nil (list (find-class 'standard-class)))
+            (find-method #'allocate-instance nil
+                         (list (find-class 'funcallable-standard-class)))
+            (find-method #'initialize-instance nil (list (find-class 'standard-object)))
+            (find-method #'shared-initialize nil
+                         (list (find-class 'standard-object) (find-class t)))))
+
+(defvar %plain-class-cache (make-hash-table :test 'eq))
+
+(defun %plain-initialization-p (class)
+  (let ((entry (gethash class %plain-class-cache)))
+    (if (and entry (eq (car entry) %dispatch-epoch))
+        (cdr entry)
+        (let ((plain (and (%only-standard-methods-p
+                           #'allocate-instance (%class-precedence-list (class-of class)))
+                          (%only-standard-methods-p
+                           #'initialize-instance (%class-precedence-list class))
+                          (%only-standard-methods-p
+                           #'shared-initialize (%class-precedence-list class)))))
+          (setf (gethash class %plain-class-cache) (cons %dispatch-epoch plain))
+          plain))))
+
+;;; Is every method of GF that could apply to an argument whose class
+;;; precedence list is CPL one of the standard ones? Judged by the first
+;;; specializer alone, and an `eql` specializer counts as applying: that
+;;; can only say "no" too often, which costs speed and nothing else.
+(defun %only-standard-methods-p (gf cpl)
+  (dolist (method (%gf-methods gf) t)
+    (let ((first (car (%method-specializers method))))
+      (when (and (or (%eql-specializer-p first) (%member-eq first cpl))
+                 (not (%member-eq method %standard-initialization-methods)))
+        (return nil)))))
 
 ;;; The keywords the applicable methods of the generic functions named in
 ;;; FUNCTIONS accept, for an instance of CLASS (CLHS 7.1.2), and whether one

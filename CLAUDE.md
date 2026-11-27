@@ -855,7 +855,15 @@ against the REPL's 5,000,000-step budget. **#162**: `slot-value`,
 in the wrapper's name vector (`%local-slot-index`), which is its location;
 only shared slots, structures and missing slots still look for the slot
 definition (`slot-value` 161 steps from 643, an accessor 496).
-Rebuild `(:FORMS 2420 :REPLACED 1753)`.
+**#163**: `%make-instance` skips the dispatches of `allocate-instance`,
+`initialize-instance` and `shared-initialize` for a *plain* class, one to
+which only this file's own methods of the three apply
+(`%plain-initialization-p`, cached with the epoch;
+`%standard-initialization-methods` is set right after their `defmethod`s —
+**a new standard method on any of the three must join that list**, or every
+class stops being plain); the valid initargs of a class are cached
+(`%valid-initargs`). `make-instance` of a plain class is 1,979 steps.
+Rebuild `(:FORMS 2426 :REPLACED 1756)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

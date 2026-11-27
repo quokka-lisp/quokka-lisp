@@ -906,20 +906,26 @@
 (defun %check-initargs (class initargs functions &optional previous)
   (unless (and (listp initargs) (evenp (length initargs)))
     (error 'program-error "an odd number of initialization arguments" initargs))
-  (multiple-value-bind (method-keys any)
-      ;; `change-class` passes the previous class too: rare enough to need
-      ;; no cache.
-      (if previous
-          (%compute-method-initargs class functions previous)
-          (%method-initargs class functions))
-   (unless (or any (getf initargs :allow-other-keys))
-    (let ((valid (cons :allow-other-keys method-keys)))
-      (dolist (slot (%class-slots class))
-        (setq valid (append (%slot-definition-initargs slot) valid)))
+  ;; `change-class` passes the previous class too: rare enough to need no
+  ;; cache.
+  (let ((valid (if previous
+                   (%compute-valid-initargs class functions previous)
+                   (%valid-initargs class functions))))
+    (unless (or (eq valid t) (getf initargs :allow-other-keys))
       (do ((rest initargs (cddr rest)))
           ((null rest))
-        (unless (member (car rest) valid)
-          (error 'program-error "an invalid initialization argument" (car rest))))))))
+        (unless (%member-eq (car rest) valid)
+          (error 'program-error "an invalid initialization argument" (car rest)))))))
+
+;;; The initargs CLASS accepts for FUNCTIONS, or t when it accepts any.
+(defun %compute-valid-initargs (class functions previous)
+  (multiple-value-bind (method-keys any)
+      (%compute-method-initargs class functions previous)
+    (if any
+        t
+        (let ((valid (cons :allow-other-keys method-keys)))
+          (dolist (slot (%class-slots class) valid)
+            (setq valid (append (%slot-definition-initargs slot) valid)))))))
 
 ;;; What the standard method of `make-instance` does (CLHS 7.1): the default
 ;;; initargs added, the initargs checked, then `allocate-instance` and
@@ -927,13 +933,22 @@
 (defun %make-instance (class &rest initargs)
   (let* ((class (%ensure-finalized (%class-designated class)))
          (initargs (%add-default-initargs class initargs)))
-    (unless (member (class-of class) (list (find-class 'standard-class)
-                                           (find-class 'funcallable-standard-class)))
+    (unless (or (eq (class-of class) (gethash 'standard-class %class-table))
+                (eq (class-of class) (gethash 'funcallable-standard-class %class-table)))
       (error "make-instance cannot make an instance of this class" (%class-name class)))
     (%check-initargs class initargs '(allocate-instance initialize-instance shared-initialize))
-    (let ((instance (apply #'allocate-instance class initargs)))
-      (apply #'initialize-instance instance initargs)
-      instance)))
+    ;; When only the standard methods of `allocate-instance`,
+    ;; `initialize-instance` and `shared-initialize` apply to the class,
+    ;; what they would do is done here without the three dispatches, which
+    ;; cost more than the work (#163). PCL calls this a constructor
+    ;; optimisation.
+    (if (%plain-initialization-p class)
+        (let ((instance (%allocate-instance class)))
+          (apply #'%shared-initialize instance t initargs)
+          instance)
+        (let ((instance (apply #'allocate-instance class initargs)))
+          (apply #'initialize-instance instance initargs)
+          instance))))
 
 (defun %reinitialize-instance (instance &rest initargs)
   (%ensure-current-instance instance)
