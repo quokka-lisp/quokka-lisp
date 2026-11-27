@@ -54,11 +54,19 @@
 ;;; for it. The text is taken for this form alone: an `eval` inside it, in a
 ;;; macro's expander say, sees none.
 (defun eval (form)
-  (let ((place %definition-place) (source %definition-source))
-    (multiple-value-prog1
-        (let ((%definition-place nil) (%definition-source nil))
-          (%eval-in form form))
-      (%record-definition form place source))))
+  (let ((place %definition-place) (source %definition-source)
+        ;; Around a defining form the compiler is asked what it refers to
+        ;; (`%references`, a compiler global, put back after).
+        (references (if (and %recording-definitions (%definition-key form)) (cons nil nil) nil))
+        (outer %references))
+    (setq %references references)
+    (unwind-protect
+         (multiple-value-prog1
+             (let ((%definition-place nil) (%definition-source nil))
+               (%eval-in form form))
+           (setq %references outer)
+           (%record-definition form place source references))
+      (setq %references outer))))
 
 (defun %eval-in (form context)
   (let ((form (macroexpand form)))

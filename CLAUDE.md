@@ -675,7 +675,15 @@ recorded**: `%rebuild-world` binds `%recording-definitions` nil.
 `%function-name` (a primitive) reads a compiled function's name;
 `function-lambda-expression` answers from a definition (the body in
 `defun`'s block). Text is cut only for a defining form (`%definition-place`,
-`%place-text`). Rebuild `(:FORMS 1966 :REPLACED 1541)`. Next: sub-step 2, cross-reference. Phase 2's scope was
+`%place-text`). Rebuild `(:FORMS 1966 :REPLACED 1541)`. **Sub-steps 2 and 3
+are done, and with them step C** (chapter 85): **the compiler notes
+references** into `%references`, a compiler global that `eval` sets around a
+defining form (`%note-reference`: global functions named, global macros
+expanded; decides nothing, so the fixpoint holds); `who-calls`,
+`who-macroexpands`; defining a macro marks what used it stale;
+`recompile-definition`, `recompile-stale-definitions`. Rebuild `(:FORMS 1978
+:REPLACED 1551)`; ansi-test unchanged, 12,568. **Next: phase 3 step
+D**, frames keep their original arguments (decided in #111; issue to open). Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

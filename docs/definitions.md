@@ -1,6 +1,6 @@
 # Definitions that keep their source: design
 
-*Status: decided 27 Nov 2026 (#55), being built. Phase 3, step C.*
+*Status: built, 27 Nov 2026 (#55), in three sub-steps, book chapters 84 and 85. Phase 3, step C.*
 
 This document says how a Quokka world comes to know its own definitions,
 closely enough to build from. It is the first concrete layer of what

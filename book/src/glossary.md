@@ -975,6 +975,9 @@ chosen for size rather than speed. ([24](part-3-compiling/24-why-compile-at-all.
 Popped slots are cleared, because every slot of a traced object is traced and
 a dead one would keep what it last held alive. ([25](part-3-compiling/25-a-machine-made-of-instructions.md))
 
+<a id="stale-definition"></a>
+**Stale (definition).** A definition whose compiled code is older than what its form now means, because a macro it expanded, or a name it called that has since become a macro, was defined after it was compiled. The world marks it, and recompiles it from its kept form when asked. ([85](part-9-definitions/85-who-uses-what.md))
+
 <a id="static-area"></a>
 **Static area.** The first words of the heap, which the collector copies verbatim and never relocates. A reference into it is therefore a compile-time constant, which is how `nil` can be an ordinary symbol *and* `Value::NIL` a Rust constant. `t` lives there too; the keyword package will. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
 

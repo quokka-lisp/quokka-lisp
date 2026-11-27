@@ -114,6 +114,7 @@
 # Part IX · Definitions
 
 - [Definitions keep their source](part-9-definitions/84-definitions-keep-their-source.md)
+- [Who uses what](part-9-definitions/85-who-uses-what.md)
 
 # Looking ahead
 

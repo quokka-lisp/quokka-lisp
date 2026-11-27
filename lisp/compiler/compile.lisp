@@ -572,6 +572,26 @@
 ;;; every code walker would have to learn.
 (setq %pending-name nil)
 
+;;; What the form being compiled refers to, for the world's cross-reference
+;;; (#55, `definitions.lisp`): nil when nobody asked, or a cons of the
+;;; global macros the form expanded and the global functions it named, which
+;;; whoever asked reads afterwards. A global, as the compiler's other state
+;;; is, since tier 0 has no special variables; `eval` sets it around a
+;;; defining form and puts it back. Only noted, never consulted: what the
+;;; compiler produces does not depend on it, so the fixpoint is untouched.
+(setq %references nil)
+
+(defun %note-reference (kind name)
+  (if %references
+      (if (eq kind ':macro)
+          (if (member name (car %references))
+              nil
+              (rplaca %references (cons name (car %references))))
+          (if (member name (cdr %references))
+              nil
+              (rplacd %references (cons name (cdr %references)))))
+      nil))
+
 (defun %assemble-lambda (params body names env)
   (let ((outer-code %code)
         (outer %constants)
@@ -618,7 +638,8 @@
          (let ((place (%lookup head env 0 ':function)))
            (if place
                (%emit (list 'FREF (car place) (cdr place)))
-               (%emit (list 'GFREF (%constant-index head))))))
+               (progn (%note-reference ':call head)
+                      (%emit (list 'GFREF (%constant-index head)))))))
         ;; `((lambda (x) ...) 1)` — a lambda expression in operator position,
         ;; which is a call like any other once the closure is on the stack.
         ((and (consp head) (eq (car head) 'lambda)) (%compile-lambda head env))
@@ -1619,7 +1640,8 @@
           ;; Otherwise a call — unless a compiler macro rewrites it (#65).
           (t (let ((expander (if (symbolp head) (%macro-function head) nil)))
                (if expander
-                   (%compile (%expand expander form env) env tail)
+                   (progn (%note-reference ':macro head)
+                          (%compile (%expand expander form env) env tail))
                    (let ((rewritten (%apply-compiler-macro form env)))
                      (if (eq rewritten form)
                          (%compile-call form env tail)

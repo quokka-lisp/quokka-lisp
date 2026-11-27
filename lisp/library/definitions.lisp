@@ -25,7 +25,17 @@
    (position :initarg :position :initform nil :reader definition-position)
    (package :initarg :package :initform nil :reader definition-package)
    (object :initarg :object :initform nil :reader definition-object)
-   (versions :initarg :versions :initform nil :accessor definition-versions)))
+   (versions :initarg :versions :initform nil :accessor definition-versions)
+   ;; What compiling it named: the global functions it calls and the
+   ;; macros it expanded (sub-step 2), for `who-calls` and staleness.
+   (calls :initarg :calls :initform nil :reader definition-calls)
+   (macros :initarg :macros :initform nil :reader definition-macros)
+   ;; True when a macro it expanded, or a name it called that is now a
+   ;; macro, has been defined since it was compiled: its code is older than
+   ;; what its form now means.
+   (stale :initarg :stale :initform nil :accessor definition-stale)
+   ;; The order definitions were made in, which recompiling follows.
+   (number :initarg :number :initform 0 :reader definition-number)))
 
 ;;; `#<DEFINITION :FUNCTION FOO>`.
 (defmethod print-object ((definition definition) stream)
@@ -97,11 +107,15 @@
              %definitions)
     found))
 
+;;; How many definitions the world has made, for their order.
+(defvar %definition-count 0)
+
 ;;; Record FORM, just evaluated, if it is a defining form, with the text
-;;; cut from PLACE if it came from one; the forms of a `progn` or an
-;;; `eval-when` that ran are each recorded, without text of their own (the
-;;; text of the whole is not any one of theirs).
-(defun %record-definition (form place source)
+;;; cut from PLACE if it came from one, and REFERENCES, the compiler's
+;;; (macros . calls), if they were collected; the forms of a `progn` or an
+;;; `eval-when` that ran are each recorded, without text or references of
+;;; their own (those of the whole are not any one of theirs).
+(defun %record-definition (form place source &optional references)
   (when %recording-definitions
     (cond ((and (consp form) (eq (car form) 'progn))
            (dolist (sub (cdr form)) (%record-definition sub nil source)))
@@ -118,13 +132,18 @@
                                             :source source :position position
                                             :package *package*
                                             :object (%definition-object kind name)
+                                            :macros (reverse (car references))
+                                            :calls (reverse (cdr references))
+                                            :number (setq %definition-count
+                                                          (+ %definition-count 1))
                                             :versions (if old
                                                           (cons old (definition-versions old))
                                                           nil))))
                    ;; The old definition is a version now; its own versions
                    ;; are the new one's, so the history is one list.
                    (when old (setf (definition-versions old) nil))
-                   (setf (gethash key %definitions) new)))))))))
+                   (setf (gethash key %definitions) new)
+                   (when (eq kind :macro) (%mark-stale name))))))))))
 
 ;;; What a definition made, where there is one object to point at.
 (defun %definition-object (kind name)
@@ -151,6 +170,13 @@
 ;;; 2. A comment at the end of its last line is its own, and is not the next
 ;;;    definition's: `(defvar *n* 0)   ; how many` keeps its note.
 (defun %place-text (place)
+  (cond ((typep place 'definition)
+         ;; Recompiling: the definition's own text, as it was read.
+         (values (definition-text place) (definition-position place)))
+        (place (%place-text-cut place))
+        (t (values nil nil))))
+
+(defun %place-text-cut (place)
   (if place
       (destructuring-bind (string start end limit) place
         (let ((text-start (min (%own-comments-start string start limit) end))
@@ -211,3 +237,73 @@
                nil))
          (%definition-source source))
     (eval form)))
+
+;;; ------------------------------------------------------------------------
+;;; Cross-reference and staleness (sub-step 2)
+;;;
+;;; The compiler notes, for the form it compiles, the global functions it
+;;; names and the macros it expands (`%note-reference`, when `%references`
+;;; asks it to), and a definition keeps them. A macro is expanded when its
+;;; caller is compiled, so redefining it leaves every caller with the old
+;;; expansion; now the world knows which those are, and marks them stale. It
+;;; does not recompile them at once, as Genera's *Compile Changed
+;;; Definitions* is a command: a program changing several macros should not
+;;; recompile on each. `recompile-stale-definitions` does it when asked.
+
+;;; Every definition in the world, in the order it was made.
+(defun all-definitions ()
+  (let ((found nil))
+    (maphash (lambda (key definition) key (push definition found)) %definitions)
+    (sort found #'< :key #'definition-number)))
+
+;;; The definitions whose code calls the global function NAME, and those
+;;; whose code expanded the macro NAME (SBCL's `sb-introspect` names).
+(defun who-calls (name)
+  (remove-if-not (lambda (definition) (member name (definition-calls definition)))
+                 (all-definitions)))
+
+(defun who-macroexpands (name)
+  (remove-if-not (lambda (definition) (member name (definition-macros definition)))
+                 (all-definitions)))
+
+;;; The macro NAME was just defined: whatever expanded it, or called NAME as
+;;; a function before it was a macro, was compiled for something else.
+(defun %mark-stale (name)
+  (maphash (lambda (key definition)
+             key
+             (when (or (member name (definition-macros definition))
+                       (member name (definition-calls definition)))
+               (setf (definition-stale definition) t)))
+           %definitions))
+
+(defun stale-definitions ()
+  (remove-if-not #'definition-stale (all-definitions)))
+
+;;; ------------------------------------------------------------------------
+;;; Recompiling (sub-step 3)
+
+;;; Evaluate DEFINITION's form again, in the package it was read in, as a
+;;; new version of it with the same text and place: what a changed macro
+;;; now means is compiled in. Returns the new definition.
+(defun recompile-definition (definition)
+  (let ((%definition-place definition)
+        (%definition-source (definition-source definition))
+        (*package* (or (definition-package definition) *package*)))
+    (eval (definition-form definition)))
+  (gethash (cons (definition-kind definition) (definition-name definition)) %definitions))
+
+;;; Recompile every stale definition, in the order they were made, so that
+;;; a macro is compiled before what uses it. Recompiling a macro can make
+;;; others stale; they are recompiled too, but none twice, so a macro that
+;;; uses itself does not go round for ever. Returns what was recompiled.
+(defun recompile-stale-definitions ()
+  (let ((done nil))
+    (do ((stale (stale-definitions) (stale-definitions)))
+        ((null (set-difference stale done :key #'definition-key :test #'equal))
+         (nreverse done))
+      (dolist (definition stale)
+        (unless (member (definition-key definition) done :key #'definition-key :test #'equal)
+          (push (recompile-definition definition) done))))))
+
+(defun definition-key (definition)
+  (cons (definition-kind definition) (definition-name definition)))

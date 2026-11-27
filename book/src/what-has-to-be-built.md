@@ -344,6 +344,7 @@ Each chapter answers one question.
 | 82 | [Restarts](part-8-conditions/82-restarts.md) | How does the code that found an error offer ways out, and the code that knows what it wants choose one? |
 | 83 | [Measuring conditions](part-8-conditions/83-measuring-conditions.md) | What did ansi-test find once `assert` and the condition system existed, and how was each failure explained? |
 | 84 | [Definitions keep their source](part-9-definitions/84-definitions-keep-their-source.md) | How does a world remember what its definitions said, and which comments belong to each? |
+| 85 | [Who uses what](part-9-definitions/85-who-uses-what.md) | How does a world know what a changed macro has left out of date, and recompile it? |
 | — | [The environment, on paper](looking-ahead/the-environment-on-paper.md) | What will a person see and use once phases 4 to 6 are built, and what changes when a program is a live database of definitions instead of a pile of files? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
@@ -382,7 +383,8 @@ Still to come, and deliberately so:
   handlers that run where a condition is signalled, and chapter 81 sends
   the machine's own errors through them; chapter 82 adds restarts, and
   chapter 83 measures the whole. Chapter 84 begins Part IX, the world's
-  definitions, which keep their source. Still to come are the
+  definitions, which keep their source, and chapter 85 what they use.
+  Still to come are the
   rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a
   compact instruction set faster than anything can walk a tree, and a

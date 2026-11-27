@@ -418,7 +418,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1966 :REPLACED 1541)".into())],
+        [Outcome::Value("(:FORMS 1978 :REPLACED 1551)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -553,6 +553,38 @@ fn definitions_keep_their_source() {
          => IN-PROGN-B\n=> (T T)\n=> NIL\n=> NIL\n=> EARLY\n=> :YES\n=> T\n\
          => \";; own\r\n(defun crlf-f () 1)\"\n=> #<PACKAGE \"DPK\">\n=> #<PACKAGE \"DPK\">\n=> 1\n\
          => T\n=> \"(defvar *bounded* 1)\"\n=> NIL\n"
+    );
+}
+
+/// Cross-reference and recompilation (#55, sub-steps 2 and 3): a
+/// definition knows the functions it calls and the macros it expanded;
+/// redefining a macro marks what expanded it stale, and so does defining a
+/// macro under a name a definition called as a function; recompiling a
+/// stale definition evaluates its kept form again, keeping its text.
+#[test]
+fn definitions_know_their_references() {
+    let out = run_compiled(
+        "(defmacro xm (x) `(+ ,x 1)) \
+         (defun xf (y) (xm y)) \
+         (defun xg (y) (xf y)) \
+         (mapcar #'quokka::definition-name (quokka::who-calls 'xf)) \
+         (mapcar #'quokka::definition-name (quokka::who-macroexpands 'xm)) \
+         (xf 1) \
+         (defmacro xm (x) `(+ ,x 100)) \
+         (list (xf 1) (mapcar #'quokka::definition-name (quokka::stale-definitions))) \
+         (mapcar #'quokka::definition-name (quokka::recompile-stale-definitions)) \
+         (list (xf 1) (quokka::stale-definitions)) \
+         (quokka::definition-text (quokka::find-definition 'xf)) \
+         (length (quokka::definition-versions (quokka::find-definition 'xf))) \
+         (defun xh (y) (later-m y)) \
+         (defmacro later-m (x) (list 'quote x)) \
+         (mapcar #'quokka::definition-name (quokka::stale-definitions)) \
+         (progn (quokka::recompile-stale-definitions) (xh 5))",
+    );
+    assert_eq!(
+        out,
+        "=> XM\n=> XF\n=> XG\n=> (XG)\n=> (XF)\n=> 2\n=> XM\n=> (2 (XF))\n=> (XF)\n\
+         => (101 NIL)\n=> \"(defun xf (y) (xm y))\"\n=> 1\n=> XH\n=> LATER-M\n=> (XH)\n=> Y\n"
     );
 }
 
