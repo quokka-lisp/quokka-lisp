@@ -624,7 +624,7 @@ through the prelude's `%condition-type-of`/`%condition-message-of`: **never
 redefine the primitives `%condition-type`/`%condition-message`**. Machine
 errors still unwind straight to `handler-case` until sub-step 3. The
 library's `unbound-slot` and `coerce` errors now pass CLHS initargs; the ansi
-runner reads conditions with `%condition-message-of`. Rebuild `(:FORMS 1900
+runner reads conditions with `%condition-message-of`. Rebuild `(:FORMS 1901
 :REPLACED 1492)`; ansi-test **10,805**, one plain failure (`MAKUNBOUND.2`,
 a machine error's `cell-error-name`, sub-step 3). Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

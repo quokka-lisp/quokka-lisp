@@ -203,12 +203,15 @@
       (when report (return report)))))
 
 ;;; A condition's message as text, for a person to read: what a host prints
-;;; for an error nobody handled (`%host-step`).
+;;; for an error nobody handled (`%host-step`). A report that itself fails
+;;; gives SBCL's `#<error printing a BAD>`: the error it signals is reported
+;;; by this function too, and would fail again, for ever.
 (defun %condition-text (condition)
   (if (%conditionp condition)
       (let ((message (%condition-message condition)))
         (if (stringp message) message (princ-to-string message)))
-      (princ-to-string condition)))
+      (handler-case (princ-to-string condition)
+        (error () (format nil "#<error printing a ~A>" (%condition-type-of condition))))))
 
 ;;; The standard types' reports, in SBCL's words, as SBCL prints them with
 ;;; `*print-pretty*` false: with it true SBCL breaks the longer ones over
@@ -289,6 +292,11 @@
 ;;; handler sees only the handlers outside its own (CLHS 9.1.4.1).
 (defvar %handler-floor nil)
 
+;;; CLHS's: a condition of this type, when signalled, enters the debugger
+;;; before any handler sees it. Defined now so that a program's binding of
+;;; it is special; consulted once there is a debugger to enter (step F).
+(defvar *break-on-signals* nil)
+
 ;;; `(handler-bind ((type handler)...) form...)`: each HANDLER is a form
 ;;; whose value is a function designator, evaluated now, in order.
 (defmacro handler-bind (bindings &body forms)
@@ -305,17 +313,21 @@
 ;;; the floor set, and if it returns, the search goes on: first through the
 ;;; rest of its own cluster, in order, then outwards. Returns nil when no
 ;;; handler took a non-local exit.
+;;;
+;;; The floor is set for the type tests too, as SBCL's is: `typep` may
+;;; itself signal, for a type nobody defined or a `satisfies` predicate
+;;; that fails, and that error must go outwards. Searched from the top
+;;; again it would meet the same test and fail again, for ever.
 (defun %signal (condition)
   (dolist (entry (%handler-marks '%handler-clusters '%handler-floor) nil)
-    (let ((place (cadr entry)))
+    (let ((%handler-floor (cadr entry)))
       (if (eql (car entry) 0)
           (dolist (clause (cddr entry))
             (when (typep condition (car clause))
-              (%unwind-to-handler place condition)))
+              (%unwind-to-handler (cadr entry) condition)))
           (dolist (handler (cddr entry))
             (when (typep condition (car handler))
-              (let ((%handler-floor place))
-                (funcall (cdr handler) condition))))))))
+              (funcall (cdr handler) condition)))))))
 
 ;;; The condition DATUM and ARGUMENTS designate (CLHS 9.1.2.1): a condition
 ;;; as it is; a condition type and its initargs; a format control and its

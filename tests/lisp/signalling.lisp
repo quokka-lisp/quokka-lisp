@@ -102,3 +102,15 @@
 
 ;; An error a handler declines, and no other takes.
 (handler-bind ((sg-error (lambda (c) c nil))) (error 'sg-error))
+
+;; A handler whose type is no type: the error typep signals goes outwards,
+;; past the handler being tested.
+(handler-case (handler-case (error "x") (sg-no-such-type () :inner))
+  (error () :outer))
+(handler-case (handler-bind ((sg-no-such-type (lambda (c) c :inner))) (signal "x"))
+  (error () :outer))
+
+;; A report that fails.
+(define-condition sg-bad-report (error) () (:report (lambda (c s) c s (error 'sg-error))))
+(handler-case (princ-to-string (make-condition 'sg-bad-report)) (sg-error () :report-failed))
+(boundp '*break-on-signals*)

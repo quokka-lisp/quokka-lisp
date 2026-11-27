@@ -168,6 +168,16 @@ The inner handler's own signal reaches its own handler and the outer one,
 but not the inner handler again; then the first signal goes on to the
 outer handler. SBCL gives the same answer.
 
+The review of this step found that the floor has to be set earlier than
+the call. `signal` asks `typep` whether each handler wants the condition,
+and `typep` can itself signal, for a type nobody defined. Without the floor,
+that error was offered to the same handler, whose test failed again, and
+`signal` went round until the step budget ran out. Now the floor is set for
+the tests too, as SBCL's is, and the error goes outwards. A report that
+fails is the same kind of trap: `error` reports a condition nobody handled,
+and if the report signals an error, that one has to be reported too. A
+report that fails now prints as SBCL prints it, `#<error printing a BAD>`.
+
 ## `error` in Lisp
 
 With a way to signal, `error` is three lines: make the condition, signal
@@ -206,7 +216,8 @@ machine already did to see whether any `handler-case` was open;
 two-slot vector of its place and the condition, which no other record can
 match; and `%signalled` stops the machine with an error no handler took.
 The rest is Lisp: `handler-bind`, `signal`, `error` and the walk's
-interpretation in `conditions.lisp`, and the clause test in the prelude.
+interpretation in `conditions.lisp`, and the clause test the compiler
+writes.
 A new differential file, `signalling.lisp`, checks the order of handlers,
 the floor, and `handler-case` and `handler-bind` nested both ways, against
 SBCL.
@@ -224,5 +235,7 @@ which the next chapter turns into an instance.
 When the machine fails, in `(car 5)` say, it still makes its own condition
 and unwinds straight to the innermost `handler-case`, past any
 `handler-bind` in between, and with no `handler-case` open it halts, so a
-`handler-bind` alone never sees it. The next chapter makes those errors go
+`handler-bind` alone never sees it. Nor does that unwind know about the
+floor: a `(car 5)` inside a handler can reach a `handler-case` the handler
+should not see. The next chapter makes those errors go
 through `signal` like any other. `warn` and the restarts come after that.

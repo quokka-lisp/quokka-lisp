@@ -30,3 +30,8 @@
 => :TYPE-ERROR
 => (NIL SG-ERROR)
 !! error
+=> :OUTER
+=> :OUTER
+=> SG-BAD-REPORT
+=> :REPORT-FAILED
+=> T

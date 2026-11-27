@@ -124,9 +124,9 @@ comes with the debugger (step F), where it has something to choose between.
    condition types become classes in `typep` and `subtypep`. Conditions are
    still signalled the old way.
 2. **`signal` in Lisp.** The walk primitive and `%unwind-to-handler`;
-   `handler-bind`, `signal`, `error`, the run-time clause test, and the library's
-   `%condition-type` and `%condition-message` for compiled code that reads a
-   condition.
+   `handler-bind`, `signal`, `error`, the run-time clause test, and the
+   prelude's `%condition-type-of` and `%condition-message-of` for compiled
+   code that reads a condition.
 3. **The machine's errors through Lisp** (Rust): `fail` calls
    `%signal-machine-error` with a type and initargs; host failures likewise.
 4. **Restarts and the debugger's entry**: `restart-bind`, `restart-case`,
