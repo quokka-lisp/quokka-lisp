@@ -7,7 +7,8 @@ Quokka is a modern Lisp-machine-style environment: a small Rust VM running a Com
 resumes where it left off* — holds in a compiled world, and every differential
 file agrees interpreted, compiled and with SBCL (#38).
 
-**Phase 2 · Self-hosting is complete** (#39; gate met 25 Nov 2026, step AJ, #82). **Step A, special variables, is
+**Phase 3 · Conditions and processes is complete** (#123; gate met 27 Nov 2026,
+step G, #133; chapters 72–93). **Phase 2 · Self-hosting is complete** (#39; gate met 25 Nov 2026, step AJ, #82). **Step A, special variables, is
 done** (#40): `defvar`, `defparameter`, dynamic `let`/`let*`/parameters by
 shallow binding — a `DBIND` record restored by `UNMARK`, the unwinder, an
 uncaught error, or an abandoned computation. **Packages are decided (#41)** —
@@ -771,7 +772,13 @@ region. **#34 item 5 is decided (27 Nov 2026): one OS thread per world for
 good; parallelism by a pool of share-nothing worker worlds** (named-function
 tasks over copying channels, code fetched on demand; #132), the same
 `spawn-task`/`receive` on both layers; layer 2 is not built yet.
-Rebuild `(:FORMS 2118 :REPLACED 1638)`. **Next: phase 3 step G**, the gate.
+Rebuild `(:FORMS 2118 :REPLACED 1638)`.
+**Phase 3 step G, the gate, is met (27 Nov 2026, #133, chapter 93), and
+phase 3 is complete** (#123): `crates/quokka/tests/gate.rs` builds a world
+with the `quokka` binary and types sessions at it — a function fixed from
+inside its error and its frame retried, in the main thread and in a thread
+the main thread joins. `quokka_vm::PHASE` says phase 3. **Next: phase 4**,
+the renderer and live text (`docs/design.md`); worker worlds are #132.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

@@ -18,7 +18,54 @@ a whole system can be small enough to read.
 
 **The full design is in [`docs/design.md`](docs/design.md).** Read it first.
 
-## Status: phase 2 complete — the system reads, prints, evaluates and rebuilds itself in Lisp
+## Status: phase 3 complete — fix a function from inside its error and retry the frame
+
+Phase 3, *conditions and processes*
+([#123](https://github.com/quokka-lisp/quokka-lisp/issues/123)), ends with the
+gate it set itself. An error no longer throws away the computation that met
+it: the world stops, shows the stack, and waits while you redefine the
+function that failed, and then runs the failed call again.
+
+```
+quokka> (defun broken (x) (error "broken ~a" x))
+BROKEN
+quokka> (defun caller (y) (list :got (broken (* y 2))))
+CALLER
+quokka> (caller 5)
+
+debugger invoked on a SIMPLE-ERROR: broken 10
+
+Type HELP for debugger help.
+
+restarts (invokable by number or by name):
+  0: [ABORT] Return to the top level.
+
+0: (BROKEN 10)
+0] backtrace
+0: (BROKEN 10)
+1: (CALLER 5)
+0] (defun broken (x) (+ x 1))
+BROKEN
+0] restart-frame
+(:GOT 11)
+```
+
+That needed, in this order:
+- CLOS with a small metaobject protocol;
+- conditions and restarts, and the machine's own errors signalled through
+  them;
+- definitions that keep their source;
+- frames that keep their calls;
+- a console a world can read, and the debugger;
+- processes (green threads, with SBCL's thread interface) and Go-style
+  channels.
+
+The gate is tested through the real `quokka` program, in the main thread and
+in a thread (#133). The fixpoint still holds, and ansi-test now runs eighteen
+groups, 12,568 of 17,739 tests passing, with every other one explained.
+Phase 4, the renderer and live text in the browser, is next.
+
+### Phase 2: the system reads, prints, evaluates and rebuilds itself in Lisp
 
 Phase 1 ended with a compiled world built by itself (below). Phase 2, *self-hosting*
 ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39)), has since moved the
@@ -50,7 +97,7 @@ stays a standing test ([#50](https://github.com/quokka-lisp/quokka-lisp/issues/5
 ([#82](https://github.com/quokka-lisp/quokka-lisp/issues/82)): of the 15,472
 tests in ansi-test's fifteen tier-1 groups, 8,970 pass, and every one of the
 rest is explained by a feature deferred to a later tier, such as `loop`, CLOS
-or `typep`. Phase 3, conditions and processes, is next.
+or `typep`.
 **How to build, run, rebuild and test it all is in the
 [developer manual](docs/manual.md).**
 
@@ -167,25 +214,25 @@ primitive table is Lisp.
 ### What does not exist yet
 
 **Tier 2.** Tier 1 is complete and measured against ansi-test, the Common
-Lisp conformance suite: 8,970 of 15,472 tests in the groups it runs pass, and
-the rest wait for features of later tiers
-([`docs/ansi-test.md`](docs/ansi-test.md) has the table; #60, #82).
+Lisp conformance suite: 12,568 of 17,739 tests in the eighteen groups it runs
+pass, and the rest wait for features of later tiers or agree with SBCL
+([`docs/ansi-test.md`](docs/ansi-test.md) has the table; #60, #82, #125).
 The first world is still built by the interpreter, which is the cold build,
 and is then rebuilt by itself.
 
 No single-floats or complex numbers (ratios arrived with
 [#59](https://github.com/quokka-lisp/quokka-lisp/issues/59)).
-No `loop`, no CLOS. No restarts
-or `define-condition`: `handler-case` is the exception-shaped half of the
-condition system, and the rest is phase 3. No renderer and no editor, which
-are phases 4 through 6 in [`docs/design.md`](docs/design.md).
+No `loop` and no pretty printer yet, nor generic streams or pathnames, all
+tier 2. No renderer and no editor, which are phases 4 through 6 in
+[`docs/design.md`](docs/design.md).
 
 ## The book
 
 [`book/`](book/README.md) holds **The Road to Quokka**: the design and
 implementation written up as a textbook, alongside the system rather than
-afterwards. Sixty-four chapters in six parts, covering the substrate, reading
-and running, the machine, the compiler, the image and self-hosting, assuming
+afterwards. Ninety-three chapters in eleven parts, covering the substrate,
+reading and running, the machine, the compiler, the image, self-hosting,
+objects, conditions, definitions, the debugger and processes, assuming
 no prior knowledge of language implementation, including what a garbage collector is,
 what `car` and `cdr` are, what an opcode is, and why a program would want to
 rewrite itself.
@@ -256,8 +303,9 @@ Every development step and open decision is a
 code, with the reasoning in the comments.
 [#9](https://github.com/quokka-lisp/quokka-lisp/issues/9) tracked phase 0,
 [#18](https://github.com/quokka-lisp/quokka-lisp/issues/18) tracked tier 0, and
-[#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) tracked phase 1, now closed, and
-[#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) tracks phase 2; a
+[#23](https://github.com/quokka-lisp/quokka-lisp/issues/23) tracked phase 1,
+[#39](https://github.com/quokka-lisp/quokka-lisp/issues/39) phase 2, and
+[#123](https://github.com/quokka-lisp/quokka-lisp/issues/123) phase 3, all closed; a
 `decision` issue closes when the reasoning is recorded in the design and the
 book, not when the code lands.
 

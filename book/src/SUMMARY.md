@@ -128,6 +128,7 @@
 - [Taking turns](part-11-processes/90-taking-turns.md)
 - [Threads](part-11-processes/91-threads.md)
 - [Channels](part-11-processes/92-channels.md)
+- [Phase 3 ends](part-11-processes/93-phase-three-ends.md)
 
 # Looking ahead
 

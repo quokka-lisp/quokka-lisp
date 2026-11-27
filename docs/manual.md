@@ -84,11 +84,11 @@ says how to make one. `quokka help` prints the table above.
 
 ```text
 $ quokka build world.qi
-world.qi: 359688 bytes, 44914 words, sequence 1
+world.qi: 359688 bytes, 270500 words, sequence 1
 
 $ quokka world.qi
-Quokka 0.0.0 — phase 2 · Self-hosting
-world.qi: 44914 words, sequence 1 · compiled · tier 1
+Quokka 0.0.0 — phase 3 · Conditions and processes
+world.qi: 270500 words, sequence 1 · compiled · tier 1
 :save FILE saves this world · Ctrl-D leaves
 quokka> (defun hello () :saved-in-the-world)
 HELLO
@@ -375,7 +375,16 @@ The second runs one module's unit tests.
 cargo test -p quokka-bootstrap --test differential tier1::reader
 ```
 
-That runs one differential file. Test builds are optimised (`[profile.test]`
+That runs one differential file.
+
+```bash
+cargo test -p quokka --test gate
+```
+
+That runs phase 3's gate through the real `quokka` program: it builds a
+world with the binary and types a session at it (#133).
+
+Test builds are optimised (`[profile.test]`
 in `Cargo.toml`), because the time goes into running Lisp, not compiling Rust.
 
 Tests live in two places, and the difference matters (CLAUDE.md, *Where tests

@@ -47,9 +47,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The phase this build implements, for the banner.
 ///
-/// Phase 2: its gate, the fixpoint, passes (#50); its scope, all of tier 1,
-/// is under way (#39).
-pub const PHASE: &str = "2 · Self-hosting";
+/// Phase 3 is complete: its gate, fixing a function from inside its error
+/// and retrying the frame, passes (#133).
+pub const PHASE: &str = "3 · Conditions and processes";
 
 #[cfg(test)]
 #[path = "unit/lib.rs"]
