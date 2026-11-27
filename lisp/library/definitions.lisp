@@ -39,12 +39,14 @@
 ;;; rebuilds itself (`rebuild.lisp`).
 (defvar %recording-definitions t)
 
-;;; The text, file and position of the top-level form being evaluated, which
-;;; `load` and the host loop know and `eval` does not: they bind these
-;;; around each form, and `eval` takes them for that form alone.
-(defvar %definition-text nil)
+;;; Where the top-level form being evaluated was read from, which `load` and
+;;; the host loop know and `eval` does not: they bind these around each form,
+;;; and `eval` takes them for that form alone. The place is (string start
+;;; end limit), positions in the string read from, and the form's text is
+;;; cut from it only if the form turns out to define something, since
+;;; cutting costs more than many a form does to evaluate.
+(defvar %definition-place nil)
 (defvar %definition-source nil)
-(defvar %definition-position nil)
 
 ;;; The defining operators the world records, and the kind each defines.
 ;;; A program's own `def...` macro is not among them: there is no telling
@@ -69,6 +71,11 @@
           (case kind
             (:structure (values kind (if (consp name) (car name) name)))
             (:method (values kind (%method-definition-name form)))
+            ;; A package is named by its name's string: `#:pk`, `:pk` and
+            ;; "PK" are one package.
+            (:package (values kind (if (or (stringp name) (symbolp name) (characterp name))
+                                       (string name)
+                                       name)))
             (t (values kind name))))
         nil)))
 
@@ -90,17 +97,20 @@
              %definitions)
     found))
 
-;;; Record FORM, just evaluated, if it is a defining form; the forms of a
-;;; `progn` or an `eval-when` that ran are each recorded, without text.
-(defun %record-definition (form text source position)
+;;; Record FORM, just evaluated, if it is a defining form, with the text
+;;; cut from PLACE if it came from one; the forms of a `progn` or an
+;;; `eval-when` that ran are each recorded, without text of their own (the
+;;; text of the whole is not any one of theirs).
+(defun %record-definition (form place source)
   (when %recording-definitions
     (cond ((and (consp form) (eq (car form) 'progn))
-           (dolist (sub (cdr form)) (%record-definition sub nil source nil)))
+           (dolist (sub (cdr form)) (%record-definition sub nil source)))
           ((and (consp form) (eq (car form) 'eval-when)
                 (or (member :execute (cadr form)) (member 'eval (cadr form))))
-           (dolist (sub (cddr form)) (%record-definition sub nil source nil)))
+           (dolist (sub (cddr form)) (%record-definition sub nil source)))
           (t (multiple-value-bind (kind name) (%definition-key form)
                (when kind
+                 (multiple-value-bind (text position) (%place-text place)
                  (let* ((key (cons kind name))
                         (old (gethash key %definitions))
                         (new (make-instance 'definition
@@ -114,56 +124,71 @@
                    ;; The old definition is a version now; its own versions
                    ;; are the new one's, so the history is one list.
                    (when old (setf (definition-versions old) nil))
-                   (setf (gethash key %definitions) new))))))))
+                   (setf (gethash key %definitions) new)))))))))
 
 ;;; What a definition made, where there is one object to point at.
 (defun %definition-object (kind name)
   (case kind
     ((:function :generic-function) (and (fboundp name) (fdefinition name)))
-    (:macro (and (symbolp name) (macro-function name)))
+    ;; The macro object itself: `macro-function` makes a new wrapper of it
+    ;; each time it is asked, which nothing could compare.
+    (:macro (and (symbolp name) (%macro-function name)))
     ((:class :structure :condition) (and (symbolp name) (find-class name nil)))
     (:package (find-package name))
     (t nil)))
 
-;;; The stretch of STRING a form read between START and END belongs to, as
-;;; two values, its start and end. #126 decided which comments belong to a
+;;; The characters a blank line may hold besides its newline: a file with
+;;; CRLF line ends has a return before each.
+(defvar %blank-characters '(#\Space #\Tab #\Return))
+
+;;; The text of the form PLACE says was read, and where it begins, as two
+;;; values; nil for no place. #126 decided which comments belong to a
 ;;; definition, so that writing it back reproduces the file:
 ;;;
-;;; 1. The comments directly above it, with no blank line between, are its
-;;;    own. Comments further up, a file's opening ones say, belong to what
-;;;    comes before or to the package.
+;;; 1. The line comments directly above it, with no blank line between,
+;;;    are its own. Comments further up, a file's opening ones say, belong
+;;;    to what comes before or to the package.
 ;;; 2. A comment at the end of its last line is its own, and is not the next
 ;;;    definition's: `(defvar *n* 0)   ; how many` keeps its note.
-(defun %definition-extent (string start end)
-  (values (min (%own-comments-start string start) end) (%trailing-comment-end string end)))
+(defun %place-text (place)
+  (if place
+      (destructuring-bind (string start end limit) place
+        (let ((text-start (min (%own-comments-start string start limit) end))
+              (text-end (%trailing-comment-end string end limit)))
+          (values (string-right-trim (cons #\Newline %blank-characters)
+                                     (subseq string text-start text-end))
+                  text-start)))
+      (values nil nil)))
 
-;;; Past a comment that ends the line END is on, if there is one.
-(defun %trailing-comment-end (string end)
-  (let ((i end) (length (length string)))
-    (do () ((or (>= i length) (not (member (char string i) '(#\Space #\Tab)))))
+;;; Past a comment that ends the line END is on, if there is one, and not
+;;; past LIMIT, the end of what the stream may read.
+(defun %trailing-comment-end (string end limit)
+  (let ((i end))
+    (do () ((or (>= i limit) (not (member (char string i) '(#\Space #\Tab)))))
       (setq i (+ i 1)))
-    (if (and (< i length) (char= (char string i) #\;))
-        (or (position #\Newline string :start i) length)
+    (if (and (< i limit) (char= (char string i) #\;))
+        (or (position #\Newline string :start i :end limit) limit)
         end)))
 
 ;;; Where a definition's text begins, at or after START.
-(defun %own-comments-start (string start)
-  (let ((length (length string)) (i start) (own nil))
+(defun %own-comments-start (string start limit)
+  (let ((i start) (own nil))
     ;; START in the middle of a line is the end of the previous form: a
     ;; comment ending that line is the previous definition's. Another form
     ;; may follow on the same line, and then that is where this one starts.
-    (when (and (> i 0) (< i length) (not (char= (char string (- i 1)) #\Newline)))
-      (let ((next (or (position-if-not (lambda (c) (member c '(#\Space #\Tab))) string :start i)
-                      length)))
-        (if (and (< next length) (char= (char string next) #\;))
-            (setq i (let ((newline (position #\Newline string :start next)))
-                      (if newline (+ newline 1) length)))
+    (when (and (> i 0) (< i limit) (not (char= (char string (- i 1)) #\Newline)))
+      (let ((next (or (position-if-not (lambda (c) (member c '(#\Space #\Tab)))
+                                       string :start i :end limit)
+                      limit)))
+        (if (and (< next limit) (char= (char string next) #\;))
+            (setq i (let ((newline (position #\Newline string :start next :end limit)))
+                      (if newline (+ newline 1) limit)))
             (setq i next))))
     ;; Line by line: a blank line forgets the comments above it; the first
     ;; line that is neither blank nor a comment is where the form begins.
-    (do () ((>= i length) (or own i))
-      (let* ((line-end (or (position #\Newline string :start i) length))
-             (first (position-if-not (lambda (c) (member c '(#\Space #\Tab))) string
+    (do () ((>= i limit) (or own i))
+      (let* ((line-end (or (position #\Newline string :start i :end limit) limit))
+             (first (position-if-not (lambda (c) (member c %blank-characters)) string
                                      :start i :end line-end)))
         (cond ((null first) (setq own nil))
               ((char= (char string first) #\;) (unless own (setq own i)))
@@ -173,19 +198,16 @@
 (defun %stream-position (stream)
   (if (%string-input-stream-p stream) (%string-input-stream-position stream) nil))
 
-;;; Read a form from STREAM for `load` or the host loop, and evaluate it
-;;; with its text and position known: the one place a top-level form's text
-;;; is found. A stream that is not a string's gives no text.
+;;; Evaluate FORM, read from STREAM for `load` or the host loop from START
+;;; to where the stream is now, with that place known: the one place a
+;;; top-level form's text can be found. A stream that is not a string's
+;;; gives no place.
 (defun %eval-read-form (form stream start source)
-  (let ((end (%stream-position stream)))
-    (if (and start end (%string-input-stream-p stream))
-        (let ((string (%string-input-stream-string stream)))
-          (multiple-value-bind (text-start text-end) (%definition-extent string start end)
-            ;; Without the whitespace the reader consumed after the form.
-            (let ((%definition-text (string-right-trim '(#\Space #\Tab #\Newline)
-                                                       (subseq string text-start text-end)))
-                  (%definition-source source)
-                  (%definition-position text-start))
-              (eval form))))
-        (let ((%definition-source source))
-          (eval form)))))
+  (let* ((end (%stream-position stream))
+         (%definition-place
+           (if (and start end)
+               (let ((string (%string-input-stream-string stream)))
+                 (list string start end (or (%string-input-stream-end stream) (length string))))
+               nil))
+         (%definition-source source))
+    (eval form)))

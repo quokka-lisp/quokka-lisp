@@ -920,9 +920,9 @@ pub fn call_slice<'h>(
             detail: "is intercepted by the machine and should never be called here",
         }),
         Prim::HandlerMarks => crate::vm::handler_marks(mc, args[0], args[1]),
-        // A compiled function's name, through a closure to its body, or nil:
-        // for an anonymous function, an interpreted closure, or anything that
-        // is not a function.
+        // A compiled function's name, through a closure to its body, or nil
+        // for an interpreted closure or anything that is not a function. The
+        // compiler assembles an anonymous function under the name LAMBDA.
         Prim::FunctionName => {
             let mut f = args[0];
             if f.is_object() && mc.header(f).object_type == ObjectType::Closure {

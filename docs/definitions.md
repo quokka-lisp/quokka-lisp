@@ -44,8 +44,10 @@ in hand.
    and name**, and a function finds its definition through its name, which a
    new primitive, `%function-name`, reads from the function object. Kinds
    are function, macro, generic function, method, variable, constant,
-   class, structure, condition, type, setf expander, compiler macro, package,
-   and the name of any other `def...` operator. Rejected: a slot on the
+   class, structure, condition, type, setf expander, compiler macro, symbol
+   macro, method combination and package, from eighteen defining operators;
+   a program's own `def...` macro is not recorded, since nothing says what
+   it defines. Rejected: a slot on the
    `Function` object, which needs Rust, the image format and the verifier,
    and gives nothing a name does not, except for a lambda inside a
    definition, which step F (the debugger) can name after the definition
@@ -73,6 +75,20 @@ would put the 850 KB of the library's and the compiler's source in every
 image, as writable strings of a word per character, several times the
 image's own 1.9 MB, before anything uses it. Phase 4's file-in records them
 when the environment needs to browse the system itself.
+
+## Limits, known and accepted
+
+- A definition is recorded when its top-level form returns. The
+  definitions inside a `progn` that fails part way are not recorded, though
+  they were made, and they keep no text of their own.
+- Text is cut by line comments. A `#|...|#` block comment, or a form a `#+`
+  reader conditional skipped, before a definition becomes part of its text.
+- The host loop is handed what a person types one line at a time, so a
+  comment typed on the line above a definition is not part of its text.
+- Definitions and their versions are kept for ever, as #126 decided (only
+  pruning history, which asks first, drops old versions). A program that
+  `eval`s defining forms in a loop, or a test runner that evaluates
+  thousands, grows the table without bound.
 
 ## Order of work
 

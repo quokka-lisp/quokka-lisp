@@ -69,8 +69,12 @@ primitive that lets Lisp read it, and a function finds its definition by
 that name:
 
 ```lisp
-(function-lambda-expression #'sq)          ; (LAMBDA (X) (* X X)), T, SQ
+(function-lambda-expression #'sq)          ; (LAMBDA (X) (BLOCK SQ (* X X))), T, SQ
 ```
+
+The `block` is the one `defun` puts its body in, so that `return-from sq`
+works; without it, as our first version left it, the expression compiled
+into a function that failed where the original returned.
 
 `function-lambda-expression` answers only if the function is still the one
 the definition made; a function installed some other way has no definition
@@ -123,6 +127,18 @@ one line, which a person typing at the prompt often writes, broke the first
 version of that rule, and a test caught it: the second form's text started
 at the next line, after its own end.
 
+The review of this step found that cutting text was costly for what it
+was: `load` cut the text of every form it read, defining or not, and a file
+of a few hundred `setq`s loaded at half the speed. The place a form was read
+from is now passed along, and its text is cut only once the form is known to
+define something. It also found that a file with Windows line ends, a
+return before each newline, broke the blank-line rule, since a line holding
+only a return did not look blank. Two things the rule does not do, we left:
+a `#|...|#` block comment, or a form a `#+` conditional skipped, above a
+definition becomes part of its text, since the rule is about line comments;
+and the host loop is handed one typed line at a time, so a comment typed on
+the line above a definition is not part of it.
+
 ## Versions
 
 Evaluating `defun sq` again replaces the definition, and the new one keeps
@@ -134,7 +150,9 @@ the old one as a version, newest first:
 ```
 
 #126 gives definitions a history with commits and a way back. This step
-keeps only the list; phase 4 adds the rest.
+keeps only the list; phase 4 adds the rest. Versions are kept for ever, as
+#126 decided: only pruning history, which asks first, drops them. A program
+that evaluates defining forms in a loop grows the table without bound.
 
 ## What did it cost?
 

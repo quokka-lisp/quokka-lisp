@@ -418,7 +418,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1965 :REPLACED 1540)".into())],
+        [Outcome::Value("(:FORMS 1966 :REPLACED 1541)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -527,16 +527,32 @@ fn definitions_keep_their_source() {
          (progn (defun in-progn-a () 1) (defun in-progn-b () 2)) \
          (mapcar (lambda (n) (not (null (quokka::find-definition n)))) '(in-progn-a in-progn-b)) \
          (function-lambda-expression #'car) \
-         (quokka::find-definition 'mapcar)",
+         (quokka::find-definition 'mapcar) \
+         (defun early (x) \"Doc.\" (declare (ignorable x)) (if x (return-from early :yes)) :no) \
+         (funcall (compile nil (function-lambda-expression #'early)) t) \
+         (load (make-string-input-stream (concatenate 'string \";;; head\" (string #\\Return) \"
+\" (string #\\Return) \"
+;; own\" (string #\\Return) \"
+(defun crlf-f () 1)\" (string #\\Return) \"
+\"))) \
+         (quokka::definition-text (quokka::find-definition 'crlf-f)) \
+         (defpackage #:dpk (:use)) \
+         (defpackage \"DPK\" (:use)) \
+         (length (quokka::definition-versions (quokka::find-definition \"DPK\" :package))) \
+         (load (make-string-input-stream \"(defvar *bounded* 1) ; past the end\" 0 20)) \
+         (quokka::definition-text (quokka::find-definition '*bounded* :variable)) \
+         (third (multiple-value-list (function-lambda-expression (lambda (y) y))))",
     );
     assert_eq!(
         out,
-        "=> SQ\n=> \"(defun sq (x) (* x x))\"\n=> (LAMBDA (X) (* X X))\n=> SQ\n=> SQ\n\
+        "=> SQ\n=> \"(defun sq (x) (* x x))\"\n=> (LAMBDA (X) (BLOCK SQ (* X X)))\n=> SQ\n=> SQ\n\
          => \"(defun sq (x) (* x x))\"\n=> 1\n=> T\n\
          => \";; Doubles.\n(defun twice (x) (* 2 x))\"\n\
          => \"(defvar *dc* 0)   ; a counter\"\n=> \"(defun after () 1)\"\n\
          => #<STANDARD-METHOD DM (STRING)>\n=> :METHOD\n=> DMM\n=> (NIL :MACRO)\n\
-         => IN-PROGN-B\n=> (T T)\n=> NIL\n=> NIL\n"
+         => IN-PROGN-B\n=> (T T)\n=> NIL\n=> NIL\n=> EARLY\n=> :YES\n=> T\n\
+         => \";; own\r\n(defun crlf-f () 1)\"\n=> #<PACKAGE \"DPK\">\n=> #<PACKAGE \"DPK\">\n=> 1\n\
+         => T\n=> \"(defvar *bounded* 1)\"\n=> NIL\n"
     );
 }
 

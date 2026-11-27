@@ -673,8 +673,9 @@ eighteen operators), with text and position from `load` and the host loop
 last line belong to it (#126). **The system's own definitions are not
 recorded**: `%rebuild-world` binds `%recording-definitions` nil.
 `%function-name` (a primitive) reads a compiled function's name;
-`function-lambda-expression` answers from a definition. Rebuild `(:FORMS
-1965 :REPLACED 1540)`. Next: sub-step 2, cross-reference. Phase 2's scope was
+`function-lambda-expression` answers from a definition (the body in
+`defun`'s block). Text is cut only for a defining form (`%definition-place`,
+`%place-text`). Rebuild `(:FORMS 1966 :REPLACED 1541)`. Next: sub-step 2, cross-reference. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

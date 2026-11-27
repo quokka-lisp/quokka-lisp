@@ -54,11 +54,11 @@
 ;;; for it. The text is taken for this form alone: an `eval` inside it, in a
 ;;; macro's expander say, sees none.
 (defun eval (form)
-  (let ((text %definition-text) (source %definition-source) (position %definition-position))
+  (let ((place %definition-place) (source %definition-source))
     (multiple-value-prog1
-        (let ((%definition-text nil) (%definition-source nil) (%definition-position nil))
+        (let ((%definition-place nil) (%definition-source nil))
           (%eval-in form form))
-      (%record-definition form text source position))))
+      (%record-definition form place source))))
 
 (defun %eval-in (form context)
   (let ((form (macroexpand form)))
@@ -161,12 +161,27 @@
 ;;; the second value is true.
 (defun function-lambda-expression (function)
   (if (not (functionp function)) (error 'type-error :datum function :expected-type 'function))
-  (let* ((name (%function-name function))
+  (let* ((name (if (%generic-function-p function)
+                   (%gf-name function)
+                   ;; The compiler assembles an anonymous function under the
+                   ;; name LAMBDA, which names nothing.
+                   (let ((name (%function-name function))) (if (eq name 'lambda) nil name))))
          (definition (and name (symbolp name) (find-definition name :function))))
     (if (and definition (eq (definition-object definition) function))
-        (let ((form (definition-form definition)))
-          (values (list* 'lambda (third form) (cdddr form)) t name))
+        (values (%defun-lambda (definition-form definition)) t name)
         (values nil t name))))
+
+;;; `(defun name lambda-list . body)` as the lambda expression of its
+;;; function: the body in the implicit block `defun` puts it in, after its
+;;; documentation and declarations, as SBCL gives it.
+(defun %defun-lambda (form)
+  (let ((prefix nil) (body (cdddr form)))
+    (do () ((not (or (and (consp (car body)) (eq (car (car body)) 'declare))
+                     (and (stringp (car body)) (cdr body)))))
+      (push (car body) prefix)
+      (setq body (cdr body)))
+    `(lambda ,(third form) ,@(nreverse prefix)
+       (block ,(let ((name (second form))) (if (consp name) (second name) name)) ,@body))))
 
 ;;; Compiler macros (decision 1): the compiler applies them, from its table
 ;;; `%compiler-macros` (compile.lisp); these are CL's ways of filling it.
