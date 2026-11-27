@@ -108,6 +108,8 @@ player object itself. The first is a requirement on the display protocol of
 phase 4, the boundary between Lisp and the screen, and it is cheap only if
 the protocol has it from the beginning.
 
+![Clicking the player pauses the game and inspects the player object](../mockups/png/07-platformer-2.png)
+
 ![From the prompt to the method that draws it](../mockups/png/03-find-where-it-lives-3.png)
 
 Following the prompt leads to a method, `listener-prompt`, in a browser that
@@ -178,6 +180,8 @@ but membership is stored, never guessed from a prefix.
 A package can still be opened as text when many definitions change at once:
 a view the world generates, with a bar marking each definition and its
 version. Exporting a system writes exactly this text, one file per package.
+
+![A package opened as text, a bar marking each definition and its version](../mockups/png/05-package-first-3.png)
 That brought back a question the design had already answered the other way.
 
 The design's list of decisions said that files are the truth and an image
@@ -212,6 +216,8 @@ not know Lisp. Our first idea was an app mode: a link opens your world with
 the game filling the screen and the environment one button away. We
 rejected it, because a world opened from a link runs someone else's code
 with far less deliberation than downloading and opening a file.
+
+![The rejected app mode: the game filling the screen, the environment one button away](../mockups/png/07-platformer-4.png)
 
 Instead a system that names a **main view** can be exported as a web page:
 the page, the VM as WebAssembly, and a stripped world holding the
@@ -279,6 +285,8 @@ reading interface and not its adding one cannot change your contacts.
 The fifth use case asked what happens when you close the tab. A world saves
 itself as you work, so there is no Save button and no question on closing.
 
+![The next morning: the same tiles, the same transcript, a line marking the night](../mockups/png/08-save-and-come-back-2.png)
+
 The technique has a name, **prevalence**, from Prevayler, a Java library of
 2002 by Klaus Wuestefeld: keep the data as live objects in memory, write a
 snapshot now and then, and append every change to a **journal** as it
@@ -331,6 +339,8 @@ cheap because all of a world's state is in its heap (rule 4), an image can
 be saved and loaded in the middle of a computation (chapter 30), and the VM
 has no globals two worlds would share.
 
+![A compiler change tried in a copy of the world, which rebuilds itself and runs the checks](../mockups/png/09-change-the-system-2.png)
+
 ## Windows
 
 Quokka's design has always wanted tiled viewers that never overlap, after
@@ -359,6 +369,15 @@ in several rooms at once, the part that made it hard to reason about. And a
 **layout template** is an arrangement with named, empty slots, so that an
 application opens on a desktop of its own with its main view in the slot
 `:main`.
+
+![The Rolodex on a desktop of its own, its list and its editor's empty slot side by side](../mockups/png/12-rolodex-tutorial-1.png)
+
+This picture comes from one of three tutorials we wrote afterwards, in
+`docs/tutorials/`, pretending the environment exists in order to find out
+what writing a program in it would feel like: the Tower of Hanoi, a
+Rolodex, and a small platform game. The Rolodex opens from a template with
+two slots, `:main` for its list of cards and `:detail` for the card being
+edited, which says *Nothing open* until there is one.
 
 The window manager is Lisp, by rule 1, and knows a viewer only through a
 small protocol, again in proposed names from the design:
