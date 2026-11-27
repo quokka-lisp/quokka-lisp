@@ -2,9 +2,9 @@
 
 Draft v0.1 · November 2026 · Carsten
 
-> This is the repository copy of the design. The live version, with all diagrams, is at
-> https://claude.ai/artifact/SbwCzDv2s8uG2xW18Afuv2. Diagrams are noted below as *[Diagram: …]*.
-> When a design decision changes, update both.
+> This file is the design. Its diagrams are SVG files in [`images/`](images/), each a
+> picture of the table or text beside it: when a decision changes one, change the
+> other.
 >
 > How to build, run, rebuild and test Quokka is in [the developer manual](manual.md).
 
@@ -27,7 +27,7 @@ Quokka is one live Lisp world — VM, language, editor, UI and tools in a single
 
 Each tradition is strongest where the others are weak, so we take three ideas from each and leave behind its main burden.
 
-*[Diagram: inheritance — three traditions, one synthesis]*
+![Three traditions feed one live Lisp world: Lisp machines, Smalltalk and Oberon](images/inheritance.svg)
 
 | Tradition | What we take | What we leave behind |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ The combination that none of the three had on its own: Oberon's executable text 
 
 The system has five layers and one hard boundary: Rust below it, Lisp above it.
 
-*[Diagram: architecture — five layers, one boundary]*
+![Five layers: three in the image, in Lisp; two in the host program, in Rust; the primitive table between them](images/architecture.svg)
 
 | Layer | Language | Contents |
 | --- | --- | --- |
@@ -159,14 +159,14 @@ The compiler is written once, in CL. The build needs only `cargo`, and SBCL is a
 
 The subset grows in three tiers, each the minimum needed to unlock a phase. ANSI conformance is measured as we go rather than promised up front.
 
-*[Diagram: CL subset — three tiers and what is deferred]*
+![Three tiers of Common Lisp, each unlocking a phase, and what is deferred](images/cl-subset.svg)
 
 | Tier | Unlocks | Contents |
 | --- | --- | --- |
 | Tier 0 | Runs the compiler · phase 0 | 22 of 25 special operators; `defmacro` with full lambda lists; fixnums, conses, symbols; strings, vectors, hash tables; `defstruct`, `error`, `handler-case` |
 | Tier 1 | Self-hosting core · phase 2 | All 25 special operators; `setf` expanders, packages; reader, printer (with `*print-circle*`, #64), `eval`, `load`; sequences, basic `format`; double floats, bignums, ratios (decided by #59); arrays of any rank, fill pointers, adjustable and displaced arrays, bit vectors (pulled from tier 2 by #67) |
 | Tier 2 | Runs the environment · phases 3–5 | CLOS generic functions; live class redefinition; conditions, restarts, debugger; `loop`, full `format`, streams; pathnames over file hosts |
-| Deferred | Until someone needs it | Ratios, complex numbers, the full MOP, pretty-print dispatch, `compile-file` and fasls |
+| Deferred | Until someone needs it | Complex numbers, the full MOP, pretty-print dispatch, `compile-file` and fasls |
 
 Tier 0 is the first target: it is everything the phase 0 interpreter must support, which is why the compiler's own source is written to stay inside it.
 
@@ -181,7 +181,7 @@ Tier 0 is the first target: it is everything the phase 0 interpreter must suppor
 
 The screen is a set of tiled viewers holding live text: any form can be run where it stands, and every result stays a live object you can point at and act on.
 
-*[Diagram: screen mock-up — listener, editor and inspector in tiled viewers]*
+![A listener, an editor and an inspector in tiled viewers; every result on screen is a live object](images/screen.svg)
 
 One interaction loop runs through everything: evaluate a form, get presentations back, pick a command that fits the object's type, and land in another viewer with the object itself.
 
@@ -345,7 +345,7 @@ The window manager knows one class, `viewer`, and only through a small protocol;
 
 Lisp code describes what to show in Lisp terms, and a small renderer in the page decides how: the DOM for text, canvas or SVG for drawing. HTML never appears in Lisp code.
 
-*[Diagram: display pipeline — Lisp UI code → output records → display protocol → renderer (DOM | canvas/SVG)]*
+![The display pipeline: Lisp UI code, output records, the display protocol, and a renderer drawing with the DOM or a canvas](images/display-pipeline.svg)
 
 The display protocol is the boundary between the VM and the screen, so the VM can run as WASM, natively in a Tauri shell, or later on a server, without the Lisp side changing.
 
@@ -475,7 +475,7 @@ Four questions were left open when this section was first written, and were deci
 
 All file access goes through CL pathnames, whose host component selects a file host behind one protocol. Genera and Interlisp worked the same way for local and network files.
 
-*[Diagram: file hosts — one protocol, four backends]*
+![One pathname protocol over four file hosts: image, browser storage, local disk and remote](images/file-hosts.svg)
 
 Code never knows which backend it is talking to, so the same environment works natively, in the browser and against a remote service.
 
@@ -493,7 +493,7 @@ Code never knows which backend it is talking to, so the same environment works n
 
 The work runs in seven phases, each ending at a gate we can demonstrate, so the system is usable (in a terminal) from phase 0 and graphical from phase 4.
 
-*[Diagram: roadmap — seven phases, each with a demonstrable gate]*
+![Seven phases, each with the gate it must pass](images/roadmap.svg)
 
 | Phase | Scope | Gate to pass before moving on |
 | --- | --- | --- |
@@ -515,7 +515,7 @@ No dates yet: this is a hobby-pace project. Phases 0 to 3 are mostly Rust and co
 
 Every phase is testable from the terminal and in CI long before Quokka has a renderer or file hosts, because the test harness lives in the Rust host, which has the operating system's files and console.
 
-*[Diagram: differential testing — one test file runs on Quokka native, Quokka in WASM and SBCL; results are compared]*
+![One test file runs on Quokka natively, on Quokka in WASM and on SBCL, and the results are compared](images/differential-testing.svg)
 
 The backbone is differential testing: the same Lisp test file runs on Quokka interpreted and Quokka compiled, natively and in WASM, and on SBCL, and all of them must print the same result.
 
