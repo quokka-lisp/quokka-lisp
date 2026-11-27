@@ -145,6 +145,13 @@ pub fn report_error(e: &EvalError) -> String {
 }
 
 /// The condition type and message an `EvalError` stands for, or `None` if
+/// it is not the program's fault: what the machine hands the library's
+/// `%signal-machine-error` (#125).
+pub fn type_and_message(e: &EvalError) -> Option<(&'static str, String)> {
+    classify(e)
+}
+
+/// The condition type and message an `EvalError` stands for, or `None` if
 /// it is not the program's fault.
 fn classify(e: &EvalError) -> Option<(&'static str, String)> {
     Some(match e {

@@ -102,6 +102,26 @@ pub struct Vm<'a, 'h> {
     /// it, exactly as `eval::Machine` does.
     pub error: Option<EvalError>,
     halted: bool,
+    /// Set while the machine is calling the library's
+    /// `%signal-machine-error` for an error of its own, so that a failure
+    /// in making that call halts instead of trying the call again
+    /// (`Vm::fail_with`).
+    signalling: bool,
+}
+
+/// What the machine knows about the error it is raising, beyond the error
+/// itself: the Lisp values a condition's initargs are made from (#125,
+/// sub-step 3), which an `EvalError` cannot hold since it outlives the heap.
+#[derive(Clone)]
+enum Culprit<'h> {
+    /// Nothing more.
+    Nothing,
+    /// The name of a variable or function: a `cell-error`'s.
+    Name(Value<'h>),
+    /// A value that was not a function, called.
+    NotAFunction(Value<'h>),
+    /// A primitive, by its index, and the arguments it failed on.
+    Call(u32, Vec<Value<'h>>),
 }
 
 /// Whether the machine has stopped and why, and how full the heap is. Its
@@ -132,6 +152,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             mc: &mut *mc,
             error: None,
             halted: false,
+            signalling: false,
         }
         .unbind_all();
         let wanted = mc
@@ -159,6 +180,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             mc,
             error: None,
             halted: false,
+            signalling: false,
         }
     }
 
@@ -179,6 +201,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             mc,
             error: None,
             halted: false,
+            signalling: false,
         }
     }
 
@@ -457,7 +480,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             // Say *what* was called. "is not a function" without the value is
             // a hint; with it, it is usually the whole diagnosis.
             let what = crate::printer::print(self.mc, callee);
-            return self.fail(EvalError::NotAFunction(what));
+            return self.fail_with(EvalError::NotAFunction(what), Culprit::NotAFunction(callee));
         };
         // A bare compiled form runs in no scope at all, as `Vm::start` runs
         // one. Binding its empty parameter list would make a scope object,
@@ -621,7 +644,7 @@ impl<'a, 'h> Vm<'a, 'h> {
     fn call_value(&mut self, callee: Value<'h>, args: &[Value<'h>], tail: bool) -> Transition {
         let callee = match closure::designated(self.mc, callee) {
             Ok(function) => function,
-            Err(e) => return self.fail(e),
+            Err(e) => return self.fail_with(e, Culprit::Name(callee)),
         };
         // A funcallable instance, such as a generic function, is called
         // through the function it holds, with the same arguments (#124). Its
@@ -654,7 +677,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 }
                 Err(e) => match self.fallback(index, args, &e) {
                     Some(generic) => self.call_value(generic, args, tail),
-                    None => self.fail(e),
+                    None => self.fail_with(e, Culprit::Call(index, args.to_vec())),
                 },
             };
         }
@@ -1153,7 +1176,38 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// variant, in one place. `BadSyntax` is the program's own syntax, such
     /// as a lambda list `(lambda (5) …)`, and is a `program-error` (#97).
     fn fail(&mut self, e: EvalError) -> Transition {
+        self.fail_with(e, Culprit::Nothing)
+    }
+
+    /// [`Vm::fail`], knowing more about the error (#125, sub-step 3).
+    ///
+    /// Once the library defines `%signal-machine-error`, an error that is
+    /// the program's becomes a call of it, **at the point of the error**:
+    /// with the condition's type, the machine's message, and a property
+    /// list of what the machine knows, the variable's name, the value
+    /// called, or the primitive and its arguments. The library makes the
+    /// condition and signals it like any other, so `handler-bind` sees
+    /// `(car 5)` with the frames that failed still on the stack, and the
+    /// floor of a running handler (CLHS 9.1.4.1) is respected. The call is
+    /// the arithmetic fallback's technique (`Vm::fallback`); the function
+    /// never returns, since `error` does not.
+    ///
+    /// Before the library is loaded, and in the interpreter, the old way
+    /// stands: a condition made here, unwinding to the innermost
+    /// `handler-case`.
+    fn fail_with(&mut self, e: EvalError, culprit: Culprit<'h>) -> Transition {
         let the_programs = !matches!(e, EvalError::Fault { .. } | EvalError::Malformed(_));
+        if the_programs && !self.signalling {
+            if let Some(handler) = self.machine_error_handler() {
+                if let Some((type_name, message)) = crate::condition::type_and_message(&e) {
+                    let args = self.machine_error_arguments(type_name, &message, &e, culprit);
+                    self.signalling = true;
+                    let transition = self.call_value(handler, &args, false);
+                    self.signalling = false;
+                    return transition;
+                }
+            }
+        }
         if the_programs && self.has_handler() {
             if let Some(condition) = crate::condition::from_eval_error(self.mc, &e) {
                 return self.start_unwind(condition, Value::NIL);
@@ -1163,6 +1217,85 @@ impl<'a, 'h> Vm<'a, 'h> {
         self.error = Some(e);
         self.halted = true;
         Transition::Halt
+    }
+
+    /// The library's `%signal-machine-error`, or `None` before it exists.
+    fn machine_error_handler(&mut self) -> Option<Value<'h>> {
+        let symbol = self.mc.cached_symbol(
+            crate::heap::symbol_cache::MACHINE_ERROR,
+            "%SIGNAL-MACHINE-ERROR",
+        );
+        let function = self.mc.slot(symbol, symbol::FUNCTION);
+        if function == Value::UNBOUND || function.as_primitive().is_some() {
+            None
+        } else {
+            Some(function)
+        }
+    }
+
+    /// `(type message context)`: what `%signal-machine-error` is called
+    /// with. CONTEXT is a property list of what the machine knows: `:name`,
+    /// `:datum` and `:expected-type`, or `:operation` and `:operands`.
+    fn machine_error_arguments(
+        &mut self,
+        type_name: &str,
+        message: &str,
+        e: &EvalError,
+        culprit: Culprit<'h>,
+    ) -> Vec<Value<'h>> {
+        let type_symbol = self.mc.intern(type_name);
+        let text = self.mc.alloc_string(message);
+        let mut context: Vec<Value<'h>> = Vec::new();
+        match culprit {
+            Culprit::Nothing => {}
+            Culprit::Name(name) => {
+                context.push(self.mc.intern_keyword("NAME"));
+                context.push(name);
+            }
+            Culprit::NotAFunction(value) => {
+                // `(or function symbol)`, a function designator, as SBCL says.
+                let or = self.mc.intern("OR");
+                let function = self.mc.intern("FUNCTION");
+                let symbol = self.mc.intern("SYMBOL");
+                let expected = self.mc.cons(symbol, Value::NIL);
+                let expected = self.mc.cons(function, expected);
+                let expected = self.mc.cons(or, expected);
+                context.push(self.mc.intern_keyword("DATUM"));
+                context.push(value);
+                context.push(self.mc.intern_keyword("EXPECTED-TYPE"));
+                context.push(expected);
+            }
+            Culprit::Call(index, args) => {
+                if let EvalError::IndexOutOfBounds { index: bad, length } = e {
+                    // `(integer 0 (length))`, SBCL's expected type for an index.
+                    let integer = self.mc.intern("INTEGER");
+                    let zero = Value::fixnum(0).expect("small");
+                    let below = Value::fixnum(*length as i64).unwrap_or(Value::NIL);
+                    let bound = self.mc.cons(below, Value::NIL);
+                    let rest = self.mc.cons(bound, Value::NIL);
+                    let rest = self.mc.cons(zero, rest);
+                    let expected = self.mc.cons(integer, rest);
+                    context.push(self.mc.intern_keyword("DATUM"));
+                    context.push(Value::fixnum(*bad).unwrap_or(Value::NIL));
+                    context.push(self.mc.intern_keyword("EXPECTED-TYPE"));
+                    context.push(expected);
+                }
+                let operation = primitives::name_of(index).map(|name| self.mc.intern(name));
+                let mut operands = Value::NIL;
+                for v in args.iter().rev() {
+                    operands = self.mc.cons(*v, operands);
+                }
+                context.push(self.mc.intern_keyword("OPERATION"));
+                context.push(operation.unwrap_or(Value::NIL));
+                context.push(self.mc.intern_keyword("OPERANDS"));
+                context.push(operands);
+            }
+        }
+        let mut list = Value::NIL;
+        for v in context.into_iter().rev() {
+            list = self.mc.cons(v, list);
+        }
+        vec![type_symbol, text, list]
     }
 
     /// Is a `handler-case` record open anywhere on the stack?
@@ -1275,6 +1408,21 @@ impl<'a, 'h> Vm<'a, 'h> {
         let tail = self.mc.slot(record, request::TAIL) != Value::NIL;
         self.mc.set_register(Register::Request, Value::NIL);
         if self.mc.symbol_is(state, request::FAILED) {
+            // The host made one of the machine's own conditions. With the
+            // library loaded it is signalled in Lisp, as every error is.
+            if crate::condition::is_condition(self.mc, reply) {
+                if let Some(handler) = self.machine_error_handler() {
+                    let type_name = self.mc.slot(reply, crate::condition::TYPE);
+                    let message = self.mc.slot(reply, crate::condition::MESSAGE);
+                    let message =
+                        if message.is_object() && self.mc.header(message).object_type.is_string() {
+                            message
+                        } else {
+                            self.mc.alloc_string("the host could not do it")
+                        };
+                    return self.call_value(handler, &[type_name, message, Value::NIL], false);
+                }
+            }
             return self.start_unwind(reply, Value::NIL);
         }
         if tail {
@@ -1457,7 +1605,7 @@ impl Steppable for Vm<'_, '_> {
                     let v = self.mc.slot(s, symbol::VALUE);
                     if v == Value::UNBOUND {
                         let name = self.mc.symbol_name(s);
-                        return self.fail(EvalError::UnboundVariable(name));
+                        return self.fail_with(EvalError::UnboundVariable(name), Culprit::Name(s));
                     }
                     self.push_fresh(v);
                 }
@@ -1476,7 +1624,8 @@ impl Steppable for Vm<'_, '_> {
                     let v = self.mc.slot(s, symbol::FUNCTION);
                     if v == Value::UNBOUND {
                         let name = self.mc.symbol_name(s);
-                        return self.fail(EvalError::UndefinedFunction(name));
+                        return self
+                            .fail_with(EvalError::UndefinedFunction(name), Culprit::Name(s));
                     }
                     self.push_fresh(v);
                 }

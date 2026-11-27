@@ -206,12 +206,18 @@
 ;;; for an error nobody handled (`%host-step`). A report that itself fails
 ;;; gives SBCL's `#<error printing a BAD>`: the error it signals is reported
 ;;; by this function too, and would fail again, for ever.
+;;;
+;;; The report is printed with `*print-level*` and `*print-length*` bound,
+;;; as the machine's own printer of errors bounded its depth: a datum can be
+;;; a circular list, `(funcall x)` with X its own car, and printed in full
+;;; it would never end.
 (defun %condition-text (condition)
   (if (%conditionp condition)
       (let ((message (%condition-message condition)))
         (if (stringp message) message (princ-to-string message)))
-      (handler-case (princ-to-string condition)
-        (error () (format nil "#<error printing a ~A>" (%condition-type-of condition))))))
+      (let ((*print-level* 5) (*print-length* 20))
+        (handler-case (princ-to-string condition)
+          (error () (format nil "#<error printing a ~A>" (%condition-type-of condition)))))))
 
 ;;; The standard types' reports, in SBCL's words, as SBCL prints them with
 ;;; `*print-pretty*` false: with it true SBCL breaks the longer ones over
@@ -363,3 +369,88 @@
   (let ((condition (%designated-condition datum arguments 'simple-error)))
     (%signal condition)
     (%signalled (%condition-type-of condition) (%condition-text condition))))
+
+;;; ------------------------------------------------------------------------
+;;; The machine's own errors (sub-step 3)
+;;;
+;;; When a primitive or an instruction fails, `(car 5)` say, the machine
+;;; calls this function where the error happened, with the condition's
+;;; type, its own message, and a property list of what it knows: `:name`
+;;; for an unbound variable or undefined function, `:datum` and
+;;; `:expected-type` for a value called that is not a function or an index
+;;; out of bounds, `:operation` and `:operands` for a primitive that failed
+;;; (`Vm::fail_with`). Here the condition is made with the initargs CLHS
+;;; gives its type, and signalled like any other, so a `handler-bind` sees
+;;; it with the failing frames still on the stack.
+
+;;; How deep the machine's errors are nested: an error inside this very
+;;; function, which a bug could make happen every time, stops the machine
+;;; on the fourth instead of going round for ever.
+(defvar %machine-error-depth 0)
+
+(defun %signal-machine-error (type message context)
+  (if (> %machine-error-depth 3)
+      (%signalled type message)
+      (let ((%machine-error-depth (+ %machine-error-depth 1)))
+        (error (%machine-condition type message context)))))
+
+;;; The condition: of TYPE, with the initargs the context gives, and the
+;;; machine's message as its report when it gives none.
+(defun %machine-condition (type message context)
+  (let ((class (find-class type nil)))
+    (if (%condition-class-p class)
+        (let* ((initargs (%machine-initargs class context))
+               (condition (apply #'make-condition class initargs)))
+          (unless initargs
+            (setf (slot-value condition '%message) message))
+          condition)
+        (make-condition 'simple-error :format-control "~A" :format-arguments (list message)))))
+
+(defun %machine-initargs (class context)
+  (let ((precedence (%class-precedence-list class))
+        (operation (getf context :operation))
+        (operands (getf context :operands)))
+    (cond ((member (find-class 'cell-error) precedence)
+           (cond ((%plist-has-key context :name) (list :name (getf context :name)))
+                 (operation (list :name (first operands)))
+                 (t nil)))
+          ((member (find-class 'type-error) precedence)
+           (if (%plist-has-key context :datum)
+               (list :datum (getf context :datum) :expected-type (getf context :expected-type))
+               (let ((culprit (%primitive-type-culprit operation operands)))
+                 (if culprit (list :datum (car culprit) :expected-type (cdr culprit)) nil))))
+          ((and operation (member (find-class 'arithmetic-error) precedence))
+           (list :operation operation :operands operands))
+          (t nil))))
+
+;;; The types a primitive takes, by argument: what `(car 5)` was given that
+;;; it should not have been, and what it wanted instead. The Rust says only
+;;; "CAR wants a list", in words; the types are Lisp's to know, as SBCL
+;;; knows them from its functions' declared types. A primitive missing
+;;; here signals its `type-error` without a datum, reporting the machine's
+;;; message.
+(defvar %primitive-argument-types
+  '((car list) (cdr list) (rplaca cons) (rplacd cons)
+    (symbol-name symbol) (symbol-function symbol) (symbol-value symbol)
+    (symbol-plist symbol) (boundp symbol) (makunbound symbol) (set symbol)
+    (make-symbol string)
+    (char-code character) (char-upcase character) (char-downcase character)
+    (alpha-char-p character) (code-char integer)
+    (+ &rest number) (- &rest number) (* &rest number) (/ &rest number) (= &rest number)
+    (< &rest real) (> &rest real) (rem real real)
+    (values-list list) (hash-table-count hash-table) (hash-table-test hash-table)
+    (remhash t hash-table)))
+
+;;; The first of OPERANDS that is not of the type OPERATION takes there, and
+;;; that type, as (datum . type); nil if none can be named.
+(defun %primitive-type-culprit (operation operands)
+  (let ((types (cdr (assoc operation %primitive-argument-types)))
+        (every-other nil))
+    (when types
+      (dolist (operand operands nil)
+        (when (eq (car types) '&rest)
+          (setq every-other (cadr types) types nil))
+        (let ((type (or every-other (car types))))
+          (when (and type (not (typep operand type)))
+            (return (cons operand type)))
+          (unless every-other (setq types (cdr types))))))))

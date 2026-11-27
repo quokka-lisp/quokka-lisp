@@ -9,24 +9,24 @@ A test can need several things.
 
 | group | pass | fail | escaped | timeout | needs tier 1 | needs later | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| cons | 1573 | 0 | 0 | 0 | 0 | 149 | 1722 |
+| cons | 1577 | 0 | 0 | 0 | 0 | 145 | 1722 |
 | sequences | 2694 | 0 | 0 | 0 | 0 | 593 | 3287 |
 | strings | 404 | 0 | 0 | 0 | 0 | 105 | 509 |
 | arrays | 1049 | 0 | 0 | 0 | 0 | 241 | 1290 |
 | characters | 143 | 0 | 0 | 0 | 0 | 116 | 259 |
-| symbols | 126 | 1 | 0 | 0 | 0 | 1018 | 1145 |
+| symbols | 131 | 0 | 0 | 0 | 0 | 1014 | 1145 |
 | packages | 401 | 0 | 0 | 0 | 0 | 99 | 500 |
 | numbers | 605 | 0 | 0 | 0 | 0 | 839 | 1444 |
 | reader | 423 | 0 | 0 | 0 | 0 | 152 | 575 |
-| printer | 419 | 0 | 0 | 0 | 0 | 1450 | 1869 |
-| data-and-control-flow | 1239 | 0 | 0 | 0 | 0 | 189 | 1428 |
+| printer | 428 | 0 | 0 | 0 | 0 | 1441 | 1869 |
+| data-and-control-flow | 1240 | 0 | 0 | 0 | 0 | 188 | 1428 |
 | eval-and-compile | 280 | 0 | 0 | 0 | 0 | 38 | 318 |
 | iteration | 95 | 0 | 0 | 0 | 0 | 748 | 843 |
 | hash-tables | 119 | 0 | 0 | 0 | 0 | 48 | 167 |
 | structures | 72 | 0 | 0 | 0 | 0 | 44 | 116 |
 | types-and-classes | 416 | 0 | 0 | 0 | 0 | 98 | 514 |
 | objects | 747 | 0 | 0 | 0 | 0 | 96 | 843 |
-| **all** | **10805** | **1** | **0** | **0** | **0** | **6023** | **16829** |
+| **all** | **10824** | **0** | **0** | **0** | **0** | **6005** | **16829** |
 
 ## Tier-1 gaps, by how many tests each blocks
 
@@ -44,7 +44,7 @@ A test can need several things.
 | `LOGICAL-PATHNAME[tier-2:pathnames-and-files]` | 407 |
 | `MAKE-RANDOM-STATE[tier-2:random]` | 406 |
 | `MAKE-PATHNAME[tier-2:pathnames-and-files]` | 394 |
-| `MUFFLE-WARNING[tier-2:conditions]` | 270 |
+| `MUFFLE-WARNING[tier-2:conditions]` | 252 |
 | `COMPLEX[deferred:complex-numbers]` | 190 |
 | `PPRINT-LOGICAL-BLOCK[tier-2:pretty-printer]` | 141 |
 | `format-directive[tier-2:format]` | 126 |

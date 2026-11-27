@@ -107,6 +107,7 @@
 
 - [Conditions are objects](part-8-conditions/79-conditions-are-objects.md)
 - [Handlers that do not unwind](part-8-conditions/80-handlers-that-do-not-unwind.md)
+- [The machine's errors](part-8-conditions/81-the-machines-errors.md)
 
 ---
 

@@ -541,9 +541,17 @@
     (cond ((null text) nil)
           ((search "a directive basic format does not have" text)
            (list "format-directive[tier-2:format]"))
+          ;; `LOOP is undefined`, as the machine said it, or `The function
+          ;; COMMON-LISP:LOOP is undefined.`, as the condition's report says it
+          ;; since the machine's errors are conditions with names (#125).
           ((let ((end (search " is undefined" text)))
              (and end
-                  (let ((symbol (find-symbol (subseq text 0 end) "COMMON-LISP")))
+                  (let* ((start (let ((at (search "The function " text)))
+                                  (if at (+ at (length "The function ")) 0)))
+                         (name (subseq text start end))
+                         (colon (position #\: name :from-end t))
+                         (symbol (find-symbol (if colon (subseq name (+ colon 1)) name)
+                                              "COMMON-LISP")))
                     (and symbol (gethash symbol *deferred*) (list (%reason-for symbol))))))))))
 
 ;;; A test made by a macro of the suite's (DEF-MACRO-TEST and the like)

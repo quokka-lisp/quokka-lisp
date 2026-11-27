@@ -250,6 +250,10 @@ pub mod symbol_cache {
     pub const UNSUPPLIED: usize = 0;
     /// The first of the arithmetic fallbacks, one slot each from here.
     pub const FALLBACKS: usize = 1;
+    /// `%SIGNAL-MACHINE-ERROR`, which the machine calls with an error of
+    /// its own once the library defines it (#125). After the twelve
+    /// fallbacks.
+    pub const MACHINE_ERROR: usize = 13;
     /// How many slots the cache has.
     pub const SLOTS: usize = 16;
 }

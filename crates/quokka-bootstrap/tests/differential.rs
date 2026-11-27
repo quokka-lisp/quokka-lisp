@@ -185,6 +185,7 @@ tier1_cases! {
     class_details => "class-details",
     condition_objects => "condition-objects",
     signalling => "signalling",
+    machine_errors => "machine-errors",
 }
 
 /// The Lisp reader (#45) reads every source the system is built from exactly
@@ -416,7 +417,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1901 :REPLACED 1492)".into())],
+        [Outcome::Value("(:FORMS 1907 :REPLACED 1496)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
