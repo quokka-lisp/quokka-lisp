@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="figure-size" content="760x500">
+<title>Tutorial: a Rolodex</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,3fr) minmax(0,2fr); height: 400px; }
+.qk-body { padding: 8px 10px; line-height: 1.5; }
+.qk-cmd { font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 0.5px solid var(--border-strong); background: var(--surface-2); color: var(--text-primary); white-space: nowrap; }
+.qk-cmd.off { color: var(--text-muted); border-style: dashed; }
+.qk-cmd.go { border-color: var(--border-accent); color: var(--text-accent); }
+.qk-cmd.danger { border-color: var(--border-danger); color: var(--text-danger); }
+.qk-deco { color: var(--text-muted); font-size: 13px; }
+.qk-cards { width: 100%; border-collapse: collapse; font-size: 12px; }
+.qk-cards td { padding: 5px 4px; border-bottom: 0.5px solid var(--border); white-space: nowrap; }
+.qk-cards td:nth-child(2) { color: var(--text-secondary); font-family: var(--font-mono); font-size: 11.5px; }
+.qk-cards td:last-child { text-align: right; }
+.qk-name { border-bottom: 0.5px dashed var(--border-accent); }
+.qk-field { display: grid; grid-template-columns: 48px 1fr; gap: 4px 8px; align-items: start; margin: 0 0 8px; font-size: 12px; }
+.qk-field label { color: var(--text-secondary); padding-top: 5px; }
+.qk-field input, .qk-field textarea { width: 100%; height: 28px; font-size: 12px; }
+.qk-field textarea { height: 52px; font: inherit; font-size: 12px; color: var(--text-primary); background: var(--surface-2); border: 0.5px solid var(--border-strong); border-radius: var(--radius); padding: 4px 10px; resize: none; }
+.qk-field input.bad { border: 1px solid var(--border-danger); }
+.qk-why { grid-column: 2; font-size: 11.5px; color: var(--text-danger); margin-top: -2px; }
+.qk-ask { position: absolute; left: 170px; top: 196px; width: 230px; background: var(--surface-popover); border: 0.5px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.qk-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 12.5px; }
+.qk-desk { padding: 1px 8px; border-radius: 6px; }
+.qk-desk.on { background: var(--bg-accent); color: var(--text-accent); }
+</style>
+</head>
+<body>
+<main>
+<h1>Tutorial · a Rolodex</h1>
+<p class="lede">The screens of <code>docs/tutorials/rolodex.md</code>: the application on a desktop of its own, its list and editor in the two slots of <code>rolodex-layout</code>.</p>
+<h2 class="sr-only">The Rolodex: the list with its search bar and row buttons, the editor open on a card, a field that refuses what was typed, and the question before a delete.</h2>
+<div class="steps">
+<button>1 · Started</button>
+<button>2 · Search and edit</button>
+<button>3 · A field complains</button>
+<button>4 · Delete asks first</button>
+</div>
+<div id="stage"><p class="caption">This mock-up is drawn by its script.</p></div>
+<p class="caption" id="cap"></p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+const CARDS = [["Ada Lovelace", "020 7946 0018"], ["Grace Hopper", "202 555 0143"],
+               ["John McCarthy", "650 723 2273"], ["Niklaus Wirth", "044 555 0170"]];
+const decos = `<i class="ti ti-arrows-maximize qk-deco"></i><i class="ti ti-layout-columns qk-deco"></i><i class="ti ti-x qk-deco"></i>`;
+const vt = (icon, title, cmds) => `<div class="qk-vt"><i class="ti ${icon}" aria-hidden="true"></i><span style="color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${title}</span>
+<span style="margin-left:auto;display:flex;gap:4px;align-items:center;flex:none">${cmds}<span style="width:1px"></span>${decos}</span></div>`;
+function list(search, editing, ask) {
+  const shown = CARDS.filter(([name]) => name.toLowerCase().includes(search.toLowerCase()));
+  const off = editing ? " off" : "";
+  let rows = shown.map(([name, phone]) => `<tr${ask && name === "Niklaus Wirth" ? ' style="background:var(--bg-neutral)"' : ""}><td><span class="qk-name">${name}</span></td><td>${phone}</td>
+<td><span class="qk-cmd${off}">Edit</span> <span class="qk-cmd">Delete</span></td></tr>`).join("");
+  return `<div style="position:relative;height:100%">${vt("ti-address-book", "Rolodex", `<span class="qk-cmd${off}">New card</span>`)}
+<div class="qk-body"><input value="${search}" placeholder="Search names" style="width:100%;height:28px;font-size:12px;margin-bottom:6px">
+<table class="qk-cards">${rows}</table></div>
+${ask ? `<div class="qk-ask"><div style="margin-bottom:10px">Delete Niklaus Wirth?</div><div style="display:flex;gap:6px;justify-content:flex-end"><span class="qk-cmd">Cancel</span><span class="qk-cmd danger">Delete</span></div></div>` : ""}</div>`;
+}
+const empty = `${vt("ti-layout-sidebar-right", "detail", "")}<div class="qk-empty" style="height:calc(100% - 30px)">Nothing open</div>`;
+function editor(phone, bad) {
+  return `<div style="position:relative;height:100%">${vt("ti-id", "Edit John McCarthy",
+    `<span class="qk-cmd">Cancel</span><span class="qk-cmd${bad ? " off" : " go"}">Save</span>`)}
+<div class="qk-body" style="padding-top:12px">
+<div class="qk-field"><label>Name</label><input value="John McCarthy"></div>
+<div class="qk-field"><label>Phone</label><input value="${phone}"${bad ? ' class="bad"' : ""}>${bad ? `<div class="qk-why">A phone number is digits, spaces and + - ( ).</div>` : ""}</div>
+<div class="qk-field"><label>Email</label><input value="jmc@example.org"></div>
+<div class="qk-field"><label>Notes</label><textarea>Met at the Lisp conference.</textarea></div>
+</div></div>`;
+}
+const screen = (left, right, foot) => `<div class="qk"><div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span>
+<span style="display:flex;gap:4px;margin-left:8px"><span class="qk-desk">main</span><span class="qk-desk on">rolodex</span></span><span style="margin-left:auto">package rolodex</span></div>
+<div class="qk-tracks"><div style="border-right:0.5px solid var(--border);min-width:0">${left}</div><div style="min-width:0">${right}</div></div>
+<div class="qk-foot">${foot}</div></div>`;
+const S = [
+{stage: screen(list("", false), empty, `Start Application rolodex · a new desktop, laid out by rolodex-layout: :main on the left, :detail on the right`),
+ cap: `Section 9: the Rolodex on a desktop of its own. Edit and Delete are command buttons on each row; New card is in the tile's command bar.`},
+{stage: screen(list("mc", true), editor("650 723 2273", false), `Typing in the search bar runs the built-in edit-field command · the list redraws as you type`),
+ cap: `Search for "mc" and click Edit: the editor opens in the :detail slot. While a card is open, New card and Edit do not apply, which is this Rolodex's own rule for unsaved work.`},
+{stage: screen(list("mc", true), editor("650 72x 2273", true), `phone-number's parse-input signalled input-not-of-required-type · the field shows its report`),
+ cap: `A letter in the phone number: the field turns red and shows the condition's report, and Save's <code>:when</code>, <code>viewer-fields-valid-p</code>, is false.`},
+{stage: screen(list("", false, true), empty, `delete-card has :confirm · the command runs only after you answer`),
+ cap: `Delete asks first, with the text from the command's <code>:confirm</code>. It is the one change in the Rolodex that Cancel cannot take back.`}];
+document.getElementById("stage").innerHTML = S[0].stage;
+document.getElementById("cap").innerHTML = S[0].cap;
+mockupSteps(S.slice(1));
+</script>
+</body>
+</html>

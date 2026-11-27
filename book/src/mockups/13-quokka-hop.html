@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="figure-size" content="760x540 760x540 760x540 760x422 760x540">
+<title>Tutorial: Quokka Hop</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-game svg { display: block; width: 100%; height: auto; }
+.qk-tracks { display: grid; grid-template-columns: minmax(0,62fr) minmax(0,38fr); }
+.qk-body { padding: 8px 10px; line-height: 1.5; }
+.qk-deco { color: var(--text-muted); font-size: 13px; }
+.qk-desk { padding: 1px 8px; border-radius: 6px; }
+.qk-desk.on { background: var(--bg-accent); color: var(--text-accent); }
+.qk-sr { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+.qk-sr span:first-child { font-family: var(--font-mono); min-width: 76px; color: var(--text-secondary); }
+.qk-sr span:last-child, .qk-sr input { font-family: var(--font-mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Tutorial · Quokka Hop</h1>
+<p class="lede">The screens of <code>docs/tutorials/quokka-hop.md</code>. The level is the tutorial's <code>*level*</code>, read as <code>read-level</code> reads it, and every shape is drawn where <code>draw-thing</code> and <code>draw-quokka</code> draw it, in the game's 320 by 180 box.</p>
+<h2 class="sr-only">Quokka Hop: the title screen, the game running, the options screen waiting for a key, the game paused with the quokka in the inspector, and getting home.</h2>
+<div class="steps">
+<button>1 · Title</button>
+<button>2 · Playing</button>
+<button>3 · Options</button>
+<button>4 · Paused and inspected</button>
+<button>5 · Home</button>
+</div>
+<div id="stage"><p class="caption">This mock-up is drawn by its script.</p></div>
+<p class="caption" id="cap"></p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+const LEVEL = [
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                    L                       ",
+  "                       L          =====                     ",
+  "            L        =======                  L          B  ",
+  "          =====                ===          =====    =======",
+  "   L                                                        ",
+  "Q      ==       S         S    L      S                S    ",
+  "=====================    ========================   ========",
+  "=====================    ========================   ========"];
+const TILE = 16;
+const INK = {sky: "#cfe8f7", dusk: "#f3d2b3", fur: "#9a7650", ear: "#7a5838", eye: "#1f1f1d",
+  leaf: "#3b8a3e", vein: "#25602a", snake: "#5e7d2a", burrow: "#4a3523",
+  ground: "#d9b77e", grass: "#6aa84f", text: "#1f1f1d", accent: "#185fa5"};
+// read-level: solid tiles and things, as the Lisp does it.
+const solid = LEVEL.map(row => [...row].map(c => c === "="));
+const THINGS = [];
+LEVEL.forEach((row, ty) => [...row].forEach((c, tx) => {
+  const kind = {L: "leaf", S: "snake", Q: "start", B: "burrow"}[c];
+  if (kind) THINGS.push({kind, x: tx * TILE, y: ty * TILE});
+}));
+function drawThing(t) {
+  const {x, y} = t;
+  switch (t.kind) {
+    case "leaf": return `<ellipse cx="${x + 8}" cy="${y + 9}" rx="5" ry="3" fill="${INK.leaf}"/>
+<line x1="${x + 3}" y1="${y + 9}" x2="${x + 13}" y2="${y + 9}" stroke="${INK.vein}" stroke-width="1"/>`;
+    case "snake": { const b = y + 12;
+      return `<polyline points="${x},${b} ${x + 4},${b - 4} ${x + 8},${b} ${x + 12},${b - 4} ${x + 16},${b}" fill="none" stroke="${INK.snake}" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="${x + 16}" cy="${b - 1}" r="2" fill="${INK.snake}"/>`; }
+    case "burrow": return `<ellipse cx="${x + 8}" cy="${y + 12}" rx="9" ry="6" fill="${INK.burrow}"/>`;
+    default: return "";
+  }
+}
+function drawQuokka(q) {
+  const cx = q.x + 6, cy = q.y + 8, f = q.facing;
+  return `<ellipse cx="${cx}" cy="${cy}" rx="7" ry="6" fill="${INK.fur}"/>
+<circle cx="${cx + f * 5}" cy="${cy - 5}" r="4" fill="${INK.fur}"/>
+<circle cx="${cx + f * 3}" cy="${cy - 9}" r="2" fill="${INK.ear}"/>
+<circle cx="${cx + f * 7}" cy="${cy - 6}" r="1" fill="${INK.eye}"/>`;
+}
+function drawGround() {
+  let s = "";
+  solid.forEach((row, ty) => row.forEach((on, tx) => {
+    if (!on) return;
+    s += `<rect x="${tx * TILE}" y="${ty * TILE}" width="${TILE}" height="${TILE}" fill="${INK.ground}"/>`;
+    if (!(ty > 0 && solid[ty - 1][tx])) s += `<rect x="${tx * TILE}" y="${ty * TILE}" width="${TILE}" height="3" fill="${INK.grass}"/>`;
+  }));
+  return s;
+}
+const text = (str, x, y, opts = {}) => `<text x="${x}" y="${y}" text-anchor="${opts.center ? "middle" : "start"}" font-family="var(--font-sans)" font-size="${opts.size || 10}" font-weight="${opts.bold ? 600 : 400}" style="white-space:pre" fill="${opts.ink || INK.text}">${str}</text>`;
+const box = (inner, label) => `<svg viewBox="0 0 320 180" role="img" aria-label="${label}">${inner}</svg>`;
+// The play scene: things minus the leaves already taken, the camera as camera-x works it out.
+function play(q, taken, score, selected) {
+  const cam = Math.max(0, Math.min(q.x - 150, LEVEL[0].length * TILE - 320));
+  const things = THINGS.filter((t, i) => !taken.includes(i));
+  let s = `<rect width="320" height="180" fill="${INK.sky}"/><g transform="translate(${-cam} 0)"><g shape-rendering="crispEdges">${drawGround()}</g>${things.map(drawThing).join("")}${drawQuokka(q)}`;
+  if (selected) s += `<rect x="${q.x - 4}" y="${q.y - 6}" width="${24}" height="${22}" rx="3" fill="none" stroke="#378ADD" stroke-width="1.2"/>`;
+  return box(s + `</g>` + text(score, 8, 14), "The game: the quokka on the island among leaves and snakes");
+}
+const leafAt = (tx, ty) => THINGS.findIndex(t => t.kind === "leaf" && t.x === tx * TILE && t.y === ty * TILE);
+const RUNNING = {x: 176, y: 82, facing: 1};
+const LEAPING = {x: 2057 / 12, y: 1559 / 24, facing: 1};
+const title = box(`<rect width="320" height="180" fill="${INK.sky}"/>` + text("Quokka Hop", 160, 70, {center: true, size: 28, bold: true})
+  + text("Space to start · O for options", 160, 110, {center: true}), "The title screen");
+const keys = [["Left", "←"], ["Right", "→"], ["Jump", "press a key…"], ["Back", "Esc"]];
+const options = box(`<rect width="320" height="180" fill="${INK.sky}"/>` + text("Keys", 160, 30, {center: true, size: 16, bold: true})
+  + keys.map(([a, k], i) => text(a, 100, 60 + 20 * i, {ink: i === 2 ? INK.accent : INK.text}) + text(k, 200, 60 + 20 * i)).join(""), "The options screen");
+const home = box(`<rect width="320" height="180" fill="${INK.sky}"/>` + text("Home!", 160, 70, {center: true, size: 28, bold: true})
+  + text("6 leaves in 41.3 seconds", 160, 105, {center: true}) + text("Any key for the title", 160, 130, {center: true}), "The home screen");
+const decos = `<i class="ti ti-arrows-maximize qk-deco"></i><i class="ti ti-layout-columns qk-deco"></i><i class="ti ti-x qk-deco"></i>`;
+const tileBar = state => `<div class="qk-vt"><i class="ti ti-device-gamepad-2" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka Hop</span>
+<span style="margin-left:auto;display:flex;gap:6px;align-items:center">${state}<span style="width:2px"></span>${decos}</span></div>`;
+const running = `<span style="color:var(--text-success)">running</span>`;
+const topBar = `<div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span>
+<span style="display:flex;gap:4px;margin-left:8px"><span class="qk-desk">main</span><span class="qk-desk on">hop</span></span><span style="margin-left:auto">package hop</span></div>`;
+const one = (game, state, foot) => `<div class="qk">${topBar}${tileBar(state)}<div class="qk-game">${game}</div><div class="qk-foot">${foot}</div></div>`;
+const inspector = `<div class="qk-vt"><i class="ti ti-search" aria-hidden="true"></i>Inspector</div>
+<div class="qk-body"><div class="qk-c" style="font-size:12.5px">#&lt;QUOKKA&gt;</div>
+<div style="font-size:12px;color:var(--text-secondary)">instance of <span class="qk-l">quokka</span></div>
+<div class="qk-k">slots</div>
+<div class="qk-sr"><span>kind</span><span>:QUOKKA</span></div>
+<div class="qk-sr"><span>x</span><span>2057/12</span></div>
+<div class="qk-sr"><span>y</span><span>1559/24</span></div>
+<div class="qk-sr"><span>vx</span><span>110</span></div>
+<div class="qk-sr"><span>vy</span><input value="-500" style="height:24px;width:90px;border-color:var(--border-accent)"></div>
+<div class="qk-sr"><span>on-ground</span><span>NIL</span></div>
+<div class="qk-sr"><span>facing</span><span>1</span></div>
+<div class="qk-k">x and y are ratios: every step is exactly 1/120 of a second.</div></div>`;
+const S = [
+{stage: one(title, running, `Start Application hop · the game on a desktop of its own · Cmd-Escape always returns to the environment`),
+ cap: `The title scene: sky, two lines of text, and its song looping. The key it names comes from <code>key-for</code>, so it changes when the player changes it.`},
+{stage: one(play(RUNNING, [leafAt(3, 7)], "Leaves 1   7.4 s"), running, `viewer-tick moves the world in steps of 1/120 s · display-viewer only draws it`),
+ cap: `Playing. The ground, leaves, snakes and burrow are the letters of <code>*level*</code>; the drawing is translated by <code>camera-x</code>, and the score is drawn after it, where it stays put.`},
+{stage: one(options, running, `The arrow keys and Enter are fixed here · the new key is written to the settings store in a transaction`),
+ cap: `The options scene waiting for the key that will mean <em>jump</em>. Each key is shown by <code>key-name</code>, the character its position types on this keyboard.`},
+{stage: `<div class="qk">${topBar}<div class="qk-tracks"><div style="border-right:0.5px solid var(--border);min-width:0;display:flex;flex-direction:column">${tileBar(`<span style="color:var(--text-warning)">paused</span>`)}<div class="qk-game" style="flex:1;display:flex;align-items:center;background:var(--surface-1)">${play(LEAPING, [leafAt(3, 7)], "Leaves 1   7.1 s", true)}</div></div>
+<div style="min-width:0">${inspector}</div></div><div class="qk-foot">The tile stopped running, so the world stopped ticking and viewer-running-changed paused the music</div></div>`,
+ cap: `Section 11: right-click the quokka mid-jump. The game pauses and the inspector shows the real quokka. Type -500 into <code>vy</code>, continue, and it leaps.`},
+{stage: one(home, running, `The home scene plays its own tune · any key goes back to the title`),
+ cap: `Home, with all six leaves. The time is the play scene's <code>clock</code>, the sum of every 1/120 s step.`}];
+document.getElementById("stage").innerHTML = S[0].stage;
+document.getElementById("cap").innerHTML = S[0].cap;
+mockupSteps(S.slice(1));
+</script>
+</body>
+</html>

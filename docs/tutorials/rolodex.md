@@ -370,12 +370,33 @@ Start Application rolodex
 ```
 
 Quokka opens a new desktop called *rolodex*, with the list on the left and
-an empty slot on the right that says *Nothing open*. Type `mc` in the search
-bar and only John McCarthy is left. Click *Edit* on his row and the editor
-opens on the right. While it is open, New card and the other rows' Edit
-buttons do not apply. Type a phone number with a letter in it, watch the
-field complain and Save stop applying, fix it, and press Return. Click *New
-card* above the list, or press `n`, and the editor opens empty.
+an empty slot on the right that says *Nothing open*.
+
+![The Rolodex on its own desktop: the list on the left, an empty slot on the right](../../book/src/mockups/png/12-rolodex-tutorial-1.png)
+
+*The two slots of rolodex-layout. New card is in the command bar; Edit and Delete are on each row.*
+
+Type `mc` in the search bar and only John McCarthy is left. Click *Edit* on
+his row and the editor opens on the right. While it is open, New card and
+every Edit button do not apply.
+
+![The list narrowed to John McCarthy, and his card open in the editor](../../book/src/mockups/png/12-rolodex-tutorial-2.png)
+
+*Searching narrows the list as you type. With a card open, New card and Edit are drawn dashed.*
+
+Type a phone number with a letter in it, and watch the field complain and
+Save stop applying.
+
+![The phone field outlined in red, with its complaint under it, and Save not applying](../../book/src/mockups/png/12-rolodex-tutorial-3.png)
+
+*The field shows the report of the condition that parse-input signalled.*
+
+Fix it and press Return. Click *New card* above the list, or press `n`, and
+the editor opens empty. Click *Delete* on a row, and the Rolodex asks first.
+
+![A question over the list: Delete Niklaus Wirth?](../../book/src/mockups/png/12-rolodex-tutorial-4.png)
+
+*The text comes from delete-card's :confirm.*
 
 The desktop is one of your desktops now. Switch back to the one with the
 listener, and the Rolodex is still there, with its search text and its open

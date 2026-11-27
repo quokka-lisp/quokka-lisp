@@ -432,6 +432,10 @@ dark theme:
 ;; and the others in the same way
 ```
 
+![The game running: the quokka on a platform beside a gum leaf, a snake on the ground below](../../book/src/mockups/png/13-quokka-hop-2.png)
+
+*The level drawn from *level*, moved left by camera-x. The score is drawn after the translation, so it stays put.*
+
 ## 8. Sound effects
 
 Sounds go in `hop.sound`. Each is built from a few parts, an oscillator
@@ -551,6 +555,10 @@ The title screen starts its song when it is entered and waits for a key:
          (change-scene (game s) (make-instance 'options-scene :game (game s))))))
 ```
 
+![The title screen: Quokka Hop, and Space to start · O for options](../../book/src/mockups/png/13-quokka-hop-1.png)
+
+*The title scene. It names the key bound to jump, so the text changes when the player changes the key.*
+
 `play-scene` reads the level when it is entered:
 
 ```lisp
@@ -613,6 +621,10 @@ of a value nobody else shares.
 The arrow keys and Enter that move through the options are fixed, so that a
 player who maps *jump* to the down arrow can still find their way back.
 
+![The options screen with Jump highlighted, waiting for a key](../../book/src/mockups/png/13-quokka-hop-3.png)
+
+*Waiting for the key that will mean jump.*
+
 Being caught plays its song and offers another go; getting home plays the
 other and shows the time:
 
@@ -646,6 +658,10 @@ other and shows the time:
   (change-scene (game s) (make-instance 'title-scene :game (game s))))
 ```
 
+![The home screen: 6 leaves in 41.3 seconds](../../book/src/mockups/png/13-quokka-hop-5.png)
+
+*Home with all six leaves.*
+
 ## 11. Playing it, and changing it while you play
 
 ```
@@ -664,6 +680,10 @@ Right-click the quokka while the game runs. The tile stops running, so the
 game pauses and its music with it, and the inspector shows the quokka: its position, its speed,
 whether it is on the ground. Change `vy` to -500 in the inspector and
 continue: the quokka leaps.
+
+![The game paused with the quokka selected mid-jump, and the inspector beside it showing its slots](../../book/src/mockups/png/13-quokka-hop-4.png)
+
+*Paused and inspected. The position is a ratio, because every step is exactly 1/120 of a second.*
 
 ## 12. Advanced: sprites
 

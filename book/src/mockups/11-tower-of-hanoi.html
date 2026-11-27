@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="figure-size" content="760x500">
+<title>Tutorial: the Tower of Hanoi</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="mockups.css">
+<style>
+.qk-tracks { display: grid; grid-template-columns: minmax(0,44fr) minmax(0,56fr); height: 400px; }
+.qk-one { height: 400px; display: flex; flex-direction: column; }
+.qk-tile { display: flex; flex-direction: column; min-width: 0; }
+.qk-tile svg { flex: 1; min-height: 0; width: 100%; display: block; }
+.qk-body { padding: 8px 10px; line-height: 1.5; }
+.qk-c { font-size: 11px; }
+.qk-r { font-size: 11px; }
+.qk-cmd { font-size: 11.5px; padding: 1px 8px; border-radius: 6px; border: 0.5px solid var(--border-strong); background: var(--surface-2); color: var(--text-primary); }
+.qk-cmd.off { color: var(--text-muted); border-style: dashed; }
+.qk-deco { color: var(--text-muted); font-size: 14px; }
+.qk-deco.on { color: var(--text-accent); }
+.qk-focus { box-shadow: inset 0 0 0 1.5px var(--border-accent); }
+</style>
+</head>
+<body>
+<main>
+<h1>Tutorial · the Tower of Hanoi</h1>
+<p class="lede">The screens of <code>docs/tutorials/tower-of-hanoi.md</code>. The disks are drawn by a JavaScript copy of the tutorial's <code>solve</code>, <code>positions</code> and <code>display-viewer</code>, so each picture is what that code would draw.</p>
+<h2 class="sr-only">The Tower of Hanoi viewer: opened beside the listener, stepped forward, zoomed, and changed while on the screen.</h2>
+<div class="steps">
+<button>1 · Opened</button>
+<button>2 · Move 8</button>
+<button>3 · Zoomed, at the end</button>
+<button>4 · Changed while on screen</button>
+</div>
+<div id="stage"><p class="caption">This mock-up is drawn by its script.</p></div>
+<p class="caption" id="cap"></p>
+<a class="back" href="index.html">All mock-ups</a>
+</main>
+<script src="mockups.js"></script>
+<script>
+// The tutorial's Lisp, transcribed. A move is [from, to]; a position is
+// three arrays, one per peg, top disk first.
+function solve(n, from = 0, to = 2, via = 1) {
+  if (n === 0) return [];
+  return [...solve(n - 1, from, via, to), [from, to], ...solve(n - 1, via, to, from)];
+}
+function positions(n) {
+  let pegs = [Array.from({length: n}, (_, i) => i + 1), [], []];
+  const all = [pegs];
+  for (const [from, to] of solve(n)) {
+    const next = pegs.map(p => p.slice());
+    const disk = next[from].shift();
+    next[to].unshift(disk);
+    all.push(pegs = next);
+  }
+  return all;
+}
+const N = 4, ALL = positions(N), LAST = ALL.length - 1;
+const INKS = ["#D85A30", "#EF9F27", "#1D9E75", "#378ADD", "#7F77DD", "#D4537E"];
+// (shade +teal+ (/ disk n)): darker as the disk grows.
+function shade(t) {
+  const a = [0xB4, 0xE8, 0xD6], b = [0x0B, 0x5C, 0x48];
+  return "rgb(" + a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",") + ")";
+}
+function picture(step, shaded) {
+  const pegs = ALL[step];
+  let s = `<svg viewBox="0 0 300 180" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Three pegs with disks, move ${step} of ${LAST}">`;
+  s += `<rect x="10" y="160" width="280" height="6" fill="var(--border-stronger)"/>`;
+  for (let peg = 0; peg < 3; peg++) {
+    const x = 55 + peg * 95;
+    s += `<rect x="${x - 2}" y="50" width="4" height="110" fill="var(--border-stronger)"/>`;
+    pegs[peg].slice().reverse().forEach((disk, level) => {
+      const hw = 10 + 34 * disk / N, bottom = 160 - level * 14;
+      const ink = shaded ? shade(disk / N) : INKS[(disk - 1) % 6];
+      s += `<rect x="${x - hw}" y="${bottom - 12}" width="${2 * hw}" height="12" rx="3" fill="${ink}"/>`;
+    });
+  }
+  return s + `</svg>`;
+}
+function tile(step, opts = {}) {
+  const back = step > 0, fwd = step < LAST;
+  return `<div class="qk-tile${opts.focus ? " qk-focus" : ""}" style="height:100%">
+<div class="qk-vt"><i class="ti ti-stack-2" aria-hidden="true"></i><span style="color:var(--text-primary);white-space:nowrap">Tower of Hanoi · move ${step} of ${LAST}</span>
+<span style="margin-left:auto;display:flex;gap:5px;align-items:center;white-space:nowrap">
+<span class="qk-cmd${back ? "" : " off"}">Back</span><span class="qk-cmd${fwd ? "" : " off"}">Forward</span>
+<span style="width:2px"></span>
+<i class="ti ${opts.zoomed ? "ti-arrows-minimize" : "ti-arrows-maximize"} qk-deco${opts.zoomed ? " on" : ""}" title="Zoom"></i>
+<i class="ti ti-layout-columns qk-deco" title="Split"></i><i class="ti ti-x qk-deco" title="Close"></i></span></div>
+<div style="flex:1;min-height:0;display:flex;padding:8px">${picture(step, opts.shaded)}</div></div>`;
+}
+const bar = right => `<div class="qk-bar"><i class="ti ti-paw" aria-hidden="true"></i><span style="color:var(--text-primary)">Quokka</span><span>· world: my-apps.qi</span><span style="margin-left:auto">${right}</span></div>`;
+const two = (left, right, foot, pkg = "package hanoi") => `<div class="qk">${bar(pkg)}
+<div class="qk-tracks"><div style="border-right:0.5px solid var(--border);min-width:0">${left}</div>${right}</div>
+<div class="qk-foot">${foot}</div></div>`;
+const listener = `<div class="qk-vt"><i class="ti ti-terminal-2" aria-hidden="true"></i>Listener</div>
+<div class="qk-body">
+<div class="qk-c"><span class="qk-cm">hanoi 2 › </span>(solve 3)</div>
+<span class="qk-r">((0 . 2) (0 . 1) (2 . 1) (0 . 2) (1 . 0) (1 . 2) (0 . 2))</span>
+<div class="qk-c"><span class="qk-cm">hanoi 3 › </span>(car (last (positions 3)))</div>
+<span class="qk-r">#(NIL NIL (1 2 3))</span>
+<div class="qk-c"><span class="qk-cm">hanoi 4 › </span>(open-viewer 'hanoi-viewer
+                     :disks 4)</div>
+<span class="qk-r">#&lt;HANOI-VIEWER Tower of Hanoi · move 0 of 15&gt;</span>
+<div class="qk-c"><span class="qk-cm">hanoi 5 › </span><span class="qk-cur"></span></div>
+</div>`;
+const editor = `<div class="qk-vt"><i class="ti ti-pencil" aria-hidden="true"></i>Editor · draw-disk <span style="margin-left:auto;color:var(--text-warning)">changed since commit</span></div>
+<div class="qk-body"><div class="qk-c">(defun draw-disk (stream disk n x level)
+  (let ((half-width
+          (+ 10 (* 34 (/ disk n))))
+        (bottom (- 160 (* level 14))))
+    (with-output-as-presentation
+        (stream disk 'disk)
+      (draw-rectangle*
+        (- x half-width) (- bottom 12)
+        (+ x half-width) bottom
+        <span class="qk-ed">:ink (shade +teal+ (/ disk n))</span>
+        :corner-radius 3))))</div>
+<div class="qk-k">Installed with Cmd-Enter. Quokka knows which viewers <span class="qk-l">draw-disk</span> drew, and redraws them.</div></div>`;
+const S = [
+{stage: two(listener, tile(0, {focus: true}),
+  `The new tile split the listener along its longer side · → or Forward steps on`),
+ cap: `Section 7: <code>open-viewer</code> splits the tile that had the focus and puts the puzzle in the new half. Back does not apply at move 0, so it is drawn dashed.`},
+{stage: two(listener, tile(8, {focus: true}),
+  `After each command every visible viewer redraws; only the disk that moved is drawn again`),
+ cap: `Move 8 of 15: the largest disk has gone home to the third peg, and the three smaller disks wait on the middle one.`},
+{stage: `<div class="qk">${bar("package hanoi")}<div class="qk-one">${tile(LAST, {zoomed: true})}</div>
+<div class="qk-foot">Zoomed · the drawing scaled up by :scale :fit · Zoom again puts the tile back where it was</div></div>`,
+ cap: `Zoomed, at the last move. The tile fills the screen and <code>with-drawing</code>'s <code>:scale :fit</code> scales the picture with it. Forward's <code>:when</code> is false, so it no longer applies.`},
+{stage: two(editor, tile(8, {shaded: true}),
+  `Installed at once · the tile redrew at move 8 of 15, with the same viewer object`, "package hanoi · changed"),
+ cap: `Section 8: <code>draw-disk</code> shades each disk by its size. After Cmd-Enter the tile redraws at the step it was on; nothing restarted.`}];
+document.getElementById("stage").innerHTML = S[0].stage;
+document.getElementById("cap").innerHTML = S[0].cap;
+mockupSteps(S.slice(1));
+</script>
+</body>
+</html>

@@ -254,13 +254,25 @@ hanoi 4 › (open-viewer 'hanoi-viewer :disks 4)
 
 A new tile appears. Quokka has split the tile that had the focus, the
 listener, along its longer side, and put the Hanoi viewer in the new half.
+
+![The Hanoi viewer beside the listener, at move 0](../../book/src/mockups/png/11-tower-of-hanoi-1.png)
+
+*The new tile beside the listener. Back does not apply yet, so it is drawn dashed.*
 Press the right arrow fifteen times, or click *Forward*, and watch the disks
 go across. Click *Back* to see a move again.
+
+![The Hanoi viewer at move 8 of 15](../../book/src/mockups/png/11-tower-of-hanoi-2.png)
+
+*Move 8: the largest disk is home, and the other three wait on the middle peg.*
 
 Back and Forward are in the tile's command bar, next to the standard
 decorations every tile gets: *Zoom*, *Split* and *Close*. Click *Zoom* and the tile fills the screen, the drawing scaled
 up because of `:scale :fit`; click it again and the tile returns to exactly
 where it was. You wrote no code for either.
+
+![The Hanoi viewer zoomed to fill the screen, at the last move](../../book/src/mockups/png/11-tower-of-hanoi-3.png)
+
+*Zoomed, at the last move. Forward no longer applies.*
 
 ## 8. Changing it while it is on the screen
 
@@ -276,6 +288,10 @@ The tile redraws at once, at the same step, with the same disks in the same
 places. Quokka knows which function drew which part of the screen, so when
 you install a new `draw-disk` it redraws the viewers it drew. Nothing was
 restarted, and the viewer object, with its step, is the one you had.
+
+![The new draw-disk in the editor, and the viewer redrawn with shaded disks](../../book/src/mockups/png/11-tower-of-hanoi-4.png)
+
+*The changed draw-disk, and the tile redrawn at the step it was on.*
 
 ## 9. Keeping it
 

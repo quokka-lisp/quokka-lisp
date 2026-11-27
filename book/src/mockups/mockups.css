@@ -79,6 +79,10 @@ input { background: var(--surface-2); height: 30px; }
 .steps button.on { border-color: var(--border-accent); }
 .caption { font-size: 13px; color: var(--text-secondary); margin: 10px 0 0; }
 .back { display: inline-block; margin-top: 20px; font-size: 13px; }
+/* Figure mode (#step=N&figure): only the screen, for a tutorial. */
+body.figure { padding: 12px; }
+body.figure h1, body.figure .lede, body.figure .steps,
+body.figure .caption, body.figure .back { display: none; }
 
 /* The frame every mock-up shares: a window, its top bar, viewer titles. */
 .qk { border: 0.5px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface-2); font-size: 13px; }

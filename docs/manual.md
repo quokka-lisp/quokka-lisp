@@ -534,7 +534,15 @@ scripts/render-mockups.sh
 ```
 
 from the repository root, with Chrome or Chromium installed. Run it again
-after changing a page, and commit the PNGs with it.
+after changing a page, and commit the PNGs with it; name pages after the
+script to render only those.
+
+A page that illustrates a tutorial in `docs/tutorials/` says so with
+`<meta name="figure-size" content="760x500">`, one size for each step if
+they differ. Its PNGs are then rendered at that size in figure mode
+(`#step=N&figure`), which hides the page's heading, step buttons and
+caption and leaves only the screen; the tutorial writes its own caption
+under each one.
 
 ---
 
