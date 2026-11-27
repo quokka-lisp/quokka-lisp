@@ -255,9 +255,9 @@ and keeps the remainder for the next frame.
 
 ```lisp
 (defconstant +step+ 1/120)
-(defconstant +gravity+ 900)
-(defconstant +run-speed+ 110)
-(defconstant +jump-speed+ 320)
+(defparameter *gravity* 900)
+(defparameter *run-speed* 110)
+(defparameter *jump-speed* 320)
 
 (defclass play-scene (scene)
   ((solid :accessor solid)
@@ -286,6 +286,16 @@ however many frames they were spread over. `(min seconds 1/10)` stops a
 long pause, such as the tab being hidden, from arriving as one enormous
 step that sends the quokka through the floor.
 
+`+step+` is a constant because the game is built around it. Gravity and the
+two speeds are the numbers you will want to tune while you play, so they
+are parameters, special variables, and the difference matters in a world
+that keeps running. `defconstant` promises that a value will never change,
+so the compiler may write the value itself into every function that uses
+it, and defining the constant again with a different value is an error
+(SBCL signals one). A special variable is read each time it is used, so a
+new value reaches the running game at its next step. The names say which
+is which: `+plus signs+` for constants, `*earmuffs*` for special variables.
+
 One step reads the actions, moves the quokka across, then up or down, and
 looks at what it touched:
 
@@ -293,13 +303,13 @@ looks at what it touched:
 (defun step-world (s dt)
   (let ((q (quokka s))
         (game (game s)))
-    (setf (vx q) (* +run-speed+ (- (if (held-p game :right) 1 0)
+    (setf (vx q) (* *run-speed* (- (if (held-p game :right) 1 0)
                                    (if (held-p game :left) 1 0))))
     (unless (zerop (vx q)) (setf (facing q) (signum (vx q))))
     (when (and (held-p game :jump) (on-ground q))
-      (setf (vy q) (- +jump-speed+))
+      (setf (vy q) (- *jump-speed*))
       (play *jump*))
-    (incf (vy q) (* +gravity+ dt))
+    (incf (vy q) (* *gravity* dt))
     (move-across s q (* (vx q) dt))
     (move-down s q (* (vy q) dt))
     (look-around s q)))
@@ -670,7 +680,7 @@ Start Application hop
 
 The game opens on a desktop of its own. Click the tile and press the key
 the title screen names. While you play, open the listener on another
-desktop, change `+jump-speed+` to 360 and press Cmd-Enter: the next jump is
+desktop, change `*jump-speed*` to 360 and press Cmd-Enter: the next jump is
 higher, without restarting. Change the level's text, and the next time you
 start it the level is new. Change `*jump*` and the next jump sounds
 different. Nothing stops, because the game is just objects in the world,
