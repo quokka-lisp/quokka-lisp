@@ -97,6 +97,9 @@ pub struct Quokka {
     messages: Vec<String>,
     /// Events the world has not asked for yet.
     events: VecDeque<String>,
+    /// How many times in a row the started program has failed without
+    /// once waiting for the person: three, and it is not started again.
+    failures: u32,
 }
 
 /// Send a panic's message to the browser's console before the trap.
@@ -148,6 +151,7 @@ impl Quokka {
             program: None,
             messages: Vec::new(),
             events: VecDeque::new(),
+            failures: 0,
         })
     }
 
@@ -177,16 +181,17 @@ impl Quokka {
     /// the read-eval-print loop: a program that runs until it returns, such
     /// as the environment's command loop, `%RUN-ENVIRONMENT` (#137).
     ///
+    /// NAME is looked up in the system table, where the library's names
+    /// are, as a host's `%host-step` is.
+    ///
     /// # Errors
     /// If something is running already, or NAME is not a function.
     pub fn start(&mut self, name: &str) -> Result<(), String> {
         if self.doing != Doing::Nothing {
             return Err("something is running already".to_string());
         }
-        vm::begin_call(&mut self.heap, name).map_err(|e| e.to_string())?;
-        self.doing = Doing::Program;
-        self.program = Some(name.to_string());
-        Ok(())
+        self.failures = 0;
+        self.begin_program(name)
     }
 
     /// Queue an event for the world: the text of an S-expression
@@ -217,6 +222,7 @@ impl Quokka {
             // on the page while others ran (#34) — and stop if nothing can
             // go on without the person.
             if !self.answer_all() {
+                self.failures = 0;
                 return false;
             }
             match vm::one_slice(&mut self.heap, left) {
@@ -230,8 +236,20 @@ impl Quokka {
                     self.output.push_str(&format!("; {e}\n"));
                     vm::recover(&mut self.heap);
                     // As the native loop does: on to the next form, or the
-                    // program from the start.
-                    self.restart();
+                    // program from the start, unless it keeps failing
+                    // before it ever waits, which starting again would
+                    // repeat for ever. This call ends here either way.
+                    left = 0;
+                    self.failures += 1;
+                    if self.program.is_some() && self.failures >= 3 {
+                        self.output.push_str(
+                            "; the program failed three times running, and was stopped\n",
+                        );
+                        self.doing = Doing::Nothing;
+                        self.program = None;
+                    } else {
+                        self.restart();
+                    }
                 }
             }
         }
@@ -294,13 +312,21 @@ impl Quokka {
         };
     }
 
+    /// Start the program NAME, counting failures on from before.
+    fn begin_program(&mut self, name: &str) -> Result<(), String> {
+        vm::begin_call(&mut self.heap, name).map_err(|e| e.to_string())?;
+        self.doing = Doing::Program;
+        self.program = Some(name.to_string());
+        Ok(())
+    }
+
     /// After a machine error: the program from the start, or the loop's
     /// next form.
     fn restart(&mut self) {
         match self.program.clone() {
             Some(name) => {
                 self.doing = Doing::Nothing;
-                if let Err(e) = self.start(&name) {
+                if let Err(e) = self.begin_program(&name) {
                     self.output.push_str(&format!("; {e}\n"));
                 }
             }

@@ -56,3 +56,12 @@ HELLO
 => T
 => :TYPE-ERROR
 => NIL
+=> (T T)
+=> (T T)
+=> (T T NIL)
+=> NIL
+=> :TYPE-ERROR
+=> :OK
+=> :OK
+=> (#\a #\a 1)
+=> "D"

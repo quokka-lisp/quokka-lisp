@@ -50,7 +50,9 @@
     "lisp/library/conditions.lisp" "lisp/library/definitions.lisp"
     "lisp/library/frames.lisp" "lisp/library/debugger.lisp" "lisp/library/threads.lisp"
     "lisp/library/channels.lisp"
-    "lisp/library/eval.lisp"
+    "lisp/library/eval.lisp" "lisp/library/ui-records.lisp" "lisp/library/ui-viewers.lisp"
+    "lisp/library/ui-drawing.lisp"
+    "lisp/library/listener.lisp"
     "lisp/library/rebuild.lisp" "lisp/library/packages.lisp"))
 
 ;;; `(%rebuild-world)` — rebuild every function from source, and say how many

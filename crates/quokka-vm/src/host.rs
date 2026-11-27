@@ -251,6 +251,11 @@ fn decode<'h>(mc: &Mutation<'h>, record: Value<'h>) -> Option<Request> {
         return Some(Request::AwaitEvent);
     }
     let argument = mc.slot(record, request::ARGUMENT);
+    // Every other kind takes a string, which the machine checked when it
+    // made the request; an image could hold anything (rule 10).
+    if !(argument.is_object() && mc.header(argument).object_type.is_string()) {
+        return None;
+    }
     let text = mc.string_to_rust(argument);
     if mc.symbol_is(kind, "%READ-SOURCE") {
         return Some(Request::ReadSource(text));

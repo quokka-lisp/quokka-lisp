@@ -778,9 +778,9 @@ phase 3 is complete** (#123): `crates/quokka/tests/gate.rs` builds a world
 with the `quokka` binary and types sessions at it — a function fixed from
 inside its error and its frame retried, in the main thread and in a thread
 the main thread joins. `quokka_vm::PHASE` says phase 3. Worker worlds are #132.
-**Phase 4, the renderer and live text, has begun** (#134; the design and its
-thirteen decisions are `docs/display.md`; book Part XII, chapters 94–). Gate:
-edit and evaluate a form in the browser. **Step B, Gray streams, is done**
+**Phase 4, the renderer and live text, is complete** (#134; gate met 27 Nov
+2026, #142; the design and its thirteen decisions are `docs/display.md`; book
+Part XII, chapters 94–100). Gate: edit and evaluate a form in the browser. **Step B, Gray streams, is done**
 (#136, chapter 95): `lisp/library/gray-streams.lisp` (before `char-names.lisp`
 and the reader), package **`QUOKKA-GRAY`** with SBCL's `SB-GRAY` names; the
 structure streams keep their fast paths and anything else goes to the generic
@@ -797,7 +797,49 @@ waiting; `vm::can_run`, `vm::begin_call`. `crates/quokka-wasm`'s `Quokka` has
 world is **idle** (every process waiting on the host, nothing to answer);
 `interrupt` restarts a started program with the event `(:interrupted)`.
 **Waiting in Lisp (`%wait-until`) keeps a world from ever being idle**: the
-environment waits only on `%await-event`. Rebuild `(:FORMS 2204 :REPLACED 1649)`.
+environment waits only on `%await-event`. A started program that fails three
+times running before it waits is stopped; `start` refuses a name with no
+function; the main process's requests are listed first, so events go to the
+command loop. **Steps D–H are done, and with them phase 4's gate** (#138–#142,
+chapters 96–99; 27 Nov 2026). `lisp/library/ui-records.lisp` and
+`ui-viewers.lisp` (package **`QUOKKA-UI`**, after `eval.lisp`): output records
+(CLOS: `text-record`, `block-record`, `editor-record`, `viewer-record`), each
+with an identity number, properties (names, never CSS), a `:key`, and
+**`record-drawn-by`, the innermost non-machinery function on the stack**
+(`%drawing-function` over the new primitive `%frame-callee`, ≤64 frames);
+changes are **notes in `%display-queue`, turned into messages at
+`flush-display` from the records as they are then** (an insertion says the
+sibling it goes before, computed at the flush); `record-stream` is a Gray
+stream of text runs; `with-text-style`, `with-ink`. Viewers: `viewer` and its
+protocol generics; `:display-time :command-loop` viewers redraw after every
+event by **reconciliation** (same class and place, or same `:key`, keeps the
+old record's identity); `%run-environment` is the command loop (events read
+with `*read-eval*` nil); `read-event-loop` runs it nested inside a form that
+reads; an error in a viewer is written into it, except inside a form the
+listener runs (`%listener-evaluating`). `lisp/library/listener.lisp`
+(**`QUOKKA-ENV`**): the listener, entries of prompt (generic
+`listener-prompt`) + editor + output (`:bar`) + values; Enter runs a complete
+form, Cmd/Ctrl-Enter any; an edited earlier form runs as a new entry above
+the input, the old results `:strike`, notes both ways; `listener-stream` is a
+two-way Gray stream whose reads run the nested loop; **the debugger is on in
+the environment and reads through the listener**; `*`/`+`/`/` and kin are set.
+The renderer (`crates/quokka-wasm/www/`): `sexp.js`, `renderer.js` (a
+**model** that runs in Node and dumps the screen as text, and a **view**);
+editors are `<textarea>`s whose key tables are announced; `index.html` is the
+environment, the dev console is `console.html`. Gate tests: the
+`crates/quokka-wasm` unit tests, `scripts/smoke-wasm.mjs` (the whole screen
+compared as text), `scripts/smoke-browser.sh` (both pages, headless).
+`quokka_vm::PHASE` says phase 4. After a Stop or a machine failure the command loop calls `viewer-restarted`
+on each viewer (cleanups did not run); event property lists are validated;
+property values are sent through `%wire-value`. **Step I, drawing, is done, and with it phase
+4** (#143, chapter 100): `lisp/library/ui-drawing.lisp` — `with-drawing (stream
+:width :height :scale)`, `draw-rectangle*` … `draw-text*` into `*drawing*` (no
+stream argument, as the tutorials), `with-translation`/`with-scaling` as
+`:group` records with a matrix; shapes are records (kind `:shape`, SVG in the
+renderer), so redisplay moves one rather than making it again; a ratio is
+sent as a double; `stream-record-stream` says where a stream's pictures go.
+**Next: phase 5**, presentations, commands and the inspector.
+Rebuild `(:FORMS 2416 :REPLACED 1749)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
@@ -1045,7 +1087,8 @@ crates/quokka            the `quokka` program (#51), one concern a file: `main.r
                          line, `host.rs` what a world may ask of this machine, `world.rs`
                          running, building, rebuilding and saving one, `bootstrap.rs` the
                          bootstrap REPL
-crates/quokka-wasm       the browser host: loads a world and runs it in slices (#84), and the dev console page
+crates/quokka-wasm       the browser host: loads a world and runs it in slices (#84); the environment page
+                         (www/index.html, renderer.js, sexp.js) and the dev console (www/console.html)
 lisp/                    Lisp sources: the prelude and compiler (tier 0), the library (tier 1)
 tests/lisp/              differential test files
 docs/design.md        the design
@@ -1099,9 +1142,9 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Regenerate a baseline | `cargo run -p quokka -- bootstrap --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |
 | Build for the browser | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
 | Test under WASI | `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime --dir=. --dir=$PWD" cargo test -p quokka-vm -p quokka-bootstrap --target wasm32-wasip1` |
-| Dev console bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |
-| A world for the dev console | `cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi` — the page fetches it; the browser carries no interpreter (#84) |
-| Serve the dev console | `python3 -m http.server -d crates/quokka-wasm/www 8080` |
+| Browser bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |
+| A world for the browser | `cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi` — the page fetches it; the browser carries no interpreter (#84) |
+| Serve the environment | `python3 -m http.server -d crates/quokka-wasm/www 8080` — `/` is the environment (phase 4), `/console.html` the dev console; the built-in browser's preview config in `.claude/launch.json` serves with caching off |
 | Format and lint | `cargo fmt --all` · `cargo clippy --workspace --all-targets -- -D warnings` |
 | Test placement | `./scripts/check-test-placement.sh` — rule 7: no `#[test]` outside the test directories; also prints each crate's size |
 | Docs | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --open` |

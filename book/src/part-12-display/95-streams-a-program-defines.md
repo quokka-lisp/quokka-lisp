@@ -125,7 +125,7 @@ The whole reader runs over a stream it has never heard of, and gives
 
 ## What did it cost?
 
-One library file of about 300 lines, `gray-streams.lisp`, and a branch at
-the end of each stream function; no Rust. Gray streams make a program's
+One library file, `gray-streams.lisp`, and a branch at the end of each
+stream function; no Rust. Gray streams make a program's
 output go anywhere a class can send it. The next chapter makes a class
 that sends it into a viewer.

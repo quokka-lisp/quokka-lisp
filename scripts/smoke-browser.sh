@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# The dev console, in a real browser with no window (#116).
+# The browser pages, in a real browser with no window (#116, #142).
 #
-# scripts/smoke-wasm.mjs runs the bundle in Node: the engine and the
-# bindings. This runs the *page*: index.html fetches the world, the pump
-# gives the browser back between slices, and what a form prints lands in the
-# document. The form goes in after `#` in the address, which the page
-# evaluates once the world is up; the browser is asked for the document
-# afterwards and the answer is looked for in it.
+# scripts/smoke-wasm.mjs runs the bundle in Node: the engine, the bindings
+# and the renderer's model. This runs the *pages*: they fetch the world, the
+# pump gives the browser back between slices, and what a form prints lands
+# in the document. The form goes in after `#` in the address. The dev
+# console (console.html) evaluates it once the world is up; the environment
+# (index.html, phase 4's gate) types it into the listener's editor and
+# presses Enter, as a person would, and the renderer draws the answer. The
+# browser is asked for each document afterwards and the answer is looked
+# for in it.
 #
 #   wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
 #   cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi
@@ -52,14 +55,15 @@ wanted="(3 1267650600228229401496703205376 (2 3 4))"
 
 # Virtual time: the browser runs the page's timers as fast as it can and
 # stops when that much page time has passed, so the pump's slices all run.
-page=$("$browser" --headless=new --no-sandbox --disable-gpu \
-  --virtual-time-budget=30000 --dump-dom \
-  "http://localhost:$port/index.html#$form" 2>/dev/null)
-
-if printf '%s' "$page" | grep -qF "$wanted"; then
-  echo "smoke-browser: the page evaluated a form and printed $wanted"
-else
-  echo "smoke-browser: the page did not print $wanted. Its transcript:" >&2
-  printf '%s' "$page" | sed -n '/id="transcript"/,/<\/pre>/p' | head -n 20 >&2
-  exit 1
-fi
+for page_name in console.html index.html; do
+  page=$("$browser" --headless=new --no-sandbox --disable-gpu \
+    --virtual-time-budget=30000 --dump-dom \
+    "http://localhost:$port/$page_name#$form" 2>/dev/null)
+  if printf '%s' "$page" | grep -qF "$wanted"; then
+    echo "smoke-browser: $page_name evaluated a form and printed $wanted"
+  else
+    echo "smoke-browser: $page_name did not print $wanted. Its body:" >&2
+    printf '%s' "$page" | sed -n '/<body>/,$p' | head -n 30 >&2
+    exit 1
+  fi
+done

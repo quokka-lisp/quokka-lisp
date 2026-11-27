@@ -691,6 +691,14 @@
          (done nil))
     (when (member class supers)
       (error "a class cannot be its own superclass" name))
+    ;; `stream` is a built-in class: a standard class may have it among its
+    ;; superclasses only beside a standard class, as the Gray streams'
+    ;; `fundamental-stream` has it beside `standard-object` (#136), or the
+    ;; instances could not be made.
+    (when (and (member (find-class 'stream) supers)
+               (not (eq metaclass (find-class 'condition-class)))
+               (notany (lambda (s) (%standard-metaclass-p (class-of s))) supers))
+      (error "stream can be a superclass only beside a standard class" name))
     (dolist (super supers)
       ;; `condition` itself is the one condition class whose superclass
       ;; is `t` (`conditions.lisp`).

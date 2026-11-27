@@ -69,10 +69,13 @@
 ;;; as in SBCL, so that a stream class can answer them; the method on `t`
 ;;; answers for the structure streams and refuses anything else.
 
+;;; A string stream closes, as in SBCL; the console does not.
 (defgeneric close (stream &key abort))
 (defmethod close ((stream t) &key abort)
   (declare (ignore abort))
-  (if (%structure-stream-p stream) t (%not-a-stream stream)))
+  (if (%structure-stream-p stream)
+      (progn (%close-structure-stream stream) t)
+      (%not-a-stream stream)))
 (defmethod close ((stream fundamental-stream) &key abort)
   (declare (ignore abort))
   (setf (slot-value stream '%open-p) nil)
@@ -80,7 +83,10 @@
 
 (defgeneric open-stream-p (stream))
 (defmethod open-stream-p ((stream t))
-  (if (%structure-stream-p stream) t (%not-a-stream stream)))
+  (cond ((%string-input-stream-p stream) (not (%string-input-stream-closed stream)))
+        ((%string-output-stream-p stream) (not (%string-output-stream-closed stream)))
+        ((%structure-stream-p stream) t)
+        (t (%not-a-stream stream))))
 (defmethod open-stream-p ((stream fundamental-stream))
   (slot-value stream '%open-p))
 
@@ -111,6 +117,8 @@
 (defgeneric stream-element-type (stream))
 (defmethod stream-element-type ((stream t))
   (if (%structure-stream-p stream) 'character (%not-a-stream stream)))
+(defmethod stream-element-type ((stream fundamental-stream))
+  (error "~S says neither characters nor bytes: it has no element type" stream))
 (defmethod stream-element-type ((stream fundamental-character-stream)) 'character)
 
 ;;; ------------------------------------------------------------------------
@@ -271,12 +279,14 @@
 (defmacro with-open-stream (binding &body body)
   (let ((var (car binding)))
     `(let ((,var ,(cadr binding)))
-       (unwind-protect (progn ,@body)
+       ,@(%body-declarations body)
+       (unwind-protect (progn ,@(%body-forms body))
          (when ,var (close ,var))))))
 
 ;;; `read-sequence` and `write-sequence` (CLHS 21.2): a Gray stream is asked
 ;;; for the whole run; the library's own streams go a character at a time.
 (defun read-sequence (sequence stream &key (start 0) end)
+  (unless (streamp stream) (%not-a-stream stream))
   (let ((stream (%input-stream stream)))
     (if (%gray-stream-p stream)
         (stream-read-sequence stream sequence start end)
@@ -284,6 +294,7 @@
                            (lambda (s) (read-char s nil :eof))))))
 
 (defun write-sequence (sequence stream &key (start 0) end)
+  (unless (streamp stream) (%not-a-stream stream))
   (let ((stream (%output-stream stream)))
     (if (%gray-stream-p stream)
         (stream-write-sequence stream sequence start end)

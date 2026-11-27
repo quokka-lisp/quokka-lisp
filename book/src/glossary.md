@@ -163,6 +163,9 @@ turns out to be. ([28](part-4-the-compiler/28-a-compiler-in-the-language-it-comp
 <a id="collection"></a>
 **Collection.** One run of the [garbage collector](#garbage-collection).
 
+<a id="command-loop"></a>
+**Command loop.** The environment's top level: wait for an event, give it to the viewer it is for, redraw what changed, and wait again. A form that wants input runs one inside itself until its line arrives. ([96](part-12-display/96-output-records.md))
+
 <a id="compiler-macro"></a>
 **Compiler macro.** An optional rewrite of calls to a global function, applied by the compiler before it compiles the call: `(define-compiler-macro square (&whole form x) (if (numberp x) (* x x) form))` turns `(square 5)` into `25` and leaves `(square y)` alone by returning its own form. The function itself is unchanged and still callable. Quokka's compiler applies them, except where a local function of the same name is in scope. ([53](part-6-self-hosting/53-compiling-on-request.md))
 
@@ -505,6 +508,9 @@ a character, `nil`, `t`. Contrast a *reference*, which points into the heap.
 <a id="implicit-progn"></a>
 **Implicit progn.** A body that is a sequence of forms yielding the last — the bodies of `lambda`, `defun`, `let` and most else. Nobody writes the `progn`; it is what a body means. ([13](part-2-reading-and-running/13-the-special-operators.md))
 
+<a id="ink"></a>
+**Ink.** A name the theme gives a colour, such as `:accent` or `:error`, which output is written in. The world sends the name; the page's style sheet decides the colour, light and dark. ([96](part-12-display/96-output-records.md))
+
 <a id="instruction-selection"></a>
 **Instruction selection.** Choosing *which* instructions express a form, when
 several would work. `(+ 1 2)` can be a function-cell read and a call, or a
@@ -526,6 +532,9 @@ that "go to the *i*th place" becomes "jump to the *i*th row" — arithmetic
 instead of a search. The classic way to compile a computed goto, or a `switch`
 on small integers. A `tagbody`'s `go` lands on one.
 ([28](part-4-the-compiler/28-a-compiler-in-the-language-it-compiles.md))
+
+<a id="key-table"></a>
+**Key table.** The keys an editor in the page gives the world rather than the browser, announced in advance because the page must decide at once whether the browser may act on a key. ([97](part-12-display/97-the-renderer.md))
 
 <a id="keyword"></a>
 **Keyword.** A symbol written with a leading colon — `:foo` — that evaluates
@@ -597,7 +606,7 @@ times a limb plus a carry still fits in a fixnum.
 **Lisp-2.** A Lisp where a [symbol](#symbol) has separate value and function cells, so `(list list)` is legal — the first is the function, the second the variable. Common Lisp is one. Scheme, a *Lisp-1*, has a single cell. ([8](part-2-reading-and-running/08-text-becomes-structure.md))
 
 <a id="listener"></a>
-**Listener.** The window where you type a form and see its value: the [REPL](#repl) as something on a screen. Quokka's is designed as live text, so an earlier form can be edited and run again. ([The environment, on paper](looking-ahead/the-environment-on-paper.md))
+**Listener.** The window where you type a form and see its value: the [REPL](#repl) as something on a screen. Quokka's is designed as live text, so an earlier form can be edited and run again. ([The environment, on paper](looking-ahead/the-environment-on-paper.md), [98](part-12-display/98-the-listener.md))
 
 <a id="literal"></a>
 **Literal.** An object written directly in the source — `"hello"`, `#(1 2 3)`,
@@ -882,6 +891,9 @@ unusually small, because the structure it produces is ordinary lists.
 
 <a id="re-entrant"></a>
 **Re-entrant.** Safe to call again while a call is still in progress. Quokka's `compile-form` keeps its work in global variables, so it became re-entrant by saving and restoring them around each call. That is not the same as safe for two processes at once, whose calls interleave rather than nest. ([40](part-6-self-hosting/40-the-loop-closes.md))
+
+<a id="reconciliation"></a>
+**Reconciliation.** Comparing a viewer's fresh drawing with the old one, record by record, so that a record of the same kind in the same place keeps its identity and only what changed is sent. React made the technique familiar for its "virtual DOM". ([96](part-12-display/96-output-records.md))
 
 <a id="register-machine"></a>
 **Register machine.** An instruction set whose instructions name where their

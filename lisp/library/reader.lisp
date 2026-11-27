@@ -141,7 +141,7 @@
 ;;; functions here keep their standard names and arguments so that callers
 ;;; do not change when that happens.
 
-(defstruct %string-input-stream string position end)
+(defstruct %string-input-stream string position end closed)
 
 (defun make-string-input-stream (string &optional (start 0) end)
   (make-%string-input-stream :string string :position start
@@ -284,8 +284,8 @@
 ;;; once, so the loops that run for every character of the text — tokens,
 ;;; whitespace, strings and comments — need not do it again, nor parse
 ;;; `read-char`'s four optional arguments; that was a good part of what a
-;;; character cost (#70, chapter 58). Tier 2's generic streams will make this
-;;; a generic function too.
+;;; character cost (#70, chapter 58). A Gray stream (#136) is read through
+;;; its `stream-read-char`.
 (defun %next-char (stream)
   (if (%string-input-stream-p stream)
       (let ((at (%string-input-stream-position stream)))
@@ -310,7 +310,12 @@
 ;;; character; t skips whitespace first; a character skips up to that one.
 (defun peek-char (&optional peek-type stream (eof-error-p t) eof-value recursive-p)
   (let* ((stream (%input-stream stream))
-         (char (read-char stream nil nil)))
+         (char (if (and (null peek-type) (not (%string-input-stream-p stream)))
+                   ;; A Gray stream may peek better than read and put back.
+                   (let ((c (stream-peek-char stream)))
+                     (return-from peek-char
+                       (if (eq c :eof) (%end-of-file eof-error-p eof-value) c)))
+                   (read-char stream nil nil))))
     (cond ((null char) (%end-of-file eof-error-p eof-value))
           ((or (and (eq peek-type t) (%whitespacep char))
                (and (characterp peek-type) (not (eq peek-type char))))

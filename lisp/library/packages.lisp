@@ -726,9 +726,17 @@
 (defvar %quokka-thread-package (make-package "QUOKKA-THREAD" :use '("COMMON-LISP")))
 ;;; And Gray streams' (`gray-streams.lisp`), as SBCL's are in `SB-GRAY` (#136).
 (defvar %quokka-gray-package (make-package "QUOKKA-GRAY" :use '("COMMON-LISP")))
+;;; The platform a program draws with (`ui-records.lisp`, `ui-viewers.lisp`;
+;;; phase 4, `docs/display.md`, decision 11): the package the tutorials use.
+(defvar %quokka-ui-package
+  (make-package "QUOKKA-UI" :use '("COMMON-LISP" "QUOKKA-GRAY")))
+;;; And the environment built on it (`listener.lisp`): mock-up 03 finds
+;;; `listener-prompt` here.
+(defvar %quokka-env-package
+  (make-package "QUOKKA-ENV" :use '("COMMON-LISP" "QUOKKA-GRAY" "QUOKKA-UI")))
 (defvar %quokka-package
   (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP" "QUOKKA-DEBUG" "QUOKKA-THREAD"
-                                "QUOKKA-GRAY")))
+                                "QUOKKA-GRAY" "QUOKKA-UI" "QUOKKA-ENV")))
 (defvar %cl-user-package
   (make-package "COMMON-LISP-USER" :nicknames '("CL-USER") :use '("COMMON-LISP")))
 
@@ -788,6 +796,38 @@
     "STREAM-READ-SEQUENCE" "STREAM-START-LINE-P" "STREAM-TERPRI" "STREAM-UNREAD-CHAR"
     "STREAM-WRITE-BYTE" "STREAM-WRITE-CHAR" "STREAM-WRITE-SEQUENCE" "STREAM-WRITE-STRING"))
 
+;;; The names `QUOKKA-UI` exports: the platform's (`docs/display.md`).
+(defvar %quokka-ui-symbol-names
+  '("OUTPUT-RECORD" "TEXT-RECORD" "CONTAINER-RECORD" "BLOCK-RECORD" "EDITOR-RECORD"
+    "VIEWER-RECORD" "RECORD-ID" "RECORD-PARENT" "RECORD-PROPERTIES" "RECORD-PROPERTY"
+    "RECORD-KEY" "RECORD-DRAWN-BY" "RECORD-KIND" "RECORD-TEXT" "RECORD-CHILDREN"
+    "RECORD-NODE" "EDITOR-TEXT" "EDITOR-START" "EDITOR-END" "SET-EDITOR-TEXT"
+    "MAKE-TEXT-RECORD" "MAKE-BLOCK-RECORD" "ADD-RECORD" "INSERT-RECORD" "REMOVE-RECORD"
+    "REPLACE-RECORD" "CLEAR-RECORDS" "FOCUS-RECORD" "FLUSH-DISPLAY"
+    "MAKE-TEXT-STYLE" "TEXT-STYLE-FAMILY" "TEXT-STYLE-FACE" "TEXT-STYLE-SIZE"
+    "*DEFAULT-TEXT-STYLE*" "WITH-TEXT-STYLE" "WITH-INK"
+    "+INK+" "+DIM+" "+ACCENT+" "+ERROR+" "+SUCCESS+" "+WARNING+" "+CORAL+" "+AMBER+"
+    "+TEAL+" "+BLUE+" "+PURPLE+" "+PINK+"
+    "RECORD-STREAM" "MAKE-RECORD-STREAM" "STREAM-CONTAINER" "STREAM-TEXT-STYLE" "STREAM-INK"
+    "FIND-RECORD"
+    ;; `ui-viewers.lisp`
+    "VIEWER" "VIEWER-RECORD" "VIEWER-ROOT" "RECORD-VIEWER" "RECORD-VIEWER-OF"
+    "VIEWER-TITLE" "DISPLAY-VIEWER" "VIEWER-INPUT" "VIEWER-COMMANDS" "VIEWER-MINIMUM-SIZE"
+    "VIEWER-STATE" "VIEWER-DISPLAY-TIME" "EVENT" "EVENT-P" "EVENT-KIND" "EVENT-TARGET"
+    "EVENT-KEY" "EVENT-CODE" "EVENT-POSITION" "EVENT-MODIFIERS" "EVENT-MODIFIER-P"
+    "EVENT-REPEAT-P" "EVENT-TEXT" "EVENT-START" "EVENT-END"
+    "*SURFACE*" "VISIBLE-VIEWERS" "FOCUSED-VIEWER" "SHOW-SURFACE" "SET-LAYOUT"
+    "REDISPLAY" "READ-EVENT-LOOP" "*ENVIRONMENT-SURFACE*"
+    ;; `ui-drawing.lisp`
+    "DRAWING-RECORD" "GROUP-RECORD" "SHAPE-RECORD" "*DRAWING*" "WITH-DRAWING"
+    "DRAW-RECTANGLE*" "DRAW-CIRCLE*" "DRAW-ELLIPSE*" "DRAW-LINE*" "DRAW-POLYLINE*"
+    "DRAW-POLYGON*" "DRAW-TEXT*" "WITH-TRANSLATION" "WITH-SCALING" "STREAM-RECORD-STREAM"))
+
+;;; The names `QUOKKA-ENV` exports: the environment's (`listener.lisp`).
+(defvar %quokka-env-symbol-names
+  '("LISTENER" "LISTENER-PROMPT" "LISTENER-COUNT" "LISTENER-PACKAGE" "LISTENER-STREAM"
+    "*LISTENER*"))
+
 ;;; Sort every symbol in the Rust system table into a package: each of the
 ;;; standard's 978 names into `COMMON-LISP`, as an external symbol — creating
 ;;; the ones nothing has used yet, such as `LOOP` — and everything else into
@@ -802,6 +842,10 @@
     (%adopt (%intern name) %quokka-thread-package t))
   (dolist (name %quokka-gray-symbol-names)
     (%adopt (%intern name) %quokka-gray-package t))
+  (dolist (name %quokka-ui-symbol-names)
+    (%adopt (%intern name) %quokka-ui-package t))
+  (dolist (name %quokka-env-symbol-names)
+    (%adopt (%intern name) %quokka-env-package t))
   (%adopt-the-rest (%system-symbols))
   ;; The names have done their job — each symbol has its own copy now — and a
   ;; list of 978 strings is not worth carrying in every image.

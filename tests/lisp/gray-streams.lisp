@@ -103,3 +103,14 @@
   (error (c) (not (null c))))
 (handler-case (write-char #\a 42) (type-error () :type-error))
 (handler-case (streamp 42) (error () :error))
+
+;; What the review of #136 found.
+(multiple-value-list (subtypep 'fundamental-stream 'stream))
+(multiple-value-list (subtypep 'fundamental-character-output-stream 'stream))
+(let ((s (make-string-output-stream))) (list (open-stream-p s) (close s) (open-stream-p s)))
+(let ((s (make-string-input-stream "x"))) (close s) (open-stream-p s))
+(handler-case (read-sequence (make-string 2) 42) (type-error () :type-error))
+(progn (defclass peeking (lines-stream) ((peeks :initform 0 :accessor peeks))) :ok)
+(progn (defmethod stream-peek-char ((s peeking)) (incf (peeks s)) (call-next-method)) :ok)
+(let ((s (make-instance 'peeking :text "ab"))) (list (peek-char nil s) (read-char s) (peeks s)))
+(with-open-stream (s (make-instance 'shouting-stream)) (declare (special s)) (write-string "d" s) (shout s))

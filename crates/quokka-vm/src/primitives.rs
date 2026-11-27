@@ -228,6 +228,7 @@ pub enum Prim {
     CompareAndSwapSvref = 168,
     Display = 169,
     AwaitEvent = 170,
+    FrameCallee = 171,
 }
 
 impl Prim {
@@ -789,6 +790,11 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // with no screen). While it waits, the machine may be idle (decision 2).
     (Prim::Display, "%DISPLAY", Arity::Exactly(1)),
     (Prim::AwaitEvent, "%AWAIT-EVENT", Arity::Exactly(0)),
+    // What the frame N frames out from the caller called, or nil past the
+    // outermost (#138): how an output record finds the code that drew it
+    // without `%frames`, which conses a list of every frame. Linear in N,
+    // and allocates nothing.
+    (Prim::FrameCallee, "%FRAME-CALLEE", Arity::Exactly(1)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1109,6 +1115,15 @@ pub fn call_slice<'h>(
         }),
         Prim::HandlerMarks => crate::vm::handler_marks(mc, args[0], args[1]),
         Prim::Frames => crate::vm::frames(mc),
+        Prim::FrameCallee => {
+            let Some(n) = args[0].as_fixnum().filter(|n| *n >= 0) else {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a non-negative fixnum",
+                });
+            };
+            Ok(crate::vm::frame_callee(mc, n as u64))
+        }
         Prim::FrameLocals => crate::vm::frame_locals(mc, args[0], args[1]),
         // A compiled function's name, through a closure to its body, or nil
         // for an interpreted closure or anything that is not a function. The

@@ -202,7 +202,10 @@ fn the_table_order_is_pinned() {
             "%PROCESS-DATA",
             "%SET-PROCESS-DATA",
             "%PROCESS-MAIN-P",
-            "%COMPARE-AND-SWAP-SVREF"
+            "%COMPARE-AND-SWAP-SVREF",
+            "%DISPLAY",
+            "%AWAIT-EVENT",
+            "%FRAME-CALLEE"
         ]
     );
 }

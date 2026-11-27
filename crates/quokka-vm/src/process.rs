@@ -221,14 +221,31 @@ pub fn can_run(mc: &Mutation<'_>) -> bool {
     ring(mc).into_iter().any(|p| runnable(mc, p))
 }
 
-/// Every request a process is waiting on: the running process's first,
-/// then the others', round the ring (#137, `host::waiting`).
+/// Every request a process is waiting on: the main process's first, then
+/// the others', round the ring (#137, `host::waiting`). The main one first,
+/// because a host hands the first event request it finds the next event,
+/// and the environment's command loop is the main process's.
 pub fn waiting_requests<'h>(mc: &Mutation<'h>) -> Vec<Value<'h>> {
     if !is(mc, mc.register(Register::Process)) {
         let running = mc.register(Register::Request);
-        return if waits(mc, running) { vec![running] } else { Vec::new() };
+        return if waits(mc, running) {
+            vec![running]
+        } else {
+            Vec::new()
+        };
     }
-    ring(mc).into_iter().filter_map(|p| waiting(mc, p)).collect()
+    let mut processes = ring(mc);
+    if let Some(at) = processes
+        .iter()
+        .position(|p| mc.slot(*p, MAIN) != Value::NIL)
+    {
+        let main = processes.remove(at);
+        processes.insert(0, main);
+    }
+    processes
+        .into_iter()
+        .filter_map(|p| waiting(mc, p))
+        .collect()
 }
 
 /// Is the request the host will answer next the main process's, or the only

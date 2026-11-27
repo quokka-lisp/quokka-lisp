@@ -211,6 +211,22 @@ pub const LIBRARY: &[(&str, &str)] = &[
     ),
     ("eval.lisp", include_str!("../../../lisp/library/eval.lisp")),
     (
+        "ui-records.lisp",
+        include_str!("../../../lisp/library/ui-records.lisp"),
+    ),
+    (
+        "ui-viewers.lisp",
+        include_str!("../../../lisp/library/ui-viewers.lisp"),
+    ),
+    (
+        "ui-drawing.lisp",
+        include_str!("../../../lisp/library/ui-drawing.lisp"),
+    ),
+    (
+        "listener.lisp",
+        include_str!("../../../lisp/library/listener.lisp"),
+    ),
+    (
         "rebuild.lisp",
         include_str!("../../../lisp/library/rebuild.lisp"),
     ),

@@ -10,9 +10,10 @@ debugger viewer on these viewers. `docs/design.md`'s *Environment and UI* and
 *Display: hybrid renderer* sections are the target this file serves; where a
 decision here refines one of theirs, it says so.
 
-> **Status (27 Nov 2026):** decided while planning phase 4, before any of it
-> is built. Each step's issue repeats the decisions it needs, and this file is
-> corrected where building shows a decision wrong.
+> **Status (27 Nov 2026):** decided while planning phase 4, and built in
+> steps B to I (#136–#143). Step H met the gate: a form is typed into the
+> listener in a browser, evaluated, edited and run again. Step I added
+> drawing. Where building changed a decision, the decision below says so.
 
 ## The pieces
 
@@ -94,7 +95,9 @@ grow by phase:
 | `:block` | children stacked downwards; text inside keeps its line breaks | 4 |
 | `:text` | a run of text in one style | 4 |
 | `:editor` | text the person edits, in place | 4 |
-| `:drawing` | shapes in a box of their own, as SVG | 4 (last step) |
+| `:drawing` | shapes in a box of their own, as SVG (`:width`, `:height`, `:scale`) | 4 (step I) |
+| `:group` | shapes under a transformation `(:transform (a b c d e f))` | 4 (step I) |
+| `:shape` | one shape: `:type` `:rectangle`, `:ellipse`, `:line`, `:polyline`, `:polygon` or `:text`, its geometry, `:ink`, `:filled`, `:line-thickness` | 4 (step I) |
 | `:table`, `:row`, `:cell` | `formatting-table` | 5 |
 | `:presentation` | a record that shows an object, clickable | 5 |
 
@@ -125,8 +128,10 @@ the same key when the program gave one, takes over the old record's identity,
 and only what differs is sent. This is the reconciliation React made familiar
 in 2013 for its "virtual DOM", done here over output records, which is what
 `docs/design.md` asks for when it says redisplay compares records and not DOM
-nodes. A record that keeps its identity keeps its node, so an editor in it
-keeps its cursor.
+nodes. A record that keeps its identity and its place keeps its node, so an
+editor in it keeps its cursor; one matched by key in another place is moved
+by taking it away and adding it again, so its node is made anew (a `:move`
+message could keep it, and is left until a viewer needs it).
 
 Phase 4's listener is recorded; the first redisplayed viewer is a test, and
 phase 5's viewers are the first real ones. Both kinds go through the same
@@ -159,6 +164,27 @@ Phase 4 draws an editor as a `<textarea>` that grows with its text, because
 its caret and selection are reliable in every engine; `contenteditable`,
 needed for coloured code, is a renderer change later.
 
+### Known limits (review of #138–#143)
+
+- A `:set :text` the world sends in answer to a key (a newline inserted
+  where Enter was pressed) overwrites anything typed in the editor after
+  the key, if the world is slow to answer; the page and the world then
+  disagree until the next edit. A fix wants edits numbered, so the world
+  can tell which text its answer was computed from.
+- While a form reads through the nested loop, `%listener-evaluating` stays
+  bound, so an error in another viewer's command would be taken for the
+  form's. Nothing reaches this with one viewer.
+- A nested read inside a nested read does not restore the outer one's
+  state on returning normally; every way out of phase 4's debugger unwinds
+  past both.
+- An event's text is read with the standard readtable, so a qualified
+  symbol in it (`cl::foo`) is interned. The page is the world's own host,
+  so this is not a way in; a remote host would want a reader that refuses
+  qualified symbols.
+- A form after `#` in the page's address is run on load, as the dev
+  console did; a link can run code in a fresh world, which cannot read
+  files and keeps nothing.
+
 ### 6. The command loop is the main process; input is read by nested loops
 
 The environment's top level is a **command loop** running in the main
@@ -182,21 +208,41 @@ process of its own (`docs/processes.md`), and redisplays from it.
 A form that never ends is stopped from the page: its Stop button, or
 Cmd-period, makes the host abandon the computation (`vm::recover`) and start
 the command loop again, which redraws from the records, so nothing on the
-screen is lost; the listener notes `; interrupted`. *Provisional:* an
-interrupt that enters the debugger in the running form, through the
-interrupt frame `docs/processes.md` designs, is better and is not built.
+screen is lost; the program is sent the event `(:interrupted)`. A program
+that fails three times running before it once waits for the person is not
+started again (review of #137). *Provisional:* an interrupt that enters the
+debugger in the running form, through the interrupt frame
+`docs/processes.md` designs, is better and is not built.
+
+Errors find their way as follows (#141). The listener runs each form under a
+handler that calls the debugger when it is on, and the environment turns it
+on, since the listener is a console that can answer it: the debugger's
+banner, restarts and backtrace are written into the form's entry, and its
+`0]` prompt reads from an editor there, through the nested loop. The
+command loop's own handler catches what a viewer's methods signal outside a
+form, writes the message into the focused viewer and returns to the loop;
+it leaves alone an error inside a form the listener runs
+(`%listener-evaluating`), which is the listener's.
 
 ### 7. Every record remembers the code that drew it
 
 Phase 5's right-click menu offers *Show the code that drew this* on any
 output (design, *Point at anything*), and phase 4 must keep what it needs.
-When a record is made, the machine is asked for the innermost frame whose
-function is not part of the output machinery, by a primitive that walks a
-bounded number of frames and allocates nothing (`%drawing-function`); the
+When a record is made, `%drawing-function` asks the machine for the
+innermost frame whose function is not part of the output machinery, one
+frame at a time through the primitive `%frame-callee`, which walks the
+frame chain and allocates nothing; it looks at most 64 frames out, and the
 record keeps that function. A function counts as machinery when its name is
-in `COMMON-LISP`, `QUOKKA` or `QUOKKA-GRAY`, so the prompt's record names the
-environment's own `listener-prompt`, and a line `dump-db` printed names
-`dump-db`.
+in `COMMON-LISP`, `KEYWORD`, or one of Quokka's system packages (`QUOKKA`,
+`QUOKKA-GRAY`, `QUOKKA-UI`, `QUOKKA-MOP`, `QUOKKA-DEBUG`, `QUOKKA-THREAD`);
+a method counts by its generic function's name, and a local or anonymous
+function never counts, since the function around it is the definition to
+show. So the prompt's record names the environment's own `listener-prompt`
+(`QUOKKA-ENV`), and a line `dump-db` printed names `dump-db`. One
+consequence, noted in review: a program's own method on a Gray stream
+generic function, such as `stream-write-char`, is named in `QUOKKA-GRAY` and
+counts as machinery, so the record names the function that wrote to that
+stream; we think that is the right answer.
 
 ### 8. Layout is part of the protocol
 
@@ -267,12 +313,24 @@ them, applied in order.
 | --- | --- |
 | `(:reset layout)` | forget everything and show LAYOUT, whose viewers carry their contents |
 | `(:layout layout)` | arrange the viewers again; their contents stay |
-| `(:append parent node...)` | add NODEs at the end of PARENT's children |
-| `(:insert parent index node)` | add NODE before PARENT's child number INDEX |
+| `(:append parent node)` | add NODE at the end of PARENT's children |
+| `(:insert parent before node)` | add NODE in front of PARENT's child BEFORE |
 | `(:replace id node)` | put NODE where record ID is |
 | `(:remove id)` | take record ID away |
-| `(:set id property value...)` | change properties: `:style`, `:ink`, `:text`, `:keys` |
+| `(:set id property value...)` | change properties; nil removes one |
 | `(:focus id)` | put the caret in editor ID |
+
+Where a new record goes is said by the sibling it goes in front of, worked
+out when the world flushes its queue of changes, from the tree as it is
+then: a place given as a number would be thrown out by a record added and
+taken away again before the flush.
+
+The properties are names, never CSS: `:style` (a text style), `:ink`, `:text`
+(of a text or an editor), `:start` and `:end` (an editor's selection),
+`:keys` (an editor's key table), `:title` (a viewer's), `:readonly` (an
+editor that keeps what was typed), `:layout :row` (a block whose children
+stand side by side), and three the listener uses, `:strike` (struck
+through), `:note` (a small note) and `:bar` (output set apart by a bar).
 
 A layout is `(:split direction (weight layout)...)`, with direction
 `:horizontal` (side by side) or `:vertical` (one above the other), or a
@@ -283,7 +341,7 @@ Events go from the page to the world, one per `%await-event`.
 | Event | Meaning |
 | --- | --- |
 | `(:edit :target id :text string :start n :end n)` | editor ID now holds STRING, selected from START to END |
-| `(:key :target id :key name :code code :modifiers (...))` | a key in ID's key table was pressed |
+| `(:key :target id :key name :code code :modifiers (...) :start n :end n)` | a key in ID's key table was pressed, with the caret where it was |
 | `(:interrupted)` | the page abandoned a computation and restarted the loop |
 
 `:key` is the character or name the key produces (the browser's `key`), and

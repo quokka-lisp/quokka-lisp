@@ -2712,6 +2712,27 @@ pub fn frames<'h>(mc: &mut Mutation<'h>) -> Result<Value<'h>, EvalError> {
     Ok(list)
 }
 
+/// `(%frame-callee n)`: the callee of the frame N frames out from the
+/// innermost, which is the frame of the function that asked (#138), or nil
+/// if there are not that many. The same walk as [`frames`], stopping early
+/// and making nothing.
+pub fn frame_callee<'h>(mc: &mut Mutation<'h>, n: u64) -> Value<'h> {
+    let mut fp = mc.fp();
+    let mut left = n;
+    while let Some((base, _)) = frame_bounds(mc, fp) {
+        let stack = mc.register(Register::Operands);
+        if left == 0 {
+            return mc.slot(stack, base + frame::CALLEE);
+        }
+        left -= 1;
+        match mc.slot(stack, base + frame::FP).as_fixnum() {
+            Some(caller) if caller >= 0 && (caller as usize) < fp => fp = caller as usize,
+            _ => break,
+        }
+    }
+    Value::NIL
+}
+
 /// `(%frame-locals environment callee)`: the variables a frame can see that
 /// are its own, as `(name . value)`, innermost first (#131): those of every
 /// variable scope in ENVIRONMENT down to the scope CALLEE closed over,
@@ -2912,8 +2933,21 @@ pub fn begin_step(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
 
 /// Begin a call of the global function NAME with the argument nil, in the
 /// main process: how a host starts a program that is not the read-eval-print
-/// loop, such as the environment's command loop (#137).
+/// loop, such as the environment's command loop (#137). NAME is a symbol of
+/// the system table, the name a host knows a program by; a symbol a running
+/// world interned in a package of its own is not there. Refused if it names
+/// no function.
 pub fn begin_call(heap: &mut crate::heap::Heap, name: &str) -> Result<(), EvalError> {
+    let defined = heap.mutate(|mc| match mc.find_system_symbol(name, false) {
+        Some(symbol) => {
+            let function = mc.slot(symbol, crate::heap::symbol::FUNCTION);
+            function.is_object() && function != Value::UNBOUND
+        }
+        None => false,
+    });
+    if !defined {
+        return Err(EvalError::UndefinedFunction(name.to_string()));
+    }
     heap.mutate(|mc| {
         crate::process::focus_main(mc);
         mc.set_register(Register::Value, Value::NIL)

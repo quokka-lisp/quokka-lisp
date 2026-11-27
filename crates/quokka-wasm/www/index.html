@@ -3,175 +3,276 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Quokka dev console</title>
+    <title>Quokka</title>
     <link rel="icon" href="favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
     <meta name="theme-color" content="#105C55" />
     <style>
-      /* Brand palette — see assets/README.md. */
+      /* The theme: what each ink and text style the world names looks like
+         (docs/display.md, decision 3). The world never sends CSS; it sends
+         names, and these rules give them colours, light and dark. Brand
+         palette: assets/README.md. */
       :root {
         color-scheme: light dark;
-        --bg: #fdf7ec;    /* soft cream  */
-        --fg: #4c2311;    /* dark brown  */
+        --page: #fdf7ec;      /* soft cream */
+        --surface: #fffdf8;
+        --rule: #e8dcc8;
+        --ink: #4c2311;       /* dark brown */
         --dim: #8a6a55;
-        --rule: #e4d7c3;
-        --accent: #105c55; /* teal       */
+        --accent: #105c55;    /* teal */
+        --error: #a32d2d;
+        --success: #3b6d11;
+        --warning: #854f0b;
+        --coral: #c8553d; --amber: #c98a12; --teal: #105c55;
+        --blue: #2c6aa0; --purple: #6b4ea0; --pink: #b04a7a;
+        --editor: #f6eedf;
+        --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+        --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #073a39;  /* dark teal   */
-          --fg: #fdf7ec;
-          --dim: #7fa6a0;
+          --page: #073a39;    /* dark teal */
+          --surface: #0a4543;
           --rule: #10534f;
-          --accent: #a2d9c5; /* mint     */
+          --ink: #fdf7ec;
+          --dim: #7fa6a0;
+          --accent: #a2d9c5;  /* mint */
+          --error: #f09595;
+          --success: #97c459;
+          --warning: #fac775;
+          --coral: #f0997b; --amber: #f2c26b; --teal: #a2d9c5;
+          --blue: #85b7eb; --purple: #b9a2e8; --pink: #ed93b1;
+          --editor: #0e4e4b;
         }
       }
-      body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
-             font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
-      main { max-width: 760px; margin: 0 auto; }
-      h1 { font: 600 15px/1.4 system-ui, sans-serif; color: var(--dim); margin: 0 0 16px;
-           display: flex; align-items: center; gap: 10px; }
-      h1 img { width: 22px; height: 22px; }
-      label { color: var(--accent); font-weight: 600; }
-      #transcript { white-space: pre-wrap; border-bottom: 1px solid var(--rule); padding-bottom: 12px; min-height: 40vh; }
-      form { display: flex; gap: 8px; align-items: baseline; padding-top: 12px; }
-      input { flex: 1; font: inherit; color: inherit; background: transparent; border: 0; outline: none; }
-      button { font: inherit; color: var(--accent); background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 0 8px; }
+      html, body { height: 100%; margin: 0; }
+      body { background: var(--page); color: var(--ink); font: 14px/1.5 var(--font-sans);
+             display: flex; flex-direction: column; }
+      #bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+             border-bottom: 1px solid var(--rule); font-weight: 600; color: var(--dim); }
+      #bar img { width: 20px; height: 20px; }
+      #bar .space { flex: 1; }
+      #status { font-weight: 400; font-size: 12px; }
+      button { font: inherit; font-weight: 400; color: var(--accent); background: transparent;
+               border: 1px solid var(--rule); border-radius: 4px; padding: 0 8px; }
       button:disabled { color: var(--dim); }
+      #surface { flex: 1; min-height: 0; display: flex; padding: 8px; gap: 8px; }
+      #surface > * { flex: 1; }
+      #console { white-space: pre-wrap; font: 12px/1.4 var(--font-mono); color: var(--dim);
+                 max-height: 20vh; overflow: auto; padding: 0 12px; }
+      #console:empty { display: none; }
+
+      /* Layout (decision 8): splits are flexible boxes, weights their flex. */
+      .q-split { display: flex; gap: 8px; min-width: 0; min-height: 0; }
+      .q-split.q-vertical { flex-direction: column; }
+      .q-viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0;
+                  background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+      .q-viewer > .q-title { padding: 4px 10px; font-size: 12px; color: var(--dim);
+                             border-bottom: 1px solid var(--rule); }
+      .q-viewer > .q-contents { flex: 1; overflow: auto; padding: 8px 12px; white-space: pre-wrap;
+                                overflow-wrap: anywhere; }
+
+      /* Records (decision 3). */
+      .q-block { white-space: pre-wrap; }
+      .q-layout-row { display: flex; align-items: flex-start; }
+      .q-layout-row > .q-block { flex: none; padding-top: 2px; }
+      .q-layout-row > .q-editor { flex: 1; }
+      .q-editor { display: block; width: 100%; box-sizing: border-box; resize: none; overflow: hidden;
+                  font: 14px/1.5 var(--font-mono); color: var(--ink); background: var(--editor);
+                  border: 0; border-radius: 4px; padding: 2px 6px; margin: 0; outline: none; }
+      .q-editor:focus { box-shadow: 0 0 0 1px var(--accent); }
+      .q-editor[readonly] { background: transparent; }
+      .q-family-fixed { font-family: var(--font-mono); }
+      .q-family-sans { font-family: var(--font-sans); }
+      .q-family-serif { font-family: Georgia, serif; }
+      .q-face-bold { font-weight: 600; }
+      .q-face-italic { font-style: italic; }
+      .q-face-bold-italic { font-weight: 600; font-style: italic; }
+      .q-size-small { font-size: 12px; }
+      .q-size-large { font-size: 17px; }
+      .q-size-huge { font-size: 24px; }
+      .q-strike { text-decoration: line-through; opacity: 0.6; }
+      .q-note { font-size: 12px; color: var(--dim); font-style: italic; }
+      .q-bar { display: block; border-left: 2px solid var(--rule); padding-left: 8px; }
+      .q-ink-ink { color: var(--ink); }
+      .q-ink-dim { color: var(--dim); }
+      .q-ink-accent { color: var(--accent); }
+      .q-ink-error { color: var(--error); }
+      .q-ink-success { color: var(--success); }
+      .q-ink-warning { color: var(--warning); }
+      .q-ink-coral { color: var(--coral); }
+      .q-ink-amber { color: var(--amber); }
+      .q-ink-teal { color: var(--teal); }
+      .q-ink-blue { color: var(--blue); }
+      .q-ink-purple { color: var(--purple); }
+      .q-ink-pink { color: var(--pink); }
+
+      /* Drawings (#143): SVG, shapes filled or stroked with an ink. */
+      .q-drawing { display: block; }
+      .q-drawing-fit { width: 100%; max-height: 60vh; }
+      .q-drawing-stretch { width: 100%; height: 100%; }
+      .q-stroke-ink, .q-stroke-dim, .q-stroke-accent, .q-stroke-error, .q-stroke-success,
+      .q-stroke-warning, .q-stroke-coral, .q-stroke-amber, .q-stroke-teal, .q-stroke-blue,
+      .q-stroke-purple, .q-stroke-pink { fill: none; stroke-width: 1; }
+      .q-fill-ink { fill: var(--ink); } .q-stroke-ink { stroke: var(--ink); }
+      .q-fill-dim { fill: var(--dim); } .q-stroke-dim { stroke: var(--dim); }
+      .q-fill-accent { fill: var(--accent); } .q-stroke-accent { stroke: var(--accent); }
+      .q-fill-error { fill: var(--error); } .q-stroke-error { stroke: var(--error); }
+      .q-fill-success { fill: var(--success); } .q-stroke-success { stroke: var(--success); }
+      .q-fill-warning { fill: var(--warning); } .q-stroke-warning { stroke: var(--warning); }
+      .q-fill-coral { fill: var(--coral); } .q-stroke-coral { stroke: var(--coral); }
+      .q-fill-amber { fill: var(--amber); } .q-stroke-amber { stroke: var(--amber); }
+      .q-fill-teal { fill: var(--teal); } .q-stroke-teal { stroke: var(--teal); }
+      .q-fill-blue { fill: var(--blue); } .q-stroke-blue { stroke: var(--blue); }
+      .q-fill-purple { fill: var(--purple); } .q-stroke-purple { stroke: var(--purple); }
+      .q-fill-pink { fill: var(--pink); } .q-stroke-pink { stroke: var(--pink); }
+      .q-drawn-text { font-family: var(--font-sans); font-size: 12px; }
+      .q-drawn-text.q-stroke-ink { fill: var(--ink); stroke: none; }
     </style>
   </head>
   <body>
-    <main>
-      <h1><img src="favicon-32x32.png" alt="" />Quokka dev console</h1>
-      <div id="transcript"></div>
-      <form id="form">
-        <label for="input">quokka&gt;</label>
-        <input id="input" autocomplete="off" autofocus />
-        <button type="button" id="stop" disabled>Stop</button>
-        <button type="button" id="save">Save world</button>
-      </form>
-    </main>
+    <div id="bar">
+      <img src="favicon-32x32.png" alt="" />Quokka
+      <span id="status"></span>
+      <span class="space"></span>
+      <button type="button" id="stop" disabled title="Stop the running form (Cmd-.)">Stop</button>
+      <button type="button" id="save">Save world</button>
+    </div>
+    <div id="surface"></div>
+    <div id="console"></div>
     <script type="module">
-      // The page is a host, in the sense of crates/quokka-vm/src/host.rs: it
-      // owns the clock and the screen, and the world owns neither. Three
-      // things happen here and nowhere else — fetching the image, deciding
-      // how long a slice may run, and putting text on the screen.
+      // The page is a host (crates/quokka-vm/src/host.rs): it owns the clock
+      // and the screen. It fetches the world, starts the environment's
+      // command loop, runs slices while the world has work, hands what the
+      // world displayed to the renderer, and posts what the person does.
+      // The dev console that was here is console.html.
       import init, { Quokka } from "./pkg/quokka_wasm.js";
+      import { View } from "./renderer.js";
 
-      const transcript = document.getElementById("transcript");
-      const form = document.getElementById("form");
-      const input = document.getElementById("input");
+      const surface = document.getElementById("surface");
+      const consoleOut = document.getElementById("console");
+      const status = document.getElementById("status");
       const stop = document.getElementById("stop");
       const save = document.getElementById("save");
 
-      // A text node, never innerHTML: what a program prints is text.
-      const print = (text) => {
-        if (!text) return;
-        transcript.append(document.createTextNode(text));
-        window.scrollTo(0, document.body.scrollHeight);
-      };
-
       await init();
 
-      // A world is an image someone built: `quokka build www/world.qi`.
-      // The page does not carry the interpreter that builds one.
       let vm;
       try {
         const response = await fetch("./world.qi");
         if (!response.ok) throw new Error(`world.qi: ${response.status}`);
         vm = new Quokka(new Uint8Array(await response.arrayBuffer()));
-        print(vm.banner() + "\n");
       } catch (error) {
-        print(`; no world: ${error}\n; build one with: cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi\n`);
-        input.disabled = true;
-        save.disabled = true;
+        surface.textContent = `No world: ${error}. Build one with: ` +
+          "cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi";
         throw error;
       }
+      status.textContent = vm.banner();
 
-      // How long a slice may hold the page: about half a frame at 60 Hz.
+      // How long a slice may hold the page: about half a frame at 60 Hz. The
+      // budget is in steps, not milliseconds (docs/design.md, "Slices"), and
+      // is sized from how long the last slice took.
       const TARGET_MS = 8;
-      // The budget is in steps, not milliseconds, so that what a program
-      // computes cannot depend on the machine's speed (docs/design.md,
-      // "Slices"). The page gets a deadline's responsiveness anyway, by
-      // sizing the next slice from how long the last one took.
       let steps = 20000;
-
-      // The world as it was before the line now running: a snapshot, taken
-      // while the machine is idle. If the machine itself fails — a trap,
-      // which is a bug in Quokka and ends this instance for good — the
-      // snapshot is what is left to save, so a failure costs one line and
-      // not the session (#88).
-      let snapshot = vm.save();
+      let pumping = false;
       let failed = false;
+
+      const view = new View(surface, (event) => {
+        vm.post_event(event);
+        pump();
+      });
+      window.quokka = { vm, view };
+
       const fail = (error) => {
         failed = true;
         console.error(error);
-        print("\n; Quokka's machine failed, which is a bug in Quokka and not in your program.\n" +
-              "; The browser's console has the details. This world cannot go on, but\n" +
-              "; Save world gives you the world as it was before that line.\n");
-        input.disabled = true;
+        consoleOut.textContent += "\nQuokka's machine failed, which is a bug in Quokka and not in " +
+          "your program. The browser's console has the details.\n";
         stop.disabled = true;
       };
 
-      const pump = () => {
+      // Run slices until the world is idle: waiting for the person.
+      function pump() {
+        if (pumping || failed) return;
+        pumping = true;
+        setTimeout(step, 0);
+      }
+
+      function step() {
         const before = performance.now();
         let more;
         try {
           more = vm.run(steps);
         } catch (error) {
+          pumping = false;
           return fail(error);
         }
         const took = performance.now() - before;
-        print(vm.take_output());
+        const messages = vm.take_messages();
+        if (messages) view.apply(messages);
+        const output = vm.take_output();
+        if (output) consoleOut.textContent += output;
+        stop.disabled = !more;
         if (more) {
           const scale = Math.min(2, Math.max(0.5, TARGET_MS / Math.max(took, 0.1)));
           steps = Math.min(5_000_000, Math.max(1000, Math.round(steps * scale)));
-          // A timer, so the browser paints and takes input between slices.
-          setTimeout(pump, 0);
+          setTimeout(step, 0);
         } else {
-          snapshot = vm.save();
-          stop.disabled = true;
-          input.disabled = false;
-          input.focus();
+          pumping = false;
+          idle();
         }
-      };
-
-      const evaluate = (line) => {
-        print("quokka> " + line + "\n");
-        vm.submit(line);
-        input.disabled = true;
-        stop.disabled = false;
-        pump();
-      };
-
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (vm.busy()) return;
-        const line = input.value;
-        input.value = "";
-        evaluate(line);
-      });
-
-      // A form after `#` in the address is evaluated once the world is up:
-      // index.html#(+ 1 2). A link can carry an example, and it is how CI
-      // drives the page in a headless browser, which has no keyboard.
-      if (location.hash.length > 1) {
-        evaluate(decodeURIComponent(location.hash.slice(1)));
       }
 
-      // The line may never end; the page is never stuck waiting for it.
-      stop.addEventListener("click", () => vm.interrupt());
+      // Stop a form that will not end: the environment starts again and
+      // redraws from its records (docs/display.md, decision 6).
+      const interrupt = () => {
+        vm.interrupt();
+        pump();
+      };
+      stop.addEventListener("click", interrupt);
+      document.addEventListener("keydown", (event) => {
+        if (event.metaKey && event.key === ".") {
+          event.preventDefault();
+          interrupt();
+        }
+      });
 
-      // The whole world as a file — load it again by serving it as world.qi.
       save.addEventListener("click", () => {
-        // After a failure the snapshot is all there is. Otherwise the world
-        // as it stands, in the middle of a computation included.
-        const bytes = failed ? snapshot : vm.save();
+        let bytes;
+        try {
+          bytes = vm.save();
+        } catch (error) {
+          // After the machine itself failed the instance cannot be used;
+          // the dev console (console.html) keeps a snapshot for this case.
+          consoleOut.textContent += "\nThe world cannot be saved after the machine failed.\n";
+          return;
+        }
         const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
         const link = Object.assign(document.createElement("a"), { href: url, download: "world.qi" });
         link.click();
         URL.revokeObjectURL(url);
       });
+
+      // A form after `#` in the address is typed into the listener and
+      // run, as a person would: index.html#(+ 1 2). How CI drives the page
+      // in a headless browser, which has no keyboard.
+      let typed = location.hash.length <= 1;
+      function idle() {
+        if (typed) return;
+        const editor = view.model.focus && view.model.focus.dom;
+        if (!editor) return;
+        typed = true;
+        editor.value = decodeURIComponent(location.hash.slice(1));
+        editor.dispatchEvent(new Event("input"));
+        editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter" }));
+      }
+
+      try {
+        vm.start("%RUN-ENVIRONMENT");
+      } catch (error) {
+        surface.textContent = `The world has no environment: ${error}`;
+        throw error;
+      }
+      pump();
     </script>
   </body>
-</html>

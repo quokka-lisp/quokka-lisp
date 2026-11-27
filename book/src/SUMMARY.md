@@ -134,6 +134,11 @@
 
 - [A screen the world does not own](part-12-display/94-a-screen-the-world-does-not-own.md)
 - [Streams a program defines](part-12-display/95-streams-a-program-defines.md)
+- [Output records](part-12-display/96-output-records.md)
+- [The renderer](part-12-display/97-the-renderer.md)
+- [The listener](part-12-display/98-the-listener.md)
+- [Editing a form in the browser](part-12-display/99-editing-a-form-in-the-browser.md)
+- [Drawing](part-12-display/100-drawing.md)
 
 # Looking ahead
 

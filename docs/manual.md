@@ -40,7 +40,7 @@ a part of the checks, and `check.sh` says which parts it skipped.
 | --- | --- | --- |
 | `sbcl` | `brew install sbcl` | the **oracle**: every differential test is also run on SBCL, a real Common Lisp, and must agree |
 | `wasmtime` | `brew install wasmtime` | runs the tests compiled to WebAssembly (`wasm32-wasip1`); without it they are only built |
-| `wasm-pack` | `cargo install wasm-pack` | bundles the browser dev console |
+| `wasm-pack` | `cargo install wasm-pack` | bundles the browser environment and dev console |
 | `mdbook` | `cargo install mdbook` | renders the book as a website; the Markdown reads fine without it |
 
 ---
@@ -77,7 +77,7 @@ says how to make one. `quokka help` prints the table above.
 | `crates/quokka-vm` | the machine a world runs on: values, heap, collector, bytecode VM, primitives, images, the host protocol. No interpreter: it cannot reach one (#29) |
 | `crates/quokka-bootstrap` | what only the cold build needs: the Rust reader, the tree-walking interpreter, `boot::build_image`, and the whole-system tests (`tests/differential.rs`) |
 | `crates/quokka` | the `quokka` program |
-| `crates/quokka-wasm` | the browser host and its dev console |
+| `crates/quokka-wasm` | the browser host: the environment page, its renderer, and the dev console |
 | `lisp/` | everything above the primitive table: the prelude, the compiler, the tier-1 library |
 
 ### Working in a world
@@ -183,13 +183,23 @@ wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
 python3 -m http.server -d crates/quokka-wasm/www 8080
 ```
 
-and open `http://localhost:8080`. A line runs in slices of about eight
-milliseconds, so the page stays live while it does; **Stop** gives up a line
-that will not end, and **Save world** downloads the world as an image —
-serve it as `world.qi` to carry on from it. The page's script is the host:
-it sizes each slice from how long the last one took, and collects what the
-world wrote with `take_output`. `crates/quokka-wasm/src/lib.rs` says why it
-is shaped that way.
+and open `http://localhost:8080`. That is the **environment** (phase 4,
+`docs/display.md`): the listener, where a form typed and entered with
+**Enter** is evaluated and its value shown under it. **Shift-Enter** makes a
+new line; Enter in an unfinished form does too. Any earlier form can be
+edited and run again with **Cmd-Enter** (or Ctrl-Enter): it runs as a new
+entry at the bottom, and the old results are struck through. An error opens
+the debugger in the listener, as at a terminal; type a restart's number, or
+a debugger command, at its `0]` prompt. **Stop** (or Cmd-period) abandons a
+form that will not end, and **Save world** downloads the world as an image
+— serve it as `world.qi` to carry on from it.
+
+The page's script is the host: it sizes each slice from how long the last
+one took, hands the world's display messages to the renderer
+(`www/renderer.js`, with `www/sexp.js`), and posts what the person does as
+events. `crates/quokka-wasm/src/lib.rs` says why it is shaped that way. The
+dev console of earlier phases, a line in and text out, is
+`http://localhost:8080/console.html`.
 
 The page can also start a program in place of the read-eval-print loop
 (`Quokka::start`), which phase 4's environment uses (`docs/display.md`): the
@@ -198,11 +208,16 @@ world then draws through `%display` messages, which the page takes with
 page answers with `post_event`. A world waiting for an event the page has not
 posted is idle, and `run` returns false until one is posted.
 
-A form after `#` in the address is evaluated once the world is up:
+A form after `#` in the address is evaluated once the world is up — typed
+into the listener and entered, in the environment:
 `http://localhost:8080/#(+ 1 2)`. Two scripts check the result of those
 three commands, and CI runs both: `node scripts/smoke-wasm.mjs` loads the
-bundle in Node and has a world answer, and `scripts/smoke-browser.sh` opens
-the page itself in a headless Chrome and looks for the answer in it.
+bundle in Node, has a world answer, and drives the environment through the
+renderer's model, comparing its text dump of the screen; and
+`scripts/smoke-browser.sh` opens both pages in a headless Chrome and looks
+for the answer in each. A browser keeps old copies of the page's scripts;
+`python3 -m http.server` sends no caching headers, so reload without the
+cache after changing one.
 
 ---
 

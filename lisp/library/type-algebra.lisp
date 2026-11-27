@@ -807,7 +807,11 @@
     ((logical-pathname) (%kinds-ctype '(:logical-pathname)))
     ((package) (%structure-names-ctype '(%package)))
     ((readtable) (%structure-names-ctype '(%readtable)))
-    ((stream) (%structure-names-ctype '(%string-input-stream %string-output-stream %console-stream)))
+    ;; The library's three structure streams, and a Gray stream, an
+    ;; instance of a class with `stream` among its superclasses (#136).
+    ((stream) (%ctype-or (%structure-names-ctype '(%string-input-stream %string-output-stream
+                                                   %console-stream))
+                         (%kind-ctype :instance (list (list (list (find-class 'stream)))))))
     ((string-stream) (%structure-names-ctype '(%string-input-stream %string-output-stream)))
     ((structure-object) (%kinds-ctype '(:structure)))
     (t (cond ((%structure-type-layout name) (%structure-names-ctype (list name)))

@@ -210,9 +210,8 @@ an event, which is the case `host::waiting` exists for.
 
 ## What did it cost?
 
-Two primitives, two kinds of request, and the two functions that list and
-answer waiting requests, about 150 lines of Rust in all, most of it the
-browser host's new loop and its tests. No Lisp: what uses the requests
+Two primitives, two kinds of request, the two functions that list and
+answer waiting requests, and the browser host's new loop. No Lisp: what uses the requests
 comes in the next chapters. Planning found one thing the design had
 promised for phase 4 that phase 4 does not need: weak references, which
 `docs/design.md` had placed here "with the output records that first need

@@ -355,6 +355,11 @@ Each chapter answers one question.
 | 93 | [Phase 3 ends](part-11-processes/93-phase-three-ends.md) | What does it take to fix a function from inside its error and run it again, and what does that make possible? |
 | 94 | [A screen the world does not own](part-12-display/94-a-screen-the-world-does-not-own.md) | How does a world draw on a page it does not own, and wait for a person without costing anything? |
 | 95 | [Streams a program defines](part-12-display/95-streams-a-program-defines.md) | How can `format` write into something the library has never heard of? |
+| 96 | [Output records](part-12-display/96-output-records.md) | How does output become objects the world keeps, and a viewer redraw only what changed? |
+| 97 | [The renderer](part-12-display/97-the-renderer.md) | What is left for the page to do when the world decides what is on the screen, and how does it edit text it does not own? |
+| 98 | [The listener](part-12-display/98-the-listener.md) | What is a read-eval-print loop whose every earlier form can be changed and run again, and how does the debugger come to the browser? |
+| 99 | [Editing a form in the browser](part-12-display/99-editing-a-form-in-the-browser.md) | What does phase 4's gate show, and what is not there yet? |
+| 100 | [Drawing](part-12-display/100-drawing.md) | How does a picture become records the world keeps, so that a redrawn shape moves instead of being made again? |
 | — | [The environment, on paper](looking-ahead/the-environment-on-paper.md) | What will a person see and use once phases 4 to 6 are built, and what changes when a program is a live database of definitions instead of a pile of files? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
@@ -404,7 +409,12 @@ Still to come, and deliberately so:
   frame retried, through the real program. Part XII is phase 4, the
   display: chapter 94 plans the protocol between a world and its page and
   lets a world wait for a person without costing anything, and chapter 95
-  lets a program define streams.
+  lets a program define streams. Chapter 96 makes output into records the
+  world keeps, and viewers that redraw only what changed; chapter 97 draws
+  them in the page; chapter 98 is the listener, live text in which any
+  earlier form can be edited and run again; chapter 99 meets phase 4's
+  gate, a form edited and evaluated in the browser; and chapter 100 adds
+  pictures, shapes drawn as SVG.
   Still to come are the
   rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

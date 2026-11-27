@@ -32,8 +32,15 @@
 ;;; whether the last thing written ended a line, which is all `fresh-line`
 ;;; needs.
 
-(defstruct %string-output-stream chars count fresh)
+(defstruct %string-output-stream chars count fresh closed)
 (defstruct %console-stream fresh)
+
+;;; `close` of a string stream (`gray-streams.lisp`, which is loaded before
+;;; these structures exist and so cannot `setf` their slots): it is closed
+;;; from now on, as in SBCL. The console is never closed.
+(defun %close-structure-stream (stream)
+  (cond ((%string-input-stream-p stream) (setf (%string-input-stream-closed stream) t))
+        ((%string-output-stream-p stream) (setf (%string-output-stream-closed stream) t))))
 
 (defun make-string-output-stream ()
   (make-%string-output-stream :chars nil :count 0 :fresh t))

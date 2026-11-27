@@ -51,3 +51,57 @@ if (again.take_output().trim() !== "42") {
   process.exit(1);
 }
 console.log("a saved world came back with what was defined in it");
+
+// The environment (phase 4, #142): the page's command loop, drawn by the
+// renderer's model, which knows no DOM and so runs here. This is the gate
+// in the world's and the model's halves: a form typed into the listener is
+// evaluated, and an earlier form edited and run again appears below, the
+// old result struck through. The model prints the screen as text.
+const { Model, editEvent } = await import("../crates/quokka-wasm/www/renderer.js");
+const { print, kw } = await import("../crates/quokka-wasm/www/sexp.js");
+
+const env = new Quokka(new Uint8Array(readFileSync(new URL("world.qi", www))));
+const model = new Model();
+const settle = () => {
+  let slices = 0;
+  while (env.run(20000)) {
+    if (++slices > 100000) throw new Error("the environment did not settle");
+  }
+  model.applyText(env.take_messages());
+};
+const enter = (id, text, modifiers = []) => {
+  // What the view does as the person types: the page has the text first.
+  model.nodes.get(id).props.text = text;
+  env.post_event(editEvent(id, text, text.length, text.length));
+  env.post_event(print([kw("key"), kw("target"), id, kw("key"), "Enter", kw("code"), "Enter",
+                        kw("modifiers"), modifiers.map(kw), kw("start"), text.length,
+                        kw("end"), text.length]));
+  settle();
+};
+env.start("%RUN-ENVIRONMENT");
+settle();
+const first = model.focus.id;
+enter(first, "(defun twice (x) (* 2 x))");
+enter(model.focus.id, "(twice 21)");
+enter(first, "(defun twice (x) (* 3 x))", ["meta"]);
+enter(model.focus.id, "(twice 21)");
+const screen = model.dump();
+console.log(screen);
+const want = `== Listener ==
+CL-USER> [(defun twice (x) (* 3 x))]
+~TWICE~
+edited · ran again below
+CL-USER> [(twice 21)]
+42
+CL-USER> [(defun twice (x) (* 3 x))]
+↑ from 2 forms up
+TWICE
+CL-USER> [(twice 21)]
+63
+CL-USER> []
+`;
+if (screen !== want) {
+  console.error(`the listener's screen should have read:\n${want}`);
+  process.exit(1);
+}
+console.log("the listener evaluated a form, and an edited one again below");
