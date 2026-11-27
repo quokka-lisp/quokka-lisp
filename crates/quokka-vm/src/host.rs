@@ -53,7 +53,7 @@
 
 use core::fmt;
 
-use crate::heap::{Heap, Mutation, Register};
+use crate::heap::{Heap, Mutation};
 use crate::value::Value;
 
 /// Why a host operation failed.
@@ -217,11 +217,8 @@ pub(crate) fn make_request<'h>(
 /// the machine simply has not run since to collect the answer.
 pub fn pending(heap: &mut Heap) -> Option<Request> {
     heap.mutate(|mc| {
-        let record = mc.register(Register::Request);
-        if record == Value::NIL || !mc.symbol_is(mc.slot(record, request::STATE), request::WAITING)
-        {
-            return None;
-        }
+        // The running process's, or a parked one's (#34).
+        let record = crate::process::waiting_request(mc)?;
         let kind = mc.slot(record, request::KIND);
         let argument = mc.slot(record, request::ARGUMENT);
         let text = mc.string_to_rust(argument);
@@ -252,11 +249,9 @@ pub fn pending(heap: &mut Heap) -> Option<Request> {
 /// one allocation between slices rather than a long step inside one.
 pub fn complete(heap: &mut Heap, reply: Result<String, HostError>) -> bool {
     heap.mutate(|mc| {
-        let record = mc.register(Register::Request);
-        if record == Value::NIL || !mc.symbol_is(mc.slot(record, request::STATE), request::WAITING)
-        {
+        let Some(record) = crate::process::waiting_request(mc) else {
             return false;
-        }
+        };
         let (state, answer) = match reply {
             Ok(text) => (request::REPLIED, mc.alloc_string(&text)),
             Err(e) => {
@@ -283,12 +278,9 @@ pub fn complete_line(heap: &mut Heap, line: Option<String>) -> bool {
     match line {
         Some(text) => complete(heap, Ok(text)),
         None => heap.mutate(|mc| {
-            let record = mc.register(Register::Request);
-            if record == Value::NIL
-                || !mc.symbol_is(mc.slot(record, request::STATE), request::WAITING)
-            {
+            let Some(record) = crate::process::waiting_request(mc) else {
                 return false;
-            }
+            };
             let replied = mc.intern(request::REPLIED);
             mc.set_slot(record, request::STATE, replied);
             mc.set_slot(record, request::REPLY, Value::NIL);

@@ -185,7 +185,17 @@ pub struct Vm<'a, 'h> {
     /// in making that call halts instead of trying the call again
     /// (`Vm::fail_with`).
     signalling: bool,
+    /// Set when the running process has unwound to its base because it was
+    /// told to end (`terminate_process`), so its halt is that and not an
+    /// error.
+    terminating: bool,
 }
+
+/// What a process told to end unwinds towards: a symbol, which no record
+/// matches — a `block` or `tag` wants its marker, a `catch` a cons, a
+/// `handler-case` a condition or a two-slot vector — so the unwind runs
+/// every cleanup and reaches the bottom of the process's stack (#34).
+const TERMINATE: &str = "%TERMINATE-PROCESS";
 
 /// What the machine knows about the error it is raising, beyond the error
 /// itself: the Lisp values a condition's initargs are made from (#125,
@@ -223,6 +233,10 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// loads an image; this is the raw entry point, kept separate so that a
     /// test can run deliberately malformed bytecode and watch what happens.
     pub fn start(mc: &'a mut Mutation<'h>, function: Value<'h>, env: Value<'h>) -> Vm<'a, 'h> {
+        // A host's computation runs in the main process (#34): whichever
+        // process was running when the last one ended is put away first,
+        // with its registers, and the main process's are the ones replaced.
+        crate::process::focus_main(mc);
         // Whatever was in progress is being discarded, and if it had special
         // variables bound — a computation its driver gave up on — their old
         // values come back now, before its stack is thrown away (#40).
@@ -231,6 +245,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             error: None,
             halted: false,
             signalling: false,
+            terminating: false,
         }
         .unbind_all();
         let wanted = mc
@@ -259,6 +274,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             error: None,
             halted: false,
             signalling: false,
+            terminating: false,
         }
     }
 
@@ -280,6 +296,7 @@ impl<'a, 'h> Vm<'a, 'h> {
             error: None,
             halted: false,
             signalling: false,
+            terminating: false,
         }
     }
 
@@ -949,6 +966,12 @@ impl<'a, 'h> Vm<'a, 'h> {
         if index == primitives::index(primitives::Prim::UnwindToFrame) {
             return Some(self.unwind_to_frame(args));
         }
+        if index == primitives::index(primitives::Prim::ProcessYield) {
+            return Some(self.yield_process(tail));
+        }
+        if index == primitives::index(primitives::Prim::ProcessTerminate) {
+            return Some(self.terminate_process(args, tail));
+        }
         if index == primitives::index(primitives::Prim::Error) {
             let Some((datum, rest)) = args.split_first() else {
                 return Some(self.fail(EvalError::WrongArgumentCount {
@@ -1193,6 +1216,13 @@ impl<'a, 'h> Vm<'a, 'h> {
             }
         }
         if at == usize::MAX {
+            // A process told to end has run every cleanup and is at its
+            // base: it ends here (#34).
+            if self.mc.symbol_is(target, TERMINATE) {
+                self.mc.set_register(Register::Unwind, Value::UNBOUND);
+                self.terminating = true;
+                return self.halt_with(Value::NIL);
+            }
             // Nothing wanted it. A throw to a tag nobody is catching, or a
             // condition nobody is handling.
             let value = self.mc.register(Register::Value);
@@ -1752,8 +1782,9 @@ impl<'a, 'h> Vm<'a, 'h> {
     }
 }
 
-impl Steppable for Vm<'_, '_> {
-    fn step(&mut self) -> Transition {
+impl Vm<'_, '_> {
+    /// One step of the running process, as if it were the only one.
+    fn step_here(&mut self) -> Transition {
         if self.halted {
             return Transition::Halt;
         }
@@ -2226,6 +2257,150 @@ impl Steppable for Vm<'_, '_> {
     }
 }
 
+impl Steppable for Vm<'_, '_> {
+    /// One step of the machine: of the running process, and then, when
+    /// there are processes (#34), whatever the scheduler does about how it
+    /// went. A process that finished, or blocked on the host while another
+    /// can run, gives way to the next in the ring, and the slice goes on in
+    /// that one; only the main process halts the machine, since its
+    /// computation is the one the host asked for. With no processes the
+    /// step is exactly what it was.
+    fn step(&mut self) -> Transition {
+        let transition = self.step_here();
+        if self.mc.register(Register::Process) == Value::NIL {
+            return transition;
+        }
+        match transition {
+            Transition::Continue => Transition::Continue,
+            Transition::Halt => {
+                let running = self.mc.register(Register::Process);
+                if self.mc.slot(running, crate::process::MAIN) != Value::NIL {
+                    return Transition::Halt;
+                }
+                self.end_process();
+                self.give_way(true)
+            }
+            Transition::Block => self.give_way(false),
+        }
+    }
+}
+
+impl<'h> Vm<'_, 'h> {
+    /// The running process, not the main one, has halted: record how, and
+    /// clear the halt, which was its own and not the machine's.
+    fn end_process(&mut self) {
+        let (state, result) = if self.terminating {
+            (crate::process::TERMINATED, Value::NIL)
+        } else if let Some(e) = self.error.take() {
+            let message = self.mc.alloc_string(&e.to_string());
+            (crate::process::FAILED, message)
+        } else {
+            let values = self.mc.register(Register::Values);
+            let list = if values == Value::UNBOUND {
+                let v = self.mc.register(Register::Value);
+                self.mc.cons(v, Value::NIL)
+            } else {
+                values
+            };
+            (crate::process::FINISHED, list)
+        };
+        self.terminating = false;
+        self.error = None;
+        self.halted = false;
+        crate::process::end(self.mc, state, result);
+    }
+
+    /// Switch to the next process that can run, and carry on in it. If none
+    /// can, the running one ended (ENDED) or is waiting on the host: the
+    /// machine blocks, in the main process if the running one has ended,
+    /// so that the host answers whoever is waiting.
+    fn give_way(&mut self, ended: bool) -> Transition {
+        let leaving = self.mc.register(Register::Process);
+        let transition = if let Some(next) = crate::process::next_runnable(self.mc) {
+            crate::process::switch_to(self.mc, next);
+            Transition::Continue
+        } else {
+            if ended {
+                crate::process::focus_main(self.mc);
+            }
+            Transition::Block
+        };
+        if ended {
+            crate::process::unlink(self.mc, leaving);
+        }
+        transition
+    }
+
+    /// Let the next process that can run have a turn, if one can: the end
+    /// of a slice, and `%process-yield`.
+    pub(crate) fn preempt(&mut self) {
+        if self.mc.register(Register::Process) == Value::NIL {
+            return;
+        }
+        if let Some(next) = crate::process::next_runnable(self.mc) {
+            crate::process::switch_to(self.mc, next);
+        }
+    }
+
+    /// `(%process-terminate process)`: make PROCESS unwind to its base,
+    /// running its cleanups in its own context, and end (#34). Its request,
+    /// if it was waiting on the host, is withdrawn. The main process is the
+    /// host's and cannot be ended; an ended one is left as it is. Answers t
+    /// if the process was told to end.
+    fn terminate_process(&mut self, args: &[Value<'h>], tail: bool) -> Transition {
+        let Some(&target) = args.first() else {
+            return self.fail(EvalError::WrongArgumentCount {
+                name: "%PROCESS-TERMINATE",
+                wanted: 1,
+                got: 0,
+            });
+        };
+        if !crate::process::is(self.mc, target) {
+            return self.fail(EvalError::WrongType {
+                name: "%PROCESS-TERMINATE",
+                wanted: "a process",
+            });
+        }
+        let told = self.mc.slot(target, crate::process::MAIN) == Value::NIL
+            && crate::process::alive(self.mc, target);
+        if told && target == self.mc.register(Register::Process) {
+            self.mc.set_register(Register::Request, Value::NIL);
+            let end = self.mc.intern(TERMINATE);
+            return self.start_unwind(end, Value::NIL);
+        }
+        if told {
+            let end = self.mc.intern(TERMINATE);
+            self.mc
+                .set_slot(target, crate::process::REQUEST, Value::NIL);
+            self.mc.set_slot(target, crate::process::UNWIND, end);
+        }
+        let answer = if told { Value::T } else { Value::NIL };
+        if tail {
+            self.mc.set_register(Register::Values, Value::UNBOUND);
+            self.do_return(answer)
+        } else {
+            self.push_fresh(answer);
+            Transition::Continue
+        }
+    }
+
+    /// `(%process-yield)`: let the next process that can run have its turn
+    /// now, rather than at the end of the slice. Answers nil.
+    fn yield_process(&mut self, tail: bool) -> Transition {
+        let transition = if tail {
+            self.mc.set_register(Register::Values, Value::UNBOUND);
+            self.do_return(Value::NIL)
+        } else {
+            self.push_fresh(Value::NIL);
+            Transition::Continue
+        };
+        if matches!(transition, Transition::Continue) {
+            self.preempt();
+        }
+        transition
+    }
+}
+
 /// Run `function` to completion, for tests and for the REPL once there is a
 /// compiler. The interpreter's `eval_now` with a different machine.
 pub fn run_now<'h>(
@@ -2288,7 +2463,6 @@ fn drive(
     while spent < budget {
         match one_slice(heap, slice)? {
             Status::Done { .. } => return Ok(()),
-            Status::Yielded => spent += slice,
             // A slice that stopped to ask the host something is charged the
             // steps it ran, not the slice it was offered: charged the whole
             // slice, 2,500 console writes used up five million steps having
@@ -2296,27 +2470,43 @@ fn drive(
             // which only ever asks still reaches the budget.
             Status::Blocked { steps } => {
                 spent += steps.max(1);
-                // A line typed at the console begins the next piece of
-                // work, and gets a budget of its own (#131): the budget
-                // stands in for an interrupt nobody can press yet, and a
-                // debugging session runs entirely inside the line that
-                // failed, so without this it would run out mid-session.
-                // Only a line: the end of the input renews nothing, or a
-                // program reading it in a loop could never be stopped.
-                if let Some(crate::host::Request::ReadConsole(prompt)) = crate::host::pending(heap)
-                {
-                    let line = host.read_line(&prompt);
-                    if line.is_some() {
-                        spent = 0;
-                    }
-                    crate::host::complete_line(heap, line);
-                } else if !crate::host::serve(heap, host) {
+                if !answer(heap, host, &mut spent) {
                     return Err(EvalError::Blocked);
+                }
+            }
+            // A process parked on the host while others ran (#34) is
+            // answered between slices too, not only once all of them wait.
+            Status::Yielded => {
+                spent += slice;
+                if crate::host::pending(heap).is_some() {
+                    answer(heap, host, &mut spent);
                 }
             }
         }
     }
     Err(EvalError::BudgetExhausted)
+}
+
+/// Answer the request a process is waiting on, through HOST; whether there
+/// was one.
+///
+/// A line typed at the console begins the next piece of work, and gets a
+/// budget of its own (#131): the budget stands in for an interrupt nobody
+/// can press yet, and a debugging session runs entirely inside the line that
+/// failed, so without this it would run out mid-session. Only a line: the
+/// end of the input renews nothing, or a program reading it in a loop could
+/// never be stopped.
+fn answer(heap: &mut crate::heap::Heap, host: &mut dyn crate::host::Host, spent: &mut u64) -> bool {
+    if let Some(crate::host::Request::ReadConsole(prompt)) = crate::host::pending(heap) {
+        let mains = heap.mutate(|mc| crate::process::main_is_asking(mc));
+        let line = host.read_line(&prompt);
+        if line.is_some() && mains {
+            *spent = 0;
+        }
+        crate::host::complete_line(heap, line)
+    } else {
+        crate::host::serve(heap, host)
+    }
 }
 
 /// Call the global function `name` with one argument — whatever is in the
@@ -2563,6 +2753,12 @@ pub fn one_slice(
     let (status, error) = heap.mutate(|mc| {
         let mut vm = Vm::resume(mc);
         let status = crate::slice::run_slice(&mut vm, steps);
+        // The slice is the time a process gets before the next one's turn
+        // (#34): the step budget is the preemption, as Erlang counts
+        // reductions.
+        if status == crate::slice::Status::Yielded {
+            vm.preempt();
+        }
         (status, vm.error.take())
     });
     match error {
@@ -2656,6 +2852,7 @@ fn is_string<'h>(mc: &Mutation<'h>, v: Value<'h>) -> bool {
 /// for [`one_slice`]. Then [`begin_step`] for each form.
 pub fn begin_source(heap: &mut crate::heap::Heap, source: &str) -> Result<(), EvalError> {
     heap.mutate(|mc| {
+        crate::process::focus_main(mc);
         let text = mc.alloc_string(source);
         mc.set_register(Register::Value, text);
     });
@@ -2664,7 +2861,10 @@ pub fn begin_source(heap: &mut crate::heap::Heap, source: &str) -> Result<(), Ev
 
 /// Begin reading, evaluating and printing the next form: `%host-step`.
 pub fn begin_step(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
-    heap.mutate(|mc| mc.set_register(Register::Value, Value::NIL));
+    heap.mutate(|mc| {
+        crate::process::focus_main(mc);
+        mc.set_register(Register::Value, Value::NIL)
+    });
     begin_global(heap, "%HOST-STEP")
 }
 
@@ -2681,6 +2881,7 @@ pub fn source_complete(
     host: &mut dyn crate::host::Host,
 ) -> Result<bool, EvalError> {
     heap.mutate(|mc| {
+        crate::process::focus_main(mc);
         let text = mc.alloc_string(source);
         mc.set_register(Register::Value, text);
     });
@@ -2719,6 +2920,7 @@ pub fn eval_source(
     mut each: impl FnMut(Outcome) -> bool,
 ) -> Result<(), EvalError> {
     heap.mutate(|mc| {
+        crate::process::focus_main(mc);
         let text = mc.alloc_string(source);
         mc.set_register(Register::Value, text);
     });
@@ -2730,7 +2932,10 @@ pub fn eval_source(
             // and this loop span for ever without reading another form (#85).
             recover(heap);
         }
-        heap.mutate(|mc| mc.set_register(Register::Value, Value::NIL));
+        heap.mutate(|mc| {
+            crate::process::focus_main(mc);
+            mc.set_register(Register::Value, Value::NIL)
+        });
         let outcome = match call_global(heap, "%HOST-STEP", budget, slice, host) {
             Err(e) => Outcome::Failed(e),
             Ok(()) => match step_outcome(heap) {

@@ -657,6 +657,9 @@ tell a stored nil from a missing key. ([23](part-2-reading-and-running/23-more-t
 [collection](#collection) can happen inside one, which is what makes holding a
 value safe. ([4](part-1-substrate/04-rooting.md))
 
+<a id="mutex"></a>
+**Mutex.** A lock that one thread at a time can hold, short for *mutual exclusion*: a thread holds it while it changes data other threads share, and any other thread that wants it waits. Quokka's is taken with one atomic compare-and-swap, which no process switch can interrupt. ([91](part-11-processes/91-threads.md))
+
 <a id="name-conflict"></a>
 **Name conflict.** Two different symbols of one name both accessible in a [package](#package), so that the name read there would mean two things. `use-package`, `import`, `export` and `unintern` check for one before they change anything and signal a `package-error` if they would create it. ([54](part-6-self-hosting/54-packages-that-disagree.md))
 
@@ -735,6 +738,9 @@ The standard also calls it a *generalized reference*. ([43](part-6-self-hosting/
 <a id="placeholder-and-patch"></a>
 **Placeholder and patch.** How a reader returns an object that refers to itself before it is finished, as in `#1=(a . #1#)`. `#1=` records a fresh placeholder; a `#1#` read while the object is incomplete returns it; once the object is complete, a walk replaces every placeholder with the object. Also called *backpatching*. ([60](part-6-self-hosting/60-labels-and-limits.md))
 
+<a id="preemption"></a>
+**Preemption.** Taking the machine away from a computation that has not offered it, so that another can run. Quokka preempts a process when its slice of steps runs out, as Erlang counts reductions; a process may also give way early by yielding. ([90](part-11-processes/90-taking-turns.md))
+
 <a id="prelude"></a>
 **Prelude.** The Lisp that a Lisp system loads before any user code —
 `lisp/prelude.lisp` here. Compiled into the binary with `include_str!`, since
@@ -773,6 +779,9 @@ only door between the two languages.
 **`print-object`.** The generic function a program specialises to say how its objects print. Quokka's printer calls it for instances, structures and conditions, and for any other object only once a program has defined a method on a built-in class; its method on `t` is the printer's own code. ([75](part-7-objects/75-printing-objects.md))
 
 **Print-read consistency.** The printer's contract in Common Lisp: what `prin1` writes, `read` reads back as the same object (or an equal one, for a list). For symbols it means a package prefix when the current package would not find the symbol alone, and `|...|` around a name the reader would change. ([39](part-6-self-hosting/39-printing-in-lisp.md))
+
+<a id="process"></a>
+**Process.** One of several computations running in the same world, taking turns on one machine: a saved set of the machine's registers, its own stack, and its own special bindings, which are swapped in and out when it starts and stops running. Quokka's are *green threads*, as Genera's and Smalltalk's are, scheduled by the machine itself; a program sees them as threads. ([90](part-11-processes/90-taking-turns.md), [91](part-11-processes/91-threads.md))
 
 <a id="proclamation"></a>
 **Proclamation.** A declaration that holds everywhere rather than in one scope. `defvar` *proclaims* a variable special, and it must do so before any code that binds the variable is compiled, because the compiler decides at compile time whether a binding is lexical or dynamic. ([40](part-6-self-hosting/40-the-loop-closes.md))

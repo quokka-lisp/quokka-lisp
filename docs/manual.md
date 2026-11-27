@@ -132,6 +132,11 @@ quokka> (hello)
   and an error is reported as before; `(quokka-debug:enable-debugger)` and
   `disable-debugger` switch it. `(read-line)` and `(read)` read from the
   terminal too.
+- **Threads** (`docs/processes.md`): `(quokka-thread:make-thread fn :name
+  "worker")` runs FN beside everything else, and `join-thread` waits for its
+  values; `with-mutex` and wait queues as in SBCL's `sb-thread`. Threads run
+  while the world is running something; at the `quokka>` prompt, waiting
+  for your next line, they wait too.
 - **`(quokka-debug:print-backtrace)`** prints the calls in progress, one a
   line, `0: (FOO 1 2)`, innermost first; inside a `handler-bind` handler it
   shows how the error was reached. `quokka-debug:frames` returns them as

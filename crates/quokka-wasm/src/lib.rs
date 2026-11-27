@@ -152,7 +152,13 @@ impl Quokka {
         let mut left = u64::from(steps);
         while self.doing != Doing::Nothing && left > 0 {
             match vm::one_slice(&mut self.heap, left) {
-                Ok(Status::Yielded) => left = 0,
+                Ok(Status::Yielded) => {
+                    left = 0;
+                    // A process parked on the page while others ran (#34).
+                    if host::pending(&mut self.heap).is_some() {
+                        self.answer();
+                    }
+                }
                 Ok(Status::Blocked { steps }) => {
                     left = left.saturating_sub(steps.max(1));
                     self.answer();

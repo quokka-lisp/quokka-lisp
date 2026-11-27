@@ -419,7 +419,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2051 :REPLACED 1590)".into())],
+        [Outcome::Value("(:FORMS 2086 :REPLACED 1613)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -933,6 +933,166 @@ fn the_debugger_review_findings() {
         ),
         "{out}"
     );
+}
+
+/// Processes take turns (#34, step E, sub-step 1), through the machine's
+/// primitives: round robin in ring order, a new process after the running
+/// one; each keeps its own special bindings across switches; one told to end
+/// runs its cleanups; one that never yields is preempted at the end of its
+/// slice; one the machine stops with an error ends as failed and the world
+/// goes on; one waiting on the console is parked while the others run.
+#[test]
+fn processes_take_turns() {
+    let out = run_compiled_typing(
+        "(defvar *log* nil) \
+         (defun worker (name n) (dotimes (i n) (push (list name i) *log*) (quokka::%process-yield)) name) \
+         (defun ended-p (p) (member (quokka::%process-state p) '(:finished :terminated :failed))) \
+         (defun wait-for (p) (do () ((ended-p p)) (quokka::%process-yield)) (quokka::%process-state p)) \
+         (let* ((a (quokka::%make-process (lambda () (worker :a 3)))) \
+                (b (quokka::%make-process (lambda () (worker :b 3)))) \
+                (before (list (quokka::%process-state a) \
+                              (quokka::%process-main-p (quokka::%current-process)) \
+                              (length (quokka::%all-processes))))) \
+           (list before (wait-for a) (wait-for b) (reverse *log*) (quokka::%process-result a) \
+                 (length (quokka::%all-processes)))) \
+         (defvar *x* :global) \
+         (let* ((seen nil) \
+                (c (quokka::%make-process \
+                     (lambda () (let ((*x* :c)) (quokka::%process-yield) (push (list :c *x*) seen)))))) \
+           (let ((*x* :main)) (quokka::%process-yield) (wait-for c) (push (list :main *x*) seen)) \
+           (list *x* (reverse seen))) \
+         (let* ((cleaned nil) \
+                (d (quokka::%make-process \
+                     (lambda () (unwind-protect (do () (nil) (quokka::%process-yield)) (setq cleaned t)))))) \
+           (quokka::%process-yield) \
+           (quokka::%process-terminate d) \
+           (list (wait-for d) cleaned)) \
+         (let* ((count 0) \
+                (spin (quokka::%make-process (lambda () (do () (nil) (setq count (+ count 1))))))) \
+           (dotimes (i 3000) nil) \
+           (quokka::%process-terminate spin) \
+           (list (> count 0) (wait-for spin))) \
+         (let ((f (quokka::%make-process (lambda () (car 5))))) \
+           (list (wait-for f) (stringp (quokka::%process-result f)))) \
+         (let ((g (quokka::%make-process (lambda () (read-line))))) \
+           (list (wait-for g) (quokka::%process-result g))) \
+         (list (quokka::%process-terminate (quokka::%current-process)) (length (quokka::%all-processes)))",
+        &["typed"],
+    );
+    assert_eq!(
+        out,
+        "=> *LOG*\n=> WORKER\n=> ENDED-P\n=> WAIT-FOR\n\
+         => ((:RUNNABLE T 3) :FINISHED :FINISHED ((:B 0) (:A 0) (:B 1) (:A 1) (:B 2) (:A 2)) (:A) 1)\n\
+         => *X*\n=> (:GLOBAL ((:C :C) (:MAIN :MAIN)))\n\
+         => (:TERMINATED T)\n\
+         => (T :TERMINATED)\n\
+         => (:FAILED T)\n\
+         typed\n=> (:FINISHED (\"typed\" NIL))\n\
+         => (NIL 1)\n"
+    );
+}
+
+/// Threads, as a program uses them (#34, sub-step 2): SBCL's `sb-thread`
+/// names. A thread's values come back from `join-thread`; one an error ended
+/// says so on the console and gives the default or a `join-thread-error`; a
+/// mutex keeps a read, a yield and a write together across three threads; a
+/// wait queue hands an item from one thread to another; a terminated thread
+/// ends; and three threads compiling at once, interleaved by the scheduler in
+/// the middle of their compilations, each get their own compiler state.
+#[test]
+fn threads_share_a_world() {
+    let out = run_compiled(
+        "(use-package :quokka-thread) \
+         (let ((th (make-thread (lambda (a b) (+ a b)) :name \"adder\" :arguments '(1 2)))) \
+           (list (join-thread th) (thread-name th) (thread-alive-p th))) \
+         (list (thread-name (current-thread)) (eq (current-thread) (main-thread)) \
+               (length (list-all-threads))) \
+         (let ((th (make-thread (lambda () (error \"boom\")) :name \"doomed\"))) \
+           (list (join-thread th :default :failed) \
+                 (handler-case (join-thread th) (join-thread-error () :join-error)))) \
+         (let* ((m (make-mutex :name \"counter\")) (n 0) \
+                (ths (mapcar (lambda (k) k \
+                               (make-thread (lambda () (dotimes (i 40) \
+                                 (with-mutex (m) (let ((v n)) (thread-yield) (setq n (+ v 1)))))))) \
+                             '(1 2 3)))) \
+           (mapc #'join-thread ths) \
+           (list n (mutex-owner m))) \
+         (let* ((m (make-mutex)) (q (make-waitqueue)) (box nil) \
+                (consumer (make-thread (lambda () (with-mutex (m) (do () (box) (condition-wait q m)) box))))) \
+           (thread-yield) \
+           (with-mutex (m) (setq box :item) (condition-notify q)) \
+           (join-thread consumer)) \
+         (let ((th (make-thread (lambda () (do () (nil) (thread-yield)))))) \
+           (thread-yield) \
+           (terminate-thread th) \
+           (list (join-thread th :default :ended) (thread-alive-p th))) \
+         (defun compile-many (k) \
+           (let ((ok t)) \
+             (dotimes (i 12 ok) \
+               (unless (= (funcall (compile nil (list 'lambda () \
+                                                      (list '+ i k (list 'length (list 'quote (make-list 30))))))) \
+                          (+ i k 30)) \
+                 (setq ok nil))))) \
+         (mapcar #'join-thread (mapcar (lambda (k) (make-thread (lambda () (compile-many k)))) '(100 200 300))) \
+         (length (list-all-threads)) \
+         (let* ((m (make-mutex)) (q (make-waitqueue)) \
+                (a (make-thread (lambda () (with-mutex (m) (condition-wait q m)) :a)))) \
+           (do () ((quokka::waitqueue-waiters q)) (thread-yield)) \
+           (terminate-thread a) \
+           (join-thread a :default nil) \
+           (let ((b (make-thread (lambda () (with-mutex (m) (condition-wait q m)) :b)))) \
+             (do () ((quokka::waitqueue-waiters q)) (thread-yield)) \
+             (with-mutex (m) (condition-notify q)) \
+             (list (join-thread b) (mutex-owner m) (length (quokka::waitqueue-waiters q)))))",
+    );
+    assert_eq!(
+        out,
+        "=> T\n=> (3 \"adder\" NIL)\n=> (\"main thread\" T 1)\n\
+         ; thread \"doomed\" ended: boom\n=> (:FAILED :JOIN-ERROR)\n\
+         => (120 NIL)\n=> :ITEM\n=> (:ENDED NIL)\n=> COMPILE-MANY\n=> (T T T)\n=> 1\n\
+         => (:B NIL 0)\n"
+    );
+}
+
+/// The console is the main process's (#34): a background thread's
+/// `read-line` waits while the main process is busy, and reads the next line
+/// only once the main process waits for it, so it never takes a line meant
+/// for the main process; each thread reads into a buffer of its own.
+#[test]
+fn a_thread_waits_for_the_console() {
+    let out = run_compiled_typing(
+        "(let ((th (quokka-thread:make-thread (lambda () (read-line)) :name \"reader\"))) \
+           (dotimes (i 4000) nil) \
+           (let ((alive (not (null (quokka-thread:thread-alive-p th))))) \
+             (list alive (quokka-thread:join-thread th)))) \
+         (read-line)",
+        &["for the thread", "for the main process"],
+    );
+    assert_eq!(
+        out,
+        "for the thread\n=> (T \"for the thread\")\nfor the main process\n=> \"for the main process\"\n"
+    );
+}
+
+/// A thread an error stopped opens the debugger too, which says which thread
+/// it is; `abort` there ends that thread, and the main thread carries on.
+#[test]
+fn a_thread_can_be_debugged() {
+    let out = run_compiled_typing(
+        "(quokka-debug:enable-debugger) \
+         (let ((th (quokka-thread:make-thread (lambda () (car 'oops)) :name \"worker\"))) \
+           (quokka-thread:join-thread th :default :aborted))",
+        &["backtrace", "abort"],
+    );
+    assert!(
+        out.contains("debugger invoked on a TYPE-ERROR in thread \"worker\": "),
+        "{out}"
+    );
+    assert!(
+        out.contains("  0: [ABORT] Terminate this thread.\n"),
+        "{out}"
+    );
+    assert!(out.ends_with("0] backtrace\n0: (LAMBDA)\n0] abort\n; thread \"worker\" ended: The value OOPS is not of type LIST\n=> :ABORTED\n"), "{out}");
 }
 
 /// What only Quokka can be held to (#124): the default `#<...>` of an

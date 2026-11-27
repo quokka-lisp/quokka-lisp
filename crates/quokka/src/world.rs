@@ -178,7 +178,10 @@ pub(crate) fn run_world(path: &str) {
     // the input is a terminal, and not when a script is piped in, which
     // goes on past an error as it always has (#131).
     let person = io::stdin().is_terminal();
-    heap.mutate(|mc| mc.set_register(Register::Value, if person { Value::T } else { Value::NIL }));
+    heap.mutate(|mc| {
+        quokka_vm::process::focus_main(mc);
+        mc.set_register(Register::Value, if person { Value::T } else { Value::NIL })
+    });
     if let Err(e) =
         quokka_vm::vm::call_global(&mut heap, "%HOST-DEBUGGER", EVAL_BUDGET, 2_000, &mut host)
     {

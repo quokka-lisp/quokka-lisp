@@ -112,7 +112,9 @@ fn booting_costs_a_known_amount_of_heap() {
     // carry it; it is what finding a symbol without walking them all costs.
     // 14,311 with phase 3's frames and debugger (#130, #131): the compiler's
     // `%never-returns-p`, `%setf-definition-p` and `%declared-name`, and the
-    // symbols of four new primitives.
+    // symbols of four new primitives. 14,479 with processes (#34): the
+    // symbols of eleven primitives, about fifteen words each with their
+    // names and their place in the index.
     //
     // The point is not the number but that raising it is a deliberate
     // act with a failing test attached — the same job as
@@ -120,7 +122,7 @@ fn booting_costs_a_known_amount_of_heap() {
     // what was added; this one is.
     let words = heap.used_words();
     assert!(
-        words < 14_400,
+        words < 14_600,
         "the prelude now costs {words} live words after a collection"
     );
 }

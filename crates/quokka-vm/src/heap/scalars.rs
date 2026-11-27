@@ -33,11 +33,14 @@ pub(crate) struct Scalars {
     /// words before it keep their positions and the byte offsets the image
     /// tests name stay true. Format version 2 (#35).
     pub request: u64,
+    /// The running process (#34), appended for the same reason. Format
+    /// version 10.
+    pub process: u64,
 }
 
 impl Scalars {
     /// How many `u64`s a `Scalars` occupies in an image header.
-    pub const WORDS: usize = 19;
+    pub const WORDS: usize = 20;
 
     /// In the order they are written. Changing this order changes the format.
     pub fn to_words(self) -> [u64; Scalars::WORDS] {
@@ -61,6 +64,7 @@ impl Scalars {
             self.gensym_counter,
             self.static_end,
             self.request,
+            self.process,
         ]
     }
 
@@ -86,6 +90,7 @@ impl Scalars {
             gensym_counter: w[16],
             static_end: w[17],
             request: w[18],
+            process: w[19],
         }
     }
 }
@@ -113,6 +118,7 @@ impl Heap {
             function: s.function,
             operands: s.operands,
             request: s.request,
+            process: s.process,
             pc: s.pc as u64,
             sp: s.sp as u64,
             fp: s.fp as u64,
@@ -162,6 +168,7 @@ impl Heap {
                 function: s.function,
                 operands: s.operands,
                 request: s.request,
+                process: s.process,
                 symbol_cache: Value::NIL.bits(),
                 symbol_index: Value::NIL.bits(),
                 pc: s.pc as usize,

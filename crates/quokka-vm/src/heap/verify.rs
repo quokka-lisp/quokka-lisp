@@ -213,7 +213,7 @@ impl Heap {
         let s = &self.storage;
         for root in [
             s.root, s.obarray, s.control, s.env, s.value, s.stack, s.unwind, s.values, s.function,
-            s.operands, s.request,
+            s.operands, s.request, s.process,
         ] {
             check(root, usize::MAX)?;
         }
@@ -351,6 +351,7 @@ impl Heap {
             ObjectType::Ratio => header.slots == 2,
             ObjectType::StandardInstance => header.slots == crate::instance::STANDARD_SLOTS,
             ObjectType::FuncallableInstance => header.slots == crate::instance::FUNCALLABLE_SLOTS,
+            ObjectType::Process => header.slots == crate::process::SLOTS,
             ObjectType::DoubleFloat | ObjectType::NilVector => header.slots >= 1,
             ObjectType::PackedString => counted(8),
             ObjectType::BitVector => counted(64),
@@ -363,6 +364,97 @@ impl Heap {
     /// counter one in the running function's code.
     fn registers_fit(&self) -> Result<(), Inconsistency> {
         let s = &self.storage;
+        // The live set is a background process's when one was running as
+        // the image was saved, and is then resumed as it stands, as every
+        // saved set is: those are held to what resuming needs.
+        let resumed = {
+            let p = Value::from_bits(s.process);
+            p.is_object()
+                && p.word_index().is_some_and(|at| {
+                    Header::decode(s.words[at]).map(|h| h.object_type) == Some(ObjectType::Process)
+                        && Value::from_bits(s.words[at + HEADER_WORDS + crate::process::MAIN])
+                            .is_nil()
+                })
+        };
+        let live = RegisterSet {
+            operands: s.operands,
+            sp: s.sp,
+            fp: s.fp,
+            mp: s.mp,
+            function: s.function,
+            pc: s.pc,
+            request: s.request,
+        };
+        self.register_set_fits(&live, resumed)?;
+        // Every process's saved registers are loaded into these when it
+        // runs (#34), so each set must fit as the live one must; and the
+        // ring must be processes all the way round.
+        let bad = |which| Err(Inconsistency::BadRegister { which });
+        let words = &s.words;
+        let header_at = |word: u64| -> Option<Header> {
+            let v = Value::from_bits(word);
+            let at = v.is_object().then(|| v.word_index()).flatten()?;
+            Header::decode(words[at])
+        };
+        let running = Value::from_bits(s.process);
+        if !running.is_nil()
+            && header_at(s.process).map(|h| h.object_type) != Some(ObjectType::Process)
+        {
+            return bad("process");
+        }
+        for at in self.objects_of(ObjectType::Process) {
+            let slot = |n: usize| words[at + HEADER_WORDS + n];
+            let place = |n: usize| -> Option<usize> {
+                let v = Value::from_bits(slot(n)).as_fixnum()?;
+                if v == -1 && n == crate::process::MP {
+                    return Some(usize::MAX);
+                }
+                usize::try_from(v).ok()
+            };
+            if header_at(slot(crate::process::NEXT)).map(|h| h.object_type)
+                != Some(ObjectType::Process)
+                || Value::from_bits(slot(crate::process::STATE))
+                    .as_fixnum()
+                    .is_none()
+            {
+                return bad("process");
+            }
+            let (Some(sp), Some(fp), Some(mp), Some(pc)) = (
+                place(crate::process::SP),
+                place(crate::process::FP),
+                place(crate::process::MP),
+                place(crate::process::PC),
+            ) else {
+                return bad("process-registers");
+            };
+            let saved = RegisterSet {
+                operands: slot(crate::process::OPERANDS),
+                sp,
+                fp,
+                mp,
+                function: slot(crate::process::FUNCTION),
+                pc,
+                request: slot(crate::process::REQUEST),
+            };
+            self.register_set_fits(&saved, true)?;
+        }
+        Ok(())
+    }
+
+    /// Do a set of registers fit what they index: the stack, frame and
+    /// mark pointers in the operand stack, the program counter in the
+    /// function's code?
+    fn register_set_fits(&self, set: &RegisterSet, resumed: bool) -> Result<(), Inconsistency> {
+        let RegisterSet {
+            operands,
+            sp,
+            fp,
+            mp,
+            function,
+            pc,
+            request,
+        } = *set;
+        let s = &self.storage;
         let object = |word: u64| -> Option<(usize, Header)> {
             let v = Value::from_bits(word);
             let at = v.is_object().then(|| v.word_index()).flatten()?;
@@ -373,32 +465,55 @@ impl Heap {
         // run yet. `Vm::start` makes one before anything is popped.
         // Then nothing is on it, so the machine never has a stack pointer
         // or a frame outside a stack vector (#130: a return trusts that).
-        if Value::from_bits(s.operands).is_nil() {
-            if s.sp != 0 || s.fp != 0 || s.mp != usize::MAX {
+        if Value::from_bits(operands).is_nil() {
+            if sp != 0 || fp != 0 || mp != usize::MAX {
                 return bad("stack-pointer");
             }
-        } else if let Some((_, stack)) = object(s.operands) {
+        } else if let Some((_, stack)) = object(operands) {
             if stack.object_type != ObjectType::Vector {
                 return bad("operand-stack");
             }
-            if s.sp > stack.slots || s.fp > s.sp {
+            if sp > stack.slots || fp > sp {
                 return bad("stack-pointer");
             }
             // A record is read whole, from its first slot to its last.
-            if s.mp != usize::MAX && s.mp + crate::vm::mark::SIZE > s.sp {
+            if mp != usize::MAX && mp + crate::vm::mark::SIZE > sp {
                 return bad("mark-pointer");
             }
         } else {
             // Neither nil nor an object: nothing could push onto it.
             return bad("operand-stack");
         }
-        if let Some((at, function)) = object(s.function) {
-            if function.object_type == ObjectType::Function {
+        // A set that will be resumed as it stands (#34) runs its function
+        // and looks at its request at once, before anything resets them: a
+        // stack means a compiled function, and a request is a record.
+        if resumed {
+            let compiled =
+                object(function).map(|(_, f)| f.object_type) == Some(ObjectType::Function);
+            if !Value::from_bits(operands).is_nil() && !compiled {
+                return bad("function");
+            }
+            if !Value::from_bits(request).is_nil() {
+                let record = object(request).filter(|(_, h)| {
+                    h.object_type == ObjectType::Vector && h.slots == crate::host::request::SLOTS
+                });
+                let Some((at, _)) = record else {
+                    return bad("request");
+                };
+                let state = s.words[at + HEADER_WORDS + crate::host::request::STATE];
+                let symbol = object(state).map(|(_, h)| h.object_type) == Some(ObjectType::Symbol);
+                if !symbol {
+                    return bad("request");
+                }
+            }
+        }
+        if let Some((at, f)) = object(function) {
+            if f.object_type == ObjectType::Function {
                 let length = Value::from_bits(
                     s.words[at + HEADER_WORDS + crate::code::function::CODE_LENGTH],
                 )
                 .as_fixnum();
-                if !length.is_some_and(|n| n >= 0 && s.pc as u64 <= n as u64) {
+                if !length.is_some_and(|n| n >= 0 && pc as u64 <= n as u64) {
                     return bad("program-counter");
                 }
             }
@@ -431,4 +546,17 @@ impl Heap {
         }
         found
     }
+}
+
+/// One computation's registers, as `register_set_fits` checks them: the
+/// live set, or one a process saved (#34).
+#[derive(Clone, Copy)]
+struct RegisterSet {
+    operands: u64,
+    sp: usize,
+    fp: usize,
+    mp: usize,
+    function: u64,
+    pc: usize,
+    request: u64,
 }

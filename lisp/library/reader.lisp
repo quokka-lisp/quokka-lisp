@@ -165,9 +165,23 @@
 (defvar %console-input (make-string-input-stream ""))
 (defvar %console-prompt "")
 
+;;; With processes (#34) the console has one reader at a time
+;;; (`%await-console` in `threads.lisp`): the main process, and a background
+;;; thread only while the main process waits for others, one thread at a
+;;; time, holding it for a line, or for a whole debugger session
+;;; (`%holding-console`). Each thread reads into a buffer of its own, its
+;;; binding of `%console-input`, so lines never mix. Proclaimed here, before
+;;; anything binds them.
+(defvar %threads-made nil)
+(defvar %main-waiting nil)
+(defvar %console-owner (vector nil))
+(defvar %holding-console nil)
+
 (defun %refill-console (stream)
   (if (eq stream %console-input)
-      (let ((line (%read-console %console-prompt)))
+      (let ((line (progn (if %threads-made (%await-console))
+                         (%read-console %console-prompt))))
+        (if %threads-made (%release-console))
         (setq %console-prompt "")
         (if (and line (> (length line) 0))
             (progn (setf (%string-input-stream-string stream) line)

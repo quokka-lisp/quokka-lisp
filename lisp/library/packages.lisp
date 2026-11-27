@@ -722,8 +722,10 @@
 ;;; The debugger's names (`frames.lisp`), likewise, as SBCL's are in
 ;;; `SB-DEBUG` (#130).
 (defvar %quokka-debug-package (make-package "QUOKKA-DEBUG" :use '("COMMON-LISP")))
+;;; And processes' (`threads.lisp`), as SBCL's are in `SB-THREAD` (#34).
+(defvar %quokka-thread-package (make-package "QUOKKA-THREAD" :use '("COMMON-LISP")))
 (defvar %quokka-package
-  (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP" "QUOKKA-DEBUG")))
+  (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP" "QUOKKA-DEBUG" "QUOKKA-THREAD")))
 (defvar %cl-user-package
   (make-package "COMMON-LISP-USER" :nicknames '("CL-USER") :use '("COMMON-LISP")))
 
@@ -759,6 +761,14 @@
     "FRAME-CALL" "FRAME-LOCALS" "LIST-BACKTRACE" "PRINT-BACKTRACE" "UNWIND-TO-FRAME-AND-CALL"
     "RESTART-FRAME" "RETURN-FROM-FRAME" "ENABLE-DEBUGGER" "DISABLE-DEBUGGER"))
 
+;;; The names `QUOKKA-THREAD` exports: SBCL's, from `sb-thread`.
+(defvar %quokka-thread-symbol-names
+  '("THREAD" "THREADP" "MAKE-THREAD" "JOIN-THREAD" "THREAD-YIELD" "CURRENT-THREAD"
+    "MAIN-THREAD" "LIST-ALL-THREADS" "THREAD-NAME" "THREAD-ALIVE-P" "TERMINATE-THREAD"
+    "THREAD-ERROR" "THREAD-ERROR-THREAD" "JOIN-THREAD-ERROR"
+    "MUTEX" "MAKE-MUTEX" "MUTEX-NAME" "MUTEX-OWNER" "GRAB-MUTEX" "RELEASE-MUTEX" "WITH-MUTEX"
+    "WAITQUEUE" "MAKE-WAITQUEUE" "CONDITION-WAIT" "CONDITION-NOTIFY" "CONDITION-BROADCAST"))
+
 ;;; Sort every symbol in the Rust system table into a package: each of the
 ;;; standard's 978 names into `COMMON-LISP`, as an external symbol — creating
 ;;; the ones nothing has used yet, such as `LOOP` — and everything else into
@@ -769,6 +779,8 @@
     (%adopt (%intern name) %quokka-mop-package t))
   (dolist (name %quokka-debug-symbol-names)
     (%adopt (%intern name) %quokka-debug-package t))
+  (dolist (name %quokka-thread-symbol-names)
+    (%adopt (%intern name) %quokka-thread-package t))
   (%adopt-the-rest (%system-symbols))
   ;; The names have done their job — each symbol has its own copy now — and a
   ;; list of 978 strings is not worth carrying in every image.

@@ -349,6 +349,8 @@ Each chapter answers one question.
 | 87 | [Retrying a frame](part-10-frames/87-retrying-a-frame.md) | How do you leave everything above a frame cleanly and run its call again, so that a fixed function takes over? |
 | 88 | [Reading the console](part-10-frames/88-reading-the-console.md) | How does a world that the host drives wait for a person to type, in the middle of a computation? |
 | 89 | [The debugger](part-10-frames/89-the-debugger.md) | How do restarts, kept definitions and kept calls become a place where you fix a function from inside its error? |
+| 90 | [Taking turns](part-11-processes/90-taking-turns.md) | How does one machine run several computations, each with its own stack and its own special bindings? |
+| 91 | [Threads](part-11-processes/91-threads.md) | What does a program see of processes, and how do threads share one world without corrupting it, the compiler included? |
 | — | [The environment, on paper](looking-ahead/the-environment-on-paper.md) | What will a person see and use once phases 4 to 6 are built, and what changes when a program is a live database of definitions instead of a pile of files? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
@@ -390,7 +392,9 @@ Still to come, and deliberately so:
   definitions, which keep their source, and chapter 85 what they use.
   Part X is the stack as the debugger sees it: chapter 86 makes every
   frame keep its call, and chapter 87 retries one; chapter 88 lets a world
-  read its console, and chapter 89 is the terminal debugger.
+  read its console, and chapter 89 is the terminal debugger. Part XI is
+  processes: chapter 90 lets the machine take turns between computations,
+  and chapter 91 gives programs threads and locks.
   Still to come are the
   rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

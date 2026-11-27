@@ -215,6 +215,17 @@ pub enum Prim {
     UnwindToFrame = 155,
     ReadConsole = 156,
     FrameLocals = 157,
+    MakeProcess = 158,
+    CurrentProcess = 159,
+    ProcessYield = 160,
+    ProcessTerminate = 161,
+    ProcessState = 162,
+    ProcessResult = 163,
+    AllProcesses = 164,
+    ProcessData = 165,
+    SetProcessData = 166,
+    ProcessMainP = 167,
+    CompareAndSwapSvref = 168,
 }
 
 impl Prim {
@@ -737,6 +748,34 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // A frame's own variables, from its environment, for the debugger's
     // `list-locals` (`vm::frame_locals`).
     (Prim::FrameLocals, "%FRAME-LOCALS", Arity::Exactly(2)),
+    // ---- processes (phase 3 step E, #34) --------------------------------
+    //
+    // Several computations in one world (`crate::process`). Making one,
+    // finding the running one and the others, asking how one is or ended,
+    // and a slot for the library's own object for it. Yielding and ending
+    // one change which process runs, which only the machine can do, and
+    // so are intercepted. One atomic operation, compare-and-swap on a
+    // simple vector's element, for the library's locks: a primitive is one
+    // step, and no process switch falls inside a step.
+    (Prim::MakeProcess, "%MAKE-PROCESS", Arity::Exactly(1)),
+    (Prim::CurrentProcess, "%CURRENT-PROCESS", Arity::Exactly(0)),
+    (Prim::ProcessYield, "%PROCESS-YIELD", Arity::Exactly(0)),
+    (
+        Prim::ProcessTerminate,
+        "%PROCESS-TERMINATE",
+        Arity::Exactly(1),
+    ),
+    (Prim::ProcessState, "%PROCESS-STATE", Arity::Exactly(1)),
+    (Prim::ProcessResult, "%PROCESS-RESULT", Arity::Exactly(1)),
+    (Prim::AllProcesses, "%ALL-PROCESSES", Arity::Exactly(0)),
+    (Prim::ProcessData, "%PROCESS-DATA", Arity::Exactly(1)),
+    (Prim::SetProcessData, "%SET-PROCESS-DATA", Arity::Exactly(2)),
+    (Prim::ProcessMainP, "%PROCESS-MAIN-P", Arity::Exactly(1)),
+    (
+        Prim::CompareAndSwapSvref,
+        "%COMPARE-AND-SWAP-SVREF",
+        Arity::Exactly(4),
+    ),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -781,6 +820,47 @@ pub const fn index(prim: Prim) -> u32 {
 }
 
 /// A Rust truth value as Lisp's.
+/// ARGUMENT, if it is a process.
+fn a_process<'h>(
+    mc: &Mutation<'h>,
+    argument: Value<'h>,
+    name: &'static str,
+) -> Result<Value<'h>, EvalError> {
+    if crate::process::is(mc, argument) {
+        Ok(argument)
+    } else {
+        Err(EvalError::WrongType {
+            name,
+            wanted: "a process",
+        })
+    }
+}
+
+/// `(%make-process function)`: a process that will call FUNCTION with no
+/// arguments, through a trampoline of three instructions, the way a host
+/// calls a global (`vm::begin_global`), so that the call is a frame like
+/// any other and its function returning ends the process.
+fn make_process<'h>(mc: &mut Mutation<'h>, function: Value<'h>) -> Result<Value<'h>, EvalError> {
+    let callable = crate::closure::is_callable(mc, function)
+        || crate::instance::is_funcallable(mc, function)
+        || (function.is_object() && mc.header(function).object_type == ObjectType::Function);
+    if !callable {
+        return Err(EvalError::WrongType {
+            name: "%MAKE-PROCESS",
+            wanted: "a function",
+        });
+    }
+    let constants = mc.alloc(ObjectType::Vector, 1);
+    mc.set_slot(constants, 0, function);
+    let mut bytes = Vec::new();
+    crate::code::encode(&mut bytes, crate::code::Op::Const, 0, 0);
+    crate::code::encode(&mut bytes, crate::code::Op::Call, 0, 0);
+    crate::code::encode(&mut bytes, crate::code::Op::Ret, 0, 0);
+    let label = mc.intern("PROCESS-START");
+    let trampoline = crate::code::make_function(mc, &bytes, constants, Value::NIL, 1, label);
+    Ok(crate::process::make(mc, trampoline, 64))
+}
+
 fn boolean<'h>(yes: bool) -> Value<'h> {
     if yes {
         Value::T
@@ -941,6 +1021,75 @@ pub fn call_slice<'h>(
             operator: "%UNWIND-TO-HANDLER",
             detail: "is intercepted by the machine and should never be called here",
         }),
+        Prim::ProcessYield | Prim::ProcessTerminate => Err(EvalError::Fault {
+            operator: name,
+            detail: "is intercepted by the machine and should never be called here",
+        }),
+        Prim::MakeProcess => make_process(mc, args[0]),
+        Prim::CurrentProcess => Ok(crate::process::current(mc)),
+        Prim::ProcessState => {
+            let p = a_process(mc, args[0], name)?;
+            let state = match mc.slot(p, crate::process::STATE).as_fixnum() {
+                Some(crate::process::FINISHED) => "FINISHED",
+                Some(crate::process::TERMINATED) => "TERMINATED",
+                Some(crate::process::FAILED) => "FAILED",
+                _ if p == mc.register(crate::heap::Register::Process) => "RUNNING",
+                _ if crate::process::runnable(mc, p) => "RUNNABLE",
+                _ => "WAITING",
+            };
+            Ok(mc.intern_keyword(state))
+        }
+        Prim::ProcessResult => {
+            let p = a_process(mc, args[0], name)?;
+            Ok(mc.slot(p, crate::process::RESULT))
+        }
+        Prim::AllProcesses => {
+            crate::process::current(mc);
+            let ring = crate::process::ring(mc);
+            let mut list = Value::NIL;
+            for p in ring.into_iter().rev() {
+                list = mc.cons(p, list);
+            }
+            Ok(list)
+        }
+        Prim::ProcessData => {
+            let p = a_process(mc, args[0], name)?;
+            Ok(mc.slot(p, crate::process::DATA))
+        }
+        Prim::SetProcessData => {
+            let p = a_process(mc, args[0], name)?;
+            mc.set_slot(p, crate::process::DATA, args[1]);
+            Ok(args[1])
+        }
+        Prim::ProcessMainP => {
+            let p = a_process(mc, args[0], name)?;
+            Ok(boolean(mc.slot(p, crate::process::MAIN) != Value::NIL))
+        }
+        Prim::CompareAndSwapSvref => {
+            let (vector, at, old, new) = (args[0], args[1], args[2], args[3]);
+            if !(vector.is_object() && mc.header(vector).object_type == ObjectType::Vector) {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "a simple vector",
+                });
+            }
+            let slots = mc.header(vector).slots;
+            let Some(i) = at
+                .as_fixnum()
+                .and_then(|i| usize::try_from(i).ok())
+                .filter(|i| *i < slots)
+            else {
+                return Err(EvalError::WrongType {
+                    name,
+                    wanted: "an index of the vector",
+                });
+            };
+            let now = mc.slot(vector, i);
+            if now == old {
+                mc.set_slot(vector, i, new);
+            }
+            Ok(now)
+        }
         Prim::UnwindToFrame => Err(EvalError::Fault {
             operator: "%UNWIND-TO-FRAME",
             detail: "is intercepted by the machine and should never be called here",

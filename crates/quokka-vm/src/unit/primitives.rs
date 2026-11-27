@@ -191,7 +191,18 @@ fn the_table_order_is_pinned() {
             "%FRAMES",
             "%UNWIND-TO-FRAME",
             "%READ-CONSOLE",
-            "%FRAME-LOCALS"
+            "%FRAME-LOCALS",
+            "%MAKE-PROCESS",
+            "%CURRENT-PROCESS",
+            "%PROCESS-YIELD",
+            "%PROCESS-TERMINATE",
+            "%PROCESS-STATE",
+            "%PROCESS-RESULT",
+            "%ALL-PROCESSES",
+            "%PROCESS-DATA",
+            "%SET-PROCESS-DATA",
+            "%PROCESS-MAIN-P",
+            "%COMPARE-AND-SWAP-SVREF"
         ]
     );
 }

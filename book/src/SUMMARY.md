@@ -123,6 +123,11 @@
 - [Reading the console](part-10-frames/88-reading-the-console.md)
 - [The debugger](part-10-frames/89-the-debugger.md)
 
+# Part XI · Processes
+
+- [Taking turns](part-11-processes/90-taking-turns.md)
+- [Threads](part-11-processes/91-threads.md)
+
 # Looking ahead
 
 - [The environment, on paper](looking-ahead/the-environment-on-paper.md)

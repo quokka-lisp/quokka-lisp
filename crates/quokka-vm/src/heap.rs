@@ -364,6 +364,9 @@ pub enum ObjectType {
     /// An instance that can be called, as a generic function is: its
     /// function, its wrapper and its slot vector. See `crate::instance`.
     FuncallableInstance = 15,
+    /// A process (#34): a computation's saved registers, its state and its
+    /// place in the ring of processes. See `crate::process`.
+    Process = 16,
     /// A macro: the same shape as a closure, and deliberately a different
     /// type.
     ///
@@ -490,6 +493,7 @@ impl ObjectType {
             13 => Ratio,
             14 => StandardInstance,
             15 => FuncallableInstance,
+            16 => Process,
             64 => String,
             65 => Code,
             66 => Bignum,
@@ -550,6 +554,10 @@ pub enum Register {
     /// rather than on the host's side so that an image saved while waiting
     /// reloads still waiting (#35).
     Request,
+    /// The running process (#34), or `nil` in a world that has never made
+    /// one: all the registers above are that process's, cached, and a
+    /// switch stores them into it and loads another's (`crate::process`).
+    Process,
 }
 
 /// An object header word, as stored in the heap.
@@ -617,6 +625,9 @@ struct Storage {
     operands: u64,
     /// The pending host request, or `nil`. A root like the rest.
     request: u64,
+    /// The running process, or `nil`. A root like the rest, and the way to
+    /// every other process, round the ring.
+    process: u64,
     /// System symbols the machine needs by name, remembered once found
     /// (see [`Mutation::cached_symbol`]): a vector, or `nil` until the first
     /// lookup. A root, so the collector forwards it; but only a cache, so an
@@ -1280,6 +1291,7 @@ impl<'h> Mutation<'h> {
             Register::Function => self.storage.function,
             Register::Operands => self.storage.operands,
             Register::Request => self.storage.request,
+            Register::Process => self.storage.process,
         })
     }
 
@@ -1295,6 +1307,7 @@ impl<'h> Mutation<'h> {
             Register::Function => &mut self.storage.function,
             Register::Operands => &mut self.storage.operands,
             Register::Request => &mut self.storage.request,
+            Register::Process => &mut self.storage.process,
         };
         *slot = v.bits();
     }
@@ -1461,6 +1474,7 @@ impl Heap {
                 function: Value::NIL.bits(),
                 operands: Value::NIL.bits(),
                 request: Value::NIL.bits(),
+                process: Value::NIL.bits(),
                 symbol_cache: Value::NIL.bits(),
                 symbol_index: Value::NIL.bits(),
                 pc: 0,
@@ -1782,6 +1796,7 @@ impl Heap {
         self.storage.function = forward(from, &mut to, static_end, self.storage.function);
         self.storage.operands = forward(from, &mut to, static_end, self.storage.operands);
         self.storage.request = forward(from, &mut to, static_end, self.storage.request);
+        self.storage.process = forward(from, &mut to, static_end, self.storage.process);
         self.storage.symbol_cache = forward(from, &mut to, static_end, self.storage.symbol_cache);
         self.storage.symbol_index = forward(from, &mut to, static_end, self.storage.symbol_index);
 

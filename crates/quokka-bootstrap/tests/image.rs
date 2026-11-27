@@ -320,7 +320,7 @@ fn the_checksum_is_the_published_fnv_1a() {
 /// to load and then panic at the first `mutate`, the first `intern` or the
 /// first error. Each is now refused by `load`, with a reason.
 ///
-/// The scalars are words 4 to 22 of an image, in the order `Scalars` lists
+/// The scalars are words 4 to 23 of an image, in the order `Scalars` lists
 /// them; the two words after say what machine the image needs.
 #[test]
 fn an_image_that_is_not_a_heap_is_refused_however_well_it_is_sealed() {
@@ -358,9 +358,9 @@ fn an_image_that_is_not_a_heap_is_refused_however_well_it_is_sealed() {
     inconsistent(4 + 9, (3 << 3) | 0b011);
 
     // Built against a machine with one more primitive than this one has.
-    let primitives = u64::from_le_bytes(good[(4 + 19) * 8..(4 + 20) * 8].try_into().unwrap());
+    let primitives = u64::from_le_bytes(good[(4 + 20) * 8..(4 + 21) * 8].try_into().unwrap());
     assert!(matches!(
-        altered(4 + 19, primitives + 1),
+        altered(4 + 20, primitives + 1),
         Some(ImageError::NeedsNewerMachine { .. })
     ));
 
@@ -380,4 +380,50 @@ fn every_function_in_a_compiled_world_passes_the_verifier_on_load() {
     let bytes = save(&mut heap);
     let loaded = load(&bytes, 1 << 22).expect("a built world loads");
     assert!(loaded.verify().is_ok());
+}
+
+/// A process's saved registers are resumed as they stand (#34), so an image
+/// whose background process has a function that is not compiled code, or a
+/// request that is not a request, is refused by the check every image
+/// passes, as a live set like it would be: resuming it would read slots the
+/// objects do not have (rule 10). The review of #34 found both accepted.
+#[test]
+fn a_process_that_cannot_be_resumed_is_refused() {
+    use quokka_vm::heap::Register;
+    use quokka_vm::value::Value;
+    // GC torture verifies the heap after every mutation, so the damage done
+    // below is refused by that same check, as a panic, before the test can
+    // ask: the property holds there too, said louder.
+    if quokka_vm::heap::TORTURE {
+        return;
+    }
+    let mut heap = Heap::new();
+    boot::build_image(&mut heap).expect("builds");
+    let mut host = quokka_vm::host::NullHost::default();
+    quokka_vm::vm::eval_source(
+        &mut heap,
+        "(quokka-thread:make-thread (lambda () (do () (nil) (quokka-thread:thread-yield))))",
+        5_000_000,
+        2_000,
+        &mut host,
+        |_| true,
+    )
+    .expect("runs");
+    heap.verify().expect("a world with a live thread is sound");
+    let bytes = save(&mut heap);
+    for (slot, bad) in [
+        (quokka_vm::process::FUNCTION, 3),
+        (quokka_vm::process::REQUEST, 7),
+    ] {
+        let mut damaged = load(&bytes, 1 << 22).expect("the saved world loads");
+        damaged.mutate(|mc| {
+            assert!(mc.register(Register::Process) != Value::NIL);
+            let background = quokka_vm::process::ring(mc)
+                .into_iter()
+                .find(|p| mc.slot(*p, quokka_vm::process::MAIN) == Value::NIL)
+                .expect("the thread is in the ring");
+            mc.set_slot(background, slot, Value::fixnum(bad).unwrap());
+        });
+        assert!(damaged.verify().is_err(), "slot {slot} accepted");
+    }
 }

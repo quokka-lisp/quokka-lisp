@@ -733,8 +733,32 @@ compiler reads (`%declared-name`); retrying a method frame runs that method
 (re-dispatch would run other methods twice). `%frames` entries are
 `(place token callee environment . args)`; `%frame-locals env callee` lists
 a frame's own variables. Tests type at the console: `run_compiled_typing`
-in `differential.rs`. Rebuild `(:FORMS 2051 :REPLACED 1590)`. **Next: phase 3 step E**,
-processes (#34), then G, the gate. Phase 2's scope was
+in `differential.rs`. Rebuild `(:FORMS 2051 :REPLACED 1590)`. 
+**Phase 3 step E, processes, is done** (#34, chapters 90–91; the design is
+`docs/processes.md`). **A process is an `ObjectType::Process`** holding a
+saved register set (`crate::process`; opaque to Lisp, checked by
+`Heap::verify`); `Register::Process` is the running one, the processes a
+ring through `NEXT`; image format 10, scalars 20 words. **A switch swaps
+special bindings** (`process::switch_to`, `swap_bindings`). **Scheduling is
+in `Vm::step`** around `step_here`: a background process's halt ends it
+(`end_process`, unlinked from the ring), a block parks it (`give_way`), and
+`one_slice` preempts at a slice's end; only the main process halts the
+machine. **Every host entry point calls `process::focus_main` before
+touching a register** (`Vm::start`, `begin_source`, `eval_source`, ... and
+`run_world`): a new one must too. `host::pending`/`complete` find a parked
+request (`process::waiting_request`); `vm::drive` answers one after any
+slice. Termination unwinds to `%TERMINATE-PROCESS`, which no record
+matches. Primitives `%make-process` ... `%compare-and-swap-svref`.
+`lisp/library/threads.lisp` (after `debugger.lisp`), package
+**`QUOKKA-THREAD`** with SBCL's `sb-thread` names; **`%thread-run` binds the
+compiler's globals at every thread's base** (#111's decision, revised: no
+tier-0 specials needed, compiler unchanged). **The console is the main
+process's**: a background thread's console read waits (`%await-console`)
+until the main process waits on threads (`%wait-until` sets `%main-waiting`)
+and takes `%console-owner` by CAS; each thread binds its own `%console-input`
+buffer. Rebuild
+`(:FORMS 2086 :REPLACED 1613)`. **Next: phase 3 step G**, the gate; #34 item 5 (one OS
+thread for good?) is Carsten's call. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

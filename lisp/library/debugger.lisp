@@ -42,12 +42,12 @@
 ;;; the program's: the debugger shows the stack from the frame that called
 ;;; the innermost of them.
 (defvar %signalling-functions
-  '(%debugger invoke-debugger error cerror signal %signal break
+  '(%debugger %debugger-session invoke-debugger error cerror signal %signal break
     %signal-machine-error %signalled))
 
 ;;; The host loop's own frames, at the bottom of every stack a person's
 ;;; form makes, and those `eval` makes for a form typed at the debugger.
-(defvar %host-loop-functions '(%host-step %eval-read-form eval compiled-form))
+(defvar %host-loop-functions '(%host-step %eval-read-form eval compiled-form %thread-run))
 
 ;;; Where a form typed at a debugger is evaluated: a debugger opened by an
 ;;; error in it shows the frames above this, the typed form's own, and not
@@ -102,9 +102,14 @@
 ;;; What a person sees on entering: the condition, the restarts, and the
 ;;; frame the debugger starts at.
 (defun %debugger-banner ()
-  (format (%debug-out) "~&~%debugger invoked on ~A ~S: ~A~%~%"
+  (format (%debug-out) "~&~%debugger invoked on ~A ~S~A: ~A~%~%"
           (if (find (char (symbol-name (type-of %debug-condition)) 0) "AEIOU") "an" "a")
           (type-of %debug-condition)
+          ;; Which thread stopped, when it is not the main one (#34).
+          (let ((process (%current-process)))
+            (if (%process-main-p process)
+                ""
+                (format nil " in thread ~S" (thread-name (%process-thread process)))))
           (%condition-text %debug-condition))
   (format (%debug-out) "Type HELP for debugger help.~%~%")
   (%print-restarts %debug-restarts)
@@ -129,18 +134,30 @@
     ;; opening another debugger.
     (unless (input-stream-p *debug-io*)
       (return-from %debugger (%without-a-debugger condition)))
-    ;; What was typed before the error is not an answer to it.
-    (clear-input *debug-io*)
-    (%debugger-banner)
-    ;; The end of the input is acted on outside the level's `abort`
-    ;; restart: inside it, that restart would be the innermost, and
-    ;; aborting would come straight back here to read the end again.
-    (do () (nil)
-      (unless (restart-case (%debugger-command level)
-                (abort ()
-                  :report (lambda (stream) (format stream "Return to debug level ~D." level))
-                  t))
-        (return-from %debugger (%without-a-debugger condition))))))
+    ;; In a background thread, the console is held for the whole session,
+    ;; and waited for first (#34): the banner is shown only when the person
+    ;; can answer it.
+    (when %threads-made
+      (%await-console))
+    (let ((%holding-console t))
+      (unwind-protect (%debugger-session condition level)
+        (let ((%holding-console nil))
+          (when %threads-made (%release-console)))))))
+
+;;; The session itself: the banner, then commands until one leaves.
+(defun %debugger-session (condition level)
+  ;; What was typed before the error is not an answer to it.
+  (clear-input *debug-io*)
+  (%debugger-banner)
+  ;; The end of the input is acted on outside the level's `abort`
+  ;; restart: inside it, that restart would be the innermost, and
+  ;; aborting would come straight back here to read the end again.
+  (do () (nil)
+    (unless (restart-case (%debugger-command level)
+              (abort ()
+                :report (lambda (stream) (format stream "Return to debug level ~D." level))
+                t))
+      (return-from %debugger-session (%without-a-debugger condition)))))
 
 ;;; What a read at the end of the console's input returns.
 (defvar %debugger-end (list :end))

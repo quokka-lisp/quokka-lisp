@@ -35,6 +35,7 @@ pub mod instance;
 pub mod lambda_list;
 pub mod primitives;
 pub mod printer;
+pub mod process;
 pub mod ratio;
 pub mod slice;
 pub mod special;
