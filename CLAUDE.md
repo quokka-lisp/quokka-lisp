@@ -1145,6 +1145,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Browser bundle | `wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg` |
 | A world for the browser | `cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi` — the page fetches it; the browser carries no interpreter (#84) |
 | Serve the environment | `python3 -m http.server -d crates/quokka-wasm/www 8080` — `/` is the environment (phase 4), `/console.html` the dev console; the built-in browser's preview config in `.claude/launch.json` serves with caching off |
+| The environment, one command | `scripts/environment.sh [--no-build] [PORT]` — builds the world and the bundle, serves them uncached (port 8080), opens the page |
 | Format and lint | `cargo fmt --all` · `cargo clippy --workspace --all-targets -- -D warnings` |
 | Test placement | `./scripts/check-test-placement.sh` — rule 7: no `#[test]` outside the test directories; also prints each crate's size |
 | Docs | `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --open` |

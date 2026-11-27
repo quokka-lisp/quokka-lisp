@@ -178,12 +178,22 @@ The browser runs a world too (#84), and carries no interpreter: the page
 fetches an image and the machine runs it. From the repository root:
 
 ```bash
+scripts/environment.sh
+```
+
+builds a world and the browser bundle, serves them on port 8080, and opens
+`http://localhost:8080`; Ctrl-C stops it. `scripts/environment.sh 9000`
+serves on another port, and `--no-build` serves what was built last time.
+Its server tells the browser not to cache, so a reload after a rebuild gets
+the new world. By hand, the script is these three commands:
+
+```bash
 cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi
 wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
 python3 -m http.server -d crates/quokka-wasm/www 8080
 ```
 
-and open `http://localhost:8080`. That is the **environment** (phase 4,
+The page is the **environment** (phase 4,
 `docs/display.md`): the listener, where a form typed and entered with
 **Enter** is evaluated and its value shown under it. **Shift-Enter** makes a
 new line; Enter in an unfinished form does too. Any earlier form can be
