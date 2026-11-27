@@ -863,7 +863,12 @@ which only this file's own methods of the three apply
 **a new standard method on any of the three must join that list**, or every
 class stops being plain); the valid initargs of a class are cached
 (`%valid-initargs`). `make-instance` of a plain class is 1,979 steps.
-Rebuild `(:FORMS 2426 :REPLACED 1756)`.
+**#165**: a flush keeps a memo per parent (`%flush-memos`, bound in
+`%take-messages`: from which index on no child is on the page, and where the
+last child was), so a run of new children is walked once: 400 records flush
+in 4.6M steps, from 327M. A `:replace` or `:thunk` note drops the memos —
+**anything new that puts a record on the page during a flush must too**.
+Rebuild `(:FORMS 2428 :REPLACED 1757)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

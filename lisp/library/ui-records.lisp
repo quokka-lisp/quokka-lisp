@@ -380,9 +380,12 @@
                         (list :insert (record-id record) (record-id before) (record-node child))
                         (list :append (record-id record) (record-node child))))
                   nil)))
-      (:replace (if (eq (%record-shown (caddr note)) :pending)
-                    (list :replace (record-id record) (record-node (caddr note)))
-                    nil))
+      ;; A replacement puts a record on the page at a place no memo was
+      ;; told of, so what the memos know is dropped.
+      (:replace (setq %flush-memos nil)
+       (if (eq (%record-shown (caddr note)) :pending)
+           (list :replace (record-id record) (record-node (caddr note)))
+           nil))
       (:remove (list :remove (record-id record)))
       (:text (setf (%record-noted record) nil)
        (if (eq (%record-shown record) t)
@@ -397,17 +400,46 @@
                     nil)
                 nil))
       (:focus (if (%record-shown record) (list :focus (record-id record)) nil))
-      (:thunk (funcall (caddr note)))
+      (:thunk (setq %flush-memos nil) (funcall (caddr note)))
       (t nil))))
 
 ;;; The first sibling after CHILD that the page has: what it goes before.
+;;;
+;;; A program that writes a hundred lines adds a hundred children to one
+;;; parent, and each is still waiting when the one before it is sent. Looked
+;;; at one at a time, each would walk every sibling after it and find
+;;; nothing: 400 new records took 327 million steps (#165). So a flush keeps
+;;; a *memo* for each parent it sends children of, `(parent tail last)`:
+;;; no child from index TAIL on is on the page (nil while nothing is known),
+;;; and LAST is where the child before this one was, since the next is
+;;; nearly always the one after it. A run of new children at the end of a
+;;; parent is then walked once.
+(defvar %flush-memos nil)
+
+(defun %flush-memo (parent)
+  (or (%assoc-eq parent %flush-memos)
+      (let ((memo (list parent nil -1)))
+        (push memo %flush-memos)
+        memo)))
+
 (defun %shown-sibling-after (child)
-  (let* ((children (%record-children (record-parent child)))
-         (at (position child children)))
+  (let* ((parent (record-parent child))
+         (children (%record-children parent))
+         (memo (%flush-memo parent))
+         (next (+ (caddr memo) 1))
+         (at (if (and (< next (length children)) (eq (aref children next) child))
+                 next
+                 (position child children)))
+         (tail (or (cadr memo) (length children)))
+         (found nil))
     (do ((i (+ at 1) (+ i 1)))
-        ((>= i (length children)) nil)
+        ((or found (>= i tail)))
       (when (eq (%record-shown (aref children i)) t)
-        (return (aref children i))))))
+        (setq found (aref children i))))
+    (setf (caddr memo) at)
+    ;; Nothing after CHILD is on the page; CHILD itself is about to be.
+    (unless found (setf (cadr memo) (+ at 1)))
+    found))
 
 ;;; Queue a message that is not about one record, such as a layout, as a
 ;;; function that makes it when the queue is flushed.
@@ -416,7 +448,8 @@
 
 ;;; The messages queued since the last flush, in order.
 (defun %take-messages ()
-  (let ((notes (reverse %display-queue)))
+  (let ((notes (reverse %display-queue))
+        (%flush-memos nil))
     (setq %display-queue nil)
     (remove nil (mapcar #'%message notes))))
 
