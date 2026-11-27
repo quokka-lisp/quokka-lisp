@@ -139,6 +139,7 @@ macro_rules! tier1_cases {
 
 tier1_cases! {
     specials => "specials",
+    read_line => "read-line",
     packages => "packages",
     reader => "reader",
     printer => "printer",
@@ -418,7 +419,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 1993 :REPLACED 1562)".into())],
+        [Outcome::Value("(:FORMS 2051 :REPLACED 1590)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -610,8 +611,8 @@ fn the_debugger_hook_sees_an_unhandled_error() {
 }
 
 /// Every frame keeps its call (#130, sub-step 1): `%frames` lists, innermost
-/// first, each frame's place, its token, the function called and the
-/// arguments as they were passed — before a `setq` of a parameter, and before `&key` parsing.
+/// first, each frame's place, its token, the function called, its
+/// environment and the arguments as they were passed — before a `setq` of a parameter, and before `&key` parsing.
 /// A tail call reuses its caller's frame, so the caller is gone from the
 /// list; a local function is named `(flet f)` or `(labels f)`, as SBCL
 /// names it, so that it is never taken for the global function `f`.
@@ -619,17 +620,17 @@ fn the_debugger_hook_sees_an_unhandled_error() {
 fn frames_keep_their_calls() {
     let out = run_compiled(
         "(defun fb (z w) (setq z 0) (let ((fs (quokka::%frames))) \
-           (list z (cdddr (first fs)) (cdddr (second fs)) (eq (caddr (first fs)) #'fb) \
+           (list z (cddddr (first fs)) (cddddr (second fs)) (eq (caddr (first fs)) #'fb) \
                  (eq (caddr (second fs)) #'fa) (> (car (first fs)) (car (second fs)))))) \
          (defun fa (x y) (car (list (fb (+ x y) 'q)))) \
          (fa 1 2) \
-         (defun tb (y) (car (list (mapcar #'cdddr (subseq (quokka::%frames) 0 2))))) \
+         (defun tb (y) (car (list (mapcar #'cddddr (subseq (quokka::%frames) 0 2))))) \
          (defun ta (x) (tb (* x 10))) \
          (defun tc () (car (list (ta 1)))) \
          (tc) \
-         (defun kf (a &key b) a b (cdddr (first (quokka::%frames)))) \
+         (defun kf (a &key b) a b (cddddr (first (quokka::%frames)))) \
          (kf 1 :b 2) \
-         (defun rf (&rest r) (setf (car r) :changed) (cdddr (first (quokka::%frames)))) \
+         (defun rf (&rest r) (setf (car r) :changed) (cddddr (first (quokka::%frames)))) \
          (rf 1 2 3) \
          (flet ((lf (x) x (quokka::%function-name (caddr (first (quokka::%frames)))))) (lf 1)) \
          (labels ((lg (x) x (quokka::%function-name (caddr (first (quokka::%frames)))))) (lg 1)) \
@@ -741,6 +742,197 @@ fn returning_from_the_host_frame_does_not_panic() {
          (+ 1 2)",
     );
     assert_eq!(out, "!! error\n!! error\n=> 3\n");
+}
+
+/// The console can be read (#131, sub-step 1): `*standard-input*` refills
+/// itself from the host a line at a time, `read` crosses lines, the
+/// console output streams read as the console, and a host with nobody at
+/// its console gives end of file.
+#[test]
+fn the_console_can_be_read() {
+    let out = run_compiled_typing(
+        "(list (read-line) (read-line)) \
+         (read) \
+         (read *query-io*) \
+         (multiple-value-list (read-line nil nil :eof)) \
+         (read-char t nil :none) \
+         (input-stream-p *debug-io*)",
+        &["first line", "second", "(a", " b)", "42", "last"],
+    );
+    assert_eq!(
+        out,
+        "first line\nsecond\n=> (\"first line\" \"second\")\n(a\n b)\n=> (A B)\n\
+         42\n=> 42\nlast\n=> (\"last\" NIL)\n=> :NONE\n=> T\n"
+    );
+}
+
+/// The gate of phase 3, as a person at a terminal does it (#131, sub-step
+/// 2): an error opens the debugger, which shows the restarts and the frame
+/// that signalled; the person looks at the stack, redefines the function
+/// and retries its frame, and the form that failed returns the fixed
+/// function's answer.
+#[test]
+fn the_debugger_fixes_and_retries() {
+    let out = run_compiled_typing(
+        "(quokka-debug:enable-debugger) \
+         (defun broken (x) (error \"broken ~a\" x)) \
+         (defun caller (y) (list :got (broken (* y 2)))) \
+         (caller 5)",
+        &["backtrace", "(defun broken (x) (+ x 1))", "restart-frame"],
+    );
+    assert_eq!(
+        out,
+        "=> NIL\n=> BROKEN\n=> CALLER\n\
+         \ndebugger invoked on a SIMPLE-ERROR: broken 10\n\n\
+         Type HELP for debugger help.\n\n\
+         restarts (invokable by number or by name):\n  \
+         0: [ABORT] Return to the top level.\n\n\
+         0: (BROKEN 10)\n\
+         0] backtrace\n0: (BROKEN 10)\n1: (CALLER 5)\n\
+         0] (defun broken (x) (+ x 1))\nBROKEN\n\
+         0] restart-frame\n=> (:GOT 11)\n"
+    );
+}
+
+/// The debugger's other ways out (#131, sub-step 2): an error inside it
+/// opens a nested level whose `abort` returns to the one before; a restart
+/// is invoked by its number or its name, interactively; `return` gives a
+/// frame's value; the end of the console's input aborts, and the error is
+/// reported as it was before there was a debugger. Without
+/// `enable-debugger`, nothing changes at all.
+#[test]
+fn the_debugger_has_levels_and_restarts() {
+    let out = run_compiled_typing(
+        "(car (list (handler-case (car 'oops) (error () :not-enabled)))) \
+         (quokka-debug:enable-debugger) \
+         (defun half (n) (if (evenp n) (/ n 2) (error \"odd: ~a\" n))) \
+         (list (half 7)) \
+         (list (half 9)) \
+         (let ((v 1)) (check-type v string) v) \
+         (list (half 11))",
+        &[
+            "(car 5)",
+            "abort",
+            "up",
+            "return 3",
+            "frame 0",
+            "0",
+            "store-value",
+            "\"ok\"",
+        ],
+    );
+    let banner = |what: &str, restarts: &str| {
+        format!(
+            "\ndebugger invoked on {what}\n\nType HELP for debugger help.\n\n\
+             restarts (invokable by number or by name):\n{restarts}"
+        )
+    };
+    let top = "  0: [ABORT] Return to the top level.\n";
+    let expected = [
+        "=> :NOT-ENABLED\n=> NIL\n=> HALF\n".to_string(),
+        banner("a SIMPLE-ERROR: odd: 7", top),
+        "\n0: (HALF 7)\n0] (car 5)\n".to_string(),
+        banner(
+            "a TYPE-ERROR: The value 5 is not of type LIST",
+            "  0: [ABORT] Return to debug level 0.\n  1: [ABORT] Return to the top level.\n",
+        ),
+        "1] abort\n0] up\nThis is the bottom frame.\n0] return 3\n=> (3)\n".to_string(),
+        banner("a SIMPLE-ERROR: odd: 9", top),
+        "\n0: (HALF 9)\n0] frame 0\n0: (HALF 9)\n0] 0\n!! error\n".to_string(),
+        banner(
+            "a SIMPLE-TYPE-ERROR: The value of V is 1, which is not of type STRING.",
+            "  0: [STORE-VALUE] Supply a new value for V.\n  1: [ABORT      ] Return to the top level.\n",
+        ),
+        "0] store-value\nEnter a form for a new value of V: \"ok\"\n=> \"ok\"\n\n".to_string(),
+        banner("a SIMPLE-ERROR: odd: 11", top),
+        "\n0: (HALF 11)\n!! error\n".to_string(),
+    ]
+    .concat();
+    assert_eq!(out, expected);
+}
+
+/// What a debugger shows of a frame besides its call (#131, sub-step 3): a
+/// method's frame is named as SBCL names it; `list-locals` shows the
+/// frame's own variables, not those of the code around a closure nor names
+/// the compiler made; `source` shows a definition's text as it was written.
+#[test]
+fn the_debugger_shows_methods_locals_and_source() {
+    let out = run_compiled_typing(
+        "(quokka-debug:enable-debugger) \
+         (defgeneric area (s)) \
+         (defmethod area ((s integer)) (let ((twice (* 2 s))) (error \"no area for ~a\" twice))) \
+         (defun measure (thing &optional (scale 3)) (list (area thing) scale)) \
+         (let ((outer 1)) (defun wrap (x) (list outer (measure x)))) \
+         (wrap 4)",
+        &[
+            "bt",
+            "list-locals",
+            "up",
+            "list-locals",
+            "source",
+            "up",
+            "list-locals",
+            "abort",
+        ],
+    );
+    let tail = out
+        .split_once("0: ((:METHOD AREA (INTEGER)) 4)\n")
+        .map_or(out.as_str(), |x| x.1);
+    assert_eq!(
+        tail,
+        "0] bt\n0: ((:METHOD AREA (INTEGER)) 4)\n1: (MEASURE 4)\n2: (WRAP 4)\n\
+         0] list-locals\n  TWICE = 8\n  S = 4\n\
+         0] up\n1: (MEASURE 4)\n\
+         0] list-locals\n  SCALE = 3\n  THING = 4\n\
+         0] source\n(defun measure (thing &optional (scale 3)) (list (area thing) scale))\n\
+         0] up\n2: (WRAP 4)\n0] list-locals\n  X = 4\n\
+         0] abort\n!! error\n",
+        "{out}"
+    );
+}
+
+/// What the review of #131 found: a method with `&optional` and `&key` is
+/// named too (its declaration was moved by the lambda-list rewrite); the
+/// newline after a restart's number is not left for the next read of the
+/// console; a `program-error` in the form `return` evaluates opens a
+/// debugger and is not reported as the command's wrong arguments, which are
+/// counted; a `*debug-io*` that cannot be read does not loop; only the
+/// two-way standard streams read the console.
+#[test]
+fn the_debugger_review_findings() {
+    let out = run_compiled_typing(
+        "(quokka-debug:enable-debugger) \
+         (defgeneric ar (s &optional k &key)) \
+         (defmethod ar ((s integer) &optional (k 2) &key (z 3)) k z (error \"no\")) \
+         (list (ar 4)) \
+         (list (read-line)) \
+         (car (list (handler-case (let ((*debug-io* (make-string-output-stream))) (car 5)) \
+                      (error () :reported)))) \
+         (mapcar #'input-stream-p (list *standard-output* *error-output* *debug-io* *terminal-io*)) \
+         (list (ar 5))",
+        &[
+            "bt", "0", "typed",
+            "return (car 1 2)", "frame 1 2", "abort", "return 7",
+        ],
+    );
+    let after = |marker: &str| out.split_once(marker).map_or("", |x| x.1).to_string();
+    assert!(
+        after("0] bt\n").starts_with("0: ((:METHOD AR (INTEGER)) 4)\n0] 0\n"),
+        "{out}"
+    );
+    assert!(out.contains("!! error\ntyped\n=> (\"typed\")\n"), "{out}");
+    assert!(out.contains("=> :REPORTED\n=> (NIL NIL T T)\n"), "{out}");
+    let nested = after("0] return (car 1 2)\n");
+    assert!(
+        nested.contains("debugger invoked on a PROGRAM-ERROR"),
+        "{out}"
+    );
+    assert!(
+        nested.ends_with(
+            "1] frame 1 2\nframe takes 0 to 1 arguments.\n1] abort\n0] return 7\n=> (7)\n"
+        ),
+        "{out}"
+    );
 }
 
 /// What only Quokka can be held to (#124): the default `#<...>` of an
@@ -1379,6 +1571,18 @@ fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
 }
 
+/// `run_compiled`, with LINES typed at the console, each ending in a
+/// newline, for whatever reads it (#131).
+fn run_compiled_typing(source: &str, lines: &[&str]) -> String {
+    TYPED.with(|typed| {
+        *typed.borrow_mut() = lines.iter().map(|l| format!("{l}\n")).collect();
+    });
+    let out = run_compiled(source);
+    let left = TYPED.with(|typed| std::mem::take(&mut *typed.borrow_mut()));
+    assert!(left.is_empty(), "lines nobody read: {left:?}\n{out}");
+    out
+}
+
 /// `run_compiled`, in the world IMAGE holds.
 fn run_compiled_in(image: &[u8], source: &str) -> String {
     use quokka_vm::vm::{eval_source, Outcome};
@@ -1417,9 +1621,25 @@ struct SharedHost(
     Vec<(&'static str, &'static str)>,
 );
 
+thread_local! {
+    /// The lines a test types at the console, for `run_compiled_typing`;
+    /// empty, so the end of the input, for every other test.
+    static TYPED: std::cell::RefCell<std::collections::VecDeque<String>> =
+        const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
 impl quokka_vm::host::Host for SharedHost {
     fn write_stdout(&mut self, s: &str) {
         self.0.borrow_mut().push_str(s);
+    }
+    /// The next typed line, written to the output after its prompt as a
+    /// terminal would show it, so a transcript reads as a session did.
+    fn read_line(&mut self, prompt: &str) -> Option<String> {
+        let line = TYPED.with(|typed| typed.borrow_mut().pop_front())?;
+        let mut out = self.0.borrow_mut();
+        out.push_str(prompt);
+        out.push_str(&line);
+        Some(line)
     }
     fn read_source(&mut self, name: &str) -> Result<String, quokka_vm::host::HostError> {
         self.1

@@ -116,10 +116,12 @@
 - [Definitions keep their source](part-9-definitions/84-definitions-keep-their-source.md)
 - [Who uses what](part-9-definitions/85-who-uses-what.md)
 
-# Part X · Frames
+# Part X · Frames and the debugger
 
 - [Frames keep their calls](part-10-frames/86-frames-keep-their-calls.md)
 - [Retrying a frame](part-10-frames/87-retrying-a-frame.md)
+- [Reading the console](part-10-frames/88-reading-the-console.md)
+- [The debugger](part-10-frames/89-the-debugger.md)
 
 # Looking ahead
 

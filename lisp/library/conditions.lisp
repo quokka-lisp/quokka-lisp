@@ -390,12 +390,22 @@
 (defvar %aborted-condition nil)
 (defvar %host-abort-restart nil)
 
+;;; Whether `invoke-debugger` talks to the person at the console (step F,
+;;; #131, `debugger.lisp`), or does what it did before there was a debugger:
+;;; invoke the innermost `abort` restart, so that a host reports the error
+;;; and carries on. Off in a new world, since a world also runs where nobody
+;;; is at a console, in tests, scripts and the browser page; the terminal
+;;; host turns it on when its input is a terminal.
+(defvar %debugger-enabled nil)
+
 (defun invoke-debugger (condition)
   (let ((hook *debugger-hook*))
     (when hook
       (let ((*debugger-hook* nil))
         (funcall hook condition hook))))
-  (%without-a-debugger condition))
+  (if %debugger-enabled
+      (%debugger condition)
+      (%without-a-debugger condition)))
 
 (defun %without-a-debugger (condition)
   (let ((abort (find-restart 'abort condition)))

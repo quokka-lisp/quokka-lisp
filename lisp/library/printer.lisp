@@ -53,12 +53,15 @@
 ;;; the user, which a program may bind to send output elsewhere. Tier 1 has
 ;;; one place to write to, so each is the console stream; `*terminal-io*`,
 ;;; `*debug-io*` and `*query-io*` are two-way streams in CLHS, and reading
-;;; from them waits for tier 2's generic streams (#42).
-(defvar *terminal-io* *standard-output*)
+;;; from them reads the console (`%input-stream`, #131): they are a console
+;;; stream of their own, `%console-io`, so that `*standard-output*` is not an
+;;; input stream, as in SBCL.
+(defvar %console-io (make-%console-stream :fresh t))
+(defvar *terminal-io* %console-io)
 (defvar *error-output* *standard-output*)
 (defvar *trace-output* *standard-output*)
-(defvar *debug-io* *standard-output*)
-(defvar *query-io* *standard-output*)
+(defvar *debug-io* %console-io)
+(defvar *query-io* %console-io)
 
 ;;; An output stream designator: nil means standard output, and t the
 ;;; terminal, `*terminal-io*`.
@@ -70,7 +73,8 @@
 
 (defun output-stream-p (stream)
   (or (%string-output-stream-p stream) (%console-stream-p stream)))
-(defun input-stream-p (stream) (%string-input-stream-p stream))
+(defun input-stream-p (stream)
+  (or (%string-input-stream-p stream) (eq stream %console-io)))
 
 ;;; Every write comes down to this: characters START to END of STRING.
 (defun %stream-write (stream string start end)

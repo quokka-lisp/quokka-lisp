@@ -122,6 +122,16 @@ quokka> (hello)
   structure's slots, what a symbol names. A program changes how its own
   objects print and are described with methods on `print-object` and
   `describe-object`.
+- **An error opens the debugger** when the world's input is a terminal
+  (`docs/debugger.md`). It shows the condition, the restarts and the frame
+  that signalled, and prompts `0] `. A number invokes a restart; `help`
+  lists the commands (`backtrace`, `frame N`, `up`, `down`, `list-locals`,
+  `source`, `restart-frame`, `return FORM`, `abort`, ...); anything else is
+  evaluated where the error happened. Fix a function by typing its new
+  `defun`, then `restart-frame`. With input piped in, the debugger is off
+  and an error is reported as before; `(quokka-debug:enable-debugger)` and
+  `disable-debugger` switch it. `(read-line)` and `(read)` read from the
+  terminal too.
 - **`(quokka-debug:print-backtrace)`** prints the calls in progress, one a
   line, `0: (FOO 1 2)`, innermost first; inside a `handler-bind` handler it
   shows how the error was reached. `quokka-debug:frames` returns them as

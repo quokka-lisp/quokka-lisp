@@ -189,7 +189,9 @@ fn the_table_order_is_pinned() {
             "%SIGNALLED",
             "%FUNCTION-NAME",
             "%FRAMES",
-            "%UNWIND-TO-FRAME"
+            "%UNWIND-TO-FRAME",
+            "%READ-CONSOLE",
+            "%FRAME-LOCALS"
         ]
     );
 }

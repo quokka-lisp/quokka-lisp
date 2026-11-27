@@ -231,7 +231,9 @@
 (defun %eval-read-form (form stream start source)
   (let* ((end (%stream-position stream))
          (%definition-place
-           (if (and start end)
+           ;; Not the console's: its string is only the last line, and a
+           ;; form read across lines began in a string that is gone.
+           (if (and start end (not (eq stream %console-input)))
                (let ((string (%string-input-stream-string stream)))
                  (list string start end (or (%string-input-stream-end stream) (length string))))
                nil))

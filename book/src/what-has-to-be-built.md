@@ -347,6 +347,8 @@ Each chapter answers one question.
 | 85 | [Who uses what](part-9-definitions/85-who-uses-what.md) | How does a world know what a changed macro has left out of date, and recompile it? |
 | 86 | [Frames keep their calls](part-10-frames/86-frames-keep-their-calls.md) | What does a backtrace need from the machine, and what does it cost every call to keep it? |
 | 87 | [Retrying a frame](part-10-frames/87-retrying-a-frame.md) | How do you leave everything above a frame cleanly and run its call again, so that a fixed function takes over? |
+| 88 | [Reading the console](part-10-frames/88-reading-the-console.md) | How does a world that the host drives wait for a person to type, in the middle of a computation? |
+| 89 | [The debugger](part-10-frames/89-the-debugger.md) | How do restarts, kept definitions and kept calls become a place where you fix a function from inside its error? |
 | — | [The environment, on paper](looking-ahead/the-environment-on-paper.md) | What will a person see and use once phases 4 to 6 are built, and what changes when a program is a live database of definitions instead of a pile of files? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
@@ -387,7 +389,8 @@ Still to come, and deliberately so:
   chapter 83 measures the whole. Chapter 84 begins Part IX, the world's
   definitions, which keep their source, and chapter 85 what they use.
   Part X is the stack as the debugger sees it: chapter 86 makes every
-  frame keep its call, and chapter 87 retries one.
+  frame keep its call, and chapter 87 retries one; chapter 88 lets a world
+  read its console, and chapter 89 is the terminal debugger.
   Still to come are the
   rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

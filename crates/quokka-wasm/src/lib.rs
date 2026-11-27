@@ -102,7 +102,17 @@ impl Quokka {
     pub fn new(image: &[u8]) -> Result<Quokka, String> {
         #[cfg(target_arch = "wasm32")]
         report_panics();
-        let heap = image::load(image, SOFT_LIMIT_WORDS).map_err(|e| e.to_string())?;
+        let mut heap = image::load(image, SOFT_LIMIT_WORDS).map_err(|e| e.to_string())?;
+        // The page has no console to read, so no debugger to talk through:
+        // off, whatever the world was saved with (#131).
+        heap.mutate(|mc| {
+            let switch = mc.intern("%DEBUGGER-ENABLED");
+            mc.set_slot(
+                switch,
+                quokka_vm::heap::symbol::VALUE,
+                quokka_vm::value::Value::NIL,
+            );
+        });
         Ok(Quokka {
             heap,
             output: String::new(),
@@ -237,6 +247,12 @@ impl Quokka {
                 Ok(String::new())
             }
             Some(Request::ReadSource(name)) => Err(HostError::NotFound(name)),
+            // The page has no console input yet: the end of the input, as
+            // for any host with nobody at a console (#131).
+            Some(Request::ReadConsole(_)) => {
+                host::complete_line(&mut self.heap, None);
+                return;
+            }
             // Blocked on something this host has never heard of: it cannot
             // be answered, so the line cannot go on.
             None => {

@@ -1,0 +1,5 @@
+=> (("one" NIL) ("two" NIL) ("" NIL) ("three" T) (:END T))
+=> NOTHING
+=> :EOF
+=> (#\a "bc")
+=> ("x" :DONE)

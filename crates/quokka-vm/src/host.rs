@@ -97,6 +97,18 @@ pub trait Host {
     /// Natively this is `std::fs`; under WASI it is the WASI filesystem.
     fn read_source(&mut self, name: &str) -> Result<String, HostError>;
 
+    /// Answer a [`Request::ReadConsole`]: the next line from whoever is at
+    /// the console, with its newline, after showing PROMPT; `None` at the
+    /// end of the input (#131).
+    ///
+    /// By default there is nobody there, so the answer is the end of the
+    /// input: a host with no console, a test or the browser page, needs to
+    /// do nothing, and a world reading from it meets end of file.
+    fn read_line(&mut self, prompt: &str) -> Option<String> {
+        let _ = prompt;
+        None
+    }
+
     // Note: there is deliberately no `should_yield` or clock method here.
     //
     // Rule 4 says the VM must be able to yield, and something has to decide when
@@ -170,6 +182,10 @@ pub enum Request {
     /// Text for the console. Made by `%write-console`, which is what
     /// `*standard-output*` writes with (#46). Answered with an empty string.
     WriteConsole(String),
+    /// A line from the console, the argument being the prompt to show. Made
+    /// by `%read-console`, which is what the console input stream refills
+    /// itself with (#131). Answered with [`complete_line`].
+    ReadConsole(String),
 }
 
 /// Make a waiting request record. Called by the VM when it intercepts a
@@ -215,6 +231,9 @@ pub fn pending(heap: &mut Heap) -> Option<Request> {
         if mc.symbol_is(kind, "%WRITE-CONSOLE") {
             return Some(Request::WriteConsole(text));
         }
+        if mc.symbol_is(kind, "%READ-CONSOLE") {
+            return Some(Request::ReadConsole(text));
+        }
         None
     })
 }
@@ -257,6 +276,27 @@ pub fn complete(heap: &mut Heap, reply: Result<String, HostError>) -> bool {
     })
 }
 
+/// Answer a [`Request::ReadConsole`] with a line, or with `nil` for the end
+/// of the input, which is not a failure: a stream meets end of file.
+/// Returns whether a request was waiting.
+pub fn complete_line(heap: &mut Heap, line: Option<String>) -> bool {
+    match line {
+        Some(text) => complete(heap, Ok(text)),
+        None => heap.mutate(|mc| {
+            let record = mc.register(Register::Request);
+            if record == Value::NIL
+                || !mc.symbol_is(mc.slot(record, request::STATE), request::WAITING)
+            {
+                return false;
+            }
+            let replied = mc.intern(request::REPLIED);
+            mc.set_slot(record, request::STATE, replied);
+            mc.set_slot(record, request::REPLY, Value::NIL);
+            true
+        }),
+    }
+}
+
 /// Answer the pending request through a synchronous [`Host`], if there is one.
 /// Returns whether there was.
 ///
@@ -272,6 +312,10 @@ pub fn serve(heap: &mut Heap, host: &mut dyn Host) -> bool {
         Request::WriteConsole(text) => {
             host.write_stdout(&text);
             Ok(String::new())
+        }
+        Request::ReadConsole(prompt) => {
+            let line = host.read_line(&prompt);
+            return complete_line(heap, line);
         }
     };
     complete(heap, reply)

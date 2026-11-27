@@ -47,7 +47,7 @@
     "lisp/library/char-names.lisp" "lisp/library/reader.lisp"
     "lisp/library/printer.lisp" "lisp/library/format.lisp" "lisp/library/describe.lisp"
     "lisp/library/conditions.lisp" "lisp/library/definitions.lisp"
-    "lisp/library/frames.lisp"
+    "lisp/library/frames.lisp" "lisp/library/debugger.lisp"
     "lisp/library/eval.lisp"
     "lisp/library/rebuild.lisp" "lisp/library/packages.lisp"))
 

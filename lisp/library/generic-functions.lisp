@@ -922,7 +922,12 @@
                       plain))
            (block-name (if (consp name) (second name) name))
            (args (gensym "ARGS")) (next (gensym "NEXT")) (method (gensym "METHOD"))
-           (call `(apply (lambda ,inner ,@declarations (block ,block-name ,@forms)) ,args)))
+           ;; The body's function is named as SBCL names a method,
+           ;; `(:method area :around (circle))`, for a backtrace (#131).
+           (call `(apply (lambda ,inner
+                           (declare (%named (:method ,name ,@qualifiers ,specializers)))
+                           ,@declarations (block ,block-name ,@forms))
+                         ,args)))
       `(let ((,method nil))
          (setq ,method
                (%ensure-method

@@ -915,6 +915,8 @@ impl<'a, 'h> Vm<'a, 'h> {
             Some("%READ-SOURCE")
         } else if index == primitives::index(primitives::Prim::WriteConsole) {
             Some("%WRITE-CONSOLE")
+        } else if index == primitives::index(primitives::Prim::ReadConsole) {
+            Some("%READ-CONSOLE")
         } else {
             None
         };
@@ -2294,7 +2296,21 @@ fn drive(
             // which only ever asks still reaches the budget.
             Status::Blocked { steps } => {
                 spent += steps.max(1);
-                if !crate::host::serve(heap, host) {
+                // A line typed at the console begins the next piece of
+                // work, and gets a budget of its own (#131): the budget
+                // stands in for an interrupt nobody can press yet, and a
+                // debugging session runs entirely inside the line that
+                // failed, so without this it would run out mid-session.
+                // Only a line: the end of the input renews nothing, or a
+                // program reading it in a loop could never be stopped.
+                if let Some(crate::host::Request::ReadConsole(prompt)) = crate::host::pending(heap)
+                {
+                    let line = host.read_line(&prompt);
+                    if line.is_some() {
+                        spent = 0;
+                    }
+                    crate::host::complete_line(heap, line);
+                } else if !crate::host::serve(heap, host) {
                     return Err(EvalError::Blocked);
                 }
             }
@@ -2411,10 +2427,12 @@ pub fn handler_marks<'h>(
 }
 
 /// `(%frames)`: every open frame, innermost first, each as
-/// `(place token callee . arguments)` — where its frame pointer is, the
-/// token that names this call (made now if nothing has asked before; see
-/// `frame::TOKEN`), what was called, and the arguments as the call passed
-/// them (#130).
+/// `(place token callee environment . arguments)` — where its frame pointer
+/// is, the token that names this call (made now if nothing has asked
+/// before; see `frame::TOKEN`), what was called, the lexical environment it
+/// was in when it called the frame above it (the one saved in that frame's
+/// header; for the innermost, the current one), and the arguments as the
+/// call passed them (#130, #131).
 ///
 /// The innermost is the frame of the function that called `%frames`, since
 /// a primitive has no frame. The function the machine was started on has
@@ -2425,8 +2443,10 @@ pub fn handler_marks<'h>(
 /// Each saved pointer must be below the one before, so a damaged stack ends
 /// the walk rather than looping.
 pub fn frames<'h>(mc: &mut Mutation<'h>) -> Result<Value<'h>, EvalError> {
-    let mut found: Vec<(usize, Value<'h>, Value<'h>, Vec<Value<'h>>)> = Vec::new();
+    type Found<'h> = (usize, Value<'h>, Value<'h>, Value<'h>, Vec<Value<'h>>);
+    let mut found: Vec<Found<'h>> = Vec::new();
     let mut fp = mc.fp();
+    let mut environment = mc.register(Register::Env);
     while let Some((base, n)) = frame_bounds(mc, fp) {
         let mut token = mc.slot(mc.register(Register::Operands), base + frame::TOKEN);
         if !token.is_cons() {
@@ -2437,23 +2457,81 @@ pub fn frames<'h>(mc: &mut Mutation<'h>) -> Result<Value<'h>, EvalError> {
         let stack = mc.register(Register::Operands);
         let callee = mc.slot(stack, base + frame::CALLEE);
         let arguments = (base - n..base).map(|i| mc.slot(stack, i)).collect();
-        found.push((fp, token, callee, arguments));
+        found.push((fp, token, callee, environment, arguments));
+        environment = mc.slot(stack, base + frame::ENV);
         match mc.slot(stack, base + frame::FP).as_fixnum() {
             Some(caller) if caller >= 0 && (caller as usize) < fp => fp = caller as usize,
             _ => break,
         }
     }
     let mut list = Value::NIL;
-    for (place, token, callee, arguments) in found.into_iter().rev() {
+    for (place, token, callee, environment, arguments) in found.into_iter().rev() {
         let mut entry = Value::NIL;
         for v in arguments.into_iter().rev() {
             entry = mc.cons(v, entry);
         }
+        entry = mc.cons(environment, entry);
         entry = mc.cons(callee, entry);
         entry = mc.cons(token, entry);
         let place = Value::fixnum(place as i64).expect("a stack index is a fixnum");
         entry = mc.cons(place, entry);
         list = mc.cons(entry, list);
+    }
+    Ok(list)
+}
+
+/// `(%frame-locals environment callee)`: the variables a frame can see that
+/// are its own, as `(name . value)`, innermost first (#131): those of every
+/// variable scope in ENVIRONMENT down to the scope CALLEE closed over,
+/// where the variables of the code around the function begin. Scopes of
+/// other namespaces (functions, blocks, tags) are passed over, and so is a
+/// slot not yet given its value.
+///
+/// Linear in the scopes, which are as many as the function's nested
+/// binding forms. Anything that is not a scope ends the walk, so a value
+/// that is not an environment is simply one with no variables.
+pub fn frame_locals<'h>(
+    mc: &mut Mutation<'h>,
+    environment: Value<'h>,
+    callee: Value<'h>,
+) -> Result<Value<'h>, EvalError> {
+    let mut function = callee;
+    if crate::instance::is_funcallable(mc, function) {
+        function = crate::instance::function(mc, function);
+    }
+    let stop = if function.is_object() && mc.header(function).object_type == ObjectType::Closure {
+        mc.slot(function, closure::ENV)
+    } else {
+        Value::NIL
+    };
+    let mut found = Vec::new();
+    let mut scope = environment;
+    // A scope is at least three words, so a chain longer than the heap
+    // could hold is a cycle, which only a damaged image can make (rule 10).
+    let mut left = mc.used_words() / 3 + 1;
+    while scope != stop
+        && left > 0
+        && scope.is_object()
+        && mc.header(scope).object_type == ObjectType::Environment
+    {
+        let slots = mc.header(scope).slots;
+        if mc.slot(scope, env::NAMESPACE).as_fixnum() == Some(env::VARIABLE) {
+            let mut i = env::FIRST_PAIR;
+            while i + 1 < slots {
+                let value = mc.slot(scope, i + 1);
+                if value != Value::UNBOUND {
+                    found.push((mc.slot(scope, i), value));
+                }
+                i += 2;
+            }
+        }
+        scope = mc.slot(scope, env::PARENT);
+        left -= 1;
+    }
+    let mut list = Value::NIL;
+    for (name, value) in found.into_iter().rev() {
+        let pair = mc.cons(name, value);
+        list = mc.cons(pair, list);
     }
     Ok(list)
 }

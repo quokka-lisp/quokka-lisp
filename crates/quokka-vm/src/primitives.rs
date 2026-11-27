@@ -213,6 +213,8 @@ pub enum Prim {
     FunctionName = 153,
     Frames = 154,
     UnwindToFrame = 155,
+    ReadConsole = 156,
+    FrameLocals = 157,
 }
 
 impl Prim {
@@ -725,6 +727,16 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // do and so is intercepted.
     (Prim::Frames, "%FRAMES", Arity::Exactly(0)),
     (Prim::UnwindToFrame, "%UNWIND-TO-FRAME", Arity::Exactly(3)),
+    // ---- console input (phase 3 step F, #131) ---------------------------
+    //
+    // A line from whoever is at the console, for the console input stream
+    // (`reader.lisp`): a host request, as `%read-source` is, since a world
+    // has no console of its own. The argument is the prompt the host may
+    // show; the answer is the line with its newline, or nil at the end.
+    (Prim::ReadConsole, "%READ-CONSOLE", Arity::Exactly(1)),
+    // A frame's own variables, from its environment, for the debugger's
+    // `list-locals` (`vm::frame_locals`).
+    (Prim::FrameLocals, "%FRAME-LOCALS", Arity::Exactly(2)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -935,6 +947,7 @@ pub fn call_slice<'h>(
         }),
         Prim::HandlerMarks => crate::vm::handler_marks(mc, args[0], args[1]),
         Prim::Frames => crate::vm::frames(mc),
+        Prim::FrameLocals => crate::vm::frame_locals(mc, args[0], args[1]),
         // A compiled function's name, through a closure to its body, or nil
         // for an interpreted closure or anything that is not a function. The
         // compiler assembles an anonymous function under the name LAMBDA.
@@ -1413,7 +1426,7 @@ pub fn call_slice<'h>(
             };
             float::make(mc, f(y, x))
         }
-        Prim::ReadSource | Prim::WriteConsole => Err(EvalError::Fault {
+        Prim::ReadSource | Prim::WriteConsole | Prim::ReadConsole => Err(EvalError::Fault {
             operator: name,
             detail: "asks the host for something, which only compiled code can do: \
                      the interpreter is the bootstrap evaluator and has no I/O",

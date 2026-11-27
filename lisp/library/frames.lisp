@@ -18,9 +18,9 @@
 ;;; has another), and the call it keeps. A snapshot: the frame it describes
 ;;; may since have returned, which `unwind-to-frame-and-call` checks before
 ;;; acting on it.
-(defstruct (frame (:constructor %make-frame (place token function arguments))
+(defstruct (frame (:constructor %make-frame (place token function environment arguments))
                   (:copier nil))
-  place token function arguments)
+  place token function environment arguments)
 
 ;;; `#<FRAME (FOO 1 2)>`.
 (defmethod print-object ((frame frame) stream)
@@ -36,7 +36,9 @@
   (let ((found nil) (n 0))
     (dolist (entry (cdr (%frames)) (nreverse found))
       (when (and count (>= n count)) (return (nreverse found)))
-      (push (%make-frame (first entry) (second entry) (third entry) (cdddr entry)) found)
+      (push (%make-frame (first entry) (second entry) (third entry) (fourth entry)
+                         (cddddr entry))
+            found)
       (setq n (+ n 1)))))
 
 ;;; The name of the function a frame is running: its global name, `(setf
@@ -49,6 +51,19 @@
     (if (%generic-function-p function)
         (%gf-name function)
         (or (%function-name function) 'lambda))))
+
+;;; The variables a frame's function can see that are its own, as
+;;; `(name . value)`, innermost first: its parameters and what it has bound
+;;; since, as they are now. Names the compiler made up (uninterned symbols,
+;;; such as those `&optional` parameters are bound under first) are left
+;;; out, and so is a name an inner binding hides.
+(defun frame-locals (frame)
+  (let ((seen nil) (shown nil))
+    (dolist (pair (%frame-locals (frame-environment frame) (frame-function frame))
+                  (nreverse shown))
+      (unless (or (null (symbol-package (car pair))) (member (car pair) seen))
+        (push (car pair) seen)
+        (push pair shown)))))
 
 ;;; The call a frame keeps, as a form: `(name argument...)`.
 (defun frame-call (frame)
@@ -92,8 +107,11 @@
 ;;; has a global name that names a function now, that function — so a
 ;;; function redefined while its frame waited runs as redefined, which is
 ;;; what fixing a function from inside an error and retrying it means —
-;;; and otherwise the frame's own function, as for a `lambda` or a local
-;;; function, whose names, `lambda` and `(flet f)`, are not global ones.
+;;; and otherwise the frame's own function, as for a `lambda`, a local
+;;; function or a method, whose names, `lambda`, `(flet f)` and
+;;; `(:method f ...)`, are not global ones. A method redefined while its
+;;; frame waited is reached by retrying the frame that called its generic
+;;; function, which dispatches afresh.
 (defun restart-frame (frame)
   (let ((name (frame-name frame))
         (arguments (frame-arguments frame)))

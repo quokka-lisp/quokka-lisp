@@ -185,6 +185,9 @@ things and resume. ([20](part-2-reading-and-running/20-errors-you-can-catch.md),
 <a id="conformance-test-suite"></a>
 **Conformance test suite.** A large collection of tests that checks an implementation against a standard rather than against its own intentions. Common Lisp's is *ansi-test*, some seventeen thousand tests written by Paul Dietz from 2002 on, organised by the chapters of the standard. Quokka runs fourteen of its groups. ([49](part-6-self-hosting/49-ansi-test.md))
 
+<a id="console-input-stream"></a>
+**Console input stream.** The stream a world reads what a person types from: a string stream over the last line the host gave it, which asks the host for another line (`%read-console`) when a read reaches its end. It is `*standard-input*`, and the two-way streams `*terminal-io*`, `*debug-io*` and `*query-io*` read from it. ([88](part-10-frames/88-reading-the-console.md))
+
 <a id="cons-cell"></a>
 **Cons cell.** The two-slot box Lisp builds lists out of: a [car](#car) and a
 [cdr](#cdr). Two words in the heap, with no header, because its type is known
@@ -218,6 +221,9 @@ it was in. ([6](part-1-substrate/06-cheneys-algorithm.md))
 
 <a id="declaration"></a>
 **Declaration.** Information about a program written at the start of a body, `(declare ...)`: that a variable is unused, holds a fixnum, or should be fast. An implementation may ignore every kind except `special`, which makes a variable dynamic for one binding or one region of code. ([50](part-6-self-hosting/50-first-gaps.md))
+
+<a id="debugger"></a>
+**Debugger.** The program that takes over when an error is not handled: it shows the condition, the restarts and the stack, and lets the person evaluate forms where the error happened, choose a restart, return from a frame, or redefine a function and [retry its frame](#retrying-a-frame). Quokka's terminal debugger answers like SBCL's, with a `0]` prompt. ([89](part-10-frames/89-the-debugger.md))
 
 <a id="defstruct"></a>
 **defstruct.** Defines a record type from one line: a constructor, a
@@ -991,7 +997,7 @@ a dead one would keep what it last held alive. ([25](part-3-compiling/25-a-machi
 **Static area.** The first words of the heap, which the collector copies verbatim and never relocates. A reference into it is therefore a compile-time constant, which is how `nil` can be an ordinary symbol *and* `Value::NIL` a Rust constant. `t` lives there too; the keyword package will. ([11](part-2-reading-and-running/11-the-trouble-with-nil.md))
 
 <a id="stream"></a>
-**Stream.** An object that hands out characters one at a time (an *input* stream) or accepts them (an *output* stream), remembering where it is. Quokka's tier 1 has string input streams; output streams come with the printer. ([38](part-6-self-hosting/38-reading-in-lisp.md))
+**Stream.** An object that hands out characters one at a time (an *input* stream) or accepts them (an *output* stream), remembering where it is. Quokka's tier 1 has string input streams and the [console input stream](#console-input-stream); output streams come with the printer. ([38](part-6-self-hosting/38-reading-in-lisp.md), [88](part-10-frames/88-reading-the-console.md))
 
 <a id="string"></a>
 **String.** A heap object whose slots hold character codes rather than

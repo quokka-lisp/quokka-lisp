@@ -6,7 +6,7 @@
 //! stdout, and source files are files — those under a directory the world
 //! was granted, and no others (#87).
 
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -21,6 +21,24 @@ impl Host for NativeHost {
     fn write_stdout(&mut self, s: &str) {
         print!("{s}");
         let _ = io::stdout().flush();
+    }
+
+    /// A line from the terminal for a world reading its console (#131): the
+    /// same standard input the REPL reads its forms from, so a program, or
+    /// the debugger, reads the lines that follow the form that asked.
+    fn read_line(&mut self, prompt: &str) -> Option<String> {
+        self.write_stdout(prompt);
+        let mut line = String::new();
+        match io::stdin().lock().read_line(&mut line) {
+            Ok(0) => None,
+            Ok(_) => Some(line),
+            // Bytes that are not UTF-8, or a terminal that went away: said,
+            // and then the end of the input, which the world can act on.
+            Err(e) => {
+                eprintln!("quokka: reading the input: {e}");
+                None
+            }
+        }
     }
 
     /// A source file, for a world that asks by name.

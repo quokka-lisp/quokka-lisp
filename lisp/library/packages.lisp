@@ -756,8 +756,8 @@
 ;;; The names `QUOKKA-DEBUG` exports: the frames of `frames.lisp`.
 (defvar %quokka-debug-symbol-names
   '("FRAME" "FRAME-P" "FRAMES" "FRAME-FUNCTION" "FRAME-ARGUMENTS" "FRAME-NAME"
-    "FRAME-CALL" "LIST-BACKTRACE" "PRINT-BACKTRACE" "UNWIND-TO-FRAME-AND-CALL"
-    "RESTART-FRAME" "RETURN-FROM-FRAME"))
+    "FRAME-CALL" "FRAME-LOCALS" "LIST-BACKTRACE" "PRINT-BACKTRACE" "UNWIND-TO-FRAME-AND-CALL"
+    "RESTART-FRAME" "RETURN-FROM-FRAME" "ENABLE-DEBUGGER" "DISABLE-DEBUGGER"))
 
 ;;; Sort every symbol in the Rust system table into a package: each of the
 ;;; standard's 978 names into `COMMON-LISP`, as an external symbol — creating

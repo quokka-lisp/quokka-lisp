@@ -189,6 +189,24 @@
          (append (cdr (car specifiers)) (%special-names (cdr specifiers))))
         (t (%special-names (cdr specifiers)))))
 
+;;; The name a body's declarations give its function, `(declare (%named
+;;; NAME))`, or OTHERWISE (#131). Where a function's maker cannot leave the
+;;; name in `%pending-name`, because it writes a `lambda` form for someone
+;;; else to compile: `defmethod` names a method's function
+;;; `(:method name qualifiers... specializers)`, as SBCL does, so that a
+;;; backtrace says which method a frame is running. A declaration and not
+;;; an operator, which #110 rejected: everything that walks code already
+;;; passes over a declaration, and the interpreter ignores it.
+(defun %declared-name (body otherwise)
+  (%named-in (%declarations body) otherwise))
+
+(defun %named-in (specifiers otherwise)
+  (cond ((endp specifiers) otherwise)
+        ((and (consp (car specifiers)) (eq (car (car specifiers)) '%named)
+              (consp (cdr (car specifiers))))
+         (second (car specifiers)))
+        (t (%named-in (cdr specifiers) otherwise))))
+
 ;;; A body's `notinline` declarations, as a compile-only scope like the
 ;;; `special` one: a compiler macro is not applied to a call of a function
 ;;; declared `notinline` where the call is (CLHS 3.2.2.1.3; ansi-test
@@ -543,6 +561,10 @@
 ;;; the binder binds them, so the compile-time scope matches the machine's
 ;;; slot for slot rather than by a second reading of the same syntax.
 (defun %compile-lambda (form env)
+  ;; A `%named` declaration is read before the lambda list is rewritten,
+  ;; which moves a body's declarations into the `let*` it makes for
+  ;; `&optional` and `&key` parameters, out of `%assemble-lambda`'s sight.
+  (if %pending-name nil (setq %pending-name (%declared-name (cddr form) nil)))
   (let ((rewritten (%rewrite-lambda-list (second form) (cddr form))))
     ;; An ordinary lambda list only: in a macro's, `()` is an empty
     ;; destructuring pattern, which the rewrite turns into a parameter named
@@ -597,7 +619,7 @@
         (outer %constants)
         (outer-count %constant-count)
         (outer-table %constant-table)
-        (name (if %pending-name %pending-name 'lambda)))
+        (name (if %pending-name %pending-name (%declared-name body 'lambda))))
     (setq %pending-name nil)
     ;; `(:lambda)` marks the function's edge: what is open outside it is not
     ;; open in it, since the closure may be called from anywhere.

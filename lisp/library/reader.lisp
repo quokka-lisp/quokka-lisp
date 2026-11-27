@@ -151,15 +151,53 @@
 (defun streamp (object)
   (or (%string-input-stream-p object) (output-stream-p object)))
 
-;;; There is no console to read from yet, so standard input is an empty
-;;; string: reading it meets end of file at once.
-(defvar *standard-input* (make-string-input-stream ""))
+;;; The console, for reading (#131). A world has no console of its own: it
+;;; asks its host for a line, `%read-console`, which blocks the machine until
+;;; the host answers between slices. So the console is a string input stream
+;;; over the line it was last given, which refills itself from the host when
+;;; a read reaches the end (`%refill-console`). Only reaching the end costs
+;;; anything, so the reader's loop over characters is the same as for any
+;;; string. A host with nobody at its console answers end of file at once.
+;;;
+;;; `%console-prompt` is what the host shows before the next line, which
+;;; whoever reads sets: the debugger's `0] `. One line's worth: after a line
+;;; is read, it is empty again.
+(defvar %console-input (make-string-input-stream ""))
+(defvar %console-prompt "")
 
-;;; A stream designator: nil and t both mean standard input.
+(defun %refill-console (stream)
+  (if (eq stream %console-input)
+      (let ((line (%read-console %console-prompt)))
+        (setq %console-prompt "")
+        (if (and line (> (length line) 0))
+            (progn (setf (%string-input-stream-string stream) line)
+                   (setf (%string-input-stream-position stream) 0)
+                   (setf (%string-input-stream-end stream) (length line))
+                   t)
+            nil))
+      nil))
+
+(defvar *standard-input* %console-input)
+
+;;; A stream designator: nil means standard input, and t the terminal, which
+;;; is the console. `*terminal-io*`, `*debug-io*` and `*query-io*`, which
+;;; CLHS makes two-way streams, are `%console-io` (`printer.lisp`), a console
+;;; stream that reads as the console too; `*standard-output*` is another,
+;;; which does not, as in SBCL.
 (defun %input-stream (designator)
-  (cond ((or (null designator) (eq designator t)) *standard-input*)
+  (cond ((null designator) *standard-input*)
+        ((eq designator t) %console-input)
         ((%string-input-stream-p designator) designator)
-        (t (error "not an input stream"))))
+        ((eq designator %console-io) %console-input)
+        (t (error 'type-error :datum designator :expected-type 'stream))))
+
+;;; Throw away what has been typed and not read: the rest of the console's
+;;; current line. A string stream has nothing typed ahead to discard.
+(defun clear-input (&optional stream)
+  (let ((stream (%input-stream stream)))
+    (when (eq stream %console-input)
+      (setf (%string-input-stream-position stream) (%string-input-stream-end stream)))
+    nil))
 
 ;;; Running out of input is an `end-of-file` condition (#70), so that a
 ;;; program can tell it from a syntax error. It is also a `stream-error`,
@@ -174,7 +212,24 @@
     (if (< at (%string-input-stream-end stream))
         (progn (setf (%string-input-stream-position stream) (+ at 1))
                (aref (%string-input-stream-string stream) at))
-        (%end-of-file eof-error-p eof-value))))
+        (if (%refill-console stream)
+            (read-char stream eof-error-p eof-value)
+            (%end-of-file eof-error-p eof-value)))))
+
+;;; The characters up to the next newline, as a string, and whether the
+;;; input ended before a newline did (CLHS's second value). At the end of
+;;; the input with nothing read, end of file.
+(defun read-line (&optional stream (eof-error-p t) eof-value recursive-p)
+  (let ((stream (%input-stream stream))
+        (out (make-string-output-stream))
+        (any nil))
+    (do ((char (read-char stream nil nil) (read-char stream nil nil)))
+        ((or (null char) (eql char #\Newline))
+         (if (or char any)
+             (values (get-output-stream-string out) (null char))
+             (values (%end-of-file eof-error-p eof-value) t)))
+      (setq any t)
+      (write-char char out))))
 
 ;;; The reader's own `read-char`: the next character of STREAM, a string
 ;;; input stream, or nil at the end. `read` resolves its stream designator
@@ -188,7 +243,7 @@
     (if (< at (%string-input-stream-end stream))
         (progn (setf (%string-input-stream-position stream) (+ at 1))
                (aref (%string-input-stream-string stream) at))
-        nil)))
+        (if (%refill-console stream) (%next-char stream) nil))))
 
 ;;; Put back the character just read. CLHS allows only that one, which is all
 ;;; a string stream needs to make it true: step back one.

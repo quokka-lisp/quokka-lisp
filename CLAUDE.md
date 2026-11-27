@@ -708,8 +708,33 @@ SBCL's `list-backtrace`, `print-backtrace`, `unwind-to-frame-and-call`;
 `return-from-frame`. `step_outcome` checks the shape of `%host-step`'s
 value, which the debugger can now return anything as. Left for F: method functions are anonymous, so a
 method's frame reads `(LAMBDA 4)`; locals; hiding the debugger's own frames.
-Rebuild `(:FORMS 1993 :REPLACED 1562)`. **Next: phase 3 step E**, processes
-(#34), or F, the terminal debugger. Phase 2's scope was
+Rebuild `(:FORMS 1993 :REPLACED 1562)`.
+**Phase 3 step F, the terminal debugger, is done** (#131, chapters 88–89;
+the design is `docs/debugger.md`). **Console input**: `%read-console` is a
+host request (`Host::read_line`, default end of file, so test hosts and the
+browser need nothing); `%console-input` is a string input stream that
+refills itself at its end (`%refill-console`, called only when `%next-char`
+or `read-char` reach the end), and is `*standard-input*`; the two-way
+streams `*terminal-io*`/`*debug-io*`/`*query-io*` are `%console-io`, a console
+stream distinct from `*standard-output*`, that reads as it (`%input-stream`).
+`read-line` and `clear-input` added. **`vm::drive`
+renews the step budget when a console read gets a line** (not at end of
+input). **The debugger is off in a new world** (`%debugger-enabled` in
+`conditions.lisp`; `quokka-debug:enable-debugger`/`disable-debugger`); off,
+`invoke-debugger` is unchanged, so tests and scripts are; **the terminal
+host turns it on when stdin is a terminal** (`%host-debugger`, called by
+`run_world`). `lisp/library/debugger.lisp` (after `frames.lisp`): SBCL's
+banner, `N] ` prompt, commands (`%define-debugger-command` **replaces in
+place**, or a rebuild would grow the list and C2 ≠ C3), restarts by number
+or name, anything else evaluated; nested levels; frames cut below the
+signalling functions and above the host loop. **Method functions are named
+`(:method name quals specs)` by `(declare (%named name))`**, which the
+compiler reads (`%declared-name`); retrying a method frame runs that method
+(re-dispatch would run other methods twice). `%frames` entries are
+`(place token callee environment . args)`; `%frame-locals env callee` lists
+a frame's own variables. Tests type at the console: `run_compiled_typing`
+in `differential.rs`. Rebuild `(:FORMS 2051 :REPLACED 1590)`. **Next: phase 3 step E**,
+processes (#34), then G, the gate. Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
 fixpoint is established early and kept as a standing test. Order: special

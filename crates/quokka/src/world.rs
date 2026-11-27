@@ -5,10 +5,11 @@
 //! terminal adds around that: gathering lines into forms, saving by atomic
 //! replace, and keeping the world when the machine itself fails.
 
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, IsTerminal, Read, Write};
 
-use quokka_vm::heap::Heap;
+use quokka_vm::heap::{Heap, Register};
 use quokka_vm::host::Host;
+use quokka_vm::value::Value;
 use quokka_vm::vm::Outcome;
 use quokka_vm::{PHASE, VERSION};
 
@@ -173,6 +174,16 @@ pub(crate) fn save_world(heap: &mut Heap, path: &str) -> Result<(), String> {
 pub(crate) fn run_world(path: &str) {
     let mut heap = load_image(path);
     let mut host = NativeHost;
+    // The debugger talks to a person, so it is on when there is one: when
+    // the input is a terminal, and not when a script is piped in, which
+    // goes on past an error as it always has (#131).
+    let person = io::stdin().is_terminal();
+    heap.mutate(|mc| mc.set_register(Register::Value, if person { Value::T } else { Value::NIL }));
+    if let Err(e) =
+        quokka_vm::vm::call_global(&mut heap, "%HOST-DEBUGGER", EVAL_BUDGET, 2_000, &mut host)
+    {
+        host.write_stdout(&format!("; the debugger could not be set up: {e}\n"));
+    }
     host.write_stdout(&format!(
         "Quokka {VERSION} — phase {PHASE}\n\
          {path}: {} words, sequence {} · compiled · tier 1\n\
