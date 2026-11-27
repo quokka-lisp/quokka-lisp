@@ -69,30 +69,30 @@
   (cond ((null designator) *standard-output*)
         ((eq designator t) *terminal-io*)
         ((or (%string-output-stream-p designator) (%console-stream-p designator)) designator)
-        (t (error "not an output stream"))))
+        ;; A Gray stream (`gray-streams.lisp`, #136): the functions below
+        ;; send it to the generic functions after their own two kinds.
+        ((%gray-stream-p designator) designator)
+        (t (error 'type-error :datum designator :expected-type 'stream))))
 
-(defun output-stream-p (stream)
-  (or (%string-output-stream-p stream) (%console-stream-p stream)))
-(defun input-stream-p (stream)
-  (or (%string-input-stream-p stream) (eq stream %console-io)))
+;;; `input-stream-p` and `output-stream-p` are generic functions in
+;;; `gray-streams.lisp`, as in SBCL.
 
 ;;; Every write comes down to this: characters START to END of STRING.
 (defun %stream-write (stream string start end)
   (if (< start end)
-      (progn
-        (if (%console-stream-p stream)
-            (progn
-              (%write-console (if (and (eq start 0) (eq end (length string))
-                                       (simple-string-p string))
-                                  string
-                                  (%substring string start end)))
-              (setf (%console-stream-fresh stream) (eq (aref string (- end 1)) #\Newline)))
-            (progn
-              (setf (%string-output-stream-chars stream)
-                    (%push-chars string start end (%string-output-stream-chars stream)))
-              (setf (%string-output-stream-count stream)
-                    (+ (%string-output-stream-count stream) (- end start)))
-              (setf (%string-output-stream-fresh stream) (eq (aref string (- end 1)) #\Newline))))))
+      (cond ((%console-stream-p stream)
+             (%write-console (if (and (eq start 0) (eq end (length string))
+                                      (simple-string-p string))
+                                 string
+                                 (%substring string start end)))
+             (setf (%console-stream-fresh stream) (eq (aref string (- end 1)) #\Newline)))
+            ((%string-output-stream-p stream)
+             (setf (%string-output-stream-chars stream)
+                   (%push-chars string start end (%string-output-stream-chars stream)))
+             (setf (%string-output-stream-count stream)
+                   (+ (%string-output-stream-count stream) (- end start)))
+             (setf (%string-output-stream-fresh stream) (eq (aref string (- end 1)) #\Newline)))
+            (t (stream-write-string stream string start end))))
   string)
 
 (defun %push-chars (string start end chars)
@@ -101,9 +101,9 @@
       chars))
 
 (defun %fresh-p (stream)
-  (if (%console-stream-p stream)
-      (%console-stream-fresh stream)
-      (%string-output-stream-fresh stream)))
+  (cond ((%console-stream-p stream) (%console-stream-fresh stream))
+        ((%string-output-stream-p stream) (%string-output-stream-fresh stream))
+        (t (stream-start-line-p stream))))
 
 (defun write-string (string &optional stream &key (start 0) end)
   (%stream-write (%output-stream stream) string start (if end end (length string)))
@@ -121,31 +121,44 @@
 ;;; (#112).
 (defun write-char (char &optional stream)
   (let ((stream (%output-stream stream)))
-    (if (%console-stream-p stream)
-        (%stream-write stream (%make-string 1 char) 0 1)
-        (progn
-          (setf (%string-output-stream-chars stream)
-                (cons char (%string-output-stream-chars stream)))
-          (setf (%string-output-stream-count stream)
-                (+ (%string-output-stream-count stream) 1))
-          (setf (%string-output-stream-fresh stream) (eq char #\Newline)))))
+    (cond ((%string-output-stream-p stream)
+           (setf (%string-output-stream-chars stream)
+                 (cons char (%string-output-stream-chars stream)))
+           (setf (%string-output-stream-count stream)
+                 (+ (%string-output-stream-count stream) 1))
+           (setf (%string-output-stream-fresh stream) (eq char #\Newline)))
+          ((%console-stream-p stream)
+           (%stream-write stream (%make-string 1 char) 0 1))
+          (t (stream-write-char stream char))))
   char)
 
 (defun terpri (&optional stream)
-  (write-char #\Newline stream)
+  (let ((stream (%output-stream stream)))
+    (if (%structure-stream-p stream)
+        (write-char #\Newline stream)
+        (stream-terpri stream)))
   nil)
 
 ;;; A newline unless the stream is already at the start of a line, and
 ;;; whether one was written.
 (defun fresh-line (&optional stream)
   (let ((stream (%output-stream stream)))
-    (if (%fresh-p stream) nil (progn (terpri stream) t))))
+    (cond ((%structure-stream-p stream)
+           (if (%fresh-p stream) nil (progn (terpri stream) t)))
+          (t (stream-fresh-line stream)))))
 
-;;; Nothing is buffered — a console write is sent at once — so there is
-;;; nothing to finish, force or clear.
-(defun finish-output (&optional stream) nil)
-(defun force-output (&optional stream) nil)
-(defun clear-output (&optional stream) nil)
+;;; Nothing the library's own streams write is buffered — a console write is
+;;; sent at once — so there is nothing to finish, force or clear; a Gray
+;;; stream is asked.
+(defun finish-output (&optional stream)
+  (let ((stream (%output-stream stream)))
+    (if (%structure-stream-p stream) nil (stream-finish-output stream))))
+(defun force-output (&optional stream)
+  (let ((stream (%output-stream stream)))
+    (if (%structure-stream-p stream) nil (stream-force-output stream))))
+(defun clear-output (&optional stream)
+  (let ((stream (%output-stream stream)))
+    (if (%structure-stream-p stream) nil (stream-clear-output stream))))
 
 ;;; `(with-output-to-string (var) body...)` — the text BODY writes to VAR.
 ;;; CLHS's optional string argument, writing into an existing string with a

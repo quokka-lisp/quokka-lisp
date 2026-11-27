@@ -226,6 +226,8 @@ pub enum Prim {
     SetProcessData = 166,
     ProcessMainP = 167,
     CompareAndSwapSvref = 168,
+    Display = 169,
+    AwaitEvent = 170,
 }
 
 impl Prim {
@@ -776,6 +778,17 @@ const TABLE: &[(Prim, &str, Arity)] = &[
         "%COMPARE-AND-SWAP-SVREF",
         Arity::Exactly(4),
     ),
+    // ---- the display protocol (phase 4 step C, #137) ---------------------
+    //
+    // A world shows things on a screen it does not own, so drawing is a host
+    // request like a console write: `%display` hands the host a message, an
+    // S-expression printed as a string (`docs/display.md`, decision 1), and
+    // is answered at once. `%await-event` asks for the next thing the person
+    // did, as a string the world reads; the host answers when there is one,
+    // which may be much later, or with nil if it will never have one (a host
+    // with no screen). While it waits, the machine may be idle (decision 2).
+    (Prim::Display, "%DISPLAY", Arity::Exactly(1)),
+    (Prim::AwaitEvent, "%AWAIT-EVENT", Arity::Exactly(0)),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1575,7 +1588,11 @@ pub fn call_slice<'h>(
             };
             float::make(mc, f(y, x))
         }
-        Prim::ReadSource | Prim::WriteConsole | Prim::ReadConsole => Err(EvalError::Fault {
+        Prim::ReadSource
+        | Prim::WriteConsole
+        | Prim::ReadConsole
+        | Prim::Display
+        | Prim::AwaitEvent => Err(EvalError::Fault {
             operator: name,
             detail: "asks the host for something, which only compiled code can do: \
                      the interpreter is the bootstrap evaluator and has no I/O",

@@ -938,6 +938,10 @@ impl<'a, 'h> Vm<'a, 'h> {
             Some("%WRITE-CONSOLE")
         } else if index == primitives::index(primitives::Prim::ReadConsole) {
             Some("%READ-CONSOLE")
+        } else if index == primitives::index(primitives::Prim::Display) {
+            Some("%DISPLAY")
+        } else if index == primitives::index(primitives::Prim::AwaitEvent) {
+            Some("%AWAIT-EVENT")
         } else {
             None
         };
@@ -945,16 +949,18 @@ impl<'a, 'h> Vm<'a, 'h> {
             // The primitives that do not return. Each leaves a request in the
             // heap and the machine stops; the host answers between slices and
             // the next step picks the answer up (`resume_request`). See
-            // `crate::host` for why this is a request and not a call.
-            if args.len() != 1 {
+            // `crate::host` for why this is a request and not a call. Each
+            // takes a string, but `%await-event`, which takes nothing.
+            let wanted = usize::from(kind != "%AWAIT-EVENT");
+            if args.len() != wanted {
                 return Some(self.fail(EvalError::WrongArgumentCount {
                     name: kind,
-                    wanted: 1,
+                    wanted,
                     got: args.len(),
                 }));
             }
-            let name = args[0];
-            if !(name.is_object() && self.mc.header(name).object_type.is_string()) {
+            let name = args.first().copied().unwrap_or(Value::NIL);
+            if wanted == 1 && !(name.is_object() && self.mc.header(name).object_type.is_string()) {
                 return Some(self.fail(EvalError::WrongType {
                     name: kind,
                     wanted: "a string",
@@ -2902,6 +2908,24 @@ pub fn begin_step(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
         mc.set_register(Register::Value, Value::NIL)
     });
     begin_global(heap, "%HOST-STEP")
+}
+
+/// Begin a call of the global function NAME with the argument nil, in the
+/// main process: how a host starts a program that is not the read-eval-print
+/// loop, such as the environment's command loop (#137).
+pub fn begin_call(heap: &mut crate::heap::Heap, name: &str) -> Result<(), EvalError> {
+    heap.mutate(|mc| {
+        crate::process::focus_main(mc);
+        mc.set_register(Register::Value, Value::NIL)
+    });
+    begin_global(heap, name)
+}
+
+/// Could a slice do anything now: is some process able to run, rather than
+/// every one waiting on the host? A host that leaves a request waiting asks
+/// this to know whether the world is idle (#137, `docs/display.md`).
+pub fn can_run(heap: &mut crate::heap::Heap) -> bool {
+    heap.mutate(|mc| crate::process::can_run(mc))
 }
 
 /// Is `source` whole — does it end outside every form? `%source-complete-p`

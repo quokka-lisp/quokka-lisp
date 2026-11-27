@@ -568,10 +568,13 @@
     (list required optional rest key allow (nreverse keywords))))
 
 ;;; The keyword a `&key` parameter takes: `x`, `(x 1)`, `((:k x) 1)`.
+;;; By `%intern-keyword`, which needs no package system: a generic function
+;;; taking keywords can be defined while the library loads, before
+;;; `packages.lisp` (`close`, `gray-streams.lisp`).
 (defun %keyword-of (parameter)
-  (cond ((symbolp parameter) (intern (symbol-name parameter) "KEYWORD"))
+  (cond ((symbolp parameter) (%intern-keyword (symbol-name parameter)))
         ((consp (car parameter)) (car (car parameter)))
-        (t (intern (symbol-name (car parameter)) "KEYWORD"))))
+        (t (%intern-keyword (symbol-name (car parameter))))))
 
 ;;; The lambda list a generic function gets when `defmethod` makes it
 ;;; (CLHS 7.6.4): the method's, without specializers, default forms,

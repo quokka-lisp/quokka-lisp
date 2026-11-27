@@ -183,6 +183,7 @@ tier1_cases! {
     redefinition => "redefinition",
     method_combination => "method-combination",
     mop => "mop",
+    gray_streams => "gray-streams",
     class_details => "class-details",
     condition_objects => "condition-objects",
     signalling => "signalling",
@@ -419,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2118 :REPLACED 1638)".into())],
+        [Outcome::Value("(:FORMS 2204 :REPLACED 1649)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)

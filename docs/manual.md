@@ -191,6 +191,13 @@ it sizes each slice from how long the last one took, and collects what the
 world wrote with `take_output`. `crates/quokka-wasm/src/lib.rs` says why it
 is shaped that way.
 
+The page can also start a program in place of the read-eval-print loop
+(`Quokka::start`), which phase 4's environment uses (`docs/display.md`): the
+world then draws through `%display` messages, which the page takes with
+`take_messages`, and waits for the person through `%await-event`, which the
+page answers with `post_event`. A world waiting for an event the page has not
+posted is idle, and `run` returns false until one is posted.
+
 A form after `#` in the address is evaluated once the world is up:
 `http://localhost:8080/#(+ 1 2)`. Two scripts check the result of those
 three commands, and CI runs both: `node scripts/smoke-wasm.mjs` loads the

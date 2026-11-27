@@ -752,6 +752,10 @@
       (eq (class-of super) metaclass)
       (or (eq super (find-class t))
           (%standard-metaclass-p (class-of super))
+          ;; `stream` too, as in SBCL, so that a stream a program defines
+          ;; is a `stream` (Gray streams, `gray-streams.lisp`, #136).
+          (and (not (eq metaclass (find-class 'funcallable-standard-class)))
+               (eq super (find-class 'stream)))
           (and (eq metaclass (find-class 'funcallable-standard-class))
                (eq super (find-class 'function))))))
 

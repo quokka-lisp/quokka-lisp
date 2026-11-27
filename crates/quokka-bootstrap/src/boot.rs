@@ -162,6 +162,10 @@ pub const LIBRARY: &[(&str, &str)] = &[
     ),
     ("mop.lisp", include_str!("../../../lisp/library/mop.lisp")),
     (
+        "gray-streams.lisp",
+        include_str!("../../../lisp/library/gray-streams.lisp"),
+    ),
+    (
         "char-names.lisp",
         include_str!("../../../lisp/library/char-names.lisp"),
     ),

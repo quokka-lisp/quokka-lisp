@@ -130,6 +130,11 @@
 - [Channels](part-11-processes/92-channels.md)
 - [Phase 3 ends](part-11-processes/93-phase-three-ends.md)
 
+# Part XII · The display
+
+- [A screen the world does not own](part-12-display/94-a-screen-the-world-does-not-own.md)
+- [Streams a program defines](part-12-display/95-streams-a-program-defines.md)
+
 # Looking ahead
 
 - [The environment, on paper](looking-ahead/the-environment-on-paper.md)

@@ -263,6 +263,9 @@ name) or a character (a string of one); `string` turns any into a string.
 <a id="displaced-array"></a>
 **Displaced array.** An array with no elements of its own, which shares another array's, starting at an offset: writing through either is seen through both. ([55](part-6-self-hosting/55-arrays.md))
 
+<a id="display-protocol"></a>
+**Display protocol.** The messages a world sends the page that shows it, saying what to draw and what changed, and the events the page sends back, saying what the person did. In Quokka both are S-expressions, carried by two host requests, `%display` and `%await-event`. ([94](part-12-display/94-a-screen-the-world-does-not-own.md))
+
 <a id="diverse-double-compiling"></a>
 **Diverse double-compiling.** Compiling a compiler's source with two *different* compilers and comparing the results, as a defence against a compiler that hides something in itself (Wheeler, 2005). Quokka's C1 (compiled by the interpreted compiler) against C2 (by the compiled one) is a small instance. ([42](part-6-self-hosting/42-the-fixpoint.md))
 
@@ -294,6 +297,9 @@ case and compares vectors element by element.
 
 <a id="eval-when"></a>
 **eval-when.** Says whether a form runs at compile time, load time, or when executed. Looks obscure and is load-bearing: it is how a macro defined in a file exists by the time a later form in that file is compiled, and therefore how self-hosting is possible at all. ([13](part-2-reading-and-running/13-the-special-operators.md))
+
+<a id="event"></a>
+**Event.** Something the person did, a key pressed or text edited, sent by the page to the world as an S-expression such as `(:key :target 17 :key "Enter")`. ([94](part-12-display/94-a-screen-the-world-does-not-own.md))
 
 <a id="expander"></a>
 **Expander.** The function behind a [macro](#macro): given the macro form and the environment it is expanded in, it returns the form to use instead. Common Lisp defines it as a function of exactly those two arguments, which `macro-function` returns; the macro's lambda list takes the form apart inside it. Quokka's expanders took only the argument forms until step AC, which is why `&whole` was missing. ([64](part-6-self-hosting/64-what-a-macro-is-given.md))
@@ -413,6 +419,9 @@ caller writes — so it cannot be [captured](#capture-variable-capture). The
 number comes from the special variable `*gensym-counter*`, which a program may
 bind; until step Y it was a primitive with its counter in Rust. ([15](part-2-reading-and-running/15-code-that-writes-code.md), [60](part-6-self-hosting/60-labels-and-limits.md))
 
+<a id="gray-stream"></a>
+**Gray stream.** A stream that is an instance of a class a program defines, which the standard stream functions reach through generic functions such as `stream-write-char`. Proposed by David Gray in 1989, never standardised, provided by every implementation; in Quokka in package `QUOKKA-GRAY`. ([95](part-12-display/95-streams-a-program-defines.md))
+
 <a id="handler-case"></a>
 **handler-case.** Runs a form, and if a condition is signalled inside it,
 hands it to the first clause whose type matches. A [catch](#non-local-exit)
@@ -472,6 +481,9 @@ error the language lets you make, and [gensym](#gensym) is the cure. ([15](part-
 introduced by a macro, so they cannot collide with the caller's, and names
 *used* by a macro keep the meaning they had where it was written. Kohlbecker's
 algorithm (1986). Quokka does not have it; see [gensym](#gensym). ([17](part-2-reading-and-running/17-why-macros-matter.md))
+
+<a id="idle"></a>
+**Idle.** Of a world: every process is waiting for the host, and the host has nothing to give it yet, so no slice could do anything. The page stops running slices until the person does something. ([94](part-12-display/94-a-screen-the-world-does-not-own.md))
 
 <a id="ieee-754"></a>
 **IEEE 754.** The standard for floating-point arithmetic that nearly every processor follows. It fixes the formats (the 64-bit double among them), the result of `+ - * /` and the square root to the last bit, rounding to nearest with ties to even, and the special values infinity and [NaN](#nan). It does not fix `sin`, `exp` or `log` to the last bit. ([48](part-6-self-hosting/48-floats.md))
@@ -714,6 +726,9 @@ Rust local, because of rule 4. ([25](part-3-compiling/25-a-machine-made-of-instr
 <a id="oracle"></a>
 **Oracle.** A reference implementation trusted more than your own, used to check answers against. Available only when reimplementing something that already exists, which is why compilers and databases get a testing technique original software does not. ([12](part-2-reading-and-running/12-agreeing-with-something-else.md))
 
+<a id="output-record"></a>
+**Output record.** An object in the world standing for a piece of output on the screen: a run of text, a block, an editable text, later a shape or a presentation. Records form a tree for each viewer, and each has a number the renderer knows it by. CLIM's term. ([94](part-12-display/94-a-screen-the-world-does-not-own.md))
+
 <a id="package"></a>
 **Package.** Common Lisp's namespace for symbols: a symbol table plus rules
 about which names are visible where. Quokka does not have them — tier 1, phase
@@ -873,6 +888,9 @@ unusually small, because the structure it produces is ordinary lists.
 operands are — `ADD r3, r1, r2` — like real hardware. Fewer, larger
 instructions than a [stack machine](#stack-machine), and a harder compiler,
 because something must decide which value lives in which register. ([24](part-3-compiling/24-why-compile-at-all.md))
+
+<a id="renderer"></a>
+**Renderer.** The small program in the page that turns display messages into what the browser shows, and the person's actions into events. It draws what it is told and decides nothing. ([94](part-12-display/94-a-screen-the-world-does-not-own.md))
 
 <a id="repl"></a>
 **REPL.** Read, Eval, Print, Loop — a prompt that reads what you type, runs it,

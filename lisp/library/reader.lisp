@@ -147,9 +147,7 @@
   (make-%string-input-stream :string string :position start
                              :end (if end end (length string))))
 
-;;; Output streams are in `printer.lisp`; this answers for them too.
-(defun streamp (object)
-  (or (%string-input-stream-p object) (output-stream-p object)))
+;;; `streamp` is in `gray-streams.lisp`, which knows every kind (#136).
 
 ;;; The console, for reading (#131). A world has no console of its own: it
 ;;; asks its host for a line, `%read-console`, which blocks the machine until
@@ -203,14 +201,19 @@
         ((eq designator t) %console-input)
         ((%string-input-stream-p designator) designator)
         ((eq designator %console-io) %console-input)
+        ;; A stream a program defined, an instance of a Gray stream class
+        ;; (`gray-streams.lisp`, #136): every function below sends it to the
+        ;; generic functions, after the structure streams' own paths.
+        ((%gray-stream-p designator) designator)
         (t (error 'type-error :datum designator :expected-type 'stream))))
 
 ;;; Throw away what has been typed and not read: the rest of the console's
 ;;; current line. A string stream has nothing typed ahead to discard.
 (defun clear-input (&optional stream)
   (let ((stream (%input-stream stream)))
-    (when (eq stream %console-input)
-      (setf (%string-input-stream-position stream) (%string-input-stream-end stream)))
+    (cond ((eq stream %console-input)
+           (setf (%string-input-stream-position stream) (%string-input-stream-end stream)))
+          ((%gray-stream-p stream) (stream-clear-input stream)))
     nil))
 
 ;;; Running out of input is an `end-of-file` condition (#70), so that a
@@ -221,21 +224,52 @@
   (if eof-error-p (error 'end-of-file "end of file") eof-value))
 
 (defun read-char (&optional stream (eof-error-p t) eof-value recursive-p)
-  (let* ((stream (%input-stream stream))
-         (at (%string-input-stream-position stream)))
-    (if (< at (%string-input-stream-end stream))
-        (progn (setf (%string-input-stream-position stream) (+ at 1))
-               (aref (%string-input-stream-string stream) at))
-        (if (%refill-console stream)
-            (read-char stream eof-error-p eof-value)
-            (%end-of-file eof-error-p eof-value)))))
+  (let ((stream (%input-stream stream)))
+    (if (%string-input-stream-p stream)
+        (let ((at (%string-input-stream-position stream)))
+          (if (< at (%string-input-stream-end stream))
+              (progn (setf (%string-input-stream-position stream) (+ at 1))
+                     (aref (%string-input-stream-string stream) at))
+              (if (%refill-console stream)
+                  (read-char stream eof-error-p eof-value)
+                  (%end-of-file eof-error-p eof-value))))
+        (let ((char (stream-read-char stream)))
+          (if (eq char :eof) (%end-of-file eof-error-p eof-value) char)))))
+
+;;; A character if one is there without waiting, nil if not, and the end of
+;;; file at the end. A string stream never waits; nor does the console,
+;;; whose line is either in hand or not asked for yet.
+(defun read-char-no-hang (&optional stream (eof-error-p t) eof-value recursive-p)
+  (let ((stream (%input-stream stream)))
+    (cond ((eq stream %console-input)
+           (if (< (%string-input-stream-position stream) (%string-input-stream-end stream))
+               (read-char stream eof-error-p eof-value)
+               nil))
+          ((%string-input-stream-p stream) (read-char stream eof-error-p eof-value))
+          (t (let ((char (stream-read-char-no-hang stream)))
+               (if (eq char :eof) (%end-of-file eof-error-p eof-value) char))))))
+
+;;; Is a character there to read without waiting?
+(defun listen (&optional stream)
+  (let ((stream (%input-stream stream)))
+    (if (%string-input-stream-p stream)
+        (< (%string-input-stream-position stream) (%string-input-stream-end stream))
+        (stream-listen stream))))
 
 ;;; The characters up to the next newline, as a string, and whether the
 ;;; input ended before a newline did (CLHS's second value). At the end of
 ;;; the input with nothing read, end of file.
 (defun read-line (&optional stream (eof-error-p t) eof-value recursive-p)
-  (let ((stream (%input-stream stream))
-        (out (make-string-output-stream))
+  (let ((stream (%input-stream stream)))
+    (if (%string-input-stream-p stream)
+        (%read-line stream eof-error-p eof-value)
+        (multiple-value-bind (line missing) (stream-read-line stream)
+          (if (and missing (eql (length line) 0))
+              (values (%end-of-file eof-error-p eof-value) t)
+              (values line missing))))))
+
+(defun %read-line (stream eof-error-p eof-value)
+  (let ((out (make-string-output-stream))
         (any nil))
     (do ((char (read-char stream nil nil) (read-char stream nil nil)))
         ((or (null char) (eql char #\Newline))
@@ -253,18 +287,23 @@
 ;;; character cost (#70, chapter 58). Tier 2's generic streams will make this
 ;;; a generic function too.
 (defun %next-char (stream)
-  (let ((at (%string-input-stream-position stream)))
-    (if (< at (%string-input-stream-end stream))
-        (progn (setf (%string-input-stream-position stream) (+ at 1))
-               (aref (%string-input-stream-string stream) at))
-        (if (%refill-console stream) (%next-char stream) nil))))
+  (if (%string-input-stream-p stream)
+      (let ((at (%string-input-stream-position stream)))
+        (if (< at (%string-input-stream-end stream))
+            (progn (setf (%string-input-stream-position stream) (+ at 1))
+                   (aref (%string-input-stream-string stream) at))
+            (if (%refill-console stream) (%next-char stream) nil)))
+      (let ((char (stream-read-char stream)))
+        (if (eq char :eof) nil char))))
 
 ;;; Put back the character just read. CLHS allows only that one, which is all
 ;;; a string stream needs to make it true: step back one.
 (defun unread-char (char &optional stream)
   (let ((stream (%input-stream stream)))
-    (setf (%string-input-stream-position stream)
-          (- (%string-input-stream-position stream) 1))
+    (if (%string-input-stream-p stream)
+        (setf (%string-input-stream-position stream)
+              (- (%string-input-stream-position stream) 1))
+        (stream-unread-char stream char))
     nil))
 
 ;;; The next character without consuming it. PEEK-TYPE nil looks at the next

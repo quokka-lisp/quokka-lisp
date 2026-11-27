@@ -109,6 +109,19 @@ pub trait Host {
         None
     }
 
+    /// Answer a [`Request::Display`]: show a message of the display
+    /// protocol (`docs/display.md`). By default there is no screen, and the
+    /// message goes nowhere.
+    fn display(&mut self, message: &str) {
+        let _ = message;
+    }
+
+    /// Answer a [`Request::AwaitEvent`]: the next event, or `None` if there
+    /// will never be one. By default there is nobody to make one.
+    fn await_event(&mut self) -> Option<String> {
+        None
+    }
+
     // Note: there is deliberately no `should_yield` or clock method here.
     //
     // Rule 4 says the VM must be able to yield, and something has to decide when
@@ -186,6 +199,14 @@ pub enum Request {
     /// by `%read-console`, which is what the console input stream refills
     /// itself with (#131). Answered with [`complete_line`].
     ReadConsole(String),
+    /// A message of the display protocol, an S-expression as text. Made by
+    /// `%display` (#137, `docs/display.md`). Answered with an empty string.
+    Display(String),
+    /// The next event the person makes. Made by `%await-event` (#137).
+    /// Answered with the event as text, or with nothing ([`complete_line`]'s
+    /// `None`) by a host that will never have one; a host with a screen may
+    /// leave it waiting, and answer the others ([`waiting`], [`answer`]).
+    AwaitEvent,
 }
 
 /// Make a waiting request record. Called by the VM when it intercepts a
@@ -219,20 +240,89 @@ pub fn pending(heap: &mut Heap) -> Option<Request> {
     heap.mutate(|mc| {
         // The running process's, or a parked one's (#34).
         let record = crate::process::waiting_request(mc)?;
-        let kind = mc.slot(record, request::KIND);
-        let argument = mc.slot(record, request::ARGUMENT);
-        let text = mc.string_to_rust(argument);
-        if mc.symbol_is(kind, "%READ-SOURCE") {
-            return Some(Request::ReadSource(text));
-        }
-        if mc.symbol_is(kind, "%WRITE-CONSOLE") {
-            return Some(Request::WriteConsole(text));
-        }
-        if mc.symbol_is(kind, "%READ-CONSOLE") {
-            return Some(Request::ReadConsole(text));
-        }
-        None
+        decode(mc, record)
     })
+}
+
+/// What the request RECORD asks for.
+fn decode<'h>(mc: &Mutation<'h>, record: Value<'h>) -> Option<Request> {
+    let kind = mc.slot(record, request::KIND);
+    if mc.symbol_is(kind, "%AWAIT-EVENT") {
+        return Some(Request::AwaitEvent);
+    }
+    let argument = mc.slot(record, request::ARGUMENT);
+    let text = mc.string_to_rust(argument);
+    if mc.symbol_is(kind, "%READ-SOURCE") {
+        return Some(Request::ReadSource(text));
+    }
+    if mc.symbol_is(kind, "%WRITE-CONSOLE") {
+        return Some(Request::WriteConsole(text));
+    }
+    if mc.symbol_is(kind, "%READ-CONSOLE") {
+        return Some(Request::ReadConsole(text));
+    }
+    if mc.symbol_is(kind, "%DISPLAY") {
+        return Some(Request::Display(text));
+    }
+    None
+}
+
+/// Every request a process is waiting on, in the order [`pending`] would
+/// show them: the running process's first, then round the ring (#137).
+///
+/// [`pending`] shows one request at a time, and a host that answers each as
+/// it comes needs no more. A host that may leave one waiting does: the page
+/// answers `%await-event` only when the person does something, and in the
+/// meantime a background process's `%display` must still be answered, or it
+/// would wait behind the event for ever. The list is good until the next
+/// slice runs; [`answer`] takes a place in it.
+pub fn waiting(heap: &mut Heap) -> Vec<Request> {
+    heap.mutate(|mc| {
+        waiting_records(mc)
+            .into_iter()
+            .filter_map(|record| decode(mc, record))
+            .collect()
+    })
+}
+
+fn waiting_records<'h>(mc: &Mutation<'h>) -> Vec<Value<'h>> {
+    crate::process::waiting_requests(mc)
+        .into_iter()
+        .filter(|record| decode(mc, *record).is_some())
+        .collect()
+}
+
+/// Answer the request at place INDEX in the list [`waiting`] returned:
+/// with text, with nothing (`None`, which the program receives as `nil`), or
+/// with a failure. Returns whether there was a request there.
+pub fn answer(heap: &mut Heap, index: usize, reply: Result<Option<String>, HostError>) -> bool {
+    heap.mutate(|mc| {
+        let Some(record) = waiting_records(mc).get(index).copied() else {
+            return false;
+        };
+        fill(mc, record, reply);
+        true
+    })
+}
+
+/// Write REPLY into the request RECORD.
+fn fill<'h>(mc: &mut Mutation<'h>, record: Value<'h>, reply: Result<Option<String>, HostError>) {
+    let (state, answer) = match reply {
+        Ok(Some(text)) => (request::REPLIED, mc.alloc_string(&text)),
+        Ok(None) => (request::REPLIED, Value::NIL),
+        Err(e) => {
+            let argument = mc.slot(record, request::ARGUMENT);
+            let kind = mc.intern("FILE-ERROR");
+            let message = mc.alloc_string(&e.to_string());
+            (
+                request::FAILED,
+                crate::condition::make(mc, kind, message, argument),
+            )
+        }
+    };
+    let state = mc.intern(state);
+    mc.set_slot(record, request::STATE, state);
+    mc.set_slot(record, request::REPLY, answer);
 }
 
 /// Answer the pending request. Returns whether there was one.
@@ -252,21 +342,7 @@ pub fn complete(heap: &mut Heap, reply: Result<String, HostError>) -> bool {
         let Some(record) = crate::process::waiting_request(mc) else {
             return false;
         };
-        let (state, answer) = match reply {
-            Ok(text) => (request::REPLIED, mc.alloc_string(&text)),
-            Err(e) => {
-                let argument = mc.slot(record, request::ARGUMENT);
-                let kind = mc.intern("FILE-ERROR");
-                let message = mc.alloc_string(&e.to_string());
-                (
-                    request::FAILED,
-                    crate::condition::make(mc, kind, message, argument),
-                )
-            }
-        };
-        let state = mc.intern(state);
-        mc.set_slot(record, request::STATE, state);
-        mc.set_slot(record, request::REPLY, answer);
+        fill(mc, record, reply.map(Some));
         true
     })
 }
@@ -275,18 +351,13 @@ pub fn complete(heap: &mut Heap, reply: Result<String, HostError>) -> bool {
 /// of the input, which is not a failure: a stream meets end of file.
 /// Returns whether a request was waiting.
 pub fn complete_line(heap: &mut Heap, line: Option<String>) -> bool {
-    match line {
-        Some(text) => complete(heap, Ok(text)),
-        None => heap.mutate(|mc| {
-            let Some(record) = crate::process::waiting_request(mc) else {
-                return false;
-            };
-            let replied = mc.intern(request::REPLIED);
-            mc.set_slot(record, request::STATE, replied);
-            mc.set_slot(record, request::REPLY, Value::NIL);
-            true
-        }),
-    }
+    heap.mutate(|mc| {
+        let Some(record) = crate::process::waiting_request(mc) else {
+            return false;
+        };
+        fill(mc, record, Ok(line));
+        true
+    })
 }
 
 /// Answer the pending request through a synchronous [`Host`], if there is one.
@@ -308,6 +379,14 @@ pub fn serve(heap: &mut Heap, host: &mut dyn Host) -> bool {
         Request::ReadConsole(prompt) => {
             let line = host.read_line(&prompt);
             return complete_line(heap, line);
+        }
+        Request::Display(message) => {
+            host.display(&message);
+            Ok(String::new())
+        }
+        Request::AwaitEvent => {
+            let event = host.await_event();
+            return complete_line(heap, event);
         }
     };
     complete(heap, reply)

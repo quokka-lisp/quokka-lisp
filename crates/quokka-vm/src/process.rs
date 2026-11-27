@@ -212,6 +212,25 @@ pub fn waiting_request<'h>(mc: &Mutation<'h>) -> Option<Value<'h>> {
     ring(mc).into_iter().find_map(|p| waiting(mc, p))
 }
 
+/// Can some process run now? With no processes, whether the one computation
+/// is not waiting on the host.
+pub fn can_run(mc: &Mutation<'_>) -> bool {
+    if !is(mc, mc.register(Register::Process)) {
+        return !waits(mc, mc.register(Register::Request));
+    }
+    ring(mc).into_iter().any(|p| runnable(mc, p))
+}
+
+/// Every request a process is waiting on: the running process's first,
+/// then the others', round the ring (#137, `host::waiting`).
+pub fn waiting_requests<'h>(mc: &Mutation<'h>) -> Vec<Value<'h>> {
+    if !is(mc, mc.register(Register::Process)) {
+        let running = mc.register(Register::Request);
+        return if waits(mc, running) { vec![running] } else { Vec::new() };
+    }
+    ring(mc).into_iter().filter_map(|p| waiting(mc, p)).collect()
+}
+
 /// Is the request the host will answer next the main process's, or the only
 /// computation's when there are no processes? Only a line the person typed
 /// for the main process renews the host's step budget (`vm::answer`): a

@@ -32,6 +32,26 @@
 //! Before #84 this crate booted the tier-0 interpreter and evaluated each
 //! line in one mutation: no world, no tier 1, no collection during a form,
 //! and a page that could not repaint until the form ended.
+//!
+//! # The environment
+//!
+//! Since phase 4 (#137, `docs/display.md`) a page can also [`start`] a
+//! program instead of the read-eval-print loop: the environment's command
+//! loop, which shows things through `%display` messages and waits for the
+//! person through `%await-event`. This host keeps two queues for it. The
+//! messages the world sent wait in one until the page takes them
+//! ([`take_messages`]); the events the page posted wait in the other until
+//! the world asks for one ([`post_event`]). A world waiting for an event
+//! with none queued, and nothing else to run, is **idle**: [`run`] returns
+//! false at once, and the page stops running slices until the person does
+//! something. An idle world costs the computer nothing.
+//!
+//! [`start`]: Quokka::start
+//! [`take_messages`]: Quokka::take_messages
+//! [`post_event`]: Quokka::post_event
+//! [`run`]: Quokka::run
+
+use std::collections::VecDeque;
 
 use quokka_vm::heap::Heap;
 use quokka_vm::host::{self, HostError, Request};
@@ -59,6 +79,8 @@ enum Doing {
     Source,
     /// `%host-step`, reading, evaluating and printing one form.
     Step,
+    /// A program the page started, which runs until it returns (#137).
+    Program,
 }
 
 /// A world, owned by the page.
@@ -69,6 +91,12 @@ pub struct Quokka {
     /// Console output and printed values the page has not collected yet.
     output: String,
     doing: Doing,
+    /// The program the page started, to start again after an interrupt.
+    program: Option<String>,
+    /// Display messages the page has not collected yet.
+    messages: Vec<String>,
+    /// Events the world has not asked for yet.
+    events: VecDeque<String>,
 }
 
 /// Send a panic's message to the browser's console before the trap.
@@ -117,6 +145,9 @@ impl Quokka {
             heap,
             output: String::new(),
             doing: Doing::Nothing,
+            program: None,
+            messages: Vec::new(),
+            events: VecDeque::new(),
         })
     }
 
@@ -142,7 +173,38 @@ impl Quokka {
         Ok(())
     }
 
-    /// Run at most `steps` steps. True if there is more to do.
+    /// Start the global function NAME, with the argument nil, in place of
+    /// the read-eval-print loop: a program that runs until it returns, such
+    /// as the environment's command loop, `%RUN-ENVIRONMENT` (#137).
+    ///
+    /// # Errors
+    /// If something is running already, or NAME is not a function.
+    pub fn start(&mut self, name: &str) -> Result<(), String> {
+        if self.doing != Doing::Nothing {
+            return Err("something is running already".to_string());
+        }
+        vm::begin_call(&mut self.heap, name).map_err(|e| e.to_string())?;
+        self.doing = Doing::Program;
+        self.program = Some(name.to_string());
+        Ok(())
+    }
+
+    /// Queue an event for the world: the text of an S-expression
+    /// (`docs/display.md`), which it reads when it next asks.
+    pub fn post_event(&mut self, event: &str) {
+        self.events.push_back(event.to_string());
+    }
+
+    /// Every display message the world has sent since the last call, and
+    /// forget them. One S-expression each, one after the other, so the
+    /// whole is read as a sequence of forms.
+    pub fn take_messages(&mut self) -> String {
+        core::mem::take(&mut self.messages).join("\n")
+    }
+
+    /// Run at most `steps` steps. True if there is more to do; false when
+    /// nothing is running, or when the world is idle, waiting for an event
+    /// the page has not posted (#137).
     ///
     /// The page picks `steps` from how long the last call took, so that a
     /// call lasts about a frame — the budget is in steps and not
@@ -151,18 +213,15 @@ impl Quokka {
     pub fn run(&mut self, steps: u32) -> bool {
         let mut left = u64::from(steps);
         while self.doing != Doing::Nothing && left > 0 {
+            // Answer whatever can be answered — a process may have parked
+            // on the page while others ran (#34) — and stop if nothing can
+            // go on without the person.
+            if !self.answer_all() {
+                return false;
+            }
             match vm::one_slice(&mut self.heap, left) {
-                Ok(Status::Yielded) => {
-                    left = 0;
-                    // A process parked on the page while others ran (#34).
-                    if host::pending(&mut self.heap).is_some() {
-                        self.answer();
-                    }
-                }
-                Ok(Status::Blocked { steps }) => {
-                    left = left.saturating_sub(steps.max(1));
-                    self.answer();
-                }
+                Ok(Status::Yielded) => left = 0,
+                Ok(Status::Blocked { steps }) => left = left.saturating_sub(steps.max(1)),
                 Ok(Status::Done { steps }) => {
                     left = left.saturating_sub(steps.max(1));
                     self.finished();
@@ -170,24 +229,33 @@ impl Quokka {
                 Err(e) => {
                     self.output.push_str(&format!("; {e}\n"));
                     vm::recover(&mut self.heap);
-                    // As the native loop does: on to the next form.
-                    self.begin(Doing::Step, "");
+                    // As the native loop does: on to the next form, or the
+                    // program from the start.
+                    self.restart();
                 }
             }
         }
-        self.doing != Doing::Nothing
+        self.doing != Doing::Nothing && self.answer_all()
     }
 
     /// Give up the line that is running. What it has changed stays changed.
+    /// A program the page started is started again, and told so with the
+    /// event `(:interrupted)` (#137): the environment's command loop keeps
+    /// its state in the heap, and redraws from it.
     pub fn interrupt(&mut self) {
         if self.doing != Doing::Nothing {
             vm::recover(&mut self.heap);
             self.doing = Doing::Nothing;
-            self.output.push_str("; interrupted\n");
+            if self.program.is_some() {
+                self.events.push_front("(:interrupted)".to_string());
+                self.restart();
+            } else {
+                self.output.push_str("; interrupted\n");
+            }
         }
     }
 
-    /// Is a line still running?
+    /// Is a line, or a program, still running? An idle program is running.
     pub fn busy(&self) -> bool {
         self.doing != Doing::Nothing
     }
@@ -226,8 +294,27 @@ impl Quokka {
         };
     }
 
+    /// After a machine error: the program from the start, or the loop's
+    /// next form.
+    fn restart(&mut self) {
+        match self.program.clone() {
+            Some(name) => {
+                self.doing = Doing::Nothing;
+                if let Err(e) = self.start(&name) {
+                    self.output.push_str(&format!("; {e}\n"));
+                }
+            }
+            None => self.begin(Doing::Step, ""),
+        }
+    }
+
     /// The function that was running has returned.
     fn finished(&mut self) {
+        if self.doing == Doing::Program {
+            self.doing = Doing::Nothing;
+            self.program = None;
+            return;
+        }
         if self.doing == Doing::Step {
             match vm::step_outcome(&mut self.heap) {
                 // The line is used up.
@@ -245,31 +332,50 @@ impl Quokka {
         self.begin(Doing::Step, "");
     }
 
-    /// Answer the request the world is blocked on.
-    fn answer(&mut self) {
-        let reply = match host::pending(&mut self.heap) {
-            Some(Request::WriteConsole(text)) => {
+    /// Answer every request that can be answered now. True if the world
+    /// can go on: a process can run once they are answered. False if every
+    /// process is waiting for an event that has not come.
+    fn answer_all(&mut self) -> bool {
+        // One at a time: each answer takes a request off the list, so the
+        // places of the rest change.
+        loop {
+            let waiting = host::waiting(&mut self.heap);
+            let Some((index, reply)) = waiting
+                .into_iter()
+                .enumerate()
+                .find_map(|(i, request)| self.reply(request).map(|r| (i, r)))
+            else {
+                break;
+            };
+            host::answer(&mut self.heap, index, reply);
+        }
+        vm::can_run(&mut self.heap)
+    }
+
+    /// The answer to REQUEST, or `None` to leave it waiting.
+    fn reply(&mut self, request: Request) -> Option<Result<Option<String>, HostError>> {
+        Some(match request {
+            Request::WriteConsole(text) => {
                 self.output.push_str(&text);
-                Ok(String::new())
+                Ok(Some(String::new()))
             }
-            Some(Request::ReadSource(name)) => Err(HostError::NotFound(name)),
-            // The page has no console input yet: the end of the input, as
-            // for any host with nobody at a console (#131).
-            Some(Request::ReadConsole(_)) => {
-                host::complete_line(&mut self.heap, None);
-                return;
+            Request::Display(message) => {
+                self.messages.push(message);
+                Ok(Some(String::new()))
             }
-            // Blocked on something this host has never heard of: it cannot
-            // be answered, so the line cannot go on.
-            None => {
-                self.output
-                    .push_str("; the world asked its host for something it cannot give\n");
-                vm::recover(&mut self.heap);
-                self.doing = Doing::Nothing;
-                return;
-            }
-        };
-        host::complete(&mut self.heap, reply);
+            Request::ReadSource(name) => Err(HostError::NotFound(name)),
+            // The page has no console: the end of the input, as for any
+            // host with nobody at one (#131). The environment's listener
+            // is the console in the page, through its own stream (#141).
+            Request::ReadConsole(_) => Ok(None),
+            Request::AwaitEvent => match self.events.pop_front() {
+                Some(event) => Ok(Some(event)),
+                // The environment waits for the person; the read-eval-print
+                // loop has nobody to wait for, and is told so.
+                None if self.doing == Doing::Program => return None,
+                None => Ok(None),
+            },
+        })
     }
 }
 

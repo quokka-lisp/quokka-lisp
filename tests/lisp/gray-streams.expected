@@ -1,0 +1,58 @@
+=> :OK
+=> :OK
+=> :OK
+=> :OK
+=> :OK
+=> SHOUT
+=> *LOUD*
+=> T
+=> T
+=> T
+=> NIL
+=> T
+=> CHARACTER
+=> NIL
+=> #\a
+=> "bcd"
+=> "ACD
+HELLO
+"
+=> (T NIL "X
+")
+=> "TEXT AND :KEY
+"
+=> "
+(1 \"TWO\" #\\3) "
+=> "(1.5 SYM \"S\") OK"
+=> "3 CARDS"
+=> "QRS"
+=> (NIL NIL NIL)
+=> "AB|"
+=> T
+=> NIL
+=> "IN"
+=> :OK
+=> :OK
+=> :OK
+=> :OK
+=> ("whole" "!")
+=> :OK
+=> :OK
+=> :OK
+=> LINES
+=> T
+=> NIL
+=> (#\f #\i #\i)
+=> ("first line" NIL)
+=> ("second" T)
+=> (:DONE :END)
+=> ((+ 1 2) FOO "bar" #(1 2) :EOF)
+=> (T #\a NIL)
+=> #\x
+=> (3 "hel")
+=> (7 "--hello-")
+=> (42 "rest")
+=> "plain"
+=> T
+=> :TYPE-ERROR
+=> NIL

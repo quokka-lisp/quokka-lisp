@@ -353,6 +353,8 @@ Each chapter answers one question.
 | 91 | [Threads](part-11-processes/91-threads.md) | What does a program see of processes, and how do threads share one world without corrupting it, the compiler included? |
 | 92 | [Channels](part-11-processes/92-channels.md) | What are threads on one processor good for, and how do they talk without sharing, as Go's do? |
 | 93 | [Phase 3 ends](part-11-processes/93-phase-three-ends.md) | What does it take to fix a function from inside its error and run it again, and what does that make possible? |
+| 94 | [A screen the world does not own](part-12-display/94-a-screen-the-world-does-not-own.md) | How does a world draw on a page it does not own, and wait for a person without costing anything? |
+| 95 | [Streams a program defines](part-12-display/95-streams-a-program-defines.md) | How can `format` write into something the library has never heard of? |
 | — | [The environment, on paper](looking-ahead/the-environment-on-paper.md) | What will a person see and use once phases 4 to 6 are built, and what changes when a program is a live database of definitions instead of a pile of files? |
 
 Chapters 3 and 4 come before 5 and 6 because of the contracts-first rule: 3
@@ -399,7 +401,10 @@ Still to come, and deliberately so:
   and chapter 91 gives programs threads and locks; chapter 92 adds Go's
   channels, and the plan for using more than one processor. Chapter 93
   meets phase 3's gate: a function fixed from inside its error and its
-  frame retried, through the real program.
+  frame retried, through the real program. Part XII is phase 4, the
+  display: chapter 94 plans the protocol between a world and its page and
+  lets a world wait for a person without costing anything, and chapter 95
+  lets a program define streams.
   Still to come are the
   rest of the condition system, `loop` and the rest, in phases 3 to 5.
 - **Bytecode**, which is two things. A **bytecode VM** in Rust that executes a

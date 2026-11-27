@@ -777,8 +777,27 @@ Rebuild `(:FORMS 2118 :REPLACED 1638)`.
 phase 3 is complete** (#123): `crates/quokka/tests/gate.rs` builds a world
 with the `quokka` binary and types sessions at it — a function fixed from
 inside its error and its frame retried, in the main thread and in a thread
-the main thread joins. `quokka_vm::PHASE` says phase 3. **Next: phase 4**,
-the renderer and live text (`docs/design.md`); worker worlds are #132.
+the main thread joins. `quokka_vm::PHASE` says phase 3. Worker worlds are #132.
+**Phase 4, the renderer and live text, has begun** (#134; the design and its
+thirteen decisions are `docs/display.md`; book Part XII, chapters 94–). Gate:
+edit and evaluate a form in the browser. **Step B, Gray streams, is done**
+(#136, chapter 95): `lisp/library/gray-streams.lisp` (before `char-names.lisp`
+and the reader), package **`QUOKKA-GRAY`** with SBCL's `SB-GRAY` names; the
+structure streams keep their fast paths and anything else goes to the generic
+functions; `close`, `open-stream-p`, `input-stream-p`, `output-stream-p`,
+`interactive-stream-p`, `stream-element-type` are generic; `defclass` accepts
+`stream` as a superclass. A generic function with `&key` may be defined while
+the library loads (`%keyword-of` uses `%intern-keyword`). **Step C is done**
+(#137, chapter 94): `%display` (a message, a string) and `%await-event` (no
+argument; answered with an event string, or nil by a host with no screen) are
+host requests; **`host::waiting` lists every waiting request and
+`host::answer` answers one by its place**, so a host can leave `%await-event`
+waiting; `vm::can_run`, `vm::begin_call`. `crates/quokka-wasm`'s `Quokka` has
+`start(name)`, `post_event`, `take_messages`, and `run` returns false when the
+world is **idle** (every process waiting on the host, nothing to answer);
+`interrupt` restarts a started program with the event `(:interrupted)`.
+**Waiting in Lisp (`%wait-until`) keeps a world from ever being idle**: the
+environment waits only on `%await-event`. Rebuild `(:FORMS 2204 :REPLACED 1649)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

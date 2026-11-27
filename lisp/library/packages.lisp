@@ -724,8 +724,11 @@
 (defvar %quokka-debug-package (make-package "QUOKKA-DEBUG" :use '("COMMON-LISP")))
 ;;; And processes' (`threads.lisp`), as SBCL's are in `SB-THREAD` (#34).
 (defvar %quokka-thread-package (make-package "QUOKKA-THREAD" :use '("COMMON-LISP")))
+;;; And Gray streams' (`gray-streams.lisp`), as SBCL's are in `SB-GRAY` (#136).
+(defvar %quokka-gray-package (make-package "QUOKKA-GRAY" :use '("COMMON-LISP")))
 (defvar %quokka-package
-  (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP" "QUOKKA-DEBUG" "QUOKKA-THREAD")))
+  (make-package "QUOKKA" :use '("COMMON-LISP" "QUOKKA-MOP" "QUOKKA-DEBUG" "QUOKKA-THREAD"
+                                "QUOKKA-GRAY")))
 (defvar %cl-user-package
   (make-package "COMMON-LISP-USER" :nicknames '("CL-USER") :use '("COMMON-LISP")))
 
@@ -772,6 +775,19 @@
     "CHANNEL" "CHANNEL-P" "MAKE-CHANNEL" "SEND" "RECEIVE" "TRY-SEND" "TRY-RECEIVE"
     "CLOSE-CHANNEL" "CHANNEL-CLOSED-P" "CLOSED-CHANNEL-ERROR" "SELECT" "SPAWN-TASK"))
 
+;;; The names `QUOKKA-GRAY` exports: SBCL's, from `sb-gray`.
+(defvar %quokka-gray-symbol-names
+  '("FUNDAMENTAL-STREAM" "FUNDAMENTAL-INPUT-STREAM" "FUNDAMENTAL-OUTPUT-STREAM"
+    "FUNDAMENTAL-CHARACTER-STREAM" "FUNDAMENTAL-BINARY-STREAM"
+    "FUNDAMENTAL-CHARACTER-INPUT-STREAM" "FUNDAMENTAL-CHARACTER-OUTPUT-STREAM"
+    "FUNDAMENTAL-BINARY-INPUT-STREAM" "FUNDAMENTAL-BINARY-OUTPUT-STREAM"
+    "STREAM-ADVANCE-TO-COLUMN" "STREAM-CLEAR-INPUT" "STREAM-CLEAR-OUTPUT"
+    "STREAM-FILE-POSITION" "STREAM-FINISH-OUTPUT" "STREAM-FORCE-OUTPUT" "STREAM-FRESH-LINE"
+    "STREAM-LINE-COLUMN" "STREAM-LINE-LENGTH" "STREAM-LISTEN" "STREAM-PEEK-CHAR"
+    "STREAM-READ-BYTE" "STREAM-READ-CHAR" "STREAM-READ-CHAR-NO-HANG" "STREAM-READ-LINE"
+    "STREAM-READ-SEQUENCE" "STREAM-START-LINE-P" "STREAM-TERPRI" "STREAM-UNREAD-CHAR"
+    "STREAM-WRITE-BYTE" "STREAM-WRITE-CHAR" "STREAM-WRITE-SEQUENCE" "STREAM-WRITE-STRING"))
+
 ;;; Sort every symbol in the Rust system table into a package: each of the
 ;;; standard's 978 names into `COMMON-LISP`, as an external symbol — creating
 ;;; the ones nothing has used yet, such as `LOOP` — and everything else into
@@ -784,6 +800,8 @@
     (%adopt (%intern name) %quokka-debug-package t))
   (dolist (name %quokka-thread-symbol-names)
     (%adopt (%intern name) %quokka-thread-package t))
+  (dolist (name %quokka-gray-symbol-names)
+    (%adopt (%intern name) %quokka-gray-package t))
   (%adopt-the-rest (%system-symbols))
   ;; The names have done their job — each symbol has its own copy now — and a
   ;; list of 978 strings is not worth carrying in every image.

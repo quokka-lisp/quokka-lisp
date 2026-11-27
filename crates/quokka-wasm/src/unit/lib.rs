@@ -112,3 +112,111 @@ fn a_world_can_be_saved_and_loaded_again() {
     let mut again = Quokka::new(&q.save()).expect("loads");
     assert_eq!(pump(&mut again, "(twice 21)", 10_000).0, "42\n");
 }
+
+// ---- the environment's host side (#137) --------------------------------
+
+/// Run until the world is idle or finished; the messages it sent.
+fn settle(q: &mut Quokka) -> String {
+    let mut calls = 0;
+    while q.run(10_000) {
+        calls += 1;
+        assert!(calls < 1_000_000, "never settled");
+    }
+    q.take_messages()
+}
+
+/// A program that shows each event it is given, upcased, until "stop".
+fn echo() -> Quokka {
+    let mut q = world();
+    pump(
+        &mut q,
+        "(defun echo (ignored) \
+           (do ((e (quokka::%await-event) (quokka::%await-event))) \
+               ((equal e \"stop\") :done) \
+             (quokka::%display (string-upcase e))))",
+        100_000,
+    );
+    q.start("ECHO").expect("starts");
+    q
+}
+
+/// A world waiting for an event with none to give it is idle: `run` says
+/// there is nothing to do, at once, and the page stops calling it. The
+/// program is still running.
+#[test]
+fn a_world_waiting_for_the_person_is_idle() {
+    let mut q = echo();
+    assert_eq!(settle(&mut q), "");
+    assert!(q.busy());
+    assert!(!q.run(10_000), "idle, and stays idle");
+}
+
+/// An event wakes it; what it displays is collected, in order; the end of
+/// the program ends the run.
+#[test]
+fn events_wake_the_world_and_messages_come_back() {
+    let mut q = echo();
+    settle(&mut q);
+    q.post_event("hello");
+    assert_eq!(settle(&mut q), "HELLO");
+    q.post_event("one");
+    q.post_event("two");
+    assert_eq!(settle(&mut q), "ONE\nTWO");
+    q.post_event("stop");
+    settle(&mut q);
+    assert!(!q.busy(), "the program returned");
+}
+
+/// While the main process waits for the person, another process's display
+/// is still answered (`host::waiting`): the event the page cannot answer
+/// does not hold up the requests it can.
+#[test]
+fn a_background_display_is_answered_while_the_main_process_waits() {
+    let mut q = world();
+    pump(
+        &mut q,
+        "(defun watch (ignored) \
+           (quokka-thread:make-thread \
+             (lambda () (dotimes (i 5) (quokka-thread:thread-yield)) \
+                        (quokka::%display \"from a thread\"))) \
+           (quokka::%await-event))",
+        100_000,
+    );
+    q.start("WATCH").unwrap();
+    assert_eq!(settle(&mut q), "from a thread");
+    assert!(q.busy());
+}
+
+/// A program that never ends is stopped by the page, started again, and
+/// told why with the event `(:interrupted)`.
+#[test]
+fn an_interrupted_program_starts_again_and_is_told() {
+    let mut q = world();
+    pump(
+        &mut q,
+        "(defun spinner (ignored) \
+           (do ((e (quokka::%await-event) (quokka::%await-event))) (nil) \
+             (quokka::%display e) \
+             (when (equal e \"spin\") (tagbody top (go top)))))",
+        100_000,
+    );
+    q.start("SPINNER").unwrap();
+    settle(&mut q);
+    q.post_event("spin");
+    for _ in 0..20 {
+        assert!(q.run(1_000), "busy spinning");
+    }
+    q.interrupt();
+    assert!(q.busy());
+    assert_eq!(settle(&mut q), "spin\n(:interrupted)");
+}
+
+/// The read-eval-print loop has nobody to wait for: a form that asks for an
+/// event gets nil, or one the page posted.
+#[test]
+fn the_repl_is_never_left_waiting_for_an_event() {
+    let mut q = world();
+    assert_eq!(pump(&mut q, "(quokka::%await-event)", 10_000).0, "NIL\n");
+    q.post_event("(:key)");
+    assert_eq!(pump(&mut q, "(quokka::%await-event)", 10_000).0, "\"(:key)\"\n");
+}
