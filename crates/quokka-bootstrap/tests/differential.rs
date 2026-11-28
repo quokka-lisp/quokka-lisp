@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2444 :REPLACED 1771)".into())],
+        [Outcome::Value("(:FORMS 2445 :REPLACED 1772)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1906,6 +1906,60 @@ fn the_rebuild_reads_the_library_the_cold_build_loads() {
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
+}
+
+/// A thread told to end twice still finishes the cleanup it is in (#176).
+/// The machine put its end off while the innermost record on its stack was
+/// an unwind's pause, and a cleanup that opened a record of its own — the
+/// `dotimes` here — hid the pause: the second `terminate-thread` ended the
+/// thread in the middle of its cleanup.
+#[test]
+fn a_cleanup_is_finished_however_often_its_thread_is_told_to_end() {
+    let out = run_compiled(
+        "(defvar *log* nil) \
+         (defparameter *b* \
+           (quokka-thread:make-thread \
+             (lambda () \
+               (unwind-protect (do () (nil) (quokka-thread:thread-yield)) \
+                 (push :began *log*) (dotimes (i 20000)) (push :finished *log*))))) \
+         (dotimes (i 10) (quokka-thread:thread-yield)) \
+         (quokka-thread:terminate-thread *b*) \
+         (dotimes (i 3) (quokka-thread:thread-yield)) \
+         (quokka-thread:terminate-thread *b*) \
+         (progn (dotimes (i 3000) (quokka-thread:thread-yield)) \
+                (list (quokka-thread:thread-alive-p *b*) *log*))",
+    );
+    assert!(out.ends_with("=> (NIL (:FINISHED :BEGAN))\n"), "{out}");
+}
+
+/// A `defclass` that is refused leaves nothing behind (#189). A class named
+/// among its own superclasses was accepted; of two classes naming each
+/// other the second was refused and left the first unusable for good; and
+/// a metaclass that cannot make a class — `built-in-class`, an ordinary
+/// class — made one that printed and could not be instantiated.
+#[test]
+fn a_refused_defclass_leaves_nothing_behind() {
+    let out = run_compiled(
+        "(list (handler-case (defclass cyc (cyc) ()) (error () :refused)) (find-class 'cyc nil)) \
+         (defclass c1 (c2) ()) \
+         (handler-case (defclass c2 (c1) ()) (error () :refused)) \
+         (defclass c2 () ((v :initform 7))) \
+         (slot-value (make-instance 'c1) 'v) \
+         (defclass k3 () ()) \
+         (list (handler-case (defclass m2 () () (:metaclass built-in-class)) (error () :refused)) \
+               (handler-case (defclass m4 () () (:metaclass k3)) (error () :refused)) \
+               (find-class 'm2 nil) (find-class 'm4 nil)) \
+         (defclass ok () ((a :initform 1))) \
+         (handler-case (defclass ok (ok) ((b :initform 2))) (error () :refused)) \
+         (slot-value (make-instance 'ok) 'a)",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "=> (:REFUSED NIL)", "{out}");
+    assert_eq!(lines[2], "=> :REFUSED", "{out}");
+    assert_eq!(lines[4], "=> 7", "{out}");
+    assert_eq!(lines[6], "=> (:REFUSED :REFUSED NIL NIL)", "{out}");
+    assert_eq!(lines[8], "=> :REFUSED", "{out}");
+    assert_eq!(lines[9], "=> 1", "{out}");
 }
 
 /// A method defined on one generic function leaves every other function's

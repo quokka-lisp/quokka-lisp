@@ -646,7 +646,14 @@
 ;;; removed again before the error goes on.
 (defun ensure-class (name &key direct-superclasses direct-slots direct-default-initargs
                                (metaclass 'standard-class) documentation &allow-other-keys)
-  (let* ((metaclass (if (symbolp metaclass) (find-class metaclass) metaclass))
+  ;; Everything that can be refused is refused before anything is changed
+  ;; (#189): a `defclass` that failed half way used to leave a class, or the
+  ;; placeholder standing for one, with a wrapper and no superclasses.
+  (unless (and name (symbolp name))
+    (error 'type-error "a class is named by a symbol other than nil" name))
+  (when (member name direct-superclasses)
+    (error "a class cannot be its own superclass" name))
+  (let* ((metaclass (%usable-metaclass metaclass))
          (existing (let ((found (find-class name nil)))
                      ;; A class is redefined only while NAME is its proper
                      ;; name (CLHS 4.3.1): one whose `class-name` has been
@@ -688,7 +695,12 @@
                                    ((eq metaclass (find-class 'condition-class)) '(condition))
                                    (t '(standard-object))))))
          (replaced nil)
-         (done nil))
+         (done nil)
+         ;; What CLASS was, to put back if this does not finish.
+         (old-wrapper (if existing (%instance-wrapper class) nil))
+         (old-slots (if existing (%class-direct-slots class) nil))
+         (old-initargs (if existing (%class-direct-default-initargs class) nil))
+         (old-documentation (if existing (%class-documentation class) nil)))
     (when (member class supers)
       (error "a class cannot be its own superclass" name))
     ;; `stream` is a built-in class: a standard class may have it among its
@@ -727,10 +739,30 @@
                  (error condition))))
            (%define-accessors class)
            (setq done t))
-      (unless (or done existing)
-        (if replaced
-            (setf (gethash name %class-table) replaced)
-            (remhash name %class-table))))
+      (unless done
+        (if existing
+            (progn (%set-instance-wrapper class old-wrapper)
+                   (%set-class-direct-slots class old-slots)
+                   (%set-class-direct-default-initargs class old-initargs)
+                   (%set-class-documentation class old-documentation))
+            (if replaced
+                (setf (gethash name %class-table) replaced)
+                (remhash name %class-table)))))
+    class))
+
+;;; The metaclass `defclass` was given, as a class it can make an instance
+;;; of: a standard class or one made from it, or the class of conditions.
+;;; `built-in-class`, `structure-class`, an ordinary class and no class at
+;;; all were taken, and made classes that could not make instances or that
+;;; printed as `#<NIL>` (#189).
+(defun %usable-metaclass (metaclass)
+  (let ((class (if (and metaclass (symbolp metaclass)) (find-class metaclass) metaclass)))
+    (unless (and class (%instance-wrapper class) (typep class 'class)
+                 (or (eq class (find-class 'condition-class))
+                     (member (find-class 'standard-class) (%class-precedence-list class))
+                     (member (find-class 'funcallable-standard-class)
+                             (%class-precedence-list class))))
+      (error "defclass cannot make a class of this metaclass" metaclass))
     class))
 
 ;;; What kind of class METACLASS makes: `:standard` for the classes

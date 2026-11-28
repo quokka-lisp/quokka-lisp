@@ -942,7 +942,14 @@ next for the same editor. **#195**: `Quokka::interrupt` also tells every
 background process to end (`vm::end_background_processes`); the page's
 console strip keeps its last 20,000 characters. `viewer-restarted` is
 exported from `QUOKKA-UI` (#155).
-Rebuild `(:FORMS 2444 :REPLACED 1771)`.
+**#176**: a process's end is put off while *any* record on its stack is an
+unwind's pause (`Vm::cleanup_in_progress`), not only the innermost.
+**#189**: `ensure-class` refuses before it changes anything — a name among
+its own superclasses, a name that is no symbol, a metaclass that is not a
+standard class, one made from it, or `condition-class` (`%usable-metaclass`)
+— and a redefinition that fails puts the class's wrapper, direct slots,
+default initargs and documentation back.
+Rebuild `(:FORMS 2445 :REPLACED 1772)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

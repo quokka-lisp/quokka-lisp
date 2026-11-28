@@ -2451,7 +2451,7 @@ impl<'h> Vm<'_, 'h> {
 
     /// Begin ending the running process if it has been told to and it is
     /// safe now (#34): not while a cleanup an unwind is running has not
-    /// finished — the innermost record is the unwind's paused state — nor
+    /// finished — some record on the stack is an unwind's paused state — nor
     /// inside a region the library marks with `%without-interrupts` (its
     /// special `%interrupts-deferred` true), which it puts around taking and
     /// letting go of a lock and around a channel's bookkeeping. Without
@@ -2464,8 +2464,7 @@ impl<'h> Vm<'_, 'h> {
         if self.mc.slot(running, crate::process::TERMINATE) == Value::NIL || self.is_unwinding() {
             return;
         }
-        let at = self.mc.mp();
-        if at != usize::MAX && self.mark_slot(at, mark::KIND).as_fixnum() == Some(mark::PAUSED) {
+        if self.cleanup_in_progress() {
             return;
         }
         let deferred = self.mc.intern(DEFERRED);
@@ -2478,6 +2477,31 @@ impl<'h> Vm<'_, 'h> {
         self.mc.set_register(Register::Request, Value::NIL);
         let end = self.mc.intern(TERMINATE);
         self.start_unwind(end, Value::NIL);
+    }
+
+    /// Is an unwind stopped somewhere on this stack while its cleanup runs?
+    ///
+    /// Asked of the whole chain of records, not of the innermost one: a
+    /// cleanup that opens a record of its own — a `dotimes`, a `let` of a
+    /// special, a `block` in a function it calls — put that record on top
+    /// of the pause, and the process was ended in the middle of the cleanup
+    /// the pause was there to protect (#176). The walk happens only while a
+    /// process has been told to end and has not yet.
+    fn cleanup_in_progress(&self) -> bool {
+        let mut at = self.mc.mp();
+        while at != usize::MAX {
+            if self.mark_slot(at, mark::KIND).as_fixnum() == Some(mark::PAUSED) {
+                return true;
+            }
+            let prev = self.read_index(at, mark::PREV);
+            // Every record's predecessor is below it; `Heap::verify` holds
+            // an image to that, and this does not follow one that is not.
+            if prev != usize::MAX && prev >= at {
+                return false;
+            }
+            at = prev;
+        }
+        false
     }
 
     /// `(%process-yield)`: let the next process that can run have its turn
