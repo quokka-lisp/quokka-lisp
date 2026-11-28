@@ -963,7 +963,7 @@ call themselves in tail position (`%same-key-p`, `%cached-method`,
 slot vector once. **Entering a `do` costs about fifty steps** (a block and
 a tagbody) before it has looked at anything; a tail call is a jump. A
 generic call is 221 steps, an accessor 375, `make-instance` 1,728.
-Rebuild `(:FORMS 2456 :REPLACED 1779)`.
+Rebuild `(:FORMS 2460 :REPLACED 1781)`.
 **The review's leftovers are finished before phase 5 goes on** (Carsten,
 28 Nov 2026). `%check-generic-lambda-list` holds a `defgeneric` to CLHS
 3.4.2; a slot is not named `t` or by a keyword; `compute-restarts` and
@@ -985,6 +985,10 @@ and, to be built, `:every-frame`; `define-command (name :applies-to
 viewer-class ...)`; the prompt `CL-USER> `; the inks `+ink+`, `+dim+`,
 `+accent+`, `+structure+`; key names are the keywords events carry
 (`:arrow-right`). The tutorials and `design.md` use them.
+**#166, finished**: the listener's stream tells the page every
+`%lines-a-flush` (20) lines, and a text run that has reached `%run-limit`
+(4,000) characters and ends a line is closed, the next line starting a new
+record. A `:reset` carries `:protocol` (`%display-protocol`, 1).
 **The review's decisions were taken on 28 Nov 2026** (the table is a
 comment on #144; each issue has its own). **The roadmap now has nine
 phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to

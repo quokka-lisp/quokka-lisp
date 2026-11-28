@@ -1007,6 +1007,15 @@ impl<'a, 'h> Vm<'a, 'h> {
             return Some(self.unwind_to_frame(args));
         }
         if index == primitives::index(primitives::Prim::ProcessYield) {
+            // An intercepted primitive is not checked against the table's
+            // arity, so it checks its own: `(%process-yield 1)` answered nil.
+            if !args.is_empty() {
+                return Some(self.fail(EvalError::WrongArgumentCount {
+                    name: "%PROCESS-YIELD",
+                    wanted: 0,
+                    got: args.len(),
+                }));
+            }
             return Some(self.yield_process(tail));
         }
         if index == primitives::index(primitives::Prim::ProcessTerminate) {
@@ -2467,7 +2476,11 @@ impl<'h> Vm<'_, 'h> {
         if self.cleanup_in_progress() {
             return;
         }
-        let deferred = self.mc.intern(DEFERRED);
+        // Through the symbol cache: this is asked at every step of a
+        // process whose end is put off, and `intern` walks the table.
+        let deferred = self
+            .mc
+            .cached_symbol(crate::heap::symbol_cache::INTERRUPTS_DEFERRED, DEFERRED);
         let value = self.mc.slot(deferred, crate::heap::symbol::VALUE);
         if value != Value::NIL && value != Value::UNBOUND {
             return;
@@ -2475,7 +2488,9 @@ impl<'h> Vm<'_, 'h> {
         self.mc
             .set_slot(running, crate::process::TERMINATE, Value::NIL);
         self.mc.set_register(Register::Request, Value::NIL);
-        let end = self.mc.intern(TERMINATE);
+        let end = self
+            .mc
+            .cached_symbol(crate::heap::symbol_cache::TERMINATE_PROCESS, TERMINATE);
         self.start_unwind(end, Value::NIL);
     }
 

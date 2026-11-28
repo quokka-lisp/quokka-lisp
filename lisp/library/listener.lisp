@@ -316,7 +316,9 @@
    (buffer :initform "" :accessor %line-buffer)
    (at :initform 0 :accessor %line-at)
    (reading :initform nil :accessor %listener-reading-editor)
-   (entered :initform nil :accessor %line-entered)))
+   (entered :initform nil :accessor %line-entered)
+   ;; Lines written since the page was last told (`%note-lines`).
+   (lines :initform 0 :accessor %lines-unsent)))
 
 (defun %reading-editor (listener)
   (%listener-reading-editor (%listener-stream listener)))
@@ -328,10 +330,30 @@
       (setf (%listener-current-output stream)
             (make-record-stream (%listener-transcript (%stream-listener stream))))))
 
+;;; A form that prints is seen printing. Nothing was shown until a form
+;;; returned, unless it called `finish-output` itself: a loop that printed
+;;; a line a second showed nothing for a minute and then sixty lines. The
+;;; page is told every `%lines-a-flush` lines; every line would be a
+;;; message to the host for each, which a form printing ten thousand lines
+;;; would pay ten thousand times (#166).
+(defvar %lines-a-flush 20)
+
+(defun %note-lines (stream newline)
+  (when newline
+    (setf (%lines-unsent stream) (+ (%lines-unsent stream) 1))
+    (when (>= (%lines-unsent stream) %lines-a-flush)
+      (setf (%lines-unsent stream) 0)
+      (flush-display))))
+
 (defmethod stream-write-char ((stream listener-stream) char)
-  (write-char char (%listener-out stream)))
+  (write-char char (%listener-out stream))
+  (%note-lines stream (eql char #\Newline))
+  char)
 (defmethod stream-write-string ((stream listener-stream) string &optional (start 0) end)
-  (write-string string (%listener-out stream) :start start :end (or end (length string))))
+  (let ((end (or end (length string))))
+    (write-string string (%listener-out stream) :start start :end end)
+    (%note-lines stream (position #\Newline string :start start :end end))
+    string))
 (defmethod stream-line-column ((stream listener-stream))
   (stream-line-column (%listener-out stream)))
 
@@ -341,8 +363,14 @@
 
 ;;; Show what was written so far: a form that prints and then computes for a
 ;;; long time is seen printing.
-(defmethod stream-force-output ((stream listener-stream)) (flush-display) nil)
-(defmethod stream-finish-output ((stream listener-stream)) (flush-display) nil)
+(defmethod stream-force-output ((stream listener-stream))
+  (setf (%lines-unsent stream) 0)
+  (flush-display)
+  nil)
+(defmethod stream-finish-output ((stream listener-stream))
+  (setf (%lines-unsent stream) 0)
+  (flush-display)
+  nil)
 
 (defmethod stream-read-char ((stream listener-stream))
   (when (>= (%line-at stream) (length (%line-buffer stream)))

@@ -254,6 +254,11 @@ pub mod symbol_cache {
     /// its own once the library defines it (#125). After the twelve
     /// fallbacks.
     pub const MACHINE_ERROR: usize = 13;
+    /// `%INTERRUPTS-DEFERRED`, which the machine reads at every step while
+    /// a process has been told to end and has not yet (`threads.lisp`).
+    pub const INTERRUPTS_DEFERRED: usize = 14;
+    /// `%TERMINATE-PROCESS`, what such a process unwinds towards.
+    pub const TERMINATE_PROCESS: usize = 15;
     /// How many slots the cache has.
     pub const SLOTS: usize = 16;
 }

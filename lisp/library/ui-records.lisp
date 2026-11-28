@@ -561,6 +561,7 @@
     (if (and current
              (> count 0)
              (eq (aref children (- count 1)) current)
+             (%run-open-p current)
              (equal (record-property current :style) (stream-text-style stream))
              (eq (record-property current :ink) (stream-ink stream)))
         current
@@ -568,6 +569,18 @@
                                   :properties (%style-properties stream))))
           (add-record container run)
           (setf (%stream-current stream) run)))))
+
+;;; May more be written to RUN? Not once it holds `%run-limit` characters
+;;; and ends at the end of a line: the next line starts a run of its own.
+;;; A transcript of a hundred thousand lines is then some hundreds of text
+;;; nodes on the page and not one, and each is a message of bounded size.
+(defvar %run-limit 4000)
+
+(defun %run-open-p (run)
+  (let* ((text (record-text run))
+         (count (length text)))
+    (or (< count %run-limit)
+        (not (eql (char text (- count 1)) #\Newline)))))
 
 (defun %style-properties (stream)
   (let ((style (stream-text-style stream))
