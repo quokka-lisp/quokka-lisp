@@ -951,6 +951,12 @@ standard class, one made from it, or `condition-class` (`%usable-metaclass`)
 default initargs and documentation back.
 **#177**: the debugger gathers the innermost `%debugger-frame-limit` (500)
 frames; `%frames` itself still walks the whole stack in one step.
+**#154**: `Heap::live_words` is what the last collection found alive;
+`Quokka::collections`/`live_words` give a host both, and the environment
+page times each slice and says in the console when one with a collection
+in it takes longer than any before (4.7 ms at 316,000 words, wasm, 28 Nov
+2026; #86 builds a generational collector past 16 ms). **Lisp is never
+told**: when a collection happens depends on the slicing (rule 4).
 Rebuild `(:FORMS 2446 :REPLACED 1772)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

@@ -198,8 +198,16 @@
         setTimeout(step, 0);
       }
 
+      // The longest a slice with a collection in it has taken: an upper
+      // bound on the collector's pause, and the figure the plan for the
+      // collector waits on (a generational one once a pause passes 16 ms,
+      // #86). Said in the console when it grows, with the size of the
+      // world that caused it.
+      let worstPause = 0;
+
       function step() {
         const before = performance.now();
+        const collected = vm.collections();
         let more;
         try {
           more = vm.run(steps);
@@ -208,6 +216,12 @@
           return fail(error);
         }
         const took = performance.now() - before;
+        if (vm.collections() > collected && took > worstPause) {
+          worstPause = took;
+          const words = vm.live_words();
+          (took > 16 ? console.warn : console.info)(
+            `a slice with a collection took ${took.toFixed(1)} ms; ${words} words alive`);
+        }
         const messages = vm.take_messages();
         try {
           if (messages) view.apply(messages);

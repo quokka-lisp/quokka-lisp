@@ -676,6 +676,10 @@ struct Storage {
     /// How many collections have happened. Torture mode uses it to vary the
     /// padding, so no object can land where it was.
     collections: u64,
+    /// How many words the last collection found alive: what it copied, and
+    /// so what it cost. For a host to report (#154); never shown to Lisp,
+    /// which must not see when collections happen (rule 4).
+    live_after: usize,
     /// Which point in this image's history the heap is at.
     ///
     /// Saved in the image header and incremented by each save, so two images
@@ -1487,6 +1491,7 @@ impl Heap {
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
                 collections: 0,
+                live_after: 0,
                 sequence: 0,
                 gensym_counter: 0,
                 static_end: 0,
@@ -1700,6 +1705,13 @@ impl Heap {
         self.storage.collections
     }
 
+    /// How many words the last collection found alive; 0 before the first.
+    /// A collection's pause is in proportion to this, so a host that times
+    /// its slices can say how long a world of this size stops for (#154).
+    pub fn live_words(&self) -> usize {
+        self.storage.live_after
+    }
+
     /// Collect garbage.
     ///
     /// Takes `&mut self`, which a live [`Mutation`] borrows, so calling this
@@ -1856,6 +1868,7 @@ impl Heap {
 
         // Where the next collection is wanted: see `wants_collection`.
         let live = self.storage.words.len() - self.storage.dynamic_start;
+        self.storage.live_after = live;
         self.storage.trigger = self.storage.soft_limit.max(live.saturating_mul(2));
         // And give back what a spike left behind. Both spaces keep their
         // allocation between collections, which is right while the heap is

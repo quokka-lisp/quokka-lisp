@@ -187,6 +187,7 @@ impl Heap {
                 hard_limit: soft_limit.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
                 collections: 0,
+                live_after: 0,
                 sequence: s.sequence,
                 gensym_counter: s.gensym_counter,
                 static_end: s.static_end as usize,

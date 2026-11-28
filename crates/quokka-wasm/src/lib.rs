@@ -292,6 +292,21 @@ impl Quokka {
         }
     }
 
+    /// How many times the heap has been collected, and how many words the
+    /// last collection found alive. The page times each call of `run`; one
+    /// in which this count rose took at least a collection's pause, which
+    /// is the measurement the decision on the collector waits for (#86,
+    /// #154). The world itself is never told: when a collection happens
+    /// depends on how its run is cut into slices, which it must not see.
+    pub fn collections(&self) -> u32 {
+        self.heap.collections().min(u64::from(u32::MAX)) as u32
+    }
+
+    /// See [`Quokka::collections`].
+    pub fn live_words(&self) -> u32 {
+        self.heap.live_words().min(u32::MAX as usize) as u32
+    }
+
     /// Is a line, or a program, still running? An idle program is running.
     pub fn busy(&self) -> bool {
         self.doing != Doing::Nothing
