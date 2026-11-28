@@ -1118,7 +1118,6 @@ impl<'a, 'h> Vm<'a, 'h> {
 
     // ---- unwind records ----------------------------------------------------
 
-    /// Push a record, remembering where to carry on if an unwind finds it.
     /// Bind SYMBOL dynamically to VALUE: a record holding its old value,
     /// which `UNMARK` and the unwinder put back. `DBIND` and `DBIND-SYMBOL`.
     fn bind_special(&mut self, symbol: Value<'h>, value: Value<'h>) {
@@ -1130,6 +1129,7 @@ impl<'a, 'h> Vm<'a, 'h> {
         self.mc.set_slot(symbol, crate::heap::symbol::VALUE, value);
     }
 
+    /// Push a record, remembering where to carry on if an unwind finds it.
     fn push_mark(&mut self, kind: i64, datum: Value<'h>, resume: usize) {
         self.ensure(mark::SIZE);
         let at = self.mc.sp();
@@ -2735,7 +2735,6 @@ pub fn call_global(
     drive(heap, budget, slice, host)
 }
 
-/// Verify the function in the `Value` register and make it the computation.
 /// `(%handler-marks clusters floor)`: what `signal` must search, innermost
 /// first. Each entry is `(0 place . clauses)` for a `handler-case` record and
 /// `(1 place . cluster)` for a binding of the symbol CLUSTERS, which
@@ -2943,6 +2942,7 @@ pub fn frame_locals<'h>(
     Ok(list)
 }
 
+/// Verify the function in the `Value` register and make it the computation.
 fn begin(heap: &mut crate::heap::Heap) -> Result<(), EvalError> {
     heap.mutate(|mc| {
         let function = mc.register(Register::Value);

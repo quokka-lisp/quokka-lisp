@@ -67,9 +67,9 @@ export function readAll(text) {
   }
 }
 
-// A token: a number, nil, t, or a symbol. The world prints doubles with a
-// `d0` exponent under the standard syntax (`1.5d0`), which JavaScript reads
-// as `e`.
+// A token: a number, nil, t, or a symbol. The world prints a double as
+// `0.5` or `1.5e300`; an exponent marker of another float format (`d`, `f`,
+// `s`, `l`) is read as `e` should one arrive.
 function atom(token) {
   if (/^[+-]?\d+\.?$/.test(token)) return parseInt(token, 10);
   if (/^[+-]?(\d+\.?\d*|\.\d+)([eEdDfFsSlL][+-]?\d+)?$/.test(token)) {

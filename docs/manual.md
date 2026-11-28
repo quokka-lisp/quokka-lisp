@@ -84,18 +84,18 @@ says how to make one. `quokka help` prints the table above.
 
 ```text
 $ quokka build world.qi
-world.qi: 359688 bytes, 270500 words, sequence 1
+world.qi: 2394032 bytes, 299204 words, sequence 1
 
 $ quokka world.qi
-Quokka 0.0.0 — phase 3 · Conditions and processes
-world.qi: 270500 words, sequence 1 · compiled · tier 1
+Quokka 0.0.0 — phase 4 · Renderer and live text
+world.qi: 315533 words, sequence 1 · compiled · tier 1
 :save FILE saves this world · Ctrl-D leaves
 quokka> (defun hello () :saved-in-the-world)
 HELLO
 quokka> (find-package :cl)
 #<PACKAGE "COMMON-LISP">
 quokka> :save mine.qi
-mine.qi: 360416 bytes, 45005 words, sequence 2
+mine.qi: 2397384 bytes, 299623 words, sequence 2
 quokka> ^D
 
 $ quokka mine.qi

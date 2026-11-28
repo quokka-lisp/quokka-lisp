@@ -55,10 +55,16 @@
 ;;; the stack of the debugger before it, which that one still shows.
 (defvar %debugger-evaluators '(%debugger-evaluate %run-debugger-command))
 
+;;; How many frames a debugger gathers, counted from the innermost. Making
+;;; a frame object for every frame of a runaway recursion cost more than the
+;;; step budget from about twelve thousand frames, and the error was never
+;;; shown at all (#177); it is the innermost frames a person reads.
+(defvar %debugger-frame-limit 500)
+
 ;;; The frames a debugger shows: those below the innermost signalling
 ;;; function, above the host loop, and above a debugger's evaluation.
 (defun %debugger-frames ()
-  (let ((all (frames)))
+  (let ((all (frames %debugger-frame-limit)))
     (let ((signalled (member-if (lambda (frame)
                                   (member (frame-name frame) %signalling-functions))
                                 all)))

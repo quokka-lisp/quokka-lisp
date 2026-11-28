@@ -73,7 +73,7 @@ in this step**: the cold build loads the library with the Rust reader, not
 `load`, and `%rebuild-world` reads files the system keeps; recording them
 would put the 850 KB of the library's and the compiler's source in every
 image, as writable strings of a word per character, several times the
-image's own 1.9 MB, before anything uses it. Phase 4's file-in records them
+image's own 1.9 MB, before anything uses it. Phase 4's file-in was to record them and did not; how the system's own definitions get their source is #151. The plan then was that it records them
 when the environment needs to browse the system itself.
 
 ## Limits, known and accepted

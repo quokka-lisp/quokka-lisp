@@ -9,8 +9,8 @@
 ;;;;
 ;;;; `typep` looks at the object and the specifier directly: a symbol goes
 ;;;; through a table of predicates, a list through its head. It never builds
-;;;; the canonical type objects that `subtypep` compares (later in this
-;;;; file), because `typep` is asked about one object at a time, often in a
+;;;; the canonical type objects that `subtypep` compares
+;;;; (`type-algebra.lisp`), because `typep` is asked about one object at a time, often in a
 ;;;; loop, and an answer for one object needs none of that machinery.
 ;;;;
 ;;;; Quokka has one float format, the IEEE double, so `short-float`,
@@ -340,8 +340,9 @@
                                     simple-bit-vector))
                      specifier)))
     ((eq head 'complex) (%type-arguments specifier 1) nil)
-    ;; CLHS says `typep` refuses a function type; SBCL refuses it only for
-    ;; a function, and answers nil for anything else.
+    ;; CLHS says `typep` refuses a function type. The pinned SBCL refuses
+    ;; it for any object; Quokka refuses it for a function and answers nil
+    ;; for anything else, which no function type could be true of.
     ((eq head 'function)
      (if (functionp object)
          (error "a function type specifier cannot be used with typep" specifier)

@@ -383,7 +383,8 @@ pub(crate) fn image_print(heap: &mut Heap, line: &str, host: &mut NativeHost) ->
 ///
 /// Without an interrupt there is nothing else to stop a program that never
 /// finishes, and a REPL that hangs is the failure the slice machinery exists to
-/// prevent. Phase 3 replaces this with Ctrl-C landing in the debugger.
+/// prevent. Phase 3 was to replace this with Ctrl-C landing in the debugger
+/// and did not; the interrupt is #160.
 ///
 /// Five million rather than fifty: the old figure let `(fact -1)` run for
 /// nineteen seconds before saying anything. A line that needs more than this is

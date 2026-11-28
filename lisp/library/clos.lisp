@@ -16,11 +16,13 @@
 ;;;; a *slot vector*. Everything about classes is here; Rust only allocates
 ;;;; instances and calls the funcallable ones.
 ;;;;
-;;;; In this sub-step `make-instance`, `initialize-instance`,
-;;;; `shared-initialize` and the slot functions are ordinary functions.
-;;;; Generic functions come next (sub-step 3) and make them generic, with
-;;;; these definitions as their standard methods; that is Closette's order
-;;;; too.
+;;;; This file has the workers: `%make-instance`, `%shared-initialize` and
+;;;; their kin, and the slot functions, which stay ordinary functions.
+;;;; `generic-functions.lisp` makes `make-instance`, `initialize-instance`
+;;;; and `shared-initialize` generic, with the workers as their standard
+;;;; methods; that is Closette's order too. This file must not define
+;;;; those public names, or a warm rebuild would replace the generic
+;;;; functions.
 ;;;;
 ;;;; The names that belong to the metaobject protocol and not to Common Lisp
 ;;;; (`metaobject`, `specializer`, the slot definition classes, ...) are in
@@ -61,10 +63,12 @@
 ;;; keep their unbound slots unbound.
 (defvar %slot-unbound-marker (make-symbol "UNBOUND-SLOT"))
 
-;;; Incremented whenever something a generic function's dispatch depends on
-;;; changes: a class is defined or redefined, a method added or removed.
-;;; Each generic function empties its cache when its own copy of this
-;;; differs (`generic-functions.lisp`).
+;;; Made anew whenever something every generic function's dispatch may
+;;; depend on changes: a class is defined or redefined, a method
+;;; combination defined, a method added to one of the few functions other
+;;; caches are worked out from (`%epoch-functions`). Each generic function
+;;; empties its cache when its own copy of this differs
+;;; (`generic-functions.lisp`).
 ;;; Each epoch is a fresh cons, compared with `eq`, rather than a number:
 ;;; a counter would keep counting across warm rebuilds, so two generations
 ;;; of the world would hold different numbers and differ word for word,
@@ -567,8 +571,8 @@
 ;;; The standard condition types become classes now, of metaclass
 ;;; `condition-class`, as in SBCL, where a condition is not a standard
 ;;; object. The lattice is the one the prelude keeps in
-;;; `%condition-supertypes`; a condition is still the machine's own object
-;;; until phase 3's step B makes it an instance of these classes.
+;;; `%condition-supertypes`. A condition is an instance of one of these
+;;; classes (`conditions.lisp`).
 
 (%ensure-plain-class 'condition 'condition-class (list (find-class t)))
 

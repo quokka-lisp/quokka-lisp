@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2445 :REPLACED 1772)".into())],
+        [Outcome::Value("(:FORMS 2446 :REPLACED 1772)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1906,6 +1906,28 @@ fn the_rebuild_reads_the_library_the_cold_build_loads() {
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
+}
+
+/// An error at the bottom of a very deep stack still opens the debugger
+/// (#177). It made a frame object for every frame, and past about twelve
+/// thousand that cost more than the step budget: the error was never shown,
+/// and what was typed for the debugger was evaluated as forms. It gathers
+/// the innermost five hundred now.
+#[test]
+fn the_debugger_opens_on_a_very_deep_stack() {
+    let out = run_compiled_typing(
+        "(quokka-debug:enable-debugger) \
+         (defun deep (n) (if (= n 0) (error \"bottom\") (+ 1 (deep (- n 1))))) \
+         (deep 20000) \
+         (+ 1 2)",
+        &["abort"],
+    );
+    assert!(
+        out.contains("debugger invoked on a SIMPLE-ERROR: bottom"),
+        "{out}"
+    );
+    assert!(out.contains("0: (DEEP 0)"), "{out}");
+    assert!(out.ends_with("=> 3\n"), "{out}");
 }
 
 /// A thread told to end twice still finishes the cleanup it is in (#176).

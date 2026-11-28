@@ -949,7 +949,9 @@ its own superclasses, a name that is no symbol, a metaclass that is not a
 standard class, one made from it, or `condition-class` (`%usable-metaclass`)
 — and a redefinition that fails puts the class's wrapper, direct slots,
 default initargs and documentation back.
-Rebuild `(:FORMS 2445 :REPLACED 1772)`.
+**#177**: the debugger gathers the innermost `%debugger-frame-limit` (500)
+frames; `%frames` itself still walks the whole stack in one step.
+Rebuild `(:FORMS 2446 :REPLACED 1772)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

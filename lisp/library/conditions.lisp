@@ -10,10 +10,9 @@
 ;;;; as on any instance (chapter 73). A condition is not a `standard-object`,
 ;;;; as in SBCL.
 ;;;;
-;;;; Signalling is the next sub-step. Until then the only conditions
-;;;; signalled are still the machine's, which `class-of` maps to their
-;;;; classes by name, so `typep` and `handler-case` treat both alike; the
-;;;; readers do not work on one of those, which has no slots.
+;;;; Signalling is here too, in Lisp: `signal`, `error`, `handler-bind`,
+;;;; restarts, and `%signal-machine-error`, through which the machine's own
+;;;; errors arrive as instances of these classes.
 
 ;;; ------------------------------------------------------------------------
 ;;; Making conditions
@@ -319,8 +318,7 @@
 (defvar %handler-floor nil)
 
 ;;; CLHS's: a condition of this type, when signalled, enters the debugger
-;;; before any handler sees it. Defined now so that a program's binding of
-;;; it is special; consulted once there is a debugger to enter (step F).
+;;; before any handler sees it (`%signal` asks).
 (defvar *break-on-signals* nil)
 
 ;;; `(handler-bind ((type handler)...) form...)`: each HANDLER is a form
@@ -392,8 +390,8 @@
 ;;; ------------------------------------------------------------------------
 ;;; Entering the debugger (sub-step 4)
 ;;;
-;;; The debugger itself is phase 3's step F. Until then, entering it means
-;;; what CLHS says before any debugger runs: `*debugger-hook*`, if a program
+;;; The debugger itself is `debugger.lisp`, and is off in a new world. With
+;;; it off, entering it means what CLHS says before any debugger runs: `*debugger-hook*`, if a program
 ;;; set one, is called with the condition and itself, bound to nil while it
 ;;; runs. If it returns, or there is none, the innermost `abort` restart is
 ;;; invoked, with the condition left in `%aborted-condition` for whoever

@@ -14,7 +14,10 @@
 ;;;; same. They are in the package `QUOKKA-THREAD` (`packages.lisp`).
 ;;;;
 ;;;; Waiting is a loop that yields until what it waits for has happened: the
-;;;; scheduler is round robin, so a waiting thread costs a few steps a turn.
+;;;; scheduler is round robin, so a waiting thread costs a turn's worth of
+;;;; steps each time round, 150 to 650 as measured, charged to whatever
+;;;; form is running. A hundred threads waiting on a mutex made a loop
+;;;; thirty times slower; parking a waiter in the scheduler is #147.
 ;;;; A primitive is one step and no switch falls inside one, so
 ;;;; `%compare-and-swap-svref` is atomic, and the locks are built on it.
 
