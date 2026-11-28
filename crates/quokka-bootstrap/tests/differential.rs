@@ -1908,6 +1908,30 @@ fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
 }
 
+/// Three definitions SBCL refuses and Quokka took (#190): a standard type
+/// given another meaning, which made `(typep 1 'integer)` false for the
+/// whole world; `satisfies` with no predicate; and a class name set to
+/// something that is not a class.
+#[test]
+fn definitions_that_would_break_the_world_are_refused() {
+    let out = run_compiled(
+        "(list (handler-case (deftype integer () 'string) (error () :refused)) (typep 1 'integer)) \
+         (deftype small () '(integer 0 9)) \
+         (list (typep 5 'small) \
+               (handler-case (typep 1 '(satisfies)) (error () :refused)) \
+               (typep 1 '(satisfies oddp))) \
+         (defclass zz () ()) \
+         (list (handler-case (setf (find-class 'broken) 5) (error () :refused)) \
+               (eq (setf (find-class 'yy) (find-class 'zz)) (find-class 'yy)) \
+               (setf (find-class 'yy) nil) \
+               (find-class 'yy nil))",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "=> (:REFUSED T)", "{out}");
+    assert_eq!(lines[2], "=> (T :REFUSED T)", "{out}");
+    assert_eq!(lines[4], "=> (:REFUSED T NIL NIL)", "{out}");
+}
+
 /// An error at the bottom of a very deep stack still opens the debugger
 /// (#177). It made a frame object for every frame, and past about twelve
 /// thousand that cost more than the step budget: the error was never shown,

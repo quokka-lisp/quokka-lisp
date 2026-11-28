@@ -30,6 +30,12 @@
 ;;; a macro's is, kept on the name's property list. `(upto 9)` is expanded
 ;;; by calling it with `(upto 9)`; the bare name `upto` with `(upto)`.
 (defun %set-deftype (name expander)
+  ;; A standard type's name is not the program's to give another meaning:
+  ;; `(deftype integer () 'string)` was taken, and `(typep 1 'integer)` was
+  ;; false from then on, for the whole world. SBCL refuses with a package
+  ;; lock (#190).
+  (when (gethash name %atomic-types)
+    (error 'program-error "deftype cannot redefine a standard type" name))
   (setf (get name '%deftype) expander)
   name)
 
@@ -294,7 +300,9 @@
     ((eq head 'eql) (eql object (first (%type-arguments specifier 1))))
     ((eq head 'satisfies)
      (let ((predicate (first (%type-arguments specifier 1))))
-       (unless (symbolp predicate) (error "malformed type specifier" specifier))
+       ;; `(satisfies)` is padded with `*`, which is no predicate (#190).
+       (unless (and (symbolp predicate) (cdr specifier) (not (eq predicate '*)))
+         (error "malformed type specifier" specifier))
        (if (funcall predicate object) t nil)))
     ((eq head 'cons)
      (let ((arguments (%type-arguments specifier 2)))

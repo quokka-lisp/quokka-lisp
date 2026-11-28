@@ -158,6 +158,10 @@
           (t nil))))
 
 (defun %set-find-class (symbol class)
+  ;; Only a class, or nil to take the name away: 5 was stored, and
+  ;; `find-class` then answered 5 (#190).
+  (unless (or (null class) (and (%instance-wrapper class) (typep class 'class)))
+    (error 'type-error :datum class :expected-type '(or class null)))
   (if class
       (setf (gethash symbol %class-table) class)
       (remhash symbol %class-table))

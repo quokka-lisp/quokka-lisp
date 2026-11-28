@@ -76,7 +76,7 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         pass
 
 port, root = int(sys.argv[1]), sys.argv[2]
-server = http.server.ThreadingHTTPServer(("", port), functools.partial(NoCache, directory=root))
+server = http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(NoCache, directory=root))
 try:
     server.serve_forever()
 except KeyboardInterrupt:

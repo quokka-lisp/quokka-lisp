@@ -43,10 +43,16 @@ for needed in crates/quokka-wasm/www/pkg/quokka_wasm.js crates/quokka-wasm/www/w
 done
 
 port=8791
-python3 -m http.server -d crates/quokka-wasm/www "$port" >/dev/null 2>&1 &
+python3 -m http.server --bind 127.0.0.1 -d crates/quokka-wasm/www "$port" >/dev/null 2>&1 &
 server=$!
 trap 'kill "$server" 2>/dev/null || true' EXIT
 sleep 1
+# A port already taken means the server above did not start, and the test
+# would be talking to whatever holds the port.
+if ! kill -0 "$server" 2>/dev/null; then
+  echo "smoke-browser: could not serve on port $port; is something else using it?" >&2
+  exit 1
+fi
 
 # (list (+ 1 2) (expt 2 100) (mapcar #'1+ '(1 2 3))): arithmetic, a bignum,
 # and a library function taking a function.

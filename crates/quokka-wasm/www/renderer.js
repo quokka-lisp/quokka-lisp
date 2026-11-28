@@ -89,10 +89,14 @@ export class Model {
       case "replace": {
         const old = this.nodes.get(args[0]);
         if (!old || !old.parent) return;
-        const node = this.build(args[1], old.parent);
-        const siblings = old.parent.children;
-        siblings[siblings.indexOf(old)] = node;
+        // The old subtree is forgotten before the new one is built: a
+        // replacement may use the same identities, and forgetting last
+        // took the new nodes out of the table with the old (#191).
+        const parent = old.parent;
+        const at = parent.children.indexOf(old);
         this.forget(old);
+        const node = this.build(args[1], parent);
+        parent.children[at] = node;
         this.notify("replace", node, old);
         break;
       }

@@ -398,6 +398,12 @@ pub fn end<'h>(mc: &mut Mutation<'h>, state: i64, result: Value<'h>) {
     mc.set_register(Register::Request, Value::NIL);
     mc.set_register(Register::Unwind, Value::UNBOUND);
     mc.set_register(Register::Operands, Value::NIL);
+    // What it was running is let go with its stack: a thread kept for its
+    // result must not keep its last environment and function alive too.
+    mc.set_register(Register::Env, Value::NIL);
+    mc.set_register(Register::Function, Value::NIL);
+    mc.set_register(Register::Value, Value::NIL);
+    mc.set_register(Register::Values, Value::UNBOUND);
     mc.set_sp(0);
     mc.set_fp(0);
     mc.set_mp(usize::MAX);

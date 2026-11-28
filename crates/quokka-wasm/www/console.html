@@ -156,7 +156,13 @@
       // index.html#(+ 1 2). A link can carry an example, and it is how CI
       // drives the page in a headless browser, which has no keyboard.
       if (location.hash.length > 1) {
-        evaluate(decodeURIComponent(location.hash.slice(1)));
+        // An address with a stray % in it is not a form: the page must
+        // still reach the lines below, which make Stop and Save work.
+        try {
+          evaluate(decodeURIComponent(location.hash.slice(1)));
+        } catch (error) {
+          console.error("the address is not a form", error);
+        }
       }
 
       // The line may never end; the page is never stuck waiting for it.

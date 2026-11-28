@@ -269,7 +269,12 @@
         const editor = view.model.focus && view.model.focus.dom;
         if (!editor) return;
         typed = true;
-        editor.value = decodeURIComponent(location.hash.slice(1));
+        // An address with a stray % in it is not a form; it is left alone.
+        try {
+          editor.value = decodeURIComponent(location.hash.slice(1));
+        } catch (error) {
+          return;
+        }
         editor.dispatchEvent(new Event("input"));
         editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter" }));
       }
