@@ -1,0 +1,36 @@
+# Steps of the machine for one evaluation of each form in forms.txt.
+# Written by: STEPS_UPDATE=1 cargo test -p quokka-bootstrap --test steps
+call 5
+generic-0 136
+generic-1 298
+generic-1-fixnum 439
+generic-1-structure 853
+generic-2 304
+generic-eql 268
+generic-around 370
+generic-10-classes 433
+slot-value-first 143
+slot-value-tenth 359
+setf-slot-value 131
+accessor 357
+setf-accessor 629
+structure-accessor 15
+make-instance 1729
+make-instance-10-slots 3160
+make-structure 26
+make-text-record 8371
+class-of-instance 16
+class-of-structure 649
+typep-class 361
+typep-integer-range 918
+handler-case-quiet 4
+handler-case-caught 1783
+restart-case-quiet 119
+dolist-10 272
+mapcar-10 400
+position-in-string 1160
+format-number 3221
+prin1-symbol 4132
+intern-found 2537
+vector-push-extend 46173
+extend-text-40 4425

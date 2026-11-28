@@ -433,6 +433,29 @@ live*):
   the interpreter are integration tests in `crates/quokka-bootstrap/tests/`,
   since `quokka-vm` cannot reach the interpreter (#29).
 
+### The step benchmark
+
+```bash
+cargo test -p quokka-bootstrap --test steps
+```
+
+This counts what 34 common forms cost in steps of the machine (a function
+call, a generic function call, `slot-value`, `make-instance`, a caught error
+and so on) and fails if one costs more than `tests/steps/baseline.txt` allows.
+The forms are in `tests/steps/forms.txt` and what they refer to in
+`tests/steps/setup.lisp`. Steps are the same on every computer, so the test
+needs no quiet machine, and it runs with the rest in `check.sh`.
+
+After a change that makes forms cheaper, or that adds a form, write the
+baseline again and commit it with the change:
+
+```bash
+STEPS_UPDATE=1 cargo test -p quokka-bootstrap --test steps
+```
+
+A count that has to rise, because a fix costs something, is raised the same
+way, and the commit says why (#169).
+
 ### Differential tests
 
 `tests/lisp/*.lisp` are ordinary Common Lisp files, each with a `.expected`

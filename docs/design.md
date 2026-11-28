@@ -493,9 +493,11 @@ Code never knows which backend it is talking to, so the same environment works n
 
 ## Roadmap
 
-The work runs in seven phases, each ending at a gate we can demonstrate, so the system is usable (in a terminal) from phase 0 and graphical from phase 4.
+The work runs in phases, each ending at a gate we can demonstrate, so the system is usable (in a terminal) from phase 0 and graphical from phase 4.
 
 ![Seven phases, each with the gate it must pass](images/roadmap.svg)
+
+The picture shows the first plan, which had seven phases. Phases 5 onward were rearranged on 28 Nov 2026 and are as the table has them; the picture has not been redrawn.
 
 | Phase | Scope | Gate to pass before moving on |
 | --- | --- | --- |
@@ -504,8 +506,10 @@ The work runs in seven phases, each ending at a gate we can demonstrate, so the 
 | 2 · Self-hosting | The compiled compiler rebuilds itself and the core library | Rebuilt compiler matches the first build byte for byte |
 | 3 · Conditions and processes | Restarts, reified frames, green threads, a terminal debugger | Fix a function from inside an error and retry the frame |
 | 4 · Renderer and live text | Display protocol, browser renderer, one live-text viewer | Edit and evaluate a form in the browser |
-| 5 · Presentations and inspector | Presentation types, commands, a moldable inspector | Click a result to inspect it or pass it to a command |
-| 6 · The environment | Tiled viewers and desktops, browser, debugger viewer, file sync | Daily work on the system happens inside the system |
+| 5 · Presentations and commands | Speed and a step benchmark; waiting that parks, and a timer; `loop` and the library a book needs; pointer events; presentation types, commands with a small command bar, `define-viewer`, `open-viewer` into a split; themes and tile frames in Lisp; the journalled core of stores, with snapshots, journals, checkpoints and the start page | The Tower of Hanoi tutorial runs as written, minus export; reload the tab and the listener is as it was |
+| 6 · Tables, fields and stores | `formatting-table`, fields bound to places, the rest of the stores library | The Rolodex tutorial runs as written and survives a reload |
+| 7 · Frames, keys, images and sound | The frame clock, key-down and key-up, images over packed byte arrays, sound | Quokka Hop runs at 60 frames a second |
+| 8 · The environment | Tiled viewers and desktops, the browser, history, systems, export, the debugger's viewer, file sync | Daily work on the system happens inside the system |
 
 > **Phase 1 finished** (#23): the compiled world is built by `boot::build_image`, the gate holds in it, and every differential file agrees interpreted, compiled and with SBCL (#38).
 >
@@ -515,7 +519,42 @@ The work runs in seven phases, each ending at a gate we can demonstrate, so the 
 >
 > **Phase 4 finished** (#134; gate met 27 Nov 2026, #142): a form is typed into the listener in a browser, evaluated, edited and run again, every part of the screen drawn by Lisp through the display protocol (`docs/display.md`); tested in the world's half from Rust, through the renderer's model in Node, and in a headless Chrome. Drawing (#143) followed the gate.
 
-No dates yet: this is a hobby-pace project. Phases 0 to 3 are mostly Rust and compiler work; phases 4 to 6 are mostly Lisp.
+No dates yet: this is a hobby-pace project. Phases 0 to 3 are mostly Rust and compiler work; the phases after them are mostly Lisp.
+
+### Phases 5 to 8: each tutorial is a gate
+
+Until the review after phase 4 ([#144](https://github.com/quokka-lisp/quokka-lisp/issues/144)) the last two phases had gates we could not test: *click a result to inspect it*, and *daily work happens inside the system*. Three tutorials had been written as the target by then, each a program a user should be able to type (`docs/tutorials/`), and nothing ran them. The review compared them with the system name by name. Most of what they use exists and matches. But the system was far too slow for them, and several things they stand on were in no phase at all: `loop`, saving in the browser, waiting that does not spin, and pointer and frame events.
+
+So each tutorial is now the gate of a phase ([#156](https://github.com/quokka-lisp/quokka-lisp/issues/156)). A tutorial becomes a test through the renderer's model, which runs in Node and writes the screen out as text. We considered keeping the seven rows and adding steps inside them. That would have left the gates abstract and the tutorials untested, which is how these gaps went unnoticed for two phases.
+
+Phase 5 is the largest, because it takes what we chose to pull forward. We mean to build it in this order:
+
+1. A step benchmark and speed targets ([#169](https://github.com/quokka-lisp/quokka-lisp/issues/169)), described below.
+2. One change of the image format, made before anyone keeps a world: processes that park when they wait, with a timer request answered by the host ([#147](https://github.com/quokka-lisp/quokka-lisp/issues/147)); a value cell for each process that binds a special variable, as SBCL has ([#175](https://github.com/quokka-lisp/quokka-lisp/issues/175)); and packed arrays of bytes and of doubles ([#153](https://github.com/quokka-lisp/quokka-lisp/issues/153)).
+3. `loop`, as a port of MIT LOOP, and the rest of what a newcomer following a book meets first: `~T`, `random`, `documentation`, `y-or-n-p` and a clock ([#146](https://github.com/quokka-lisp/quokka-lisp/issues/146)).
+4. Output records belong to the command loop, and any other process posts to it ([#149](https://github.com/quokka-lisp/quokka-lisp/issues/149)). A form typed at the listener then runs in a process of its own, so the screen keeps turning while it runs, and the page sends pointer events ([#148](https://github.com/quokka-lisp/quokka-lisp/issues/148)).
+5. Reconciliation keeps the fresh record and moves the old one's identity to it ([#157](https://github.com/quokka-lisp/quokka-lisp/issues/157)); then presentations, commands with a small command bar, `define-viewer` and `open-viewer`.
+6. Themes as Lisp objects, and a tile's frame drawn by Lisp ([#150](https://github.com/quokka-lisp/quokka-lisp/issues/150)).
+7. Slot access through `slot-value-using-class`, with the fast path kept for plain classes ([#152](https://github.com/quokka-lisp/quokka-lisp/issues/152)); the journalled core of the stores library; and on it snapshots, the two journals, checkpoints and the start page ([#145](https://github.com/quokka-lisp/quokka-lisp/issues/145)). The system's own definitions keep their text in the image ([#151](https://github.com/quokka-lisp/quokka-lisp/issues/151)).
+
+Each issue holds its decision, the reasons, and what was rejected. In six of them we chose more than the review recommended, each time the fuller or the standard way now: the whole journal in place of a snapshot alone, tile frames in Lisp at once, source text in the image, AMOP's slot protocol, keeping the fresh record, and SBCL's value cells. An image saved in one format cannot be read in the next. Until a world can move between formats through its source ([#145](https://github.com/quokka-lisp/quokka-lisp/issues/145)), the start page will say that a change of format may lose a stored world.
+
+### Speed targets
+
+The review found that the system had been measured for being right and never for being fast. A generic function call had come to cost 1,446 steps of the machine beside 4 for a plain call, and nothing had noticed. Phase 5 puts presentations, commands and the inspector on generic functions, so we set targets before building on them:
+
+| | At the review | 28 Nov 2026 | Target |
+| --- | --- | --- | --- |
+| A generic function call, one argument | 1,446 steps | 221 | 100 |
+| `make-instance` of a small class | 11,193 steps | 1,728 | 500 |
+| Redisplay of the Hanoi picture, in wasm | 75 to 116 ms | not measured since | 4 ms |
+| A form at the listener, there and back, in wasm | 153 to 193 ms | not measured since | 30 ms |
+
+The targets are our estimate of where the Hanoi tutorial feels immediate. Where one turns out to be wrong once we have measured, we change it on [#169](https://github.com/quokka-lisp/quokka-lisp/issues/169) with the measurement.
+
+The steps are counted by a standing test, `crates/quokka-bootstrap/tests/steps.rs`. It evaluates each of the forms in `tests/steps/forms.txt` a thousand times and compares the cost of one evaluation with `tests/steps/baseline.txt`, and a run fails if a form costs more than its baseline. This is the ratchet that ansi-test's list of passing tests already is. A count of steps needs no quiet machine: the machine has no clock, and the same world takes the same steps for the same form on every computer, so a rise is a change somebody made.
+
+What an `:every-frame` viewer draws with is not decided. The candidates are lighter shapes (structures or lists in place of CLOS instances), a display list for a canvas, and CLIM's `updating-output`. We decide by measurement when Quokka Hop is the gate.
 
 **Where the work is.** Phases 0 and 1 are complete and their gates passed ([#9](https://github.com/quokka-lisp/quokka-lisp/issues/9), [#23](https://github.com/quokka-lisp/quokka-lisp/issues/23)), as is tier 0 ([#18](https://github.com/quokka-lisp/quokka-lisp/issues/18)). Quokka starts from a compiled image in which the prelude, the macros and the compiler are bytecode, and every differential file agrees interpreted, compiled and with SBCL. **Phase 2 is complete** ([#39](https://github.com/quokka-lisp/quokka-lisp/issues/39)): its fixpoint holds ([#50](https://github.com/quokka-lisp/quokka-lisp/issues/50)) and tier 1 is complete and measured (#82). Special variables, packages, the reader, printer and read-eval-print loop in Lisp, and the warm rebuild are done; the compiled compiler reproduces itself — every named function equal in C1, C2 and C3, and C2 and C3 the same world word for word — as a standing test. `setf` expanders are done (#52), built on tier 0's `setf` so that the compiler still compiles itself the same, and so are the last three special operators, with macros that see their lexical environment (#53), and sequences, with the list, iteration and string basics they needed (#54), and basic `format` (#57), bignums (#16) and double floats (#17). Ratios joined tier 1 (#59). Measured against ansi-test (step N and steps O–AJ), every non-passing test in the tier-1 groups is explained by a deferred feature. **Phase 3, conditions and processes, is complete** ([#123](https://github.com/quokka-lisp/quokka-lisp/issues/123), gate met 27 Nov 2026, [#133](https://github.com/quokka-lisp/quokka-lisp/issues/133)): CLOS with a small MOP ([#124](https://github.com/quokka-lisp/quokka-lisp/issues/124), `docs/clos.md`), conditions and restarts ([#125](https://github.com/quokka-lisp/quokka-lisp/issues/125), `docs/conditions.md`), definitions that keep their source ([#55](https://github.com/quokka-lisp/quokka-lisp/issues/55), `docs/definitions.md`), frames that keep their calls ([#130](https://github.com/quokka-lisp/quokka-lisp/issues/130), `docs/frames.md`), processes and channels ([#34](https://github.com/quokka-lisp/quokka-lisp/issues/34), `docs/processes.md`) and the terminal debugger ([#131](https://github.com/quokka-lisp/quokka-lisp/issues/131), `docs/debugger.md`). **Phase 4, the renderer and live text, is complete** ([#134](https://github.com/quokka-lisp/quokka-lisp/issues/134), gate met 27 Nov 2026, [#142](https://github.com/quokka-lisp/quokka-lisp/issues/142); [`display.md`](display.md)): Gray streams, host requests for a screen and an idle world, output records with identities, viewers that redraw by reconciliation, a command loop, a renderer in the page, the listener as live text with the debugger in it, and drawing as SVG. Phase 5, presentations and the inspector, is next.
 

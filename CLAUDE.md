@@ -964,6 +964,22 @@ slot vector once. **Entering a `do` costs about fifty steps** (a block and
 a tagbody) before it has looked at anything; a tail call is a jump. A
 generic call is 221 steps, an accessor 375, `make-instance` 1,728.
 Rebuild `(:FORMS 2450 :REPLACED 1776)`.
+**The review's decisions were taken on 28 Nov 2026** (the table is a
+comment on #144; each issue has its own). **The roadmap now has nine
+phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to
+8*): 5 Hanoi, 6 the Rolodex, 7 Quokka Hop, 8 the environment. Phase 5's
+order: the step benchmark (#169, done) → one image format batch (#147
+parked waits and a timer, #175 per-process value cells, #153 packed arrays)
+→ `loop` as a port of MIT LOOP (#146) → records belong to the command loop
+(#149) and listener forms run in their own process (#148) → #157, then
+presentations → themes and tile frames in Lisp (#150) → `slot-value-using-class`
+(#152), stores' journalled core and the journal (#145), system definitions'
+text in the image (#151). **The step benchmark is a standing test**
+(`crates/quokka-bootstrap/tests/steps.rs`): a change that makes a form in
+`tests/steps/forms.txt` dearer fails the check; after one that makes forms
+cheaper run `STEPS_UPDATE=1 cargo test -p quokka-bootstrap --test steps` and
+commit `tests/steps/baseline.txt`. An image moves to a new format through
+its source, never by a reader for the old one (#145).
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The
@@ -1262,6 +1278,7 @@ if ./scripts/check.sh > /tmp/check.log 2>&1; then echo ok; else tail -40 /tmp/ch
 | Build a world (the cold build) | `cargo run --release -p quokka -- build world.qi [SRC...]` — builds the **compiled** world (`boot::build_image`), runs any sources through it, writes it |
 | Rebuild a world | `cargo run --release -p quokka -- rebuild world.qi rebuilt.qi` — from the repo root; the world recompiles itself from the files on disk (#48) |
 | GC torture | `cargo test -p quokka-vm -p quokka-bootstrap --features quokka-vm/gc-torture` — collects at every mutation boundary and verifies the heap afterwards |
+| Step benchmark | `cargo test -p quokka-bootstrap --test steps` — fails if a form in `tests/steps/forms.txt` costs more steps than `tests/steps/baseline.txt`; `STEPS_UPDATE=1` writes the baseline (#169) |
 | Differential tests | `cargo test -p quokka-bootstrap --test differential` (Quokka) · `./scripts/oracle.sh` (SBCL) |
 | Regenerate a baseline | `cargo run -p quokka -- bootstrap --run tests/lisp/NAME.lisp > tests/lisp/NAME.expected` |
 | Build for the browser | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |

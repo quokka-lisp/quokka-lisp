@@ -66,11 +66,17 @@ pub const MAGIC: u64 = u64::from_le_bytes(*b"QUOKKA\0\0");
 
 /// The format this build writes, and the only one it reads.
 ///
-/// There is no migration path and deliberately so: phase 2 rebuilds the image
-/// from source with nothing but `cargo`, so an image that cannot be read is a
-/// rebuild rather than a loss. That stops being true the moment a user's own
-/// work lives in an image, which is when this number starts to matter and a
-/// reader for older versions has to exist.
+/// There is no reader for an older format, and there will not be one: an
+/// image moves to a new format **through its source** (#145, decided 28 Nov
+/// 2026). A world writes out its definitions, whose text it keeps (#55),
+/// and its data (`make-load-form`), and a fresh world of the new format
+/// reads them in. Readers for old formats in Rust would grow for ever, one
+/// for every layout the heap has had.
+///
+/// That path is not built yet. Until it is, a change of this number loses
+/// a stored world, and the start page is to say so; which is why the
+/// changes of format already known (parked processes, per-process value
+/// cells, packed arrays) are made together, before anyone keeps a world.
 ///
 /// **Version 2** added the `Request` register (#35), two days after version 1
 /// was fixed — which is the honest measure of how stable a format is before
