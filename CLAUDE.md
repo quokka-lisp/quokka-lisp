@@ -963,7 +963,7 @@ call themselves in tail position (`%same-key-p`, `%cached-method`,
 slot vector once. **Entering a `do` costs about fifty steps** (a block and
 a tagbody) before it has looked at anything; a tail call is a jump. A
 generic call is 221 steps, an accessor 375, `make-instance` 1,728.
-Rebuild `(:FORMS 2448 :REPLACED 1774)`.
+Rebuild `(:FORMS 2450 :REPLACED 1776)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

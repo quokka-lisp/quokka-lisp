@@ -1001,19 +1001,22 @@
 ;;; from its initform. What the standard method of `shared-initialize` does.
 (defun %shared-initialize (instance slot-names &rest initargs)
   (dolist (slot (%class-slots (class-of instance)) instance)
-    (let ((name (%slot-definition-name slot))
-          (found nil) (value nil))
-      (do ((rest initargs (cddr rest)))
-          ((null rest))
-        (when (%member-eq (car rest) (%slot-definition-initargs slot))
-          (setq found t value (cadr rest))
-          (return)))
+    (let* ((name (%slot-definition-name slot))
+           (found (%initarg-for (%slot-definition-initargs slot) initargs))
+           (value (cadr found)))
       (cond (found (%set-slot-value-using-slot instance slot value))
             ((and (or (eq slot-names t) (member name slot-names))
                   (%slot-definition-initfunction slot)
                   (eq (%slot-value-using-slot instance slot) %slot-unbound-marker))
              (%set-slot-value-using-slot instance slot
                                          (funcall (%slot-definition-initfunction slot))))))))
+
+;;; INITARGS from its first key that is one of NAMES, a slot's initargs, or
+;;; nil: so its second element is the value the slot is given.
+(defun %initarg-for (names initargs)
+  (cond ((null initargs) nil)
+        ((%member-eq (car initargs) names) initargs)
+        (t (%initarg-for names (cddr initargs)))))
 
 ;;; ------------------------------------------------------------------------
 ;;; Slots (CLHS 7.5)
@@ -1044,11 +1047,16 @@
   (and (%instance-wrapper object)
        (progn
          (%ensure-current-instance object)
-         (let* ((names (%wrapper-slot-names (%instance-wrapper object)))
-                (count (length names)))
-           (do ((i 0 (+ i 1)))
-               ((or (= i count) (eq name (aref names i)))
-                (if (= i count) nil i)))))))
+         (let ((names (%wrapper-slot-names (%instance-wrapper object))))
+           (%name-index name names 0 (length names))))))
+
+;;; Where NAME is in the vector NAMES, from I on, or nil. A function that
+;;; calls itself and not a `do`, which costs fifty steps to enter (#161):
+;;; this is on the path of every slot access.
+(defun %name-index (name names i count)
+  (cond ((= i count) nil)
+        ((eq name (aref names i)) i)
+        (t (%name-index name names (+ i 1) count))))
 
 ;;; OBJECT's effective slot named NAME, or nil.
 (defun %find-slot (object name)
