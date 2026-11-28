@@ -276,7 +276,10 @@ impl Quokka {
     /// its state in the heap, and redraws from it.
     pub fn interrupt(&mut self) {
         if self.doing != Doing::Nothing {
-            vm::recover(&mut self.heap);
+            // The form runs its cleanups before it is let go of (#173):
+            // dropped where it stood, it left locks held and the
+            // listener's own state half changed.
+            vm::stop(&mut self.heap);
             // Stop means stop: a thread that runs for ever kept the page
             // working at full speed with no way to end it but to have kept
             // the thread (#195). Each is told to end and runs its cleanups

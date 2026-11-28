@@ -799,3 +799,30 @@ fn stop_ends_a_thread_that_never_would() {
         assert!(calls < 2_000, "the thread went on after Stop");
     }
 }
+
+/// Stop lets the form run its cleanups before it is let go of (#173), as
+/// the terminal does for a form that runs out of its budget. Dropped where
+/// it stood, a form stopped inside `with-mutex` left the mutex held.
+#[test]
+fn a_stopped_form_runs_its_cleanups() {
+    let mut q = world();
+    pump(
+        &mut q,
+        "(defvar *m* (quokka-thread:make-mutex)) (defvar *log* nil)",
+        1_000_000,
+    );
+    q.submit(
+        "(quokka-thread:with-mutex (*m*) (unwind-protect (do () (nil)) (push :cleaned *log*)))",
+    )
+    .expect("idle");
+    for _ in 0..50 {
+        assert!(q.run(20_000), "the form never ends by itself");
+    }
+    q.interrupt();
+    let (out, _) = pump(
+        &mut q,
+        "(list *log* (quokka-thread:mutex-owner *m*))",
+        1_000_000,
+    );
+    assert!(out.contains("((:CLEANED) NIL)"), "{out}");
+}

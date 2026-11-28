@@ -894,7 +894,7 @@ not be interleaved needs a lock, and a lock a form may be abandoned inside
 thread is (`vm::wind_down` sets the main process's `TERMINATE`), and gets
 `WIND_DOWN` (1,000,000) steps to run its cleanups before its stack is
 dropped; the host reports the budget either way. The browser's Stop does
-not do this yet. An unwind passing a record clears the frame pointer
+the same through `vm::stop`, with no host to answer a cleanup's requests. An unwind passing a record clears the frame pointer
 when its frame is dropped, so fp never lies above sp between steps.
 **#171**: `Heap::verify` follows every stack's records and frames
 (`chains_fit`): each record whole and strictly below the last, of a known

@@ -2604,7 +2604,7 @@ fn drive(
             }
         }
     }
-    wind_down(heap, slice, host);
+    wind_down(heap, slice, Some(host));
     Err(EvalError::BudgetExhausted)
 }
 
@@ -2645,7 +2645,11 @@ const WIND_DOWN: u64 = 1_000_000;
 ///
 /// With no processes there are no locks to leave held and nothing to tell;
 /// the stack is dropped.
-fn wind_down(heap: &mut crate::heap::Heap, slice: u64, host: &mut dyn crate::host::Host) {
+fn wind_down(
+    heap: &mut crate::heap::Heap,
+    slice: u64,
+    mut host: Option<&mut dyn crate::host::Host>,
+) {
     let told = heap.mutate(|mc| match crate::process::main(mc) {
         Some(main) => {
             mc.set_slot(main, crate::process::TERMINATE, Value::T);
@@ -2661,12 +2665,20 @@ fn wind_down(heap: &mut crate::heap::Heap, slice: u64, host: &mut dyn crate::hos
     while left > 0 {
         match one_slice(heap, slice.min(left)) {
             Ok(crate::slice::Status::Yielded) => {
-                if crate::host::pending(heap).is_some() {
-                    answer(heap, host, &mut unused);
+                if let Some(host) = host.as_deref_mut() {
+                    if crate::host::pending(heap).is_some() {
+                        answer(heap, host, &mut unused);
+                    }
                 }
             }
+            // A cleanup that asks the host something gets its answer where
+            // there is a host to ask, and is given up where there is not.
             Ok(crate::slice::Status::Blocked { .. }) => {
-                if !answer(heap, host, &mut unused) {
+                let answered = match host.as_deref_mut() {
+                    Some(host) => answer(heap, host, &mut unused),
+                    None => false,
+                };
+                if !answered {
                     break;
                 }
             }
@@ -3003,6 +3015,15 @@ pub fn begin_global(heap: &mut crate::heap::Heap, name: &str) -> Result<(), Eval
         mc.set_register(Register::Value, trampoline);
     });
     begin(heap)
+}
+
+/// Stop what is running, for a host whose person pressed Stop (#173): the
+/// computation runs its cleanups, as one that ran out of budget does
+/// (`wind_down`), and is then let go of. With no host to answer it, a
+/// cleanup that asks the host something is where the winding down ends.
+pub fn stop(heap: &mut crate::heap::Heap) {
+    wind_down(heap, 20_000, None);
+    recover(heap);
 }
 
 /// After a failure no handler caught: let go of the dead computation and,
