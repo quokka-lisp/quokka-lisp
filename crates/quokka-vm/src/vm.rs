@@ -2416,12 +2416,15 @@ impl<'h> Vm<'_, 'h> {
         if told {
             // Asked, not done: the machine ends it at its next step at which
             // that is safe (`Vm::step`). A process waiting on the host is
-            // given up waiting, so that it runs again and can end.
+            // given up waiting, so that it runs again and can end: its
+            // request is answered with nothing, not dropped, because it may
+            // not be safe to end yet and it then carries on from the call
+            // (`host::withdraw`).
             self.mc
                 .set_slot(target, crate::process::TERMINATE, Value::T);
             if target != self.mc.register(Register::Process) {
-                self.mc
-                    .set_slot(target, crate::process::REQUEST, Value::NIL);
+                let request = self.mc.slot(target, crate::process::REQUEST);
+                crate::host::withdraw(self.mc, request);
             }
         }
         let answer = if told { Value::T } else { Value::NIL };

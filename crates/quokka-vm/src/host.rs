@@ -310,6 +310,24 @@ pub fn answer(heap: &mut Heap, index: usize, reply: Result<Option<String>, HostE
     })
 }
 
+/// Answer RECORD with nothing, if it is a request still waiting: what
+/// happens to the request of a process that is told to end (#172). The
+/// process comes back from its call with `nil`, as a program comes back
+/// from an interrupted system call, and the host no longer sees a request
+/// to answer. A request the host has answered already is left as it is, so
+/// that the process finds its reply. Dropping the record, in either state,
+/// left the process to resume with no value where the reply belonged, one
+/// short on its stack.
+pub(crate) fn withdraw<'h>(mc: &mut Mutation<'h>, record: Value<'h>) {
+    let waiting = record.is_object()
+        && mc.header(record).object_type == crate::heap::ObjectType::Vector
+        && mc.header(record).slots == request::SLOTS
+        && mc.symbol_is(mc.slot(record, request::STATE), request::WAITING);
+    if waiting {
+        fill(mc, record, Ok(None));
+    }
+}
+
 /// Write REPLY into the request RECORD.
 fn fill<'h>(mc: &mut Mutation<'h>, record: Value<'h>, reply: Result<Option<String>, HostError>) {
     let (state, answer) = match reply {

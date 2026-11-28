@@ -902,6 +902,10 @@ kind, resuming in a function; each frame's caller below it; a live thread
 has a stack. Not for the running process's saved registers, which are
 stale. **A new kind of record, or a new slot a walk trusts, is checked
 there.**
+**#172**: a process told to end keeps its host request: one still waiting
+is answered with nil (`host::withdraw`), one already answered is left for
+the process to find. Never drop a request record of a process that will
+run again: it resumes expecting a reply on its stack.
 Rebuild `(:FORMS 2433 :REPLACED 1761)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

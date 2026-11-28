@@ -1908,6 +1908,42 @@ fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
 }
 
+/// A thread told to end while it waits on the host, in a region that puts
+/// its end off, comes back from its call with a value (#172). Its request
+/// used to be dropped, answered or not: the thread resumed with nothing
+/// where the reply belonged, and the next thing popped was a slot of the
+/// record below — an environment came back as `%write-console`'s value, and
+/// in argument position a record slot was called as a function.
+#[test]
+fn a_thread_ended_while_it_asks_the_host_gets_its_answer() {
+    let out = run_compiled(
+        "(in-package :quokka) \
+         (defvar *seen* :unset) \
+         (defvar *trace* nil) \
+         (defvar *go* nil) \
+         (defun writer () \
+           (do () (*go*) (%process-yield)) \
+           (let ((%interrupts-deferred t)) \
+             (push :before *trace*) \
+             (setq *seen* (%write-console \".\")) \
+             (push (list :one (%write-console \".\") :three) *trace*) \
+             (push :end *trace*))) \
+         (defparameter *th* (quokka-thread:make-thread #'writer)) \
+         (progn (setq *go* t) (%process-yield) \
+                (%process-terminate (thread-process *th*)) \
+                (dotimes (i 3000) (%process-yield)) \
+                :main-done) \
+         (list (or (null *seen*) (stringp *seen*)) \
+               (first *trace*) \
+               (let ((call (second *trace*))) \
+                 (list (first call) (or (null (second call)) (stringp (second call))) (third call))))",
+    );
+    assert!(
+        out.ends_with("=> (T :END (:ONE T :THREE))\n"),
+        "the deferred region ran to its end on sound values: {out}"
+    );
+}
+
 /// A form given up at its step budget runs its cleanups first (#173). It
 /// used to be dropped where it stood: the mutex below stayed held by the
 /// main thread for the life of the world, and a runaway loop over a channel
