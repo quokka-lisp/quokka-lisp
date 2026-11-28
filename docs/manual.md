@@ -153,6 +153,11 @@ quokka> (hello)
   adds a file or a directory; both go before the world's name:
   `quokka --allow-read ~/lisp world.qi`. A file must also be a regular file
   of at most 16 MB.
+- **A form is given up after 5,000,000 steps**, about a third of a second,
+  because nothing can interrupt a form yet and a REPL that hangs is worse.
+  `--budget N` gives a form N steps and `--budget 0` as many as it takes:
+  `quokka --budget 0 world.qi`. A form that is given up runs its
+  `unwind-protect` cleanups first.
 - **A saved world keeps working across a rebuild.** `quokka rebuild mine.qi
   new.qi` replaces the system's own functions and leaves yours alone, since
   they are not in the system's source.
@@ -658,6 +663,6 @@ under each one.
 | *can't find crate for `core`* | a non-rustup `cargo` on your `PATH` (§1) | put `~/.cargo/bin` first |
 | *image format 10, but this build reads 11* | the image format changed since the file was saved | make a new one with `quokka build` |
 | `quokka rebuild` fails with *not found: lisp/prelude.lisp* | run from somewhere other than the repository's root | `cd` to the root |
-| *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | the budget is `EVAL_BUDGET` in `crates/quokka/src/world.rs` |
+| *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | a form gets 5,000,000 steps, about a third of a second (`EVAL_BUDGET` in `crates/quokka/src/world.rs`). For a computation that is merely long, start the world with `quokka --budget N world.qi`, or `--budget 0` for no limit. The form runs its cleanups before it is given up |
 | `quokka: no world to run` | `quokka` was started without a world | `quokka build world.qi` once, then `quokka world.qi` |
 | `check.sh` "passed" but CI failed | its output was piped, and the pipe's success hid the failure (§4) | use the exit-code form |

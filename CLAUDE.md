@@ -976,7 +976,10 @@ The page's model forgets viewers a layout leaves out, `sexp.js` reads
 with their references (`%eval-part`), and `setf` notes a macro it expands
 as a place (#184); the definitions API is exported from `QUOKKA-DEBUG`;
 `class-slots` and `class-precedence-list` of a class not yet finalized
-are errors.
+are errors. `(%frames n)` gives the innermost N frames and `frames` asks
+for no more than it was asked for (#177). Kept definition text is a
+constant, packed string (#185). `quokka --budget N WORLD.qi` gives a form
+N steps, 0 for no limit (#160); the default stays 5,000,000.
 **The review's decisions were taken on 28 Nov 2026** (the table is a
 comment on #144; each issue has its own). **The roadmap now has nine
 phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to

@@ -195,8 +195,12 @@
       (destructuring-bind (string start end limit) place
         (let ((text-start (min (%own-comments-start string start limit) end))
               (text-end (%trailing-comment-end string end limit)))
-          (values (string-right-trim (cons #\Newline %blank-characters)
-                                     (subseq string text-start text-end))
+          ;; Kept as a constant string, which is packed eight characters to
+          ;; a word where a string that can be written to has one (#44): a
+          ;; world keeps the text of everything defined in it (#185).
+          (values (%constant-string
+                   (string-right-trim (cons #\Newline %blank-characters)
+                                      (subseq string text-start text-end)))
                   text-start)))
       (values nil nil)))
 

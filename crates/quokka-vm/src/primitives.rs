@@ -739,7 +739,7 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // stack holds, read in one walk (`vm::frames`); and a way to unwind to
     // one frame and call something in its place, which only the machine can
     // do and so is intercepted.
-    (Prim::Frames, "%FRAMES", Arity::Exactly(0)),
+    (Prim::Frames, "%FRAMES", Arity::AtLeast(0)),
     (Prim::UnwindToFrame, "%UNWIND-TO-FRAME", Arity::Exactly(3)),
     // ---- console input (phase 3 step F, #131) ---------------------------
     //
@@ -1114,7 +1114,30 @@ pub fn call_slice<'h>(
             detail: "is intercepted by the machine and should never be called here",
         }),
         Prim::HandlerMarks => crate::vm::handler_marks(mc, args[0], args[1]),
-        Prim::Frames => crate::vm::frames(mc),
+        Prim::Frames => {
+            // `(%frames)` for every frame, `(%frames n)` for the innermost N.
+            let limit = match args {
+                [] => None,
+                [n] if n.is_nil() => None,
+                [n] => match n.as_fixnum().and_then(|n| usize::try_from(n).ok()) {
+                    Some(n) => Some(n),
+                    None => {
+                        return Err(EvalError::WrongType {
+                            name,
+                            wanted: "a count of frames, or nil for all of them",
+                        })
+                    }
+                },
+                _ => {
+                    return Err(EvalError::WrongArgumentCount {
+                        name: "%FRAMES",
+                        wanted: 1,
+                        got: args.len(),
+                    })
+                }
+            };
+            crate::vm::frames(mc, limit)
+        }
         Prim::FrameCallee => {
             let Some(n) = args[0].as_fixnum().filter(|n| *n >= 0) else {
                 return Err(EvalError::WrongType {

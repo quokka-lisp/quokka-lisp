@@ -31,6 +31,10 @@ usage:
   quokka bootstrap --compile-file FILE  compile FILE with the bootstrap compiler
   quokka --version                      which Quokka this is
 
+A form typed at a world is given up after 5,000,000 steps, about a third
+of a second, since nothing can interrupt one yet:
+  --budget N          the steps a form may take; 0 for as many as it takes
+
 A world may read files under the current directory and nowhere else:
   --root DIR          the directory it may read, in place of the current one
   --allow-read PATH   a further file or directory it may read; may be repeated

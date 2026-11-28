@@ -2839,12 +2839,19 @@ pub fn handler_marks<'h>(
 /// as `handler_marks` is in the records; it allocates only what it returns.
 /// Each saved pointer must be below the one before, so a damaged stack ends
 /// the walk rather than looping.
-pub fn frames<'h>(mc: &mut Mutation<'h>) -> Result<Value<'h>, EvalError> {
+pub fn frames<'h>(mc: &mut Mutation<'h>, limit: Option<usize>) -> Result<Value<'h>, EvalError> {
     type Found<'h> = (usize, Value<'h>, Value<'h>, Value<'h>, Vec<Value<'h>>);
     let mut found: Vec<Found<'h>> = Vec::new();
     let mut fp = mc.fp();
     let mut environment = mc.register(Register::Env);
     while let Some((base, n)) = frame_bounds(mc, fp) {
+        // Whoever asks for the innermost few gets those and no more: with
+        // no limit this walked and consed a whole runaway stack in one
+        // step, ten milliseconds at a hundred thousand frames (#177,
+        // rule 9), which is just when a debugger asks.
+        if limit.is_some_and(|limit| found.len() >= limit) {
+            break;
+        }
         let mut token = mc.slot(mc.register(Register::Operands), base + frame::TOKEN);
         if !token.is_cons() {
             token = mc.cons(Value::NIL, Value::NIL);

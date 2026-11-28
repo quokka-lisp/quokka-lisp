@@ -34,7 +34,9 @@
   (unless (or (null count) (and (integerp count) (>= count 0)))
     (error 'type-error :datum count :expected-type '(or null (integer 0))))
   (let ((found nil) (n 0))
-    (dolist (entry (cdr (%frames)) (nreverse found))
+    ;; One more than COUNT is asked of the machine: its first is this
+    ;; function's own frame.
+    (dolist (entry (cdr (%frames (if count (+ count 1) nil))) (nreverse found))
       (when (and count (>= n count)) (return (nreverse found)))
       (push (%make-frame (first entry) (second entry) (third entry) (fourth entry)
                          (cddddr entry))

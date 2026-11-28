@@ -361,13 +361,22 @@ pub(crate) fn load_image(path: &str) -> Heap {
 /// there is nothing left to bootstrap.
 pub(crate) fn image_print(heap: &mut Heap, line: &str, host: &mut NativeHost) -> String {
     let mut out = String::new();
-    let ran = quokka_vm::vm::eval_source(heap, line, EVAL_BUDGET, 2_000, host, |outcome| {
+    let ran = quokka_vm::vm::eval_source(heap, line, budget(), 2_000, host, |outcome| {
         if !out.is_empty() {
             out.push('\n');
         }
         match outcome {
             Outcome::Value(text) => out.push_str(&text),
             Outcome::Error { message, .. } => out.push_str(&format!("; {message}")),
+            // A form that was given up is told how to be given longer: the
+            // budget is this host's stand-in for an interrupt, and a person
+            // whose computation is merely long needs to know it can move.
+            Outcome::Failed(e @ quokka_vm::error::EvalError::BudgetExhausted) => {
+                out.push_str(&format!(
+                    "; {e}\n; ({} steps; `quokka --budget N WORLD.qi` allows N, and 0 as many as it takes)",
+                    budget()
+                ));
+            }
             Outcome::Failed(e) => out.push_str(&format!("; {e}")),
         }
         true
@@ -391,6 +400,28 @@ pub(crate) fn image_print(heap: &mut Heap, line: &str, host: &mut NativeHost) ->
 /// rare enough to be worth noticing, and the heap ceiling usually arrives first
 /// anyway.
 pub(crate) const EVAL_BUDGET: u64 = 5_000_000;
+
+/// The steps a form typed at a world may take: `EVAL_BUDGET`, or what
+/// `--budget` said, with 0 for no limit (#160). The limit exists because
+/// nothing can interrupt a form yet; it must not also be the reason `(fib
+/// 26)` cannot be computed at all.
+static BUDGET: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+
+pub(crate) fn budget() -> u64 {
+    *BUDGET.get().unwrap_or(&EVAL_BUDGET)
+}
+
+/// Take `--budget`'s argument.
+pub(crate) fn set_budget(steps: Option<String>) {
+    let steps = steps
+        .as_deref()
+        .and_then(|text| text.replace('_', "").parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            eprintln!("quokka: --budget wants a number of steps after it, or 0 for no limit");
+            std::process::exit(2);
+        });
+    let _ = BUDGET.set(if steps == 0 { u64::MAX } else { steps });
+}
 
 /// The soft limit a loaded image is given.
 ///

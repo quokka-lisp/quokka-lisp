@@ -160,6 +160,7 @@ pub(crate) fn grant(arguments: Vec<String>) -> Vec<String> {
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
+            "--budget" => crate::world::set_budget(arguments.next()),
             "--root" => root = Some(resolve("--root", arguments.next())),
             "--allow-read" => more.push(resolve("--allow-read", arguments.next())),
             _ => rest.push(argument),
