@@ -844,7 +844,7 @@ Rebuild `(:FORMS 2416 :REPLACED 1749)`.
 Its chief finding is cost: the system had been measured for being right and
 never for being fast. **#161, first part**: `%dispatch` compared cache keys
 with `(every #'eq a b)` under `assoc :test`, 1,000 of a generic call's 1,446
-steps; `%same-key-p`, `%cached-method` and `%key-element` are bare loops
+steps; `%same-key-p`, `%cached-cell` and `%key-element` are bare loops
 (a generic call 338 steps, an accessor 932, `make-instance` 5,245 from
 32,877). **On a path that runs per call, write the loop**: the sequence
 functions parse keywords and take the general path for two sequences. And
@@ -958,12 +958,12 @@ in it takes longer than any before (4.7 ms at 316,000 words, wasm, 28 Nov
 2026; #86 builds a generational collector past 16 ms). **Lisp is never
 told**: when a collection happens depends on the slicing (rule 4).
 **#161, second part**: the loops on the dispatch path are functions that
-call themselves in tail position (`%same-key-p`, `%cached-method`,
+call themselves in tail position (`%same-key-p`, `%cached-cell`,
 `%check-arity`, `%key-from`), and `%dispatch` reads the generic function's
 slot vector once. **Entering a `do` costs about fifty steps** (a block and
 a tagbody) before it has looked at anything; a tail call is a jump. A
 generic call is 221 steps, an accessor 375, `make-instance` 1,728.
-Rebuild `(:FORMS 2460 :REPLACED 1781)`.
+Rebuild `(:FORMS 2462 :REPLACED 1782)`.
 **The review's leftovers are finished before phase 5 goes on** (Carsten,
 28 Nov 2026). `%check-generic-lambda-list` holds a `defgeneric` to CLHS
 3.4.2; a slot is not named `t` or by a keyword; `compute-restarts` and
@@ -995,6 +995,16 @@ out of the reserve too, the computation stops. `EvalError::HeapExhausted`
 is still not an `error` to Lisp: `handler-case` on `error` and
 `ignore-errors` do not take it. A collection is wanted at seven eighths of
 the limit at the latest, or a world near the limit was never collected.
+**#161, third part**: `%dispatch` looks at the first two cache entries
+before anything else, for a function dispatching on one argument with no
+`eql` method (an inline cache); `%dispatch-in-full` does the rest and
+moves an entry found further down to the front. `class-of` keeps a
+structure's class by its layout (`%layout-classes`). A one-argument
+generic call is about 120 to 130 steps, an accessor 268, `make-instance`
+1,468; a call that cannot use the fast path costs about 40 more than
+before, and the baseline in `tests/steps/` was raised for those on purpose.
+**`eql` is a library function, a call; `eq` is an instruction**: on a path
+that runs per call, compare small integers and symbols with `eq`.
 **The review's decisions were taken on 28 Nov 2026** (the table is a
 comment on #144; each issue has its own). **The roadmap now has nine
 phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to

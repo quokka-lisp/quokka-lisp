@@ -1105,15 +1105,15 @@
   (or (and positions (%member-eq i positions) (gethash argument %eql-specializers))
       (class-of argument)))
 
-;;; The effective method CACHE holds for KEY, or nil. The cache is a list
+;;; The cell of CACHE whose entry is for KEY, or nil. The cache is a list
 ;;; of `(key . effective-method)`, newest first; every key in one generic
 ;;; function's cache has as many elements as the function has required
 ;;; arguments. A linear search: a call site that sees many classes pays for
 ;;; each one in front of its own.
-(defun %cached-method (key cache)
+(defun %cached-cell (key cache)
   (cond ((null cache) nil)
-        ((%same-key-p key (car (car cache))) (cdr (car cache)))
-        (t (%cached-method key (cdr cache)))))
+        ((%same-key-p key (car (car cache))) cache)
+        (t (%cached-cell key (cdr cache)))))
 
 ;;; One walk over the arguments checks the arity (CLHS 3.5.1.2-3): the
 ;;; required ones must all be there, and dispatch needs them; when the
@@ -1139,16 +1139,65 @@
          (arity (aref slots 13))
          (count (car arity))
          (most (cdr arity)))
-    (%check-arity gf args 0 count (or most count) most)
-    (unless (eq (aref slots 6) %dispatch-epoch)
-      (%set-gf-cache gf nil)
-      (%set-gf-epoch gf %dispatch-epoch))
-    (let ((key (%key-from (aref slots 11) 0 count args)))
-      (funcall (or (%cached-method key (aref slots 5))
-                   (let ((emf (%compute-effective-method gf args)))
-                     (%set-gf-cache gf (cons (cons key emf) (%gf-cache gf)))
-                     emf))
-               args))))
+    ;; The commonest call by far first: a function that dispatches on one
+    ;; argument and has no `eql` method, called with an argument whose
+    ;; class one of the first two cache entries is for. That entry's
+    ;; effective method is called with nothing built and nothing searched.
+    ;; This is an inline cache (Deutsch and Schiffman's, for Smalltalk-80),
+    ;; kept in the function and not at the call. It makes the call it is
+    ;; for less than half as dear and every other call some forty steps
+    ;; dearer, which the step benchmark records (#161).
+    ;;
+    ;; The function qualifies if it has one required argument and either
+    ;; takes no more and was given no more, or has a `&rest` or `&key`
+    ;; after it, whose keywords the effective method checks itself. The
+    ;; tests are in the order that lets every other call leave soonest, and
+    ;; compare with `eq`: the counts are small integers, and `eql` is a
+    ;; function of the library's, a call where `eq` is an instruction.
+    (if (and (eq count 1) args
+             (if most (and (eq most 1) (null (cdr args))) t)
+             (null (aref slots 11)))
+        (let* ((cache (aref slots 5))
+               (first (car cache))
+               (second (car (cdr cache))))
+          ;; The first two entries are looked at, not one: a function called
+          ;; now with one class and now with another, as `make-instance` is
+          ;; with a name and then with the class it names, would otherwise
+          ;; miss every time.
+          (if (and first (eq (aref slots 6) %dispatch-epoch))
+              (let ((class (class-of (car args))))
+                (cond ((eq (car (car first)) class) (funcall (cdr first) args))
+                      ((and second (eq (car (car second)) class)) (funcall (cdr second) args))
+                      (t (%dispatch-in-full gf slots args count most))))
+              (%dispatch-in-full gf slots args count most)))
+        (%dispatch-in-full gf slots args count most))))
+
+;;; Every other call: the arity checked, the cache emptied if the world's
+;;; classes or this function's methods have changed, a key made of the
+;;; arguments' classes, and the effective method found or built.
+(defun %dispatch-in-full (gf slots args count most)
+  (%check-arity gf args 0 count (or most count) most)
+  (unless (eq (aref slots 6) %dispatch-epoch)
+    (%set-gf-cache gf nil)
+    (%set-gf-epoch gf %dispatch-epoch))
+  (let* ((key (%key-from (aref slots 11) 0 count args))
+         (cache (aref slots 5))
+         (cell (%cached-cell key cache)))
+    (funcall (if cell
+                 (let ((entry (car cell)))
+                   ;; An entry found below the first two changes places
+                   ;; with the first, for a function dispatching on one
+                   ;; argument: the class a caller is using now is then
+                   ;; among those `%dispatch` looks at first, though the
+                   ;; function has methods for many.
+                   (unless (or (not (eq count 1)) (eq cell cache) (eq cell (cdr cache)))
+                     (setf (car cell) (car cache))
+                     (setf (car cache) entry))
+                   (cdr entry))
+                 (let ((emf (%compute-effective-method gf args)))
+                   (%set-gf-cache gf (cons (cons key emf) (%gf-cache gf)))
+                   emf))
+             args)))
 
 
 ;;; ------------------------------------------------------------------------

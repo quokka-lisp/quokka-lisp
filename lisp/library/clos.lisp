@@ -425,12 +425,29 @@
 ;;; A structure's class is found from its layout (`%structure-class`), so
 ;;; it stays the structure's class when it is renamed. Packages, readtables
 ;;; and streams are structures too, but their classes are built-in ones.
+;;;
+;;; A structure's class is worked out once for each layout and kept: asking
+;;; whether it is a package, a readtable or a stream, and then finding its
+;;; class through its name's property list, cost 649 steps a time, and a
+;;; generic function asks for the class of each argument on every call
+;;; (#161). The class of a layout does not change: redefining a structure
+;;; updates its layout in place, and the class and the layout find each
+;;; other without the name.
+(defvar %layout-classes (make-hash-table :test 'eq))
+
 (defun class-of (object)
   (let ((wrapper (%instance-wrapper object)))
-    (cond (wrapper (%wrapper-class wrapper))
-          ((and (%structure-layout object) (not (%standard-structure-name object)))
-           (%structure-class (%structure-layout object)))
-          (t (find-class (%built-in-class-name object))))))
+    (if wrapper
+        (%wrapper-class wrapper)
+        (let ((layout (%structure-layout object)))
+          (if layout
+              (or (gethash layout %layout-classes)
+                  (setf (gethash layout %layout-classes)
+                        (if (%standard-structure-name object)
+                            (find-class (%built-in-class-name object))
+                            (%structure-class layout))))
+              ;; Straight from the table: these classes are always there.
+              (gethash (%built-in-class-name object) %class-table))))))
 
 ;;; The name of the class of an object that is neither an instance nor a
 ;;; structure of a `defstruct` (`class-of`).

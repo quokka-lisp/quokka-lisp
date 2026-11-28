@@ -250,15 +250,20 @@ the compiler's re-entrancy into every first call.
 
 The cache is a list of `(key . effective-method)`, the key a list of one class
 or `eql` specializer per required argument, searched from the front with a
-bare `eq` loop (`%cached-method`, `%same-key-p`). It was first searched with
+bare `eq` loop (`%cached-cell`, `%same-key-p`). It was first searched with
 `(assoc key cache :test ...)` over `(every #'eq a b)`, which is the same
 search and cost 1,000 of a call's 1,446 steps: the general sequence functions
 parse keywords and take their slow path for two sequences (#161, found by the
 review after phase 4). The loops on this path are functions that call
 themselves in tail position, a jump to the machine, where a `do` opened a
-block and a tagbody each time. A call now costs about 220 steps against 4 for
-a plain one. What is left is the `&rest` list, the key consed per call, and
-the linear search at a call site that sees many classes; #161 keeps the list.
+block and a tagbody each time. In front of the search there is an inline
+cache: for a function that dispatches on one argument and has no `eql`
+method, the first two entries are compared with the argument's class before
+any key is built, and an entry found further down is moved to the front. A
+call of that kind costs about 125 steps against 5 for a plain one; a call
+that does not qualify, about 340 for two arguments. What is left is the
+`&rest` list, the key built for calls that miss, and the linear search at a
+call site that sees many classes; #161 keeps the list.
 
 Method combination: `standard` (primary, `:before`, `:after`, `:around`),
 the nine built-in operator combinations (`+`, `and`, `append`, `list`, `max`,
