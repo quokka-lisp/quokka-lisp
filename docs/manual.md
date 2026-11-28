@@ -41,6 +41,8 @@ a part of the checks, and `check.sh` says which parts it skipped.
 | `sbcl` | `brew install sbcl` | the **oracle**: every differential test is also run on SBCL, a real Common Lisp, and must agree |
 | `wasmtime` | `brew install wasmtime` | runs the tests compiled to WebAssembly (`wasm32-wasip1`); without it they are only built |
 | `wasm-pack` | `cargo install wasm-pack` | bundles the browser environment and dev console |
+| `node` | `brew install node` | with `wasm-pack`, runs the page's bundle and the environment through the renderer's model (`scripts/smoke-wasm.mjs`) |
+| `cargo-deny` | `cargo install cargo-deny` | checks the licences and sources of every dependency, as CI does |
 | `mdbook` | `cargo install mdbook` | renders the book as a website; the Markdown reads fine without it |
 
 ---
@@ -84,18 +86,18 @@ says how to make one. `quokka help` prints the table above.
 
 ```text
 $ quokka build world.qi
-world.qi: 2394032 bytes, 299204 words, sequence 1
+world.qi: 2410904 bytes, 301313 words, sequence 1
 
 $ quokka world.qi
 Quokka 0.0.0 — phase 4 · Renderer and live text
-world.qi: 315533 words, sequence 1 · compiled · tier 1
+world.qi: 317704 words, sequence 1 · compiled · tier 1
 :save FILE saves this world · Ctrl-D leaves
 quokka> (defun hello () :saved-in-the-world)
 HELLO
 quokka> (find-package :cl)
 #<PACKAGE "COMMON-LISP">
 quokka> :save mine.qi
-mine.qi: 2397384 bytes, 299623 words, sequence 2
+mine.qi: 2414016 bytes, 301702 words, sequence 2
 quokka> ^D
 
 $ quokka mine.qi
@@ -158,6 +160,11 @@ quokka> (hello)
   `--budget N` gives a form N steps and `--budget 0` as many as it takes:
   `quokka --budget 0 world.qi`. A form that is given up runs its
   `unwind-protect` cleanups first.
+- **Warnings go to standard error.** When a line, a loaded file or a
+  listener entry names a function or variable that nothing has defined, the
+  world warns as the unit ends, usually about a misspelt name (§7). Writes to
+  `*error-output*` go there too, so `quokka world.qi < in > out` keeps them
+  out of `out`.
 - **A saved world keeps working across a rebuild.** `quokka rebuild mine.qi
   new.qi` replaces the system's own functions and leaves yours alone, since
   they are not in the system's source.
@@ -242,8 +249,8 @@ A **world** is a heap with everything in it. An **image** is a world saved to a
 file. There are two ways to make one, and between them they form the
 **bootstrap round** that the phase-2 fixpoint checks.
 
-Use `--release`. A debug build takes about 40 seconds for the cold build and
-minutes for a rebuild; a release build takes 5 and 18 seconds. The commands
+Use `--release`. A release build takes about 12 seconds for the cold build
+and 30 for a rebuild (28 Nov 2026); a debug build is several times slower. The commands
 below are written as `quokka ...`; through cargo they are
 `cargo run --release -p quokka -- ...`.
 
@@ -316,13 +323,14 @@ quokka rebuild c2.qi c3.qi
 **C3** is made by C2's compiler.
 
 What to expect today:
-- C1 is 976,856 bytes; C2 and C3 are 978,464 each. A rebuild takes about
-  seventeen seconds.
-- Every rebuild reports `(:FORMS 1332 :REPLACED 1072)`. It runs as one form
+- C1 is 2,410,904 bytes; C2 and C3 are 2,435,744 each. A rebuild takes
+  about thirty seconds.
+- Every rebuild reports `(:FORMS 2468 :REPLACED 1786)`, and the numbers
+  change with every form added to the library. A rebuild runs as one form
   with a hundred times an ordinary form's step budget (500 million steps;
-  sixty until #125) and needed about 201 million then, a little over 300
-  million at phase 3's step B; a rebuild that runs out says
-  `BudgetExhausted`.
+  sixty times until #125), and its need grows with the library: about 201
+  million steps in phase 2, a little over 300 million at phase 3's step B.
+  A rebuild that runs out says `BudgetExhausted`.
 - `cmp c2.qi c3.qi` still reports differences, and that is expected. The
   library's `gensym` starts from `*gensym-counter*` = 0 in every rebuild, so
   its names repeat exactly (#72), but the machine still makes a few gensyms of
@@ -365,7 +373,8 @@ if either fails the script says so at the end and exits 1. It runs:
 4. that every test is in a test directory;
 5. the differential test coverage, the compiler's and the library's file
    lists, and the SBCL oracle;
-6. rustdoc;
+6. the licences of the dependencies, with `cargo-deny` installed, and
+   rustdoc;
 7. the browser build, and, with `wasm-pack` and `node` installed, the page:
    its bundle, a world for it, a form answered in a JavaScript engine
    (`scripts/smoke-wasm.mjs`) and in a headless Chrome
@@ -426,6 +435,15 @@ cargo test -p quokka --test gate
 That runs phase 3's gate through the real `quokka` program: it builds a
 world with the binary and types a session at it (#133).
 
+```bash
+cargo test -p quokka-wasm
+```
+
+That runs the world's half of phase 4's gate: the browser host, events and
+display messages, driven from Rust. The page's half is the two smoke
+scripts in §2, *In the browser*, which `check.sh` runs when `wasm-pack` and
+`node` are installed.
+
 Test builds are optimised (`[profile.test]`
 in `Cargo.toml`), because the time goes into running Lisp, not compiling Rust.
 
@@ -444,7 +462,7 @@ live*):
 cargo test -p quokka-bootstrap --test steps
 ```
 
-This counts what 34 common forms cost in steps of the machine (a function
+This counts what 36 common forms cost in steps of the machine (a function
 call, a generic function call, `slot-value`, `make-instance`, a caught error
 and so on) and fails if one costs more than `tests/steps/baseline.txt` allows.
 The forms are in `tests/steps/forms.txt` and what they refer to in
@@ -474,7 +492,7 @@ several **legs**, and every leg must match the baseline:
 | compiled, rebuilt world | `a_rebuilt_world_passes_every_differential_file` | the same | the same |
 | SBCL | `./scripts/oracle.sh` | SBCL | SBCL |
 
-**Tier 0** files (17) run in every leg. **Tier 1** files (49) use the library,
+**Tier 0** files (17) run in every leg. **Tier 1** files (51) use the library,
 which the interpreter never learns, so they skip the interpreted leg.
 `tests/lisp/README.md` lists what a test file must not contain. In short: no
 bignums in a tier-0 file, no printed functions, nothing the standard leaves unspecified, and no
@@ -495,8 +513,8 @@ sbcl --script scripts/oracle.lisp tests/lisp/reader.lisp
 | the browser build | `cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown` |
 | that every test is in a test directory (and each crate's size) | `./scripts/check-test-placement.sh` |
 
-The slowest tests are the rebuild and fixpoint tests, about 40 seconds
-together. They rebuild the system twice, and share the two rebuilt worlds.
+The slowest tests are the rebuild and fixpoint tests, about 75 seconds
+together (28 Nov 2026). They rebuild the system twice, and share the two rebuilt worlds.
 
 **If the fixpoint fails** after a change to the compiler, the prelude or the
 library, the change made the compiler compile itself differently. Read
@@ -520,7 +538,9 @@ scripts/ansi-test.sh
 ```
 
 The script clones the suite into `target/ansi-test/` at the commit it pins,
-runs the sixteen groups Quokka is measured by (`arrays` joined in #67, `types-and-classes` in #124), and fails if a test listed in
+runs the eighteen groups Quokka is measured by (`arrays` joined in #67,
+`types-and-classes` and `objects` in #124, `conditions` in #125), and fails
+if a test listed in
 `tests/ansi/baseline.txt` no longer passes: that list only grows. When a
 change makes more tests pass, record them:
 
