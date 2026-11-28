@@ -959,6 +959,8 @@ impl<'a, 'h> Vm<'a, 'h> {
             Some("%READ-SOURCE")
         } else if index == primitives::index(primitives::Prim::WriteConsole) {
             Some("%WRITE-CONSOLE")
+        } else if index == primitives::index(primitives::Prim::WriteErrorConsole) {
+            Some("%WRITE-ERROR-CONSOLE")
         } else if index == primitives::index(primitives::Prim::ReadConsole) {
             Some("%READ-CONSOLE")
         } else if index == primitives::index(primitives::Prim::Display) {

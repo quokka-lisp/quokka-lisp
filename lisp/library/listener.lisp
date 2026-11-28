@@ -272,7 +272,10 @@
           (abort ()
             :report "Return to the listener."
             (fresh-line stream)
-            (return)))))))
+            (return)))))
+    ;; An entry is a unit: what it named and did not define is said under
+    ;; it, on the listener's stream.
+    (%warn-undefined)))
 
 ;;; An error in a form the listener runs: the debugger, if it is on, which
 ;;; reads its commands from the listener; otherwise the message, and back

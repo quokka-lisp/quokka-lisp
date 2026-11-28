@@ -963,7 +963,7 @@ call themselves in tail position (`%same-key-p`, `%cached-cell`,
 slot vector once. **Entering a `do` costs about fifty steps** (a block and
 a tagbody) before it has looked at anything; a tail call is a jump. A
 generic call is 221 steps, an accessor 375, `make-instance` 1,728.
-Rebuild `(:FORMS 2462 :REPLACED 1782)`.
+Rebuild `(:FORMS 2468 :REPLACED 1786)`.
 **The review's leftovers are finished before phase 5 goes on** (Carsten,
 28 Nov 2026). `%check-generic-lambda-list` holds a `defgeneric` to CLHS
 3.4.2; a slot is not named `t` or by a keyword; `compute-restarts` and
@@ -1012,6 +1012,17 @@ reads and writes its stack through `Mutation::stack_get`/`stack_set`, one
 bounds check and no header. `(fib 30)` 2.34 s from 2.81. **Anything new
 that writes `Register::Operands` goes through `set_register`**, or the
 machine pushes onto the old stack.
+**#110, finished**: `*error-output*` is a console stream of its own whose
+writes are the host request `%write-error-console` (`Host::write_stderr`,
+by default where output goes; the terminal sends it to standard error and
+the differential host keeps it apart, as SBCL's oracle does not compare
+standard error). The compiler notes free variable reads too: `%references`
+is `(macros calls . variables)`. What a definition names and the unit
+leaves undefined is warned about when the unit ends (`%warn-undefined`): a
+`style-warning` for a function, a `warning` for a variable. **A unit is
+what the host hands over at once, a file given to `load`, or a listener
+entry.** In a differential test, warnings and the "thread ended" line are
+in `ERRORS`, not in the output.
 **The review's decisions were taken on 28 Nov 2026** (the table is a
 comment on #144; each issue has its own). **The roadmap now has nine
 phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to

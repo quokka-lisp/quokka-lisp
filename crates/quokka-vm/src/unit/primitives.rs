@@ -205,7 +205,8 @@ fn the_table_order_is_pinned() {
             "%COMPARE-AND-SWAP-SVREF",
             "%DISPLAY",
             "%AWAIT-EVENT",
-            "%FRAME-CALLEE"
+            "%FRAME-CALLEE",
+            "%WRITE-ERROR-CONSOLE"
         ]
     );
 }

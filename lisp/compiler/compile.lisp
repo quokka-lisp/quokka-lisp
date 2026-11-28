@@ -595,9 +595,10 @@
 (setq %pending-name nil)
 
 ;;; What the form being compiled refers to, for the world's cross-reference
-;;; (#55, `definitions.lisp`): nil when nobody asked, or a cons of the
-;;; global macros the form expanded and the global functions it named, which
-;;; whoever asked reads afterwards. A global, as the compiler's other state
+;;; (#55, `definitions.lisp`): nil when nobody asked, or `(macros calls .
+;;; variables)`: the global macros the form expanded, the global functions
+;;; it named, and the variables it read that no binding around them
+;;; supplied (#110), which whoever asked reads afterwards. A global, as the compiler's other state
 ;;; is, since tier 0 has no special variables; `eval` sets it around a
 ;;; defining form and puts it back. Only noted, never consulted: what the
 ;;; compiler produces does not depend on it, so the fixpoint is untouched.
@@ -609,9 +610,13 @@
           (if (member name (car %references))
               nil
               (rplaca %references (cons name (car %references))))
-          (if (member name (cdr %references))
-              nil
-              (rplacd %references (cons name (cdr %references)))))
+          (if (eq kind ':variable)
+              (if (member name (cdr (cdr %references)))
+                  nil
+                  (rplacd (cdr %references) (cons name (cdr (cdr %references)))))
+              (if (member name (car (cdr %references)))
+                  nil
+                  (rplaca (cdr %references) (cons name (car (cdr %references)))))))
       nil))
 
 (defun %assemble-lambda (params body names env)
@@ -1725,7 +1730,8 @@
                (let ((place (%lookup form env 0 ':variable)))
                  (if place
                      (%emit (list 'LREF (car place) (cdr place)))
-                     (%emit (list 'GREF (%constant-index form))))))))
+                     (progn (%note-reference ':variable form)
+                            (%emit (list 'GREF (%constant-index form)))))))))
         ((consp form) (%compile-cons form env tail))
         (t (%compile-value form))))
 

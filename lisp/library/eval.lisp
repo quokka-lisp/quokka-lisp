@@ -53,11 +53,60 @@
 ;;; (`definitions.lisp`, #55), with the text `load` or the host loop found
 ;;; for it. The text is taken for this form alone: an `eval` inside it, in a
 ;;; macro's expander say, sees none.
+;;; ------------------------------------------------------------------------
+;;; Warnings for what is named and not defined (#110)
+;;;
+;;; A definition that calls a function nobody has defined, or reads a
+;;; variable nobody has, is usually a slip of the fingers, and a compiler
+;;; that says nothing leaves it to be found when the code runs. The
+;;; compiler notes what each definition refers to (`%references`); what is
+;;; still undefined when the *unit* ends is warned about, once a name. A
+;;; unit is what a person would call one go: the text a host hands over (a
+;;; line at a terminal, a whole file given to `quokka build`), a file given
+;;; to `load`, an entry in the listener. So two functions that call each
+;;; other draw no warning, as they do not in SBCL, where a file is a unit
+;;; (`with-compilation-unit`).
+;;;
+;;; An undefined function is a `style-warning`, as in SBCL, and an
+;;; undefined variable a `warning`. They are printed on `*error-output*`,
+;;; which a host keeps apart from what the program prints.
+
+;;; What definitions in this unit named: `(kind . name)`, newest first.
+(defvar %undefined-pending nil)
+
+(defun %note-undefined (references)
+  (when references
+    (dolist (name (car (cdr references)))
+      (unless (%function-known-p name)
+        (pushnew (cons :function name) %undefined-pending :test #'equal)))
+    (dolist (name (cdr (cdr references)))
+      (unless (%variable-known-p name)
+        (pushnew (cons :variable name) %undefined-pending :test #'equal)))))
+
+(defun %function-known-p (name)
+  (or (not (symbolp name)) (fboundp name) (special-operator-p name)))
+
+(defun %variable-known-p (name)
+  (or (boundp name) (constantp name) (%special-variable-p name)))
+
+;;; The unit is over: warn of what it named that is still not defined.
+(defun %warn-undefined ()
+  (let ((pending (reverse %undefined-pending)))
+    (setq %undefined-pending nil)
+    (dolist (entry pending)
+      (if (eq (car entry) :function)
+          (unless (%function-known-p (cdr entry))
+            (warn 'style-warning "undefined function" (cdr entry)))
+          (unless (%variable-known-p (cdr entry))
+            (warn 'warning "undefined variable" (cdr entry)))))))
+
 (defun eval (form)
   (let ((place %definition-place) (source %definition-source)
         ;; Around a defining form the compiler is asked what it refers to
         ;; (`%references`, a compiler global, put back after).
-        (references (if (and %recording-definitions (%definition-key form)) (cons nil nil) nil))
+        (references (if (and %recording-definitions (%definition-key form))
+                        (cons nil (cons nil nil))
+                        nil))
         (outer %references))
     (setq %references references)
     (unwind-protect
@@ -66,6 +115,7 @@
                    (%part-source source))
                (%eval-in form form))
            (setq %references outer)
+           (%note-undefined references)
            (%record-definition form place source references))
       (setq %references outer))))
 
@@ -120,11 +170,12 @@
 ;;; definition and are not recorded again.
 (defun %eval-part (form context)
   (if (and %recording-definitions (null %references) (%definition-key form))
-      (let ((references (cons nil nil)))
+      (let ((references (cons nil (cons nil nil))))
         (setq %references references)
         (unwind-protect
              (multiple-value-prog1 (%eval-in form context)
                (setq %references nil)
+               (%note-undefined references)
                (%record-definition form nil %part-source references))
           (setq %references nil)))
       (%eval-in form context)))
@@ -310,6 +361,8 @@
         (*package* *package*)
         (*readtable* *readtable*))
     (%load-forms stream)
+    ;; A file is a unit: what it named and never defined is said now.
+    (%warn-undefined)
     t))
 
 (defun %load-forms (stream)
@@ -381,7 +434,8 @@
                (form (read %host-input nil %end-of-input)))
           (setq reading nil)
           (if (eq form %end-of-input)
-              (list :eof)
+              ;; The end of what the host handed over ends the unit.
+              (progn (%warn-undefined) (list :eof))
               (list :value (prin1-to-string (%eval-read-form form %host-input start nil)))))
       (abort ()
         :report "Return to the top level."

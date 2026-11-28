@@ -23,6 +23,15 @@ impl Host for NativeHost {
         let _ = io::stdout().flush();
     }
 
+    /// Warnings and the like go to standard error, so that what a program
+    /// prints can be piped or compared without them (#110).
+    fn write_stderr(&mut self, s: &str) {
+        // Output first, so the two appear in the order they were written
+        // when both go to one terminal.
+        let _ = io::stdout().flush();
+        eprint!("{s}");
+    }
+
     /// A line from the terminal for a world reading its console (#131): the
     /// same standard input the REPL reads its forms from, so a program, or
     /// the debugger, reads the lines that follow the form that asked.

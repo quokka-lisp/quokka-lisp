@@ -92,6 +92,18 @@ pub trait Host {
     /// `*standard-output*` arrives here as a [`Request::WriteConsole`].
     fn write_stdout(&mut self, s: &str);
 
+    /// Write a string to wherever the host keeps what is said *about* a
+    /// program and not by it: warnings, and the line that says a thread
+    /// ended. A write to `*error-output*` arrives here as a
+    /// [`Request::WriteError`] (#110).
+    ///
+    /// By default it goes where output goes, which is right for a host
+    /// with one transcript. The terminal sends it to standard error, so
+    /// that a program's output can be piped without it.
+    fn write_stderr(&mut self, s: &str) {
+        self.write_stdout(s);
+    }
+
     /// Answer a [`Request::ReadSource`].
     ///
     /// Natively this is `std::fs`; under WASI it is the WASI filesystem.
@@ -195,6 +207,9 @@ pub enum Request {
     /// Text for the console. Made by `%write-console`, which is what
     /// `*standard-output*` writes with (#46). Answered with an empty string.
     WriteConsole(String),
+    /// Text for the host's error output. Made by `%write-error-console`,
+    /// which is what `*error-output*` writes to.
+    WriteError(String),
     /// A line from the console, the argument being the prompt to show. Made
     /// by `%read-console`, which is what the console input stream refills
     /// itself with (#131). Answered with [`complete_line`].
@@ -262,6 +277,9 @@ fn decode<'h>(mc: &Mutation<'h>, record: Value<'h>) -> Option<Request> {
     }
     if mc.symbol_is(kind, "%WRITE-CONSOLE") {
         return Some(Request::WriteConsole(text));
+    }
+    if mc.symbol_is(kind, "%WRITE-ERROR-CONSOLE") {
+        return Some(Request::WriteError(text));
     }
     if mc.symbol_is(kind, "%READ-CONSOLE") {
         return Some(Request::ReadConsole(text));
@@ -397,6 +415,10 @@ pub fn serve(heap: &mut Heap, host: &mut dyn Host) -> bool {
         Request::ReadSource(name) => host.read_source(&name),
         Request::WriteConsole(text) => {
             host.write_stdout(&text);
+            Ok(String::new())
+        }
+        Request::WriteError(text) => {
+            host.write_stderr(&text);
             Ok(String::new())
         }
         Request::ReadConsole(prompt) => {

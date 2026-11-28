@@ -418,7 +418,9 @@ impl Quokka {
     /// The answer to REQUEST, or `None` to leave it waiting.
     fn reply(&mut self, request: Request) -> Option<Result<Option<String>, HostError>> {
         Some(match request {
-            Request::WriteConsole(text) => {
+            // Both go to the page's console strip; in the environment the
+            // listener binds `*error-output*` to itself and shows it there.
+            Request::WriteConsole(text) | Request::WriteError(text) => {
                 self.output.push_str(&text);
                 Ok(Some(String::new()))
             }

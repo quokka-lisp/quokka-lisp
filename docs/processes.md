@@ -127,8 +127,8 @@ reads the same:
 
 Waiting is a loop that yields until its condition holds. A thread's base
 binds the compiler's state, and offers an `abort` restart, *Terminate this
-thread*. An error nobody handles ends the thread, with a line on the
-console. With the debugger on (#131) it opens in that thread, and the
+thread*. An error nobody handles ends the thread, with a line on
+`*error-output*`, which a host keeps apart from what programs print (#110). With the debugger on (#131) it opens in that thread, and the
 banner names it.
 
 ## The console

@@ -33,7 +33,7 @@
 ;;; needs.
 
 (defstruct %string-output-stream chars count fresh closed)
-(defstruct %console-stream fresh)
+(defstruct %console-stream fresh errors)
 
 ;;; `close` of a string stream (`gray-streams.lisp`, which is loaded before
 ;;; these structures exist and so cannot `setf` their slots): it is closed
@@ -65,7 +65,12 @@
 ;;; input stream, as in SBCL.
 (defvar %console-io (make-%console-stream :fresh t))
 (defvar *terminal-io* %console-io)
-(defvar *error-output* *standard-output*)
+;;; `*error-output*` is a console stream of its own, whose writes are the
+;;; host request `%write-error-console`: a host keeps what is said about a
+;;; program apart from what the program says, as a terminal's standard
+;;; error is apart from its standard output (#110).
+(defvar %error-console (make-%console-stream :fresh t :errors t))
+(defvar *error-output* %error-console)
 (defvar *trace-output* *standard-output*)
 (defvar *debug-io* %console-io)
 (defvar *query-io* %console-io)
@@ -88,10 +93,13 @@
 (defun %stream-write (stream string start end)
   (if (< start end)
       (cond ((%console-stream-p stream)
-             (%write-console (if (and (eq start 0) (eq end (length string))
-                                      (simple-string-p string))
-                                 string
-                                 (%substring string start end)))
+             (let ((text (if (and (eq start 0) (eq end (length string))
+                                  (simple-string-p string))
+                             string
+                             (%substring string start end))))
+               (if (%console-stream-errors stream)
+                   (%write-error-console text)
+                   (%write-console text)))
              (setf (%console-stream-fresh stream) (eq (aref string (- end 1)) #\Newline)))
             ((%string-output-stream-p stream)
              (setf (%string-output-stream-chars stream)

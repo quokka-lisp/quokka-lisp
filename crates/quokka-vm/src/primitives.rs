@@ -229,6 +229,7 @@ pub enum Prim {
     Display = 169,
     AwaitEvent = 170,
     FrameCallee = 171,
+    WriteErrorConsole = 172,
 }
 
 impl Prim {
@@ -795,6 +796,14 @@ const TABLE: &[(Prim, &str, Arity)] = &[
     // without `%frames`, which conses a list of every frame. Linear in N,
     // and allocates nothing.
     (Prim::FrameCallee, "%FRAME-CALLEE", Arity::Exactly(1)),
+    // Text for the host's error output, as `%write-console` is for its
+    // output: what `*error-output*` writes (#110). A warning must not land
+    // in the middle of what a program prints.
+    (
+        Prim::WriteErrorConsole,
+        "%WRITE-ERROR-CONSOLE",
+        Arity::Exactly(1),
+    ),
 ];
 
 /// The Lisp function an arithmetic primitive hands over to when its fixnum
@@ -1628,6 +1637,7 @@ pub fn call_slice<'h>(
         }
         Prim::ReadSource
         | Prim::WriteConsole
+        | Prim::WriteErrorConsole
         | Prim::ReadConsole
         | Prim::Display
         | Prim::AwaitEvent => Err(EvalError::Fault {

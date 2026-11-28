@@ -130,7 +130,7 @@
                                             :package *package*
                                             :object (%definition-object kind name)
                                             :macros (reverse (car references))
-                                            :calls (reverse (cdr references))
+                                            :calls (reverse (car (cdr references)))
                                             :number (setq %definition-count
                                                           (+ %definition-count 1))
                                             ;; A form evaluated again as

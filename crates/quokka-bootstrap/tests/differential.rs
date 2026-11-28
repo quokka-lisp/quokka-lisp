@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2462 :REPLACED 1782)".into())],
+        [Outcome::Value("(:FORMS 2468 :REPLACED 1786)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1049,7 +1049,7 @@ fn threads_share_a_world() {
     assert_eq!(
         out,
         "=> T\n=> (3 \"adder\" NIL)\n=> (\"main thread\" T 1)\n\
-         ; thread \"doomed\" ended: boom\n=> (:FAILED :JOIN-ERROR)\n\
+         => (:FAILED :JOIN-ERROR)\n\
          => (120 NIL)\n=> :ITEM\n=> (:ENDED NIL)\n=> COMPILE-MANY\n=> (T T T)\n=> 1\n\
          => (:B NIL 0)\n"
     );
@@ -1269,7 +1269,17 @@ fn a_thread_can_be_debugged() {
         out.contains("  0: [ABORT] Terminate this thread.\n"),
         "{out}"
     );
-    assert!(out.ends_with("0] backtrace\n0: (LAMBDA)\n0] abort\n; thread \"worker\" ended: The value OOPS is not of type LIST\n=> :ABORTED\n"), "{out}");
+    // That the thread ended is said on `*error-output*`, which a host keeps
+    // apart from the session (#110).
+    assert!(
+        out.ends_with("0] backtrace\n0: (LAMBDA)\n0] abort\n=> :ABORTED\n"),
+        "{out}"
+    );
+    let said = ERRORS.with(|errors| errors.borrow().clone());
+    assert!(
+        said.contains("; thread \"worker\" ended: The value OOPS is not of type LIST\n"),
+        "{said}"
+    );
 }
 
 /// What only Quokka can be held to (#124): the default `#<...>` of an
@@ -2368,6 +2378,56 @@ fn a_read_that_cannot_advance_ends_the_input() {
     );
 }
 
+thread_local! {
+    /// What the world last run by `run_compiled` wrote to `*error-output*`.
+    static ERRORS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// `run_compiled`, and what the world wrote to `*error-output*` beside it.
+fn run_compiled_with_errors(source: &str) -> (String, String) {
+    ERRORS.with(|errors| errors.borrow_mut().clear());
+    let out = run_compiled(source);
+    (
+        out,
+        ERRORS.with(|errors| std::mem::take(&mut *errors.borrow_mut())),
+    )
+}
+
+/// A definition that names a function or a variable nobody has defined is
+/// warned about when its unit ends (#110): the compiler said nothing, and
+/// the slip was found when the code ran. Two functions that call each other
+/// draw no warning, since the unit is the whole of what the host handed
+/// over; a warning can be muffled or handled like any other; and none of it
+/// is in what the program printed.
+#[test]
+fn what_is_named_and_not_defined_is_warned_about() {
+    let (out, errors) = run_compiled_with_errors(
+        "(defun ok8 (x) (undefined-thing-zz x) (+ x unbound-zz)) \
+         (defun even? (n) (if (= n 0) t (odd? (- n 1)))) \
+         (defun odd? (n) (if (= n 0) nil (even? (- n 1)))) \
+         (defvar *known* 1) \
+         (defun fine (x) (+ x *known* most-positive-fixnum) (car (list x))) \
+         (even? 4)",
+    );
+    assert!(!out.contains("WARNING"), "{out}");
+    assert!(out.ends_with("=> FINE\n=> T\n"), "{out}");
+    assert_eq!(
+        errors,
+        "WARNING: undefined function: UNDEFINED-THING-ZZ\n\
+         WARNING: undefined variable: UNBOUND-ZZ\n"
+    );
+
+    // A warning is a condition like any other: handled, or muffled.
+    let (out, errors) = run_compiled_with_errors(
+        "(handler-case (progn (eval '(defun q2 () (nope2-zz))) (quokka::%warn-undefined)) \
+           (style-warning (c) (princ-to-string c))) \
+         (handler-bind ((warning #'muffle-warning)) \
+           (eval '(defun q3 () (nope3-zz))) (quokka::%warn-undefined) :muffled)",
+    );
+    assert_eq!(out, "=> \"undefined function: NOPE2-ZZ\"\n=> :MUFFLED\n");
+    assert_eq!(errors, "");
+}
+
 /// `run_compiled`, with LINES typed at the console, each ending in a
 /// newline, for whatever reads it (#131).
 fn run_compiled_typing(source: &str, lines: &[&str]) -> String {
@@ -2428,6 +2488,13 @@ thread_local! {
 impl quokka_vm::host::Host for SharedHost {
     fn write_stdout(&mut self, s: &str) {
         self.0.borrow_mut().push_str(s);
+    }
+    /// What a world writes to `*error-output*` is not part of what a file
+    /// prints: SBCL writes it to standard error, which the oracle does not
+    /// keep, so it is not compared (#110). `ERRORS` keeps it for the tests
+    /// that are about it.
+    fn write_stderr(&mut self, s: &str) {
+        ERRORS.with(|errors| errors.borrow_mut().push_str(s));
     }
     /// The next typed line, written to the output after its prompt as a
     /// terminal would show it, so a transcript reads as a session did.
