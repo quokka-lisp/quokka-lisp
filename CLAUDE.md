@@ -963,7 +963,16 @@ call themselves in tail position (`%same-key-p`, `%cached-method`,
 slot vector once. **Entering a `do` costs about fifty steps** (a block and
 a tagbody) before it has looked at anything; a tail call is a jump. A
 generic call is 221 steps, an accessor 375, `make-instance` 1,728.
-Rebuild `(:FORMS 2450 :REPLACED 1776)`.
+Rebuild `(:FORMS 2451 :REPLACED 1777)`.
+**The review's leftovers are finished before phase 5 goes on** (Carsten,
+28 Nov 2026). `%check-generic-lambda-list` holds a `defgeneric` to CLHS
+3.4.2; a slot is not named `t` or by a keyword; `compute-restarts` and
+`find-restart` check their arguments (#190). The warm rebuild's
+`%current-definitions` notes every system package, so `%check-replaced`
+is real for all of them (#186): **a new system package joins that list**.
+The page's model forgets viewers a layout leaves out, `sexp.js` reads
+`|...|` (#191); `smoke-browser.sh` also checks a drawing and an error
+(#197).
 **The review's decisions were taken on 28 Nov 2026** (the table is a
 comment on #144; each issue has its own). **The roadmap now has nine
 phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to

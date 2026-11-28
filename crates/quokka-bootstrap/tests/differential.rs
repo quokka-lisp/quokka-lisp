@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2450 :REPLACED 1776)".into())],
+        [Outcome::Value("(:FORMS 2451 :REPLACED 1777)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1930,6 +1930,32 @@ fn definitions_that_would_break_the_world_are_refused() {
     assert_eq!(lines[0], "=> (:REFUSED T)", "{out}");
     assert_eq!(lines[2], "=> (T :REFUSED T)", "{out}");
     assert_eq!(lines[4], "=> (:REFUSED T NIL NIL)", "{out}");
+
+    // And the condition each of these signals is SBCL's.
+    let out = run_compiled(
+        "(defmacro ty (form) \
+           `(handler-case (progn ,form :no-error) \
+              (error (c) (quokka::%condition-type-of c)))) \
+         (defgeneric g (a)) \
+         (list (ty (defmethod g (a b) 1)) \
+               (ty (eval '(defgeneric zg (x &key (y 1))))) \
+               (ty (eval '(defgeneric zh ((x integer))))) \
+               (ty (eval '(defgeneric zi (x x)))) \
+               (ty (eval '(defgeneric if (x)))) \
+               (ty (eval '(defclass sn () (t)))) \
+               (ty (eval '(defclass sk () (:kw)))) \
+               (ty (eval '(defclass si () ((a :initarg 5))))) \
+               (ty (compute-restarts 5)) \
+               (ty (find-restart nil)) \
+               (ty (eval '(defgeneric ok (x &optional y &key z &allow-other-keys)))))",
+    );
+    assert!(
+        out.ends_with(
+            "=> (PROGRAM-ERROR PROGRAM-ERROR PROGRAM-ERROR PROGRAM-ERROR PROGRAM-ERROR \
+             PROGRAM-ERROR PROGRAM-ERROR PROGRAM-ERROR TYPE-ERROR TYPE-ERROR :NO-ERROR)\n"
+        ),
+        "{out}"
+    );
 }
 
 /// An error at the bottom of a very deep stack still opens the debugger

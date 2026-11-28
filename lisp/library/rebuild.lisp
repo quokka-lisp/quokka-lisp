@@ -125,12 +125,19 @@
       (cons (cadr form) names)
       names))
 
-;;; Every symbol in `COMMON-LISP` and `QUOKKA`, with what its function cell
-;;; holds now: what a rebuild must replace.
+;;; Every symbol of the system's packages, with what its function cell
+;;; holds now: what a rebuild must replace. All of the packages: with only
+;;; `COMMON-LISP` and `QUOKKA` noted, a name whose home is one of the others
+;;; was never in the table, and the check that it was replaced compared a
+;;; missing entry with its function and always passed (#186).
 (defun %current-definitions ()
   (let ((table (make-hash-table)))
     (%note-functions (%package-externals %common-lisp-package) table)
     (%note-functions (%package-internals %quokka-package) table)
+    (dolist (package (list %quokka-mop-package %quokka-debug-package %quokka-thread-package
+                           %quokka-gray-package %quokka-ui-package %quokka-env-package))
+      (%note-functions (%package-externals package) table)
+      (%note-functions (%package-internals package) table))
     table))
 
 (defun %note-functions (symbols table)

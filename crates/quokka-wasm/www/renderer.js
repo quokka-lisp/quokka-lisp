@@ -70,7 +70,12 @@ export class Model {
         break;
       }
       case "layout": {
+        const before = this.viewers(this.root);
         this.root = this.relayout(args[0]);
+        // A viewer the new layout leaves out is gone from the screen, and
+        // from the table: kept, it and everything in it stayed for good.
+        const kept = new Set(this.viewers(this.root));
+        for (const viewer of before) if (!kept.has(viewer)) this.forget(viewer);
         this.notify("layout", this.root);
         break;
       }
@@ -172,6 +177,13 @@ export class Model {
     }
     this.nodes.set(node.id, node);
     return node;
+  }
+
+  // The viewers in a layout, which is a viewer or a split of layouts.
+  viewers(layout) {
+    if (!layout) return [];
+    if (layout.kind === "split") return layout.parts.flatMap((part) => this.viewers(part.node));
+    return [layout];
   }
 
   // A layout whose viewers are known keeps their contents.

@@ -55,9 +55,30 @@ export function readAll(text) {
       at++;
       return out;
     }
+    // A token, in which `|...|` keeps every character between the bars as
+    // it is and `\` the one after it: how the world prints a symbol whose
+    // name would otherwise read as something else. Such a symbol is never
+    // a number, nil or t, and keeps its case.
     let token = "";
-    while (at < text.length && !/[\s()";]/.test(text[at])) token += text[at++];
-    return atom(token);
+    let quoted = false;
+    while (at < text.length && !/[\s()";]/.test(text[at])) {
+      if (text[at] === "|") {
+        quoted = true;
+        at++;
+        while (at < text.length && text[at] !== "|") {
+          if (text[at] === "\\") at++;
+          token += text[at++];
+        }
+        at++;
+      } else if (text[at] === "\\") {
+        quoted = true;
+        at++;
+        if (at < text.length) token += text[at++];
+      } else {
+        token += text[at++];
+      }
+    }
+    return quoted ? new Sym(token.replace(/^:/, "")) : atom(token);
   };
 
   for (;;) {

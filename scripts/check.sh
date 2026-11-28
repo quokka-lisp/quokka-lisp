@@ -56,6 +56,15 @@ code_checks() {
   say "SBCL oracle"
   ./scripts/oracle.sh
 
+  # Licences and sources of every dependency, as CI checks them. Optional
+  # here: cargo-deny is one more tool to install.
+  if command -v cargo-deny >/dev/null 2>&1; then
+    say "cargo-deny"
+    cargo deny check
+  else
+    say "cargo-deny: SKIPPED (cargo install cargo-deny); CI runs it"
+  fi
+
   say "rustdoc"
   RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 

@@ -73,3 +73,25 @@ for page_name in console.html index.html; do
     exit 1
   fi
 done
+
+# The environment's view, which the Node test cannot reach: a drawing must
+# arrive as SVG, and an error must be shown where the person can read it.
+# Each is a form in the address and a piece of the page that only the view
+# makes (#197).
+check_view() {
+  page=$("$browser" --headless=new --no-sandbox --disable-gpu \
+    --virtual-time-budget=30000 --dump-dom \
+    "http://localhost:$port/index.html#$1" 2>/dev/null)
+  if printf '%s' "$page" | grep -qF "$2"; then
+    echo "smoke-browser: index.html showed $3"
+  else
+    echo "smoke-browser: index.html did not show $3 ($2). Its body:" >&2
+    printf '%s' "$page" | sed -n '/<body>/,$p' | head -n 30 >&2
+    exit 1
+  fi
+}
+# (quokka-ui:with-drawing (t :width 40 :height 20) (quokka-ui:draw-rectangle* 0 0 10 10))
+check_view "(quokka-ui:with-drawing%20(t%20:width%2040%20:height%2020)%20(quokka-ui:draw-rectangle*%200%200%2010%2010))" \
+  "<rect" "a drawing as SVG"
+# (car 5)
+check_view "(car%205)" "is not of type LIST" "an error and its message"

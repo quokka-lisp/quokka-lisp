@@ -719,6 +719,12 @@
          ,gf))))
 
 (defun %defgeneric (name lambda-list &rest keys)
+  ;; A special operator's name is not a function's to take. Asked only
+  ;; once `special-operator-p` exists: this file's own generic functions
+  ;; are defined before `eval.lisp` is loaded.
+  (when (and (symbolp name) (%fboundp 'special-operator-p) (special-operator-p name))
+    (error 'program-error "a special operator cannot be a generic function" name))
+  (%check-generic-lambda-list lambda-list)
   (when (getf keys :argument-precedence-order)
     (%precedence-positions lambda-list (getf keys :argument-precedence-order)))
   (let ((existing (%defined-function name)))
@@ -726,6 +732,28 @@
       (dolist (method (%gf-initial-methods existing)) (remove-method existing method))
       (%set-gf-initial-methods existing nil))
     (apply #'ensure-generic-function name :lambda-list lambda-list keys)))
+
+;;; A generic function's lambda list (CLHS 3.4.2) is an ordinary one with
+;;; less in it: a required parameter is a name and has no specializer, an
+;;; optional or keyword parameter has no default, there is no `&aux`, and
+;;; no name is used twice. `defgeneric` took all of these (#190).
+(defun %check-generic-lambda-list (lambda-list)
+  (let ((seen nil) (section nil))
+    (dolist (item lambda-list)
+      (cond ((eq item '&aux)
+             (error 'program-error "a generic function's lambda list has no &aux" lambda-list))
+            ((member item %lambda-markers) (setq section item))
+            (t (let ((name (cond ((symbolp item) item)
+                                 ((null section) nil)
+                                 ((cdr item) nil)
+                                 ((symbolp (car item)) (car item))
+                                 ((and (consp (car item)) (eq section '&key)) (cadr (car item)))
+                                 (t nil))))
+                 (when (or (null name) (not (symbolp name)) (member name seen))
+                   (error 'program-error
+                          "a parameter of a generic function is a name, once, with no default or specializer"
+                          item))
+                 (push name seen)))))))
 
 ;;; The positions of the parameters ORDER names among LAMBDA-LIST's required
 ;;; ones; ORDER must name every required parameter exactly once.
@@ -829,7 +857,8 @@
   (when (and (%method-generic-function method) (not (eq (%method-generic-function method) gf)))
     (error "this method already belongs to another generic function" method))
   (unless (%congruent-p (%gf-lambda-list gf) (%method-lambda-list method))
-    (error "the method's lambda list does not fit its generic function's" (%gf-name gf)))
+    (error 'program-error "the method's lambda list does not fit its generic function's"
+           (%gf-name gf)))
   (let ((old (find-if (lambda (m)
                         (and (%same-specializers-p (%method-specializers m) (%method-specializers method))
                              (equal (%method-qualifiers m) (%method-qualifiers method))))

@@ -576,6 +576,8 @@
 ;;; `with-condition-restarts` associated with another condition is left
 ;;; out (CLHS 9.1.4.2.2), and so is one whose test refuses the condition.
 (defun compute-restarts (&optional condition)
+  (unless (or (null condition) (%condition-object-p condition))
+    (error 'type-error :datum condition :expected-type '(or condition null)))
   (let ((found nil))
     (dolist (cluster %restart-clusters (nreverse found))
       (dolist (restart cluster)
@@ -592,6 +594,8 @@
 ;;; The innermost active restart named IDENTIFIER, or IDENTIFIER itself if
 ;;; it is an active restart.
 (defun find-restart (identifier &optional condition)
+  (unless (or (%restartp identifier) (and identifier (symbolp identifier)))
+    (error 'type-error :datum identifier :expected-type '(or restart (and symbol (not null)))))
   (dolist (restart (compute-restarts condition) nil)
     (when (if (%restartp identifier)
               (eq restart identifier)
