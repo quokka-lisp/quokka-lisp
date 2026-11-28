@@ -628,6 +628,14 @@ struct Storage {
     function: u64,
     /// Its operand stack, a vector. A root like the rest.
     operands: u64,
+    /// Where that vector's first slot is among the words, and how many slots
+    /// it has; both 0 when there is no stack. Kept beside the register and
+    /// worked out again wherever the register is written (`refresh_stack`):
+    /// the machine pushes and pops on every step, and finding the vector's
+    /// header and checking its type each time was over half of what a step
+    /// cost (#168).
+    stack_at: usize,
+    stack_slots: usize,
     /// The pending host request, or `nil`. A root like the rest.
     request: u64,
     /// The running process, or `nil`. A root like the rest, and the way to
@@ -743,6 +751,35 @@ impl Storage {
     #[inline(always)]
     #[allow(clippy::unused_self)]
     fn note_store(&mut self, _holder: usize) {}
+
+    /// Work out where the operand stack is, from the register that names
+    /// it. Called wherever that register is written: when it is set, when a
+    /// collection has moved the vector, and when an image is loaded.
+    /// `Heap::verify` checks that what is kept agrees with the register.
+    pub(crate) fn refresh_stack(&mut self) {
+        (self.stack_at, self.stack_slots) = self.stack_place();
+    }
+
+    /// Where the register says the stack is: its first slot and how many
+    /// it has, or two zeros when the register does not hold a vector.
+    pub(crate) fn stack_place(&self) -> (usize, usize) {
+        let stack = Value::from_bits(self.operands);
+        stack
+            .is_object()
+            .then(|| stack.word_index())
+            .flatten()
+            .and_then(|at| {
+                let header = Header::decode(*self.words.get(at)?)?;
+                (header.object_type == ObjectType::Vector)
+                    .then_some((at + HEADER_WORDS, header.slots))
+            })
+            .unwrap_or((0, 0))
+    }
+
+    /// What `refresh_stack` keeps, for `Heap::verify`.
+    pub(crate) fn stack_cache(&self) -> (usize, usize) {
+        (self.stack_at, self.stack_slots)
+    }
 
     /// Set the flag if `words` more would pass the hard limit.
     fn note_growth(&mut self, words: usize) {
@@ -1322,6 +1359,46 @@ impl<'h> Mutation<'h> {
             Register::Process => &mut self.storage.process,
         };
         *slot = v.bits();
+        if matches!(which, Register::Operands) {
+            self.storage.refresh_stack();
+        }
+    }
+
+    /// How many slots the operand stack has; 0 when there is none.
+    #[inline]
+    pub fn stack_slots(&self) -> usize {
+        self.storage.stack_slots
+    }
+
+    /// Slot `index` of the operand stack, without finding the vector first
+    /// (`Storage::refresh_stack`).
+    ///
+    /// # Panics
+    /// If `index` is past the stack's end, as [`Self::slot`] does.
+    #[inline]
+    pub fn stack_get(&self, index: usize) -> Value<'h> {
+        assert!(
+            index < self.storage.stack_slots,
+            "slot {index} is out of range for a stack of {} slots",
+            self.storage.stack_slots
+        );
+        Value::from_bits(self.storage.words[self.storage.stack_at + index])
+    }
+
+    /// Write slot `index` of the operand stack.
+    ///
+    /// # Panics
+    /// As [`Self::stack_get`].
+    #[inline]
+    pub fn stack_set(&mut self, index: usize, new: Value<'h>) {
+        assert!(
+            index < self.storage.stack_slots,
+            "slot {index} is out of range for a stack of {} slots",
+            self.storage.stack_slots
+        );
+        let at = self.storage.stack_at + index;
+        self.storage.note_store(at);
+        self.storage.words[at] = new.bits();
     }
 
     /// The evaluator's half-cycle marker. Meaning is `crate::eval`'s business.
@@ -1513,6 +1590,8 @@ impl Heap {
                 soft_limit: words,
                 trigger: words,
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
+                stack_at: 0,
+                stack_slots: 0,
                 exhausted: false,
                 reserve_base: 0,
                 collections: 0,
@@ -1894,6 +1973,8 @@ impl Heap {
         self.storage.spare = abandoned;
         self.storage.collections += 1;
         self.storage.dynamic_start = static_end + pad;
+        // The stack has moved with everything else.
+        self.storage.refresh_stack();
 
         // Where the next collection is wanted: see `wants_collection`.
         let live = self.storage.words.len() - self.storage.dynamic_start;

@@ -386,6 +386,14 @@ impl Heap {
             request: s.request,
         };
         self.register_set_fits(&live, resumed, true)?;
+        // What the machine keeps about where its stack is must be what the
+        // register says (`Storage::refresh_stack`, #168): it reads and writes
+        // the stack through it on every step.
+        if s.stack_place() != s.stack_cache() {
+            return Err(Inconsistency::BadRegister {
+                which: "stack-cache",
+            });
+        }
         // Every process's saved registers are loaded into these when it
         // runs (#34), so each set must fit as the live one must; and the
         // ring must be processes all the way round.

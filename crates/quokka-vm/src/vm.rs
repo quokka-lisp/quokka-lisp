@@ -110,9 +110,8 @@ fn open_frame(mc: &Mutation<'_>, fp: usize) -> Option<(usize, usize)> {
     if fp < FRAME || fp > mc.sp() {
         return None;
     }
-    let stack = mc.register(Register::Operands);
     let base = fp - FRAME;
-    let n = mc.slot(stack, base + frame::ARGUMENT_COUNT).as_fixnum()?;
+    let n = mc.stack_get(base + frame::ARGUMENT_COUNT).as_fixnum()?;
     let n = usize::try_from(n).ok()?;
     (n <= base).then_some((base, n))
 }
@@ -326,8 +325,7 @@ impl<'a, 'h> Vm<'a, 'h> {
     // ---- the operand stack -------------------------------------------------
 
     fn capacity(&self) -> usize {
-        let stack = self.mc.register(Register::Operands);
-        self.mc.header(stack).slots
+        self.mc.stack_slots()
     }
 
     /// Make room for `extra` more slots, growing the stack if needed.
@@ -366,9 +364,8 @@ impl<'a, 'h> Vm<'a, 'h> {
 
     fn push(&mut self, v: Value<'h>) {
         self.ensure(1);
-        let stack = self.mc.register(Register::Operands);
         let sp = self.mc.sp();
-        self.mc.set_slot(stack, sp, v);
+        self.mc.stack_set(sp, v);
         self.mc.set_sp(sp + 1);
     }
 
@@ -420,9 +417,8 @@ impl<'a, 'h> Vm<'a, 'h> {
             self.halted = true;
             return Value::NIL;
         }
-        let stack = self.mc.register(Register::Operands);
-        let v = self.mc.slot(stack, sp - 1);
-        self.mc.set_slot(stack, sp - 1, Value::NIL);
+        let v = self.mc.stack_get(sp - 1);
+        self.mc.stack_set(sp - 1, Value::NIL);
         self.mc.set_sp(sp - 1);
         v
     }
@@ -534,9 +530,8 @@ impl<'a, 'h> Vm<'a, 'h> {
     /// Clear every slot from `target` up to the stack pointer, and move the
     /// pointer down. See [`Vm::pop`] for why the clearing matters.
     fn drop_to(&mut self, target: usize) {
-        let stack = self.mc.register(Register::Operands);
         for i in target..self.mc.sp() {
-            self.mc.set_slot(stack, i, Value::NIL);
+            self.mc.stack_set(i, Value::NIL);
         }
         self.mc.set_sp(target);
     }
@@ -664,12 +659,11 @@ impl<'a, 'h> Vm<'a, 'h> {
                 let Some((base, n)) = open_frame(self.mc, fp) else {
                     return self.damaged_frame("TCALL");
                 };
-                let stack = self.mc.register(Register::Operands);
                 let header = [
-                    self.mc.slot(stack, base + frame::PC),
-                    self.mc.slot(stack, base + frame::FP),
-                    self.mc.slot(stack, base + frame::FUNCTION),
-                    self.mc.slot(stack, base + frame::ENV),
+                    self.mc.stack_get(base + frame::PC),
+                    self.mc.stack_get(base + frame::FP),
+                    self.mc.stack_get(base + frame::FUNCTION),
+                    self.mc.stack_get(base + frame::ENV),
                 ];
                 self.drop_to(base - n);
                 header
@@ -686,7 +680,6 @@ impl<'a, 'h> Vm<'a, 'h> {
             // commonest thing the machine does, and a push checks for room
             // each time.
             self.ensure(args.len() + FRAME + wanted);
-            let stack = self.mc.register(Register::Operands);
             let mut sp = self.mc.sp();
             let count = Value::fixnum(args.len() as i64).expect("an argument count is small");
             for word in args
@@ -695,7 +688,7 @@ impl<'a, 'h> Vm<'a, 'h> {
                 .chain([count, Value::NIL, called])
                 .chain(saved)
             {
-                self.mc.set_slot(stack, sp, word);
+                self.mc.stack_set(sp, word);
                 sp += 1;
             }
             self.mc.set_sp(sp);
@@ -789,8 +782,8 @@ impl<'a, 'h> Vm<'a, 'h> {
             .slot(stack, base + frame::FP)
             .as_fixnum()
             .unwrap_or(0) as usize;
-        let function = self.mc.slot(stack, base + frame::FUNCTION);
-        let env = self.mc.slot(stack, base + frame::ENV);
+        let function = self.mc.stack_get(base + frame::FUNCTION);
+        let env = self.mc.stack_get(base + frame::ENV);
         self.drop_to(base - n);
         self.mc.set_pc(pc);
         self.mc.set_fp(caller_fp);
@@ -1133,8 +1126,7 @@ impl<'a, 'h> Vm<'a, 'h> {
         let old = self.mc.slot(symbol, crate::heap::symbol::VALUE);
         self.push_mark(mark::SPECIAL, symbol, 0);
         let at = self.mc.mp();
-        let stack = self.mc.register(Register::Operands);
-        self.mc.set_slot(stack, at + mark::SAVED, old);
+        self.mc.stack_set(at + mark::SAVED, old);
         self.mc.set_slot(symbol, crate::heap::symbol::VALUE, value);
     }
 
@@ -1165,16 +1157,14 @@ impl<'a, 'h> Vm<'a, 'h> {
     }
 
     fn read_index(&self, at: usize, slot: usize) -> usize {
-        let stack = self.mc.register(Register::Operands);
-        match self.mc.slot(stack, at + slot).as_fixnum() {
+        match self.mc.stack_get(at + slot).as_fixnum() {
             Some(n) if n >= 0 => n as usize,
             _ => usize::MAX,
         }
     }
 
     fn mark_slot(&self, at: usize, slot: usize) -> Value<'h> {
-        let stack = self.mc.register(Register::Operands);
-        self.mc.slot(stack, at + slot)
+        self.mc.stack_get(at + slot)
     }
 
     /// Drop the innermost record without acting on it: what a `block` or
@@ -1309,9 +1299,8 @@ impl<'a, 'h> Vm<'a, 'h> {
             self.mc.set_register(Register::Env, env);
             self.push_mark(mark::PAUSED, target, 0);
             let paused = self.mc.mp();
-            let stack = self.mc.register(Register::Operands);
-            self.mc.set_slot(stack, paused + mark::FP, value);
-            self.mc.set_slot(stack, paused + mark::PC, values);
+            self.mc.stack_set(paused + mark::FP, value);
+            self.mc.stack_set(paused + mark::PC, values);
             self.mc.set_register(Register::Unwind, Value::UNBOUND);
             self.mc.set_register(Register::Values, Value::UNBOUND);
             self.mc.set_pc(cleanup);
@@ -1668,12 +1657,11 @@ impl<'a, 'h> Vm<'a, 'h> {
         let mut fp = self.mc.fp();
         let mut open = false;
         while let Some((base, _)) = frame_bounds(self.mc, fp) {
-            let stack = self.mc.register(Register::Operands);
             if fp == wanted {
-                open = args[1].is_cons() && self.mc.slot(stack, base + frame::TOKEN) == args[1];
+                open = args[1].is_cons() && self.mc.stack_get(base + frame::TOKEN) == args[1];
                 break;
             }
-            match self.mc.slot(stack, base + frame::FP).as_fixnum() {
+            match self.mc.stack_get(base + frame::FP).as_fixnum() {
                 Some(caller) if caller >= 0 && (caller as usize) < fp => fp = caller as usize,
                 _ => break,
             }
@@ -1725,8 +1713,8 @@ impl<'a, 'h> Vm<'a, 'h> {
             .slot(stack, base + frame::FP)
             .as_fixnum()
             .unwrap_or(0) as usize;
-        let function = self.mc.slot(stack, base + frame::FUNCTION);
-        let env = self.mc.slot(stack, base + frame::ENV);
+        let function = self.mc.stack_get(base + frame::FUNCTION);
+        let env = self.mc.stack_get(base + frame::ENV);
         let thunk = self.mc.slot(target, 2);
         self.drop_to(base - n);
         self.mc.set_pc(pc);
@@ -2804,8 +2792,7 @@ pub fn handler_marks<'h>(
             wanted: "two symbols",
         });
     }
-    let stack = mc.register(Register::Operands);
-    let read = |mc: &Mutation<'h>, at: usize, slot: usize| mc.slot(stack, at + slot);
+    let read = |mc: &Mutation<'h>, at: usize, slot: usize| mc.stack_get(at + slot);
     let place = |v: Value<'h>| match v.as_fixnum() {
         Some(n) if n >= 0 => n as usize,
         _ => usize::MAX,
@@ -2881,15 +2868,13 @@ pub fn frames<'h>(mc: &mut Mutation<'h>, limit: Option<usize>) -> Result<Value<'
         let mut token = mc.slot(mc.register(Register::Operands), base + frame::TOKEN);
         if !token.is_cons() {
             token = mc.cons(Value::NIL, Value::NIL);
-            let stack = mc.register(Register::Operands);
-            mc.set_slot(stack, base + frame::TOKEN, token);
+            mc.stack_set(base + frame::TOKEN, token);
         }
-        let stack = mc.register(Register::Operands);
-        let callee = mc.slot(stack, base + frame::CALLEE);
-        let arguments = (base - n..base).map(|i| mc.slot(stack, i)).collect();
+        let callee = mc.stack_get(base + frame::CALLEE);
+        let arguments = (base - n..base).map(|i| mc.stack_get(i)).collect();
         found.push((fp, token, callee, environment, arguments));
-        environment = mc.slot(stack, base + frame::ENV);
-        match mc.slot(stack, base + frame::FP).as_fixnum() {
+        environment = mc.stack_get(base + frame::ENV);
+        match mc.stack_get(base + frame::FP).as_fixnum() {
             Some(caller) if caller >= 0 && (caller as usize) < fp => fp = caller as usize,
             _ => break,
         }
@@ -2918,12 +2903,11 @@ pub fn frame_callee<'h>(mc: &mut Mutation<'h>, n: u64) -> Value<'h> {
     let mut fp = mc.fp();
     let mut left = n;
     while let Some((base, _)) = frame_bounds(mc, fp) {
-        let stack = mc.register(Register::Operands);
         if left == 0 {
-            return mc.slot(stack, base + frame::CALLEE);
+            return mc.stack_get(base + frame::CALLEE);
         }
         left -= 1;
-        match mc.slot(stack, base + frame::FP).as_fixnum() {
+        match mc.stack_get(base + frame::FP).as_fixnum() {
             Some(caller) if caller >= 0 && (caller as usize) < fp => fp = caller as usize,
             _ => break,
         }

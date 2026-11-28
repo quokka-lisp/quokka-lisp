@@ -153,7 +153,7 @@ impl Heap {
     /// about between collections; it is not part of the world.
     pub(crate) fn from_image(words: Vec<u64>, s: Scalars, soft_limit: usize) -> Heap {
         let alive = words.len();
-        Heap {
+        let mut heap = Heap {
             storage: Storage {
                 words,
                 spare: Vec::new(),
@@ -185,6 +185,8 @@ impl Heap {
                 // words are what was alive.
                 trigger: soft_limit.max(alive.saturating_mul(2)),
                 hard_limit: soft_limit.saturating_mul(HARD_LIMIT_MULTIPLE),
+                stack_at: 0,
+                stack_slots: 0,
                 exhausted: false,
                 reserve_base: 0,
                 collections: 0,
@@ -194,6 +196,10 @@ impl Heap {
                 static_end: s.static_end as usize,
                 dynamic_start: s.static_end as usize,
             },
-        }
+        };
+        // Where the stack is, which is not part of an image: it is worked
+        // out from the register, as it is whenever the register is written.
+        heap.storage.refresh_stack();
+        heap
     }
 }

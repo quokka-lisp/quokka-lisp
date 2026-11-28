@@ -1005,6 +1005,13 @@ generic call is about 120 to 130 steps, an accessor 268, `make-instance`
 before, and the baseline in `tests/steps/` was raised for those on purpose.
 **`eql` is a library function, a call; `eq` is an instruction**: on a path
 that runs per call, compare small integers and symbols with `eq`.
+**#168**: the heap keeps where the operand stack is beside the register
+that names it (`Storage::refresh_stack`, at `set_register`, after a
+collection, and on image load; `Heap::verify` checks it), and the machine
+reads and writes its stack through `Mutation::stack_get`/`stack_set`, one
+bounds check and no header. `(fib 30)` 2.34 s from 2.81. **Anything new
+that writes `Register::Operands` goes through `set_register`**, or the
+machine pushes onto the old stack.
 **The review's decisions were taken on 28 Nov 2026** (the table is a
 comment on #144; each issue has its own). **The roadmap now has nine
 phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to
