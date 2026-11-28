@@ -664,5 +664,6 @@ under each one.
 | *image format 10, but this build reads 11* | the image format changed since the file was saved | make a new one with `quokka build` |
 | `quokka rebuild` fails with *not found: lisp/prelude.lisp* | run from somewhere other than the repository's root | `cd` to the root |
 | *gave up after the step budget* | the form ran longer than the REPL allows one line, usually an infinite loop | a form gets 5,000,000 steps, about a third of a second (`EVAL_BUDGET` in `crates/quokka/src/world.rs`). For a computation that is merely long, start the world with `quokka --budget N world.qi`, or `--budget 0` for no limit. The form runs its cleanups before it is given up |
+| *out of heap* | what the program holds no longer fits, or one object was asked for that is larger than the heap may grow | it is a `storage-condition`, signalled with an eighth of the heap in reserve: a `handler-case` that names it can let something go, and unhandled the form ends with the world as it was. What filled the heap is still there; set the variable that holds it to nil. A handler for `error` does not see it |
 | `quokka: no world to run` | `quokka` was started without a world | `quokka build world.qi` once, then `quokka world.qi` |
 | `check.sh` "passed" but CI failed | its output was piped, and the pipe's success hid the failure (§4) | use the exit-code form |

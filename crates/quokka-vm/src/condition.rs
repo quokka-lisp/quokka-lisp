@@ -36,8 +36,9 @@
 //! `BudgetExhausted`. Neither is a fault in the program being run — one is the
 //! system running out of room and the other is the caller declining to wait —
 //! and a handler that caught them would be catching the machinery rather than
-//! the program. `docs/design.md` has heap exhaustion becoming a
-//! `storage-condition` in phase 3, when there is a hierarchy to put it in.
+//! the program. With the library loaded, heap exhaustion is signalled as a
+//! `storage-condition` (`type_and_message`, #159), which no handler for
+//! errors catches; without it, it stops the computation.
 
 use crate::error::EvalError;
 use crate::heap::{Mutation, ObjectType};
@@ -148,6 +149,15 @@ pub fn report_error(e: &EvalError) -> String {
 /// it is not the program's fault: what the machine hands the library's
 /// `%signal-machine-error` (#125).
 pub fn type_and_message(e: &EvalError) -> Option<(&'static str, String)> {
+    // A full heap is a `storage-condition` (#159): a serious condition and
+    // not an error, so a handler for errors does not take it for a fault of
+    // the program's, and one that asks for it by name can let go of
+    // something. Only here, for the library's signalling: the old path,
+    // which makes a condition and unwinds to the nearest `handler-case`,
+    // still treats it as the machine's own.
+    if matches!(e, EvalError::HeapExhausted) {
+        return Some(("STORAGE-CONDITION", e.to_string()));
+    }
     classify(e)
 }
 

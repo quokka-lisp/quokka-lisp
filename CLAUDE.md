@@ -989,6 +989,12 @@ viewer-class ...)`; the prompt `CL-USER> `; the inks `+ink+`, `+dim+`,
 `%lines-a-flush` (20) lines, and a text run that has reached `%run-limit`
 (4,000) characters and ends a line is closed, the next line starting a new
 record. A `:reset` carries `:protocol` (`%display-protocol`, 1).
+**#159**: a full heap is a `storage-condition`, signalled through
+`%signal-machine-error` in a reserve of an eighth (`Mutation::grant_reserve`);
+out of the reserve too, the computation stops. `EvalError::HeapExhausted`
+is still not an `error` to Lisp: `handler-case` on `error` and
+`ignore-errors` do not take it. A collection is wanted at seven eighths of
+the limit at the latest, or a world near the limit was never collected.
 **The review's decisions were taken on 28 Nov 2026** (the table is a
 comment on #144; each issue has its own). **The roadmap now has nine
 phases and each tutorial is a gate** (#156, `docs/design.md`, *Phases 5 to

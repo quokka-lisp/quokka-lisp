@@ -672,9 +672,12 @@ struct Storage {
     trigger: usize,
     /// Above this, allocation stops being possible. See [`Heap::is_exhausted`].
     hard_limit: usize,
-    /// Set when an allocation passed `hard_limit`. The evaluator checks it and
-    /// halts; nothing else needs to know.
+    /// Set when an allocation passed `hard_limit`. The evaluator checks it
+    /// and signals, or halts; nothing else needs to know.
     exhausted: bool,
+    /// The hard limit as it was before a reserve was granted on top of it
+    /// (`Mutation::grant_reserve`), or 0 when none is out.
+    reserve_base: usize,
     /// Counts the uninterned symbols `gensym` has made, so each gets a
     /// distinct name. Not a `Value`, so the collector does not touch it.
     gensym_counter: u64,
@@ -1405,6 +1408,22 @@ impl<'h> Mutation<'h> {
         self.storage.exhausted
     }
 
+    /// Give a heap that has just filled an eighth more room, once, so that
+    /// the program can be told and something can be done about it (#159):
+    /// signalling a condition, running a handler and opening a debugger
+    /// all allocate. Answers whether a reserve was granted; it is not when
+    /// one is out already, and running out of that is final. The reserve
+    /// is taken back by the collection that finds the world small again.
+    pub fn grant_reserve(&mut self) -> bool {
+        if self.storage.reserve_base != 0 {
+            return false;
+        }
+        self.storage.reserve_base = self.storage.hard_limit;
+        self.storage.hard_limit += self.storage.hard_limit / 8;
+        self.storage.exhausted = false;
+        true
+    }
+
     /// Where a heap object's header is.
     fn index(&self, v: Value<'h>) -> usize {
         v.word_index().expect("not a reference into the heap")
@@ -1495,6 +1514,7 @@ impl Heap {
                 trigger: words,
                 hard_limit: words.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
+                reserve_base: 0,
                 collections: 0,
                 live_after: 0,
                 sequence: 0,
@@ -1571,6 +1591,10 @@ impl Heap {
     /// reclaimed it; the REPL does both.
     pub fn clear_exhausted(&mut self) {
         self.storage.exhausted = false;
+        if self.storage.reserve_base != 0 {
+            self.storage.hard_limit = self.storage.reserve_base;
+            self.storage.reserve_base = 0;
+        }
     }
 
     /// The hard ceiling, in words.
@@ -1874,7 +1898,28 @@ impl Heap {
         // Where the next collection is wanted: see `wants_collection`.
         let live = self.storage.words.len() - self.storage.dynamic_start;
         self.storage.live_after = live;
-        self.storage.trigger = self.storage.soft_limit.max(live.saturating_mul(2));
+        // A reserve granted when the heap filled is taken back once the
+        // world is comfortably small again: what filled it has been let go.
+        if self.storage.reserve_base != 0 && live < self.storage.reserve_base / 2 {
+            self.storage.hard_limit = self.storage.reserve_base;
+            self.storage.reserve_base = 0;
+        }
+        // Twice what is alive, but never past seven eighths of the limit:
+        // a world that had grown close to the limit would otherwise next
+        // be collected only beyond it, and so never, however much of it
+        // had been let go since. That mattered little while filling the
+        // heap ended the computation; now that a program is told and
+        // carries on (#159), the collection that finds the room again has
+        // to come before the heap fills a second time.
+        let limit = if self.storage.reserve_base != 0 {
+            self.storage.reserve_base
+        } else {
+            self.storage.hard_limit
+        };
+        self.storage.trigger = self
+            .storage
+            .soft_limit
+            .max(live.saturating_mul(2).min(limit - limit / 8));
         // And give back what a spike left behind. Both spaces keep their
         // allocation between collections, which is right while the heap is
         // steady and wrong after one huge object: without this, a single

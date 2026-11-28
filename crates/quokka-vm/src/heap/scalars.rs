@@ -186,6 +186,7 @@ impl Heap {
                 trigger: soft_limit.max(alive.saturating_mul(2)),
                 hard_limit: soft_limit.saturating_mul(HARD_LIMIT_MULTIPLE),
                 exhausted: false,
+                reserve_base: 0,
                 collections: 0,
                 live_after: 0,
                 sequence: s.sequence,

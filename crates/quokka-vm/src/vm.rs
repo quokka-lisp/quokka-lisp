@@ -1849,7 +1849,18 @@ impl Vm<'_, '_> {
         // Checked first, exactly as the interpreter does: past the hard limit
         // the heap will not grow, so continuing allocates into a ceiling.
         if self.mc.is_exhausted() {
-            return self.fail(EvalError::HeapExhausted);
+            // The first time, the program is told, in a reserve granted for
+            // the telling: a `storage-condition`, which it may handle, and
+            // which unhandled reaches the debugger or the top level with
+            // the world as it was (#159). Out of the reserve as well, or
+            // with no library to tell, the computation stops.
+            if self.machine_error_handler().is_some() && self.mc.grant_reserve() {
+                return self.fail(EvalError::HeapExhausted);
+            }
+            self.unbind_all();
+            self.error = Some(EvalError::HeapExhausted);
+            self.halted = true;
+            return Transition::Halt;
         }
         // Before unwinding, though the two cannot coincide: a request is made
         // only from ordinary execution, and while one is waiting nothing else

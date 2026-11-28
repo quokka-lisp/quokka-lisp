@@ -1908,6 +1908,59 @@ fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
 }
 
+/// A heap that fills is a `storage-condition` the program is told of, in a
+/// reserve granted for the telling (#159). It was the one failure that was
+/// not a condition: the form stopped where it stood, and in the browser the
+/// command loop failed with it. A handler for errors does not take it; one
+/// that names it can let something go and carry on; unhandled, it is
+/// reported and the world is as it was, with what filled it still there.
+#[test]
+fn a_full_heap_is_a_storage_condition() {
+    use quokka_vm::vm::{eval_source, Outcome};
+    // A small heap: the world, and room for about a million words more.
+    let mut heap = quokka_vm::image::load(compiled_image(), 1 << 15).expect("the image loads");
+    let mut host = quokka_vm::host::NullHost::default();
+    let mut said = Vec::new();
+    eval_source(
+        &mut heap,
+        "(defvar *keep* nil) \
+         (defun fill-up () (do () (nil) (push (make-array 1000) *keep*))) \
+         (fill-up) \
+         (plusp (length *keep*)) \
+         (setq *keep* nil) \
+         (handler-case (fill-up) (error () :an-error-handler-took-it)) \
+         (setq *keep* nil) \
+         (handler-case (fill-up) (storage-condition () (setq *keep* nil) :handled)) \
+         (handler-case (make-array most-positive-fixnum) (storage-condition () :too-large)) \
+         (+ 1 2)",
+        u64::MAX,
+        20_000,
+        &mut host,
+        |outcome| {
+            said.push(match outcome {
+                Outcome::Value(text) => text,
+                Outcome::Error { message, .. } => format!("; {message}"),
+                Outcome::Failed(e) => format!("; failed: {e}"),
+            });
+            true
+        },
+    )
+    .expect("the world reads");
+    assert!(said[2].starts_with("; out of heap"), "{said:?}");
+    assert_eq!(
+        said[3], "T",
+        "what filled the heap is still there: {said:?}"
+    );
+    assert!(
+        said[5].starts_with("; out of heap"),
+        "not an error's to catch: {said:?}"
+    );
+    assert_eq!(said[7], ":HANDLED", "{said:?}");
+    assert_eq!(said[8], ":TOO-LARGE", "{said:?}");
+    assert_eq!(said[9], "3", "{said:?}");
+    heap.verify().expect("and the heap is sound");
+}
+
 /// Definitions the cross-reference did not see (#184): those inside a
 /// top-level `progn`, or inside what a program's own macro expands into,
 /// were recorded without what they call; and a macro used as a `setf` place
