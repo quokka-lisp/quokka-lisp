@@ -385,7 +385,7 @@ impl Heap {
             pc: s.pc,
             request: s.request,
         };
-        self.register_set_fits(&live, resumed)?;
+        self.register_set_fits(&live, resumed, true)?;
         // Every process's saved registers are loaded into these when it
         // runs (#34), so each set must fit as the live one must; and the
         // ring must be processes all the way round.
@@ -436,7 +436,18 @@ impl Heap {
                 pc,
                 request: slot(crate::process::REQUEST),
             };
-            self.register_set_fits(&saved, true)?;
+            // A process that is alive and not the running one will be
+            // switched to and run on its stack: it must have one (#171).
+            // The running process's saved slots are stale, and the main
+            // one may never have been switched out.
+            let alive = Value::from_bits(slot(crate::process::STATE)).as_fixnum()
+                == Some(crate::process::ALIVE);
+            let main = !Value::from_bits(slot(crate::process::MAIN)).is_nil();
+            let is_running = running.is_object() && running.word_index() == Some(at);
+            if alive && !main && !is_running && Value::from_bits(saved.operands).is_nil() {
+                return bad("process-stack");
+            }
+            self.register_set_fits(&saved, true, !is_running)?;
         }
         Ok(())
     }
@@ -444,7 +455,18 @@ impl Heap {
     /// Do a set of registers fit what they index: the stack, frame and
     /// mark pointers in the operand stack, the program counter in the
     /// function's code?
-    fn register_set_fits(&self, set: &RegisterSet, resumed: bool) -> Result<(), Inconsistency> {
+    ///
+    /// CHAINS says whether to follow the records and frames on the stack
+    /// too (`chains_fit`): not for the saved registers of the process that
+    /// is running, which are what it had when it was last switched out and
+    /// describe a stack that has moved on since. They are written over
+    /// before they are ever loaded.
+    fn register_set_fits(
+        &self,
+        set: &RegisterSet,
+        resumed: bool,
+        chains: bool,
+    ) -> Result<(), Inconsistency> {
         let RegisterSet {
             operands,
             sp,
@@ -479,6 +501,9 @@ impl Heap {
             // A record is read whole, from its first slot to its last.
             if mp != usize::MAX && mp + crate::vm::mark::SIZE > sp {
                 return bad("mark-pointer");
+            }
+            if chains {
+                self.chains_fit(operands, sp, fp, mp)?;
             }
         } else {
             // Neither nil nor an object: nothing could push onto it.
@@ -517,6 +542,98 @@ impl Heap {
                     return bad("program-counter");
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Do the unwind records and the call frames on a stack lead where the
+    /// machine will follow them (#171)?
+    ///
+    /// The machine walks both chains trusting each link: `unbind_all` when a
+    /// host call begins, every `signal` and `throw` looking for its record,
+    /// every return. An image made by hand could point a record's link past
+    /// the end of the stack (a panic), at itself (a loop no step budget
+    /// covers), or put a number where a return expects a function. So each
+    /// record must lie whole below the one before it and be of a kind the
+    /// machine knows, and each frame must hold a count of arguments that
+    /// fits under it and a caller's frame below it; where the machine will
+    /// carry on *in* a function, that must be a function.
+    fn chains_fit(
+        &self,
+        operands: u64,
+        sp: usize,
+        fp: usize,
+        mp: usize,
+    ) -> Result<(), Inconsistency> {
+        use crate::vm::{frame, mark};
+        let s = &self.storage;
+        let bad = |which| Err(Inconsistency::BadRegister { which });
+        let stack = Value::from_bits(operands);
+        let Some(base) = stack.is_object().then(|| stack.word_index()).flatten() else {
+            return bad("operand-stack");
+        };
+        let slot = |i: usize| Value::from_bits(s.words[base + HEADER_WORDS + i]);
+        let index = |v: Value<'_>| v.as_fixnum().and_then(|n| usize::try_from(n).ok());
+        let is_function = |v: Value<'_>| {
+            v.is_object()
+                && v.word_index()
+                    .and_then(|at| Header::decode(s.words[at]))
+                    .map(|h| h.object_type)
+                    == Some(ObjectType::Function)
+        };
+
+        let mut top = sp;
+        let mut at = mp;
+        while at != usize::MAX {
+            if at + mark::SIZE > top {
+                return bad("mark-chain");
+            }
+            let Some(kind) = slot(at + mark::KIND).as_fixnum() else {
+                return bad("mark-chain");
+            };
+            match kind {
+                // These carry on in a function at a frame: both are read.
+                mark::BLOCK | mark::CATCH | mark::TAG | mark::PROTECT | mark::HANDLER => {
+                    let frame_fits = index(slot(at + mark::FP)).is_some_and(|f| f <= sp);
+                    let resumes = index(slot(at + mark::PC)).is_some();
+                    if !frame_fits || !resumes || !is_function(slot(at + mark::FUNCTION)) {
+                        return bad("mark-chain");
+                    }
+                }
+                // A pause and a binding keep other things in those slots.
+                mark::PAUSED | mark::SPECIAL => {}
+                _ => return bad("mark-chain"),
+            }
+            let prev = slot(at + mark::PREV);
+            top = at;
+            at = match prev.as_fixnum() {
+                Some(-1) => usize::MAX,
+                // Strictly below: the chain ends, and cannot come round.
+                Some(n) if usize::try_from(n).is_ok_and(|p| p + mark::SIZE <= top) => n as usize,
+                _ => return bad("mark-chain"),
+            };
+        }
+
+        let mut at = fp;
+        while at != 0 {
+            if at < frame::SIZE || at > sp {
+                return bad("frame-chain");
+            }
+            let header = at - frame::SIZE;
+            let arguments = index(slot(header + frame::ARGUMENT_COUNT));
+            let caller = index(slot(header + frame::FP));
+            let function = slot(header + frame::FUNCTION);
+            let (Some(arguments), Some(caller)) = (arguments, caller) else {
+                return bad("frame-chain");
+            };
+            if arguments > header
+                || caller >= at
+                || index(slot(header + frame::PC)).is_none()
+                || !(function.is_nil() || is_function(function))
+            {
+                return bad("frame-chain");
+            }
+            at = caller;
         }
         Ok(())
     }

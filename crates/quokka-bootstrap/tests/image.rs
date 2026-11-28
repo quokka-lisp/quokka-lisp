@@ -427,3 +427,111 @@ fn a_process_that_cannot_be_resumed_is_refused() {
         assert!(damaged.verify().is_err(), "slot {slot} accepted");
     }
 }
+
+/// The records and frames on a stack lead where the machine will follow
+/// them, or the image is refused (#171). The machine walks both chains
+/// trusting every link, and `Heap::verify` used to look at the top record
+/// alone: a link past the end of the stack panicked the first host call, a
+/// record that was its own predecessor hung it outside any step budget, and
+/// a live thread with no stack ran with `nil` for one and wrote over it.
+/// Each damage here is one a correctly sealed image could carry.
+#[test]
+fn a_stack_whose_chains_lead_nowhere_is_refused() {
+    use quokka_vm::process::{FP, MAIN, MP, OPERANDS};
+    use quokka_vm::value::Value;
+    use quokka_vm::vm::{frame, mark};
+    // As above: under GC torture the damage is refused at once, as a panic.
+    if quokka_vm::heap::TORTURE {
+        return;
+    }
+    let mut heap = Heap::new();
+    boot::build_image(&mut heap).expect("builds");
+    let mut host = quokka_vm::host::NullHost::default();
+    // A thread with a catch, a binding and a cleanup open, so its stack
+    // holds records of several kinds and frames under them.
+    quokka_vm::vm::eval_source(
+        &mut heap,
+        "(quokka-thread:make-thread \
+           (lambda () \
+             (let ((*print-base* 8)) \
+               (unwind-protect \
+                    (catch 'k (do () (nil) (quokka-thread:thread-yield))) \
+                 (print :bye)))))",
+        5_000_000,
+        2_000,
+        &mut host,
+        |_| true,
+    )
+    .expect("runs");
+    let bytes = save(&mut heap);
+    load(&bytes, 1 << 22)
+        .expect("the saved world loads")
+        .verify()
+        .expect("and its chains are sound");
+
+    fn fixnum<'h>(n: i64) -> Value<'h> {
+        Value::fixnum(n).unwrap()
+    }
+    // Given the top record, the first record that resumes in a function
+    // and the frame pointer: the stack slot to spoil, and with what.
+    type Damage<'a> = &'a dyn Fn(usize, usize, usize) -> (usize, i64);
+    let damages: [(&str, Damage<'_>); 5] = [
+        ("a link past the stack", &|mp, _, _| {
+            (mp + mark::PREV, 10_000_000)
+        }),
+        ("a record that is its own predecessor", &|mp, _, _| {
+            (mp + mark::PREV, mp as i64)
+        }),
+        ("a kind of record there is none of", &|mp, _, _| {
+            (mp + mark::KIND, 99)
+        }),
+        (
+            "a number where a record resumes in a function",
+            &|_, exit, _| (exit + mark::FUNCTION, 3),
+        ),
+        ("a frame whose caller is not below it", &|_, _, fp| {
+            (fp - frame::SIZE + frame::FP, fp as i64)
+        }),
+    ];
+    for (what, damage) in damages {
+        let mut damaged = load(&bytes, 1 << 22).expect("the saved world loads");
+        damaged.mutate(|mc| {
+            let thread = quokka_vm::process::ring(mc)
+                .into_iter()
+                .find(|p| mc.slot(*p, MAIN) == Value::NIL)
+                .expect("the thread is in the ring");
+            let stack = mc.slot(thread, OPERANDS);
+            let mp = mc.slot(thread, MP).as_fixnum().unwrap() as usize;
+            let fp = mc.slot(thread, FP).as_fixnum().unwrap() as usize;
+            // The first record down the chain that resumes in a function.
+            let mut exit = mp;
+            while !matches!(
+                mc.slot(stack, exit + mark::KIND).as_fixnum(),
+                Some(mark::BLOCK | mark::CATCH | mark::TAG | mark::PROTECT | mark::HANDLER)
+            ) {
+                exit = mc.slot(stack, exit + mark::PREV).as_fixnum().unwrap() as usize;
+            }
+            let (slot, word) = damage(mp, exit, fp);
+            mc.set_slot(stack, slot, fixnum(word));
+        });
+        assert!(damaged.verify().is_err(), "accepted: {what}");
+    }
+
+    // And a live thread with no stack at all.
+    let mut damaged = load(&bytes, 1 << 22).expect("the saved world loads");
+    damaged.mutate(|mc| {
+        let thread = quokka_vm::process::ring(mc)
+            .into_iter()
+            .find(|p| mc.slot(*p, MAIN) == Value::NIL)
+            .expect("the thread is in the ring");
+        for slot in [quokka_vm::process::SP, FP, quokka_vm::process::PC] {
+            mc.set_slot(thread, slot, fixnum(0));
+        }
+        mc.set_slot(thread, MP, fixnum(-1));
+        mc.set_slot(thread, OPERANDS, Value::NIL);
+    });
+    assert!(
+        damaged.verify().is_err(),
+        "accepted: a live thread with no stack"
+    );
+}
