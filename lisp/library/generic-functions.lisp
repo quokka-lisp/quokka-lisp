@@ -768,15 +768,18 @@
   (and (= (length a) (length b)) (%same-key-p a b)))
 
 ;;; Are the elements of A, in order, `eq` to those of B? B is at least as
-;;; long as A. Written as a bare loop because `%dispatch` runs it on every
-;;; call of every generic function: `(every #'eq a b)` says the same and
-;;; cost 880 steps for two lists of one element, where this costs about 20
-;;; (#161).
+;;; long as A. Written out, and as a function that calls itself, because
+;;; `%dispatch` runs it on every call of every generic function:
+;;; `(every #'eq a b)` says the same and cost 880 steps for two lists of
+;;; one element. A call in tail position is a jump to the machine; a `do`
+;;; opens a block and a tagbody each time it is entered, about fifty steps
+;;; before it has looked at anything, which on this path was a third of a
+;;; call (#161). `%member-eq` in `lists.lisp` is written this way for the
+;;; same reason.
 (defun %same-key-p (a b)
-  (do ((a a (cdr a))
-       (b b (cdr b)))
-      ((or (null a) (not (eq (car a) (car b))))
-       (null a))))
+  (cond ((null a) t)
+        ((eq (car a) (car b)) (%same-key-p (cdr a) (cdr b)))
+        (t nil)))
 
 ;;; The printer sends a cons, a symbol, a number, a string and the other
 ;;; built-in objects to `print-object` only once a program has defined a
@@ -1054,20 +1057,17 @@
 
 ;;; The key a call's effective method is cached under: the class of each
 ;;; required argument, or, where some method has an `eql` specializer and
-;;; the argument has one, that specializer. The list is built front to
-;;; back, a cell at a time, so that nothing has to reverse it.
+;;; the argument has one, that specializer.
 (defun %dispatch-key (gf args count)
-  (if (= count 0)
+  (%key-from (%gf-eql-positions gf) 0 count args))
+
+(defun %key-from (positions i count args)
+  (if (= i count)
       nil
-      (let* ((positions (%gf-eql-positions gf))
-             (key (list (%key-element positions 0 (car args))))
-             (last key))
-        (do ((i 1 (+ i 1))
-             (rest (cdr args) (cdr rest)))
-            ((= i count) key)
-          (let ((cell (list (%key-element positions i (car rest)))))
-            (setf (cdr last) cell)
-            (setq last cell))))))
+      (cons (if positions
+                (%key-element positions i (car args))
+                (class-of (car args)))
+            (%key-from positions (+ i 1) count (cdr args)))))
 
 ;;; What argument number I contributes to the key. POSITIONS are the
 ;;; argument numbers at which some method has an `eql` specializer: nil for
@@ -1082,33 +1082,40 @@
 ;;; arguments. A linear search: a call site that sees many classes pays for
 ;;; each one in front of its own.
 (defun %cached-method (key cache)
-  (do ((entries cache (cdr entries)))
-      ((or (null entries) (%same-key-p key (car (car entries))))
-       (if entries (cdr (car entries)) nil))))
+  (cond ((null cache) nil)
+        ((%same-key-p key (car (car cache))) (cdr (car cache)))
+        (t (%cached-method key (cdr cache)))))
 
-(defun %dispatch (gf args)
-  (let* ((arity (%gf-arity gf))
-         (count (car arity))
-         (most (cdr arity)))
-    ;; One walk over the arguments checks the arity (CLHS 3.5.1.2-3): the
-    ;; required ones must all be there, and dispatch needs them; when the
-    ;; lambda list has no `&rest` or `&key`, there may be no more than it
-    ;; takes. Past the required ones the walk stops where the arguments end.
-    (do ((i 0 (+ i 1))
-         (limit (or most count))
-         (rest args (cdr rest)))
-        ((= i limit)
+;;; One walk over the arguments checks the arity (CLHS 3.5.1.2-3): the
+;;; required ones must all be there, and dispatch needs them; when the
+;;; lambda list has no `&rest` or `&key`, there may be no more than it
+;;; takes. Past the required ones the walk stops where the arguments end.
+(defun %check-arity (gf rest i count limit most)
+  (cond ((= i limit)
          (when (and most rest)
            (error 'program-error "too many arguments to a generic function" (%gf-name gf))))
-      (when (null rest)
-        (if (< i count)
-            (error 'program-error "too few arguments to a generic function" (%gf-name gf))
-            (return))))
-    (unless (eq (%gf-epoch gf) %dispatch-epoch)
+        ((null rest)
+         (when (< i count)
+           (error 'program-error "too few arguments to a generic function" (%gf-name gf))))
+        (t (%check-arity gf (cdr rest) (+ i 1) count limit most))))
+
+;;; What a generic function does when it is called. Everything on the way
+;;; to a cached effective method is done as cheaply as the machine allows,
+;;; since every generic call pays for it: the function's slots are read
+;;; from its slot vector here, once, where the `%gf-...` readers would each
+;;; be two calls. The numbers are theirs, at the top of this file: 13 the
+;;; arity, 11 the `eql` positions, 6 the epoch, 5 the cache.
+(defun %dispatch (gf args)
+  (let* ((slots (%instance-slots gf))
+         (arity (aref slots 13))
+         (count (car arity))
+         (most (cdr arity)))
+    (%check-arity gf args 0 count (or most count) most)
+    (unless (eq (aref slots 6) %dispatch-epoch)
       (%set-gf-cache gf nil)
       (%set-gf-epoch gf %dispatch-epoch))
-    (let ((key (%dispatch-key gf args count)))
-      (funcall (or (%cached-method key (%gf-cache gf))
+    (let ((key (%key-from (aref slots 11) 0 count args)))
+      (funcall (or (%cached-method key (aref slots 5))
                    (let ((emf (%compute-effective-method gf args)))
                      (%set-gf-cache gf (cons (cons key emf) (%gf-cache gf)))
                      emf))

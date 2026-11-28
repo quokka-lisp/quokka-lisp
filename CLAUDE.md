@@ -957,7 +957,13 @@ page times each slice and says in the console when one with a collection
 in it takes longer than any before (4.7 ms at 316,000 words, wasm, 28 Nov
 2026; #86 builds a generational collector past 16 ms). **Lisp is never
 told**: when a collection happens depends on the slicing (rule 4).
-Rebuild `(:FORMS 2446 :REPLACED 1772)`.
+**#161, second part**: the loops on the dispatch path are functions that
+call themselves in tail position (`%same-key-p`, `%cached-method`,
+`%check-arity`, `%key-from`), and `%dispatch` reads the generic function's
+slot vector once. **Entering a `do` costs about fifty steps** (a block and
+a tagbody) before it has looked at anything; a tail call is a jump. A
+generic call is 221 steps, an accessor 375, `make-instance` 1,728.
+Rebuild `(:FORMS 2448 :REPLACED 1774)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

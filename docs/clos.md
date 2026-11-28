@@ -254,9 +254,11 @@ bare `eq` loop (`%cached-method`, `%same-key-p`). It was first searched with
 `(assoc key cache :test ...)` over `(every #'eq a b)`, which is the same
 search and cost 1,000 of a call's 1,446 steps: the general sequence functions
 parse keywords and take their slow path for two sequences (#161, found by the
-review after phase 4). A call now costs about 340 steps against 4 for a plain
-one. What is left is the `&rest` list, the key consed per call, and the linear
-search at a call site that sees many classes; #161 keeps the list.
+review after phase 4). The loops on this path are functions that call
+themselves in tail position, a jump to the machine, where a `do` opened a
+block and a tagbody each time. A call now costs about 220 steps against 4 for
+a plain one. What is left is the `&rest` list, the key consed per call, and
+the linear search at a call site that sees many classes; #161 keeps the list.
 
 Method combination: `standard` (primary, `:before`, `:after`, `:around`),
 the nine built-in operator combinations (`+`, `and`, `append`, `list`, `max`,
