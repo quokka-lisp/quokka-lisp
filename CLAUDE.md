@@ -890,6 +890,11 @@ function added to the host loop must be, or backtraces grow a frame**.
 **`%without-interrupts` puts off a thread's end, not a switch**: what must
 not be interleaved needs a lock, and a lock a form may be abandoned inside
 (#173) must let its owner take it again.
+**#173**: a computation that runs out of its budget is told to end as a
+thread is (`vm::wind_down` sets the main process's `TERMINATE`), and gets
+`WIND_DOWN` (1,000,000) steps to run its cleanups before its stack is
+dropped; the host reports the budget either way. The browser's Stop does
+not do this yet.
 Rebuild `(:FORMS 2433 :REPLACED 1761)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

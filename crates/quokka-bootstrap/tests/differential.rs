@@ -1908,6 +1908,37 @@ fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
 }
 
+/// A form given up at its step budget runs its cleanups first (#173). It
+/// used to be dropped where it stood: the mutex below stayed held by the
+/// main thread for the life of the world, and a runaway loop over a channel
+/// left the channels' own lock held, so every later channel operation
+/// failed. A cleanup that itself never ends is still given up.
+#[test]
+fn a_form_given_up_at_its_budget_runs_its_cleanups() {
+    let out = run_compiled(
+        "(defvar *m* (quokka-thread:make-mutex)) \
+         (defvar *log* nil) \
+         (quokka-thread:with-mutex (*m*) \
+           (unwind-protect (do () (nil)) (push :cleaned *log*))) \
+         (list *log* (quokka-thread:mutex-owner *m*)) \
+         (defvar *c* (quokka::make-channel :capacity 1)) \
+         (do () (nil) (quokka::try-send *c* 1) (quokka::try-receive *c*)) \
+         (defvar *d* (quokka::make-channel :capacity 1)) \
+         (quokka::send *d* 7) \
+         (unwind-protect (do () (nil)) (do () (nil))) \
+         (+ 1 2)",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 10, "{out}");
+    assert_eq!(lines[3], "=> ((:CLEANED) NIL)", "{out}");
+    // Another channel: the loop may have been given up with *c* full.
+    assert_eq!(lines[7], "=> 7", "the channels' lock was let go: {out}");
+    assert_eq!(lines[9], "=> 3", "{out}");
+    for given_up in [2, 5, 8] {
+        assert!(lines[given_up].starts_with("!! "), "{out}");
+    }
+}
+
 /// Two threads that intern the same new name get the same symbol (#179).
 /// Looking a name up and adding it are two steps, and a thread can be
 /// switched out between them; before `intern` took a lock to make a symbol,

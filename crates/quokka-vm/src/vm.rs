@@ -1382,6 +1382,15 @@ impl<'a, 'h> Vm<'a, 'h> {
         self.restore_binding(at);
         self.drop_to(at);
         self.mc.set_mp(prev);
+        // The frame that was running is gone with what was dropped. Wherever
+        // the unwind lands sets the frame pointer from the record it lands
+        // on; until then there is no frame, and saying so keeps the frame
+        // pointer inside the stack, which `Heap::verify` asks of every
+        // moment a slice can end at. An unwind that ends at the bottom — a
+        // process told to end (#173) — never lands.
+        if self.mc.fp() > at {
+            self.mc.set_fp(0);
+        }
         Transition::Continue
     }
 
@@ -2556,7 +2565,65 @@ fn drive(
             }
         }
     }
+    wind_down(heap, slice, host);
     Err(EvalError::BudgetExhausted)
+}
+
+/// How many steps a computation that ran out of budget gets to run its
+/// cleanups in (`wind_down`).
+const WIND_DOWN: u64 = 1_000_000;
+
+/// Let a computation that has run out of its budget run its cleanups
+/// before it is given up (#173).
+///
+/// Giving it up used to mean dropping its stack: special bindings were put
+/// back and nothing else was, so an `unwind-protect` cleanup never ran. One
+/// runaway loop over a channel left the channels' lock held for the life
+/// of the world, and a `with-mutex` its mutex. So the main process is told
+/// to end, exactly as `terminate-thread` tells a thread: at its next safe
+/// step it unwinds to its base, cleanups and all, and halts. It gets
+/// `WIND_DOWN` steps for that. A computation that uses those up as well —
+/// a cleanup that loops, or a loop inside a region that defers its end — is
+/// dropped as before.
+///
+/// With no processes there are no locks to leave held and nothing to tell;
+/// the stack is dropped.
+fn wind_down(heap: &mut crate::heap::Heap, slice: u64, host: &mut dyn crate::host::Host) {
+    let told = heap.mutate(|mc| match crate::process::main(mc) {
+        Some(main) => {
+            mc.set_slot(main, crate::process::TERMINATE, Value::T);
+            true
+        }
+        None => false,
+    });
+    if !told {
+        return;
+    }
+    let mut left = WIND_DOWN;
+    let mut unused = 0u64;
+    while left > 0 {
+        match one_slice(heap, slice.min(left)) {
+            Ok(crate::slice::Status::Yielded) => {
+                if crate::host::pending(heap).is_some() {
+                    answer(heap, host, &mut unused);
+                }
+            }
+            Ok(crate::slice::Status::Blocked { .. }) => {
+                if !answer(heap, host, &mut unused) {
+                    break;
+                }
+            }
+            Ok(crate::slice::Status::Done { .. }) | Err(_) => break,
+        }
+        left = left.saturating_sub(slice.max(1));
+    }
+    // Still set if it was never safe to end: the next computation in this
+    // process must not be ended by it.
+    heap.mutate(|mc| {
+        if let Some(main) = crate::process::main(mc) {
+            mc.set_slot(main, crate::process::TERMINATE, Value::NIL);
+        }
+    });
 }
 
 /// Answer the request a process is waiting on, through HOST; whether there
