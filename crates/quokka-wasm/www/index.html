@@ -209,7 +209,12 @@
         }
         const took = performance.now() - before;
         const messages = vm.take_messages();
-        if (messages) view.apply(messages);
+        try {
+          if (messages) view.apply(messages);
+        } catch (error) {
+          // Drawing failed, not the world: say so and keep it running.
+          console.error("the page could not draw", error);
+        }
         const output = vm.take_output();
         if (output) consoleOut.textContent += output;
         stop.disabled = !more;

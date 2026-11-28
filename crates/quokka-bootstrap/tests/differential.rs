@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2433 :REPLACED 1761)".into())],
+        [Outcome::Value("(:FORMS 2439 :REPLACED 1767)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1906,6 +1906,47 @@ fn the_rebuild_reads_the_library_the_cold_build_loads() {
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
+}
+
+/// Four small faults the review after phase 4 found, each a line here.
+///
+/// A `with-mutex` inside another on the same mutex is refused and leaves
+/// the outer one's hold alone (#183); a wait with a time limit says it
+/// cannot keep one, where it used to wait for ever. `call-next-method`
+/// written by a macro is found (#187). A property value the page could not
+/// read, or that never ends, is sent as text and cannot stop a flush (#191,
+/// #192); a circular list of modifiers in an event is not walked.
+#[test]
+fn small_faults_of_the_second_review_stay_fixed() {
+    let out = run_compiled(
+        "(use-package :quokka-thread) \
+         (defvar *m* (make-mutex)) \
+         (with-mutex (*m*) \
+           (list (handler-case (with-mutex (*m*) 1) (error () :refused)) \
+                 (eq (mutex-owner *m*) (current-thread)))) \
+         (list (mutex-owner *m*) (with-recursive-lock (*m*) (with-recursive-lock (*m*) :twice))) \
+         (handler-case (grab-mutex *m* :timeout 1) (error () :no-clock)) \
+         (defmacro cnm () '(call-next-method)) \
+         (defgeneric f1 (x) (:method ((x t)) 'top)) \
+         (defmethod f1 ((x integer)) (list 'int (cnm) (next-method-p))) \
+         (defmethod f1 ((x fixnum)) (list 'fix (funcall #'call-next-method))) \
+         (f1 1) \
+         (list (quokka::%wire-value '(1 . 5)) (quokka::%wire-value :|a(b|) \
+               (quokka::%wire-value :dim) (quokka::%wire-value '(1 (2 1/2) :x)) \
+               (stringp (car (quokka::%wire-value '#1=(#1#))))) \
+         (quokka::event-modifiers \
+           (quokka::%parse-event \"(:key :modifiers #1=(:shift . #1#))\"))",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[2], "=> (:REFUSED T)", "{out}");
+    assert_eq!(lines[3], "=> (NIL :TWICE)", "{out}");
+    assert_eq!(lines[4], "=> :NO-CLOCK", "{out}");
+    assert_eq!(lines[9], "=> (FIX (INT TOP T))", "{out}");
+    assert_eq!(
+        lines[10], "=> (\"(1 . 5)\" \"a(b\" :DIM (1 (2 0.5) :X) NIL)",
+        "{out}"
+    );
+    assert_eq!(lines[11], "=> NIL", "{out}");
 }
 
 /// A thread told to end while it waits on the host, in a region that puts

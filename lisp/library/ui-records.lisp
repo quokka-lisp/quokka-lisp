@@ -369,13 +369,45 @@
   (mapcar #'%wire-value (record-properties record)))
 
 (defun %wire-value (value)
-  (cond ((or (integerp value) (floatp value) (stringp value) (keywordp value)
-             (eq value t) (null value))
+  (%wire-value-at value 0))
+
+;;; A value as the page can read it: numbers, strings, plain keywords, t and
+;;; nil as they are, a ratio as a double, a proper list element by element,
+;;; and anything else as the text it prints as. Nothing here may signal or
+;;; run for ever, whatever a program put in a property: this runs inside a
+;;; flush, which has emptied its queue by then (#192).
+(defun %wire-value-at (value depth)
+  (cond ((or (integerp value) (floatp value) (stringp value) (eq value t) (null value))
          value)
+        ((keywordp value) (if (%plain-keyword-p value) value (symbol-name value)))
         ((realp value) (float value))
-        ((and (consp value) (list-length value))
-         (if (cdr (last value)) (princ-to-string value) (mapcar #'%wire-value value)))
-        (t (let ((*print-circle* t)) (princ-to-string value)))))
+        ((and (consp value) (< depth 8) (%proper-list-p value))
+         (let ((out nil))
+           (dolist (item value (nreverse out))
+             (push (%wire-value-at item (+ depth 1)) out))))
+        (t (let ((*print-circle* t) (*print-level* 4) (*print-length* 16))
+             (princ-to-string value)))))
+
+;;; Does LIST end in nil within a thousand conses? Not `list-length`, which
+;;; signals for a dotted list.
+(defun %proper-list-p (list)
+  (do ((rest list (cdr rest))
+       (n 0 (+ n 1)))
+      ((or (atom rest) (> n 1000)) (null rest))))
+
+;;; Is KEYWORD's name one the page's reader takes as a single token? Its
+;;; reader knows no `|...|`, so a name with a parenthesis, a quote or a
+;;; space in it broke a whole batch of messages and left the page waiting
+;;; for ever (#191). Such a keyword is sent as a string.
+(defun %plain-keyword-p (keyword)
+  (let* ((name (symbol-name keyword))
+         (count (length name)))
+    (and (> count 0)
+         (do ((i 0 (+ i 1)))
+             ((or (= i count)
+                  (not (let ((c (char name i)))
+                         (or (alphanumericp c) (eql c #\-) (eql c #\_) (eql c #\.)))))
+              (= i count))))))
 
 ;;; The record is on the page from now on.
 (defun %now-shown (record)

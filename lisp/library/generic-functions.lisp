@@ -899,13 +899,28 @@
 ;;; ------------------------------------------------------------------------
 ;;; defmethod
 
-;;; Does FORM mention any of SYMBOLS anywhere? `defmethod` makes the local
-;;; functions `call-next-method` and `next-method-p` only for a body that
-;;; uses them.
-(defun %mentions-p (form symbols)
-  (cond ((symbolp form) (if (member form symbols) t nil))
-        ((consp form) (or (%mentions-p (car form) symbols) (%mentions-p (cdr form) symbols)))
-        (t nil)))
+;;; `call-next-method` and `next-method-p` in a method's body.
+;;;
+;;; They are local *macros*, which cost a method that does not use them
+;;; nothing and are found however the call came to be written: `defmethod`
+;;; once made local functions only when the body's text mentioned the names,
+;;; so a macro that expanded into `(call-next-method)` met an undefined
+;;; function (#187). Only a body that takes one of them as a function,
+;;; `#'call-next-method`, gets the local functions, a closure a call.
+
+;;; Does FORM hold `(function NAME)` for one of NAMES anywhere?
+(defun %mentions-function-p (form names)
+  (cond ((atom form) nil)
+        ((and (eq (car form) 'function) (consp (cdr form)) (member (cadr form) names)) t)
+        (t (or (%mentions-function-p (car form) names)
+               (%mentions-function-p (cdr form) names)))))
+
+;;; What `(call-next-method ...)` expands into: the next method called with
+;;; ARGUMENTS, or `no-next-method` when there is none.
+(defun %call-next-method (arguments next method)
+  (if next
+      (funcall next arguments)
+      (apply #'no-next-method (%method-generic-function method) method arguments)))
 
 ;;; A specializer as `defmethod` writes it, as the form that makes it when
 ;;; the `defmethod` runs.
@@ -948,16 +963,17 @@
                 ',name ',qualifiers (list ,@(mapcar #'%specializer-form specializers))
                 ',lambda-list
                 (lambda (,args ,next)
-                  ,(if (%mentions-p forms '(call-next-method next-method-p))
+                  ,(if (%mentions-function-p forms '(call-next-method next-method-p))
                        `(flet ((call-next-method (&rest more)
-                                 (let ((arguments (or more ,args)))
-                                   (if ,next
-                                       (funcall ,next arguments)
-                                       (apply #'no-next-method
-                                              (%method-generic-function ,method) ,method arguments))))
+                                 (%call-next-method (or more ,args) ,next ,method))
                                (next-method-p () (if ,next t nil)))
                           ,call)
-                       call))
+                       `(macrolet ((call-next-method (&rest more)
+                                     (list '%call-next-method
+                                           (if more (cons 'list more) ',args)
+                                           ',next ',method))
+                                   (next-method-p () '(if ,next t nil)))
+                          ,call)))
                 ,documentation))))))
 
 ;;; LAMBDA-LIST with `&allow-other-keys` after its keyword parameters.

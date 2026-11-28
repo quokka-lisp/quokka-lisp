@@ -906,7 +906,15 @@ there.**
 is answered with nil (`host::withdraw`), one already answered is left for
 the process to find. Never drop a request record of a process that will
 run again: it resumes expecting a reply on its stack.
-Rebuild `(:FORMS 2433 :REPLACED 1761)`.
+**#183**: `with-mutex` lets go only of a mutex it took (a flag, not the
+owner test); `with-recursive-lock`; a non-nil `:timeout` is an error until
+there is a clock (`%no-timeout`). **#187**: `call-next-method` and
+`next-method-p` are local macros in a method body, local functions only
+when `#'call-next-method` is written. **#191, #192**: `%wire-value` cannot
+signal or loop (`%proper-list-p`, a depth), and sends a keyword the page's
+reader cannot take as one token as a string; the page reads a batch under
+a `try`. **#198**: `:save` asks the directory whether a file is there.
+Rebuild `(:FORMS 2439 :REPLACED 1767)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

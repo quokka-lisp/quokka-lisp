@@ -136,9 +136,14 @@ pub(crate) fn rebuild(args: &[String]) {
 /// And it replaces only a world. `:save` takes whatever name is typed, so a
 /// slip of the fingers used to overwrite any file at all.
 pub(crate) fn save_world(heap: &mut Heap, path: &str) -> Result<(), String> {
-    if let Ok(mut existing) = std::fs::File::open(path) {
+    // Whether something is there is asked of the directory, not by opening
+    // it: a file that could not be opened was taken for no file at all,
+    // and replaced (#198).
+    if std::fs::symlink_metadata(path).is_ok() {
         let mut start = [0u8; 8];
-        let is_world = existing.read_exact(&mut start).is_ok()
+        let is_world = std::fs::File::open(path)
+            .and_then(|mut existing| existing.read_exact(&mut start))
+            .is_ok()
             && u64::from_le_bytes(start) == quokka_vm::image::MAGIC;
         if !is_world {
             return Err(format!(

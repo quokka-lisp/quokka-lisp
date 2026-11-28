@@ -33,7 +33,17 @@ export class Model {
   // Apply the text of what `take_messages` returned: any number of
   // `%display` batches, each a list of messages.
   applyText(text) {
-    for (const batch of readAll(text)) {
+    let batches;
+    try {
+      batches = readAll(text);
+    } catch (error) {
+      // Text the page cannot read at all. It is the world's mistake, and
+      // what it said is lost; but a page that threw here stopped running
+      // the world for good (#191), which is worse than a stale screen.
+      console.error("cannot read what the world sent", error);
+      return;
+    }
+    for (const batch of batches) {
       if (!Array.isArray(batch)) continue;
       for (const message of batch) {
         try {

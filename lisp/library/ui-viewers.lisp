@@ -135,7 +135,8 @@
                                        (if (integerp id) (find-record id) nil))
                              :key (of-type :key #'stringp)
                              :code (of-type :code #'stringp)
-                             :modifiers (remove-if-not #'keywordp (of-type :modifiers #'listp))
+                             :modifiers (remove-if-not #'keywordp
+                                                       (of-type :modifiers #'%proper-list-p))
                              :repeat (getf plist :repeat)
                              :text (of-type :text #'stringp)
                              :start (of-type :start (lambda (n) (and (integerp n) (>= n 0))))

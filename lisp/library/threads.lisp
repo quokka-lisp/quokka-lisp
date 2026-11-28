@@ -181,7 +181,7 @@
 ;;; finish — an error ended it, or it was terminated — gives DEFAULT if one
 ;;; was given, and otherwise is a `join-thread-error`, as in SBCL.
 (defun join-thread (thread &key (default nil default-p) timeout)
-  (declare (ignore timeout))
+  (%no-timeout timeout 'join-thread)
   (when (eq thread (current-thread))
     (error 'join-thread-error :thread thread))
   (%wait-until (lambda () (not (thread-alive-p thread))))
@@ -216,7 +216,7 @@
 ;;; up at once instead and return nil. Taking a mutex one already holds is
 ;;; an error, as in SBCL, since it would wait for ever.
 (defun grab-mutex (mutex &key (waitp t) timeout)
-  (declare (ignore timeout))
+  (%no-timeout timeout 'grab-mutex)
   (let ((me (current-thread)))
     (when (eq (mutex-owner mutex) me)
       (error "~S is already held by this thread." mutex))
@@ -236,13 +236,36 @@
 ;;; ended, and the body where it can, as SBCL's `with-mutex` does: ended in
 ;;; the body, the cleanup lets the mutex go, whole; ended while it waits for
 ;;; the mutex, it holds nothing to let go.
+;;;
+;;; The cleanup lets go only of a mutex this form took. It used to ask
+;;; whether the thread held the mutex at all, so a `with-mutex` inside
+;;; another on the same mutex — an error, signalled by `grab-mutex` — let
+;;; go of the outer one's hold on its way out, and the rest of the outer
+;;; body ran unprotected (#183).
 (defmacro with-mutex ((mutex &key (wait-p t)) &body body)
-  (let ((m (gensym "MUTEX")))
-    `(let ((,m ,mutex))
+  (let ((m (gensym "MUTEX")) (got (gensym "GOT")))
+    `(let ((,m ,mutex) (,got nil))
        (%without-interrupts
          (unwind-protect
-              (when (grab-mutex ,m :waitp ,wait-p) (%with-interrupts ,@body))
-           (when (eq (mutex-owner ,m) (current-thread)) (release-mutex ,m)))))))
+              (when (setq ,got (grab-mutex ,m :waitp ,wait-p)) (%with-interrupts ,@body))
+           (when ,got (release-mutex ,m)))))))
+
+;;; `with-mutex`, except that a thread which holds the mutex already just
+;;; runs the body: SBCL's `with-recursive-lock`, which bordeaux-threads'
+;;; backend for SBCL uses.
+(defmacro with-recursive-lock ((mutex &key (wait-p t)) &body body)
+  (let ((m (gensym "MUTEX")))
+    `(let ((,m ,mutex))
+       (if (eq (mutex-owner ,m) (current-thread))
+           (progn ,@body)
+           (with-mutex (,m :wait-p ,wait-p) ,@body)))))
+
+;;; A wait with a time limit needs a clock, and the machine has none yet
+;;; (`docs/processes.md`). Taking the argument and waiting for ever made
+;;; code written for SBCL hang without a word; it is refused instead.
+(defun %no-timeout (timeout operation)
+  (when timeout
+    (error "~S cannot take a :timeout yet: Quokka has no clock to wait by." operation)))
 
 ;;; A wait queue: threads waiting to be told that something has changed,
 ;;; each with a token the notifier sets. The mutex given to `condition-wait`
@@ -256,7 +279,7 @@
 ;;; ended while it waits takes its token out of the queue, or the next
 ;;; notification would go to it and be lost.
 (defun condition-wait (queue mutex &key timeout)
-  (declare (ignore timeout))
+  (%no-timeout timeout 'condition-wait)
   (let ((token (vector nil)))
     (%without-interrupts
       (setf (waitqueue-waiters queue) (append (waitqueue-waiters queue) (list token)))
@@ -269,9 +292,12 @@
 
 ;;; Wake N of the threads waiting on QUEUE, the longest-waiting first.
 (defun condition-notify (queue &optional (n 1))
-  (dotimes (i n)
-    (let ((token (pop (waitqueue-waiters queue))))
-      (when token (setf (svref token 0) t))))
+  ;; A notifier ended between taking a token and setting it would lose the
+  ;; wake-up for good.
+  (%without-interrupts
+    (dotimes (i n)
+      (let ((token (pop (waitqueue-waiters queue))))
+        (when token (setf (svref token 0) t)))))
   nil)
 
 (defun condition-broadcast (queue)
