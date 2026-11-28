@@ -62,11 +62,16 @@
     (setq %references references)
     (unwind-protect
          (multiple-value-prog1
-             (let ((%definition-place nil) (%definition-source nil))
+             (let ((%definition-place nil) (%definition-source nil)
+                   (%part-source source))
                (%eval-in form form))
            (setq %references outer)
            (%record-definition form place source references))
       (setq %references outer))))
+
+;;; Where the form being evaluated came from, for the definitions among the
+;;; parts of a top-level `progn`, which are recorded one by one (`%eval-part`).
+(defvar %part-source nil)
 
 (defun %eval-in (form context)
   (let ((form (macroexpand form)))
@@ -100,10 +105,29 @@
         (tagbody
          next
            (if (cdr rest)
-               (progn (%eval-in (%eval-wrap (car rest) prefix) context)
+               (progn (%eval-part (%eval-wrap (car rest) prefix) context)
                       (setq rest (cdr rest))
                       (go next))))
-        (%eval-in (%eval-wrap (car rest) prefix) context))))
+        (%eval-part (%eval-wrap (car rest) prefix) context))))
+
+;;; Evaluate one part of a top-level `progn`. A part that defines something
+;;; is recorded as a definition of its own, with what it refers to, when the
+;;; form around it is not itself a definition: `(progn (defun a ...) (defun
+;;; b ...))`, or a program's own macro that expands into one. They were
+;;; recorded without their references, so `who-calls` did not know them and
+;;; a redefined macro never marked them stale (#184). The parts of a
+;;; defining form, the `defun`s a `defstruct` expands into, belong to that
+;;; definition and are not recorded again.
+(defun %eval-part (form context)
+  (if (and %recording-definitions (null %references) (%definition-key form))
+      (let ((references (cons nil nil)))
+        (setq %references references)
+        (unwind-protect
+             (multiple-value-prog1 (%eval-in form context)
+               (setq %references nil)
+               (%record-definition form nil %part-source references))
+          (setq %references nil)))
+      (%eval-in form context)))
 
 (defun %eval-wrap (form prefix)
   (if prefix (append prefix (list form)) form))

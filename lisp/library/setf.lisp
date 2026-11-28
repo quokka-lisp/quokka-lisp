@@ -92,7 +92,14 @@
     ;; A macro form is a place if what it expands to is (CLHS 5.1.2.7).
     (t (multiple-value-bind (expansion expanded) (macroexpand-1 place environment)
          (if expanded
-             (get-setf-expansion expansion environment)
+             (progn
+               ;; `setf` expands a place that is a macro call itself, not
+               ;; the compiler, so it is `setf` that says the macro was
+               ;; used: unsaid, redefining the macro left the function that
+               ;; set through it unmarked (#184).
+               (when (%macro-function (car place))
+                 (%note-reference ':macro (car place)))
+               (get-setf-expansion expansion environment))
              (%setf-function-expansion place))))))
 
 ;;; Any other `(name args...)` is a place whose writer is the setf function

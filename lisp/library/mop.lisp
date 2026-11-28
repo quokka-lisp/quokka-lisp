@@ -30,6 +30,14 @@
     (error 'error "no method of this generic function applies to these arguments"
            (list reader object))))
 
+;;; A class that is not finalized yet, because a superclass is still to be
+;;; defined, has no precedence list and no effective slots to give: nil was
+;;; the answer, which reads as "none" (#190). SBCL signals an error too.
+(defun %check-finalized (class)
+  (unless (or (not (%standard-metaclass-p (class-of class))) (%class-finalized-p class))
+    (error "the class is not finalized: a superclass of it is not defined yet"
+           (%class-name class))))
+
 ;;; ------------------------------------------------------------------------
 ;;; Classes
 
@@ -41,6 +49,7 @@
   (%class-direct-subclasses class))
 (defun class-precedence-list (class)
   (%check-metaobject class 'class 'class-precedence-list)
+  (%check-finalized class)
   (%class-precedence-list class))
 (defun class-direct-default-initargs (class)
   (%check-metaobject class 'class 'class-direct-default-initargs)
@@ -65,6 +74,7 @@
 
 (defun class-slots (class)
   (%check-metaobject class 'class 'class-slots)
+  (%check-finalized class)
   (if (%structure-class-p class)
       (second (%structure-slot-definitions class))
       (%class-slots class)))

@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2451 :REPLACED 1777)".into())],
+        [Outcome::Value("(:FORMS 2454 :REPLACED 1779)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1906,6 +1906,34 @@ fn the_rebuild_reads_the_library_the_cold_build_loads() {
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
+}
+
+/// Definitions the cross-reference did not see (#184): those inside a
+/// top-level `progn`, or inside what a program's own macro expands into,
+/// were recorded without what they call; and a macro used as a `setf` place
+/// is expanded by `setf`, not by the compiler, so nothing noted it and
+/// redefining it left its user unmarked.
+#[test]
+fn definitions_in_a_progn_and_macros_in_places_are_cross_referenced() {
+    let out = run_compiled(
+        "(progn (defun p1 () (g)) (defun p2 () (p1))) \
+         (list (mapcar #'quokka-debug:definition-name (quokka-debug:who-calls 'g)) \
+               (mapcar #'quokka-debug:definition-name (quokka-debug:who-calls 'p1))) \
+         (defmacro both () '(progn (defun m1 () 1) (defun m2 () (m1)))) \
+         (both) \
+         (mapcar #'quokka-debug:definition-name (quokka-debug:who-calls 'm1)) \
+         (defvar *pl* (list 1 2)) \
+         (defmacro w (a) (list 'car a)) \
+         (defun usew () (setf (w *pl*) 5) *pl*) \
+         (defmacro w (a) (list 'cadr a)) \
+         (mapcar #'quokka-debug:definition-name (quokka-debug:stale-definitions)) \
+         (progn (quokka-debug:recompile-stale-definitions) (usew))",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[1], "=> ((P1) (P2))", "{out}");
+    assert_eq!(lines[4], "=> (M2)", "{out}");
+    assert_eq!(lines[9], "=> (USEW)", "{out}");
+    assert_eq!(lines[10], "=> (1 5)", "{out}");
 }
 
 /// Three definitions SBCL refuses and Quokka took (#190): a standard type

@@ -117,12 +117,9 @@
 ;;; their own (those of the whole are not any one of theirs).
 (defun %record-definition (form place source &optional references)
   (when %recording-definitions
-    (cond ((and (consp form) (eq (car form) 'progn))
-           (dolist (sub (cdr form)) (%record-definition sub nil source)))
-          ((and (consp form) (eq (car form) 'eval-when)
-                (or (member :execute (cadr form)) (member 'eval (cadr form))))
-           (dolist (sub (cddr form)) (%record-definition sub nil source)))
-          (t (multiple-value-bind (kind name) (%definition-key form)
+    ;; The definitions inside a `progn` or an `eval-when` are recorded as
+    ;; each is evaluated, with its references (`%eval-part` in `eval.lisp`).
+    (cond (t (multiple-value-bind (kind name) (%definition-key form)
                (when kind
                  (multiple-value-bind (text position) (%place-text place)
                  (let* ((key (cons kind name))

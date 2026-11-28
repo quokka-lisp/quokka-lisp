@@ -79,8 +79,18 @@ when the environment needs to browse the system itself.
 ## Limits, known and accepted
 
 - A definition is recorded when its top-level form returns. The
-  definitions inside a `progn` that fails part way are not recorded, though
-  they were made, and they keep no text of their own.
+  definitions inside a top-level `progn`, or inside what a program's own
+  macro expands into, are recorded one by one as each returns, with what
+  each refers to (#184); they keep no text of their own. A macro used as a
+  `setf` place is noted by `setf`, which expands it, since the compiler
+  never sees it.
+- The names are exported from `QUOKKA-DEBUG`: `find-definition`,
+  `all-definitions`, the `definition-...` readers, `who-calls`,
+  `who-macroexpands`, `stale-definitions`, `recompile-definition` and
+  `recompile-stale-definitions`.
+- A form evaluated again with the same form and text is no new version,
+  unless the definition was stale (#185). Recompiling what is stale does
+  macros first, until none is stale, then everything else.
 - Text is cut by line comments. A `#|...|#` block comment, or a form a `#+`
   reader conditional skipped, before a definition becomes part of its text.
 - The host loop is handed what a person types one line at a time, so a
