@@ -2368,7 +2368,19 @@ impl<'h> Vm<'_, 'h> {
         let leaving = self.mc.register(Register::Process);
         let transition = if let Some(next) = crate::process::next_runnable(self.mc) {
             crate::process::switch_to(self.mc, next);
-            Transition::Continue
+            // A process that ended just gives way. One that asked the host
+            // something ends the slice as well, though another can run: the
+            // host answers between slices, and carrying on here made the
+            // asker wait out the rest of this one while the driver charged
+            // a whole slice for it. Beside one thread that only yields,
+            // 4,000 `write-char`s ran out of a budget they use a thousandth
+            // of alone (#174; #95 was the same fault before there were
+            // threads).
+            if ended {
+                Transition::Continue
+            } else {
+                Transition::Block
+            }
         } else {
             if ended {
                 crate::process::focus_main(self.mc);

@@ -136,14 +136,31 @@
                                             :calls (reverse (cdr references))
                                             :number (setq %definition-count
                                                           (+ %definition-count 1))
-                                            :versions (if old
-                                                          (cons old (definition-versions old))
-                                                          nil))))
+                                            ;; A form evaluated again as
+                                            ;; it was (a file loaded twice,
+                                            ;; a recompile) is no new
+                                            ;; version: kept as one, each
+                                            ;; reload of a small `defun`
+                                            ;; added 5 KB to the world, for
+                                            ;; good (#185).
+                                            :versions (cond ((null old) nil)
+                                                            ((%same-source-p old form text)
+                                                             (definition-versions old))
+                                                            (t (cons old (definition-versions old)))))))
                    ;; The old definition is a version now; its own versions
                    ;; are the new one's, so the history is one list.
                    (when old (setf (definition-versions old) nil))
                    (setf (gethash key %definitions) new)
                    (when (eq kind :macro) (%mark-stale name))))))))))
+
+;;; Would evaluating FORM, read from TEXT, make what DEFINITION already
+;;; is? The same source, and nothing it was compiled with has changed
+;;; since: a stale definition compiled again means something else now, and
+;;; what it was is worth keeping as a version.
+(defun %same-source-p (definition form text)
+  (and (not (definition-stale definition))
+       (equal (definition-form definition) form)
+       (equal (definition-text definition) text)))
 
 ;;; What a definition made, where there is one object to point at.
 (defun %definition-object (kind name)
@@ -294,18 +311,41 @@
     (eval (definition-form definition)))
   (gethash (cons (definition-kind definition) (definition-name definition)) %definitions))
 
-;;; Recompile every stale definition, in the order they were made, so that
-;;; a macro is compiled before what uses it. Recompiling a macro can make
-;;; others stale; they are recompiled too, but none twice, so a macro that
-;;; uses itself does not go round for ever. Returns what was recompiled.
+;;; Recompile every stale definition, and return what was recompiled.
+;;;
+;;; Macros first, in the order they were made, again and again until none
+;;; is stale: recompiling a macro marks whatever expanded it stale, another
+;;; macro perhaps, and a function compiled before the last macro settled
+;;; would hold an old expansion. Recompiling X before the macro M it used,
+;;; because X was made first, left X with M's old meaning and a stale mark
+;;; (#184). Then everything else, once: only a macro's definition makes
+;;; anything stale. A macro is recompiled at most four times, so two that
+;;; use each other do not go round for ever.
 (defun recompile-stale-definitions ()
-  (let ((done nil))
-    (do ((stale (stale-definitions) (stale-definitions)))
-        ((null (set-difference stale done :key #'definition-key :test #'equal))
-         (nreverse done))
-      (dolist (definition stale)
-        (unless (member (definition-key definition) done :key #'definition-key :test #'equal)
-          (push (recompile-definition definition) done))))))
+  (let ((done nil) (turns nil))
+    (flet ((again (definition)
+             (let* ((key (definition-key definition))
+                    (entry (assoc key turns :test #'equal)))
+               (unless entry
+                 (setq entry (cons key 0))
+                 (push entry turns))
+               (setf (cdr entry) (+ (cdr entry) 1))
+               (setq done (cons (recompile-definition definition)
+                                (remove key done :key #'definition-key :test #'equal))))))
+      (do ((macro (%stale-macro turns) (%stale-macro turns)))
+          ((null macro))
+        (again macro))
+      (dolist (definition (stale-definitions))
+        (unless (eq (definition-kind definition) :macro)
+          (again definition))))
+    (nreverse done)))
+
+;;; The first stale macro that has not been recompiled four times already.
+(defun %stale-macro (turns)
+  (dolist (definition (stale-definitions) nil)
+    (when (and (eq (definition-kind definition) :macro)
+               (< (or (cdr (assoc (definition-key definition) turns :test #'equal)) 0) 4))
+      (return definition))))
 
 (defun definition-key (definition)
   (cons (definition-kind definition) (definition-name definition)))

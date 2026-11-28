@@ -371,8 +371,16 @@
                               (unless %listener-evaluating
                                 (%report-command-error condition)
                                 (invoke-restart 'abort)))))
-        (%dispatch-event event)
-        (%after-event))
+        ;; A key, or anything else that may be a command, is followed by
+        ;; redisplay. An edit is the page saying what was typed, once for
+        ;; every character: the editor record has it already, and the
+        ;; viewers are drawn again only if the one it was for says it used
+        ;; it (`viewer-input` answering true). Redrawing every viewer for
+        ;; every character cost a list of a hundred rows two seconds a
+        ;; keystroke (#167).
+        (if (or (%dispatch-event event) (not (eq (event-kind event) :edit)))
+            (%after-event)
+            (flush-display)))
     (abort ()
       :report "Return to the command loop."
       (flush-display)

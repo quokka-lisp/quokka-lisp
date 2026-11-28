@@ -122,7 +122,13 @@ output recording, and it is what makes a long transcript cheap.
 
 A **redisplayed** viewer draws itself again from its model, through the
 generic function `display-viewer`, whenever the command loop says so (design,
-*When a viewer redraws*). The new records are compared with the previous
+*When a viewer redraws*). That is after every event but one kind: an `:edit`,
+which the page sends for each character typed into an editor, redraws the
+viewers only when the viewer it was for answers true from `viewer-input`,
+meaning it used the text (a search field that filters as it is typed in).
+The editor's record has the text either way. Redrawing every viewer for
+every character cost a list of a hundred rows two seconds a keystroke
+(#167). The new records are compared with the previous
 drawing, child by child: a record of the same kind in the same place, or with
 the same key when the program gave one, takes over the old record's identity,
 and only what differs is sent. This is the reconciliation React made familiar

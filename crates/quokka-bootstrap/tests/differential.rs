@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2440 :REPLACED 1768)".into())],
+        [Outcome::Value("(:FORMS 2444 :REPLACED 1771)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1906,6 +1906,70 @@ fn the_rebuild_reads_the_library_the_cold_build_loads() {
 /// in the oracle's output.
 fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
+}
+
+/// A method defined on one generic function leaves every other function's
+/// cache of effective methods alone (#164); it used to empty them all. The
+/// functions other things are worked out from still do: a method on
+/// `initialize-instance` is seen by the next `make-instance`, though the
+/// class had been found plain.
+#[test]
+fn a_new_method_empties_only_what_depends_on_it() {
+    let out = run_compiled(
+        "(defclass a () ((x :initform 1))) \
+         (defgeneric g1 (o)) (defmethod g1 ((o a)) 1) \
+         (defgeneric g2 (o)) \
+         (defvar *a* (make-instance 'a)) \
+         (g1 *a*) \
+         (defmethod g2 ((o a)) 2) \
+         (list (null (quokka::%gf-cache #'g1)) (g1 *a*) (g2 *a*)) \
+         (defmethod g1 ((o a)) 3) \
+         (g1 *a*) \
+         (defvar *seen* nil) \
+         (defmethod initialize-instance :after ((o a) &key) (setq *seen* t)) \
+         (progn (make-instance 'a) *seen*)",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[7], "=> (NIL 1 2)", "{out}");
+    assert_eq!(lines[9], "=> 3", "{out}");
+    assert_eq!(lines.last(), Some(&"=> T"), "{out}");
+}
+
+/// Three faults of bookkeeping the second review found.
+///
+/// Recompiling what is stale does macros first and to a standstill (#184):
+/// done in the order things were made, a function was recompiled before the
+/// macro it used and kept that macro's old meaning. A form evaluated again
+/// unchanged is no new version of its definition (#185). And a thread that
+/// only yields does not cost a program its budget for asking the host
+/// something (#174): 4,000 characters are written beside one.
+#[test]
+fn recompiling_history_and_asking_the_host_beside_a_thread() {
+    let out = run_compiled(
+        "(defmacro k () 1) \
+         (defun x () (list (k) (m))) \
+         (defmacro m () (list 'quote (list :m (k)))) \
+         (defmacro k () 2) \
+         (mapcar #'quokka::definition-name (quokka::recompile-stale-definitions)) \
+         (list (x) (quokka::stale-definitions)) \
+         (defun zz (a) (+ a 1)) \
+         (defun zz (a) (+ a 1)) \
+         (defun zz (a) (+ a 2)) \
+         (length (quokka::definition-versions (quokka::find-definition 'zz :function))) \
+         (defvar *t* (quokka-thread:make-thread \
+                       (lambda () (do () (nil) (quokka-thread:thread-yield))))) \
+         (let ((n 0)) (dotimes (i 4000) (write-char #\\x) (setq n (+ n 1))) (terpri) n)",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[4], "=> (M X)", "{out}");
+    assert_eq!(lines[5], "=> ((2 (:M 2)) NIL)", "{out}");
+    assert_eq!(lines[9], "=> 1", "{out}");
+    assert_eq!(
+        lines.last(),
+        Some(&"=> 4000"),
+        "{}",
+        &out[..out.len().min(400)]
+    );
 }
 
 /// An error says what it is about, and a world is not lost to a variable

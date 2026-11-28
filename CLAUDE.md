@@ -922,7 +922,20 @@ a `try`. **#198**: `:save` asks the directory whether a file is there.
 opens; a frame that cannot be printed is named, not an error.
 **#197**: `check.sh` also runs `check-compiler.sh`, and, with wasm-pack and
 node, bundles the page, builds its world and runs both smoke tests.
-Rebuild `(:FORMS 2440 :REPLACED 1768)`.
+**#184**: `recompile-stale-definitions` recompiles macros until none is
+stale (each at most four times), then the rest once. **#185**: a form
+evaluated again with the same form and text is no new version
+(`%same-source-p`). **#174**: a process that blocks on the host gives way
+*and ends the slice* (`give_way` returns `Block`), so the host answers at
+once and the driver charges the steps run.
+A recompile of a *stale* definition still keeps a version.
+**#164**: `add-method` and `remove-method` empty the cache of their own
+generic function (`%invalidate-generic-function`); the global epoch moves
+only for a class redefinition, a method combination, a `defgeneric`, and a
+method on one of `%epoch-functions`, whose methods other caches are worked
+out from. **#167**: an `:edit` event redraws the viewers only if
+`viewer-input` answered true for it; every other event does as before.
+Rebuild `(:FORMS 2444 :REPLACED 1771)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

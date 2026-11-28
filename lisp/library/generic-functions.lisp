@@ -840,7 +840,7 @@
   (%set-gf-methods gf (cons method (%gf-methods gf)))
   (%set-gf-eql-positions gf (%compute-eql-positions gf))
   (%note-print-object-method gf method)
-  (%invalidate-dispatch)
+  (%invalidate-generic-function gf)
   gf)
 
 (defun remove-method (gf method)
@@ -849,8 +849,32 @@
     (%set-method-generic-function method nil)
     (%note-specializers method nil)
     (%set-gf-eql-positions gf (%compute-eql-positions gf))
-    (%invalidate-dispatch))
+    (%invalidate-generic-function gf))
   gf)
+
+;;; GF's methods have changed: what was worked out from them is forgotten.
+;;;
+;;; That is GF's own cache of effective methods and no other function's, so
+;;; a method defined on one function no longer empties the cache of every
+;;; function in the world, as it did when this was the one global epoch:
+;;; loading a file of methods made every call in between a cache miss, and
+;;; a `make-instance` after any `defmethod` cost 54,000 steps (#164).
+;;;
+;;; The functions named here are the exception. Other things are worked out
+;;; from *their* methods and kept with the epoch: which initargs a class
+;;; accepts and whether it is plain (`%valid-initargs`,
+;;; `%plain-initialization-p`), and whether a structure prints without
+;;; dispatch (`%printed-plainly-p`). **A new cache kept with the epoch that
+;;; depends on a function's methods needs that function's name here.**
+(defvar %epoch-functions
+  '(make-instance allocate-instance initialize-instance reinitialize-instance
+    shared-initialize update-instance-for-different-class
+    update-instance-for-redefined-class print-object))
+
+(defun %invalidate-generic-function (gf)
+  (if (member (%gf-name gf) %epoch-functions)
+      (%invalidate-dispatch)
+      (%set-gf-cache gf nil)))
 
 ;;; A specializer as a program names it to `find-method`: a class, a class
 ;;; name, or `(eql object)`.
