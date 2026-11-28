@@ -420,7 +420,7 @@ fn rebuild(image: &[u8]) -> Vec<u8> {
     .expect("the rebuild runs");
     assert_eq!(
         said,
-        [Outcome::Value("(:FORMS 2439 :REPLACED 1767)".into())],
+        [Outcome::Value("(:FORMS 2440 :REPLACED 1768)".into())],
         "the rebuild did not finish as expected"
     );
     quokka_vm::image::save(&mut heap)
@@ -1908,6 +1908,43 @@ fn run_compiled(source: &str) -> String {
     run_compiled_in(compiled_image(), source)
 }
 
+/// An error says what it is about, and a world is not lost to a variable
+/// set wrongly. The library signals `(error "message" datum)`, and its
+/// reports stopped at the message: "there is no class with this name"
+/// (#188). And `(setq *package* 5)` left a world in which nothing could be
+/// read again, the form that would mend it included (#181); the host loop
+/// now puts the reader's variables right before it reads, as SBCL does
+/// `*package*`.
+#[test]
+fn reports_name_their_subject_and_broken_syntax_is_repaired() {
+    let out = run_compiled(
+        "(defclass a () ((x :initarg :x))) \
+         (handler-case (find-class 'zork) (error (c) (princ-to-string c))) \
+         (handler-case (make-instance 'a :y 1) (error (c) (princ-to-string c))) \
+         (handler-case (typep 1 'zork) (error (c) (princ-to-string c))) \
+         (handler-case (error \"plain\") (error (c) (princ-to-string c))) \
+         (handler-case (error \"with ~A\" 5) (error (c) (princ-to-string c))) \
+         (setq *package* 5) \
+         (+ 1 2) \
+         (setq *readtable* nil) \
+         (package-name *package*)",
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(
+        lines[1], "=> \"there is no class with this name: ZORK\"",
+        "{out}"
+    );
+    assert_eq!(
+        lines[2], "=> \"an invalid initialization argument: :Y\"",
+        "{out}"
+    );
+    assert_eq!(lines[3], "=> \"unknown type specifier: ZORK\"", "{out}");
+    assert_eq!(lines[4], "=> \"plain\"", "{out}");
+    assert_eq!(lines[5], "=> \"with 5\"", "{out}");
+    assert_eq!(lines[7], "=> 3", "{out}");
+    assert_eq!(lines.last(), Some(&"=> \"COMMON-LISP-USER\""), "{out}");
+}
+
 /// Four small faults the review after phase 4 found, each a line here.
 ///
 /// A `with-mutex` inside another on the same mutex is refused and leaves
@@ -2040,16 +2077,17 @@ fn threads_interning_one_name_get_one_symbol() {
 }
 
 /// A read that fails without taking a character must not keep the host's
-/// loop turning for ever (#180): with no readtable every read fails, at the
-/// end of the input too, so the loop was never told the input had ended and
-/// the terminal hung. The world gives the input up after such a read; a
-/// reader's error is also reported in its own words now, not as "Aborted."
-/// (#182).
+/// loop turning for ever (#180): with no readtable every read failed, at
+/// the end of the input too, so the loop was never told the input had ended
+/// and the terminal hung. The world gives the input up after such a read.
+/// Since #181 it also mends a readtable that is not one before it reads,
+/// so this input no longer reaches that guard: the forms after are read
+/// and answered. A reader's error is reported in its own words, not as
+/// "Aborted." (#182).
 #[test]
 fn a_read_that_cannot_advance_ends_the_input() {
     let out = run_compiled("(setq *readtable* nil) (+ 1 1) (+ 2 2)");
-    assert!(!out.contains("=> 2") && !out.contains("=> 4"), "{out}");
-    assert!(out.contains("!! "), "{out}");
+    assert!(out.ends_with("=> 2\n=> 4\n"), "{out}");
     assert!(out.lines().count() <= 3, "the loop went on: {out}");
 
     let out = run_compiled(") (+ 1 2)");

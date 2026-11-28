@@ -178,7 +178,16 @@
 (defun %report-condition (condition stream)
   (let ((message (slot-value condition '%message)))
     (if message
-        (write-string message stream)
+        ;; The message, and what it is about: the library signals
+        ;; `(error 'type "there is no class with this name" name)`, and a
+        ;; report that stopped at the message never said which class (#188).
+        (let ((data (slot-value condition '%data)))
+          (write-string message stream)
+          (when (consp data)
+            (write-string ":" stream)
+            (dolist (each data)
+              (write-char #\Space stream)
+              (prin1 each stream))))
         (let ((report (%condition-report (class-of condition))))
           (cond ((stringp report) (write-string report stream))
                 (report (funcall report condition stream))
@@ -227,7 +236,18 @@
  (lambda (condition stream)
    (let ((control (simple-condition-format-control condition)))
      (if control
-         (apply #'format stream control (simple-condition-format-arguments condition))
+         (let ((arguments (simple-condition-format-arguments condition)))
+           (apply #'format stream control arguments)
+           ;; `(error "there is no class with this name" name)`: a control
+           ;; with no directive in it, and arguments. SBCL would print the
+           ;; message and drop them; the library writes its errors this way
+           ;; throughout, and the arguments are what the message is about
+           ;; (#188).
+           (when (and arguments (stringp control) (not (find #\~ control)))
+             (write-string ":" stream)
+             (dolist (each arguments)
+               (write-char #\Space stream)
+               (prin1 each stream))))
          (format stream "Condition ~S was signalled." (type-of condition))))))
 
 (%set-condition-report

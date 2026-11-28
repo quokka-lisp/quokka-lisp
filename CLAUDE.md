@@ -914,7 +914,15 @@ when `#'call-next-method` is written. **#191, #192**: `%wire-value` cannot
 signal or loop (`%proper-list-p`, a depth), and sends a keyword the page's
 reader cannot take as one token as a string; the page reads a batch under
 a `try`. **#198**: `:save` asks the directory whether a file is there.
-Rebuild `(:FORMS 2439 :REPLACED 1767)`.
+**#188**: a library error's report ends with its data (`%data`, and for
+`(error "message" datum)` the arguments of a control with no directive):
+"there is no class with this name: ZORK". **#181**: `%repair-syntax`
+(`eval.lisp`) puts an invalid `*package*`, `*readtable*`, `*print-base*` or
+`*read-base*` right, before each read of the host loop and as the debugger
+opens; a frame that cannot be printed is named, not an error.
+**#197**: `check.sh` also runs `check-compiler.sh`, and, with wasm-pack and
+node, bundles the page, builds its world and runs both smoke tests.
+Rebuild `(:FORMS 2440 :REPLACED 1768)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and
 measured *and* the compiled compiler reproduces itself byte for byte. The

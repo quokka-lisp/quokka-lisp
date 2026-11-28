@@ -322,6 +322,23 @@
 ;;; debugger, nor a program's hook. What cannot be caught at all, the step
 ;;; budget running out, the host sees as a failure of the call itself. The
 ;;; argument is ignored: the host's trampoline always passes one.
+;;; Put right the variables a person's own form can leave unusable, as
+;;; SBCL puts `*package*` right: with `*package*` set to 5 nothing could be
+;;; read again, the form that would mend it included, and every line after
+;;; said only that it was aborted; with the debugger on, its banner failed
+;;; while printing and opened another debugger, 176 deep (#181). The host
+;;; loop does this before each read, and the debugger as it opens.
+(defun %repair-syntax ()
+  (unless (packagep *package*)
+    (setq *package* (find-package "COMMON-LISP-USER")))
+  (unless (readtablep *readtable*)
+    (setq *readtable* (copy-readtable nil)))
+  (unless (and (integerp *print-base*) (<= 2 *print-base* 36))
+    (setq *print-base* 10))
+  (unless (and (integerp *read-base*) (<= 2 *read-base* 36))
+    (setq *read-base* 10))
+  nil)
+
 (defun %host-step (ignored)
   (if (null %host-input)
       ;; The input was given up (below): the host is told it has ended.
@@ -329,6 +346,7 @@
       (%host-step-reading)))
 
 (defun %host-step-reading ()
+  (%repair-syntax)
   (let ((%aborted-condition nil)
         (start (%stream-position %host-input))
         (reading t))

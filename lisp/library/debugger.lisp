@@ -78,9 +78,20 @@
 
 ;;; Write a frame as SBCL does, `3: (FOO 1 2)`, its arguments printed
 ;;; shallowly.
+;;;
+;;; A frame holds whatever the program passed, and printing that can fail:
+;;; an argument whose `print-object` method signals. An error here would
+;;; open a debugger from inside the debugger, for each frame; the frame is
+;;; named instead, as a condition whose report fails is (#181).
 (defun %print-frame (index frame)
   (let ((*print-level* 4) (*print-length* 10))
-    (format (%debug-out) "~&~D: ~S~%" index (frame-call frame))))
+    (let ((text (handler-case (prin1-to-string (frame-call frame))
+                  (error () nil))))
+      (format (%debug-out) "~&~D: ~A~%" index
+              (or text
+                  (handler-case (format nil "(~S #<error printing its arguments>)"
+                                        (frame-name frame))
+                    (error () "#<error printing this frame>")))))))
 
 (defun %print-restarts (restarts)
   (format (%debug-out) "~&restarts (invokable by number or by name):~%")
@@ -123,7 +134,11 @@
 ;;; returned from. At the end of the console's input it does what an
 ;;; unhandled error did without a debugger.
 (defun %debugger (condition)
+  (%repair-syntax)
   (let* ((level %debug-level)
+         ;; The debugger's own printing starts afresh: it is not part of
+         ;; whatever printout the error interrupted.
+         (%print-nesting nil)
          (%debug-level (+ level 1))
          (%debug-condition condition)
          (%debug-restarts (compute-restarts condition))

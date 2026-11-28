@@ -2261,6 +2261,6 @@ fn errors_say_where_and_functions_say_who() {
     );
     assert!(said[7].contains("more than 255 arguments"), "{}", said[7]);
     assert_eq!(said[8], "300", "apply is not bound by the ceiling");
-    assert_eq!(said[9], "; EVENP wants an integer");
+    assert_eq!(said[9], "; EVENP wants an integer: 1.5");
     assert_eq!(said[10], ":STILL-A-PROGRAM-ERROR");
 }

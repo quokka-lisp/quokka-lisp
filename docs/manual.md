@@ -358,10 +358,15 @@ if either fails the script says so at the end and exits 1. It runs:
 2. formatting and clippy;
 3. the native build and every test;
 4. that every test is in a test directory;
-5. the differential test coverage, and the SBCL oracle;
+5. the differential test coverage, the compiler's and the library's file
+   lists, and the SBCL oracle;
 6. rustdoc;
-7. GC torture;
-8. the WebAssembly builds and tests.
+7. the browser build, and, with `wasm-pack` and `node` installed, the page:
+   its bundle, a world for it, a form answered in a JavaScript engine
+   (`scripts/smoke-wasm.mjs`) and in a headless Chrome
+   (`scripts/smoke-browser.sh`, skipped without one);
+8. GC torture;
+9. the WebAssembly tests under `wasmtime`.
 
 The book comes first because it takes a moment, and a missing chapter should
 not have to wait for two and a half minutes of compiling to be reported.

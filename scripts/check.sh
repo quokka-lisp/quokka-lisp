@@ -50,6 +50,9 @@ code_checks() {
   say "differential test coverage"
   ./scripts/check-differential.sh
 
+  say "compiler and library file lists"
+  ./scripts/check-compiler.sh
+
   say "SBCL oracle"
   ./scripts/oracle.sh
 
@@ -58,6 +61,23 @@ code_checks() {
 
   say "wasm32-unknown-unknown (browser build)"
   cargo build -p quokka-vm -p quokka-wasm --target wasm32-unknown-unknown
+
+  # The page: the bundle it imports, a world for it, and the two smoke
+  # tests CI runs on them (#197). Until this was here a change to
+  # renderer.js, sexp.js, index.html or the bindings was first tested on
+  # GitHub, though this script is said to run everything CI does. Each
+  # needs a tool that is optional on a developer's machine, and says so
+  # when it is missing.
+  if command -v wasm-pack >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+    say "the page: bundle, world, and a form answered in a JavaScript engine"
+    wasm-pack build crates/quokka-wasm --target web --out-dir www/pkg
+    cargo run --release -p quokka -- build crates/quokka-wasm/www/world.qi
+    node scripts/smoke-wasm.mjs
+    say "the page in a headless browser"
+    ./scripts/smoke-browser.sh
+  else
+    say "the page: SKIPPED (needs wasm-pack and node); CI runs it"
+  fi
 
   # The two heavy runs, side by side. Each runs the whole suite again —
   # GC torture collecting and verifying the heap after every slice, the
