@@ -325,6 +325,11 @@ them, applied in order.
 | `(:remove id)` | take record ID away |
 | `(:set id property value...)` | change properties; nil removes one |
 | `(:append-text id string)` | add STRING to the end of text record ID's text |
+
+A place in an editor's text, `:start` and `:end` in both directions, is
+counted in characters, as the world counts a string. The browser counts in
+UTF-16 units, two for a character outside the Basic Multilingual Plane, and
+the page converts (#193).
 | `(:focus id)` | put the caret in editor ID |
 
 Where a new record goes is said by the sibling it goes in front of, worked

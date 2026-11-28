@@ -196,7 +196,21 @@ impl Quokka {
 
     /// Queue an event for the world: the text of an S-expression
     /// (`docs/display.md`), which it reads when it next asks.
+    ///
+    /// An edit says the whole of an editor's text, so one that is still
+    /// waiting when the next for the same editor arrives says nothing the
+    /// new one does not: it is replaced. Typing faster than the world
+    /// reads no longer queues a copy of the text for every character
+    /// (#194). Only the last event queued is looked at, so an edit never
+    /// moves past a key.
     pub fn post_event(&mut self, event: &str) {
+        let same_editor = match (self.events.back(), edit_target(event)) {
+            (Some(waiting), Some(target)) => edit_target(waiting) == Some(target),
+            _ => false,
+        };
+        if same_editor {
+            self.events.pop_back();
+        }
         self.events.push_back(event.to_string());
     }
 
@@ -263,6 +277,11 @@ impl Quokka {
     pub fn interrupt(&mut self) {
         if self.doing != Doing::Nothing {
             vm::recover(&mut self.heap);
+            // Stop means stop: a thread that runs for ever kept the page
+            // working at full speed with no way to end it but to have kept
+            // the thread (#195). Each is told to end and runs its cleanups
+            // when the world next runs.
+            vm::end_background_processes(&mut self.heap);
             self.doing = Doing::Nothing;
             if self.program.is_some() {
                 self.events.push_front("(:interrupted)".to_string());
@@ -403,6 +422,13 @@ impl Quokka {
             },
         })
     }
+}
+
+/// The editor an `:edit` event is for, as the text of its record number;
+/// `None` for any other event.
+fn edit_target(event: &str) -> Option<&str> {
+    let rest = event.strip_prefix("(:edit :target ")?;
+    rest.split(' ').next()
 }
 
 #[cfg(test)]

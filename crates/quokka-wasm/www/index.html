@@ -216,7 +216,9 @@
           console.error("the page could not draw", error);
         }
         const output = vm.take_output();
-        if (output) consoleOut.textContent += output;
+        // The strip keeps the end of what was written: a thread that
+        // prints for ever must not grow the page for ever (#195).
+        if (output) consoleOut.textContent = (consoleOut.textContent + output).slice(-20000);
         stop.disabled = !more;
         if (more) {
           const scale = Math.min(2, Math.max(0.5, TARGET_MS / Math.max(took, 0.1)));

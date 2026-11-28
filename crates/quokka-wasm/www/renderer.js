@@ -251,8 +251,23 @@ function plist(list) {
 // ---------------------------------------------------------------------------
 // Events, as the world reads them
 
+// A place in an editor's text is counted in characters on the wire, as the
+// world counts a string, and in UTF-16 units by the browser: the two
+// differ after any character outside the Basic Multilingual Plane, an
+// emoji say, which is two units and one character. Sent uncounted, a
+// newline the world inserted landed a place to the right for each such
+// character before it (#193). The page converts, both ways, since it is
+// the side that has the text in both forms.
+export const toCharacters = (text, units) =>
+  typeof units === "number" ? Array.from(text.slice(0, units)).length : units;
+export const toUnits = (text, characters) =>
+  typeof characters === "number"
+    ? Array.from(text).slice(0, characters).join("").length
+    : characters;
+
 export const editEvent = (id, text, start, end) =>
-  print([kw("edit"), kw("target"), id, kw("text"), text, kw("start"), start, kw("end"), end]);
+  print([kw("edit"), kw("target"), id, kw("text"), text,
+         kw("start"), toCharacters(text, start), kw("end"), toCharacters(text, end)]);
 
 export function keyEvent(id, event, area = null) {
   const modifiers = [];
@@ -260,7 +275,10 @@ export function keyEvent(id, event, area = null) {
   if (event.ctrlKey) modifiers.push(kw("control"));
   if (event.altKey) modifiers.push(kw("alt"));
   if (event.metaKey) modifiers.push(kw("meta"));
-  const where = area ? [kw("start"), area.selectionStart, kw("end"), area.selectionEnd] : [];
+  const where = area
+    ? [kw("start"), toCharacters(area.value, area.selectionStart),
+       kw("end"), toCharacters(area.value, area.selectionEnd)]
+    : [];
   return print([kw("key"), kw("target"), id, kw("key"), event.key, kw("code"), event.code,
                 kw("modifiers"), modifiers, kw("repeat"), !!event.repeat, ...where]);
 }
@@ -437,7 +455,9 @@ export class View {
         this.fit(element);
       }
       if (typeof node.props.start === "number" && document.activeElement === element) {
-        element.setSelectionRange(node.props.start, node.props.end ?? node.props.start);
+        element.setSelectionRange(
+          toUnits(text, node.props.start),
+          toUnits(text, node.props.end ?? node.props.start));
       }
     } else if (node.kind === "viewer" && name === "title") {
       element.querySelector(":scope > .q-title").textContent = node.props.title ?? "";

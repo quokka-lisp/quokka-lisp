@@ -935,6 +935,13 @@ only for a class redefinition, a method combination, a `defgeneric`, and a
 method on one of `%epoch-functions`, whose methods other caches are worked
 out from. **#167**: an `:edit` event redraws the viewers only if
 `viewer-input` answered true for it; every other event does as before.
+**#193**: places in an editor's text are characters on the wire; the page
+converts to and from the browser's UTF-16 units (`toCharacters`, `toUnits`
+in `renderer.js`). **#194**: `post_event` replaces a waiting `:edit` by the
+next for the same editor. **#195**: `Quokka::interrupt` also tells every
+background process to end (`vm::end_background_processes`); the page's
+console strip keeps its last 20,000 characters. `viewer-restarted` is
+exported from `QUOKKA-UI` (#155).
 Rebuild `(:FORMS 2444 :REPLACED 1771)`.
 Phase 2's scope was
 **all of tier 1** (Carsten's call): the phase ends when tier 1 is complete and

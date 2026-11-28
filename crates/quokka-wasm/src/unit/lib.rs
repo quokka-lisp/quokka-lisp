@@ -753,3 +753,49 @@ fn a_replacement_removed_before_the_flush_removes_the_original() {
     );
     assert!(messages.contains(":ODD (0.5 \"#<"), "{messages}");
 }
+
+/// An edit still waiting when the next for the same editor arrives is
+/// replaced (#194): each says the whole text, so the older says nothing the
+/// newer does not, and typing faster than the world reads queued a copy of
+/// the text a character. An edit never moves past a key, nor replaces one
+/// for another editor.
+#[test]
+fn a_waiting_edit_is_replaced_by_the_next_for_its_editor() {
+    let mut q = world();
+    q.post_event("(:edit :target 5 :text \"a\" :start 1 :end 1)");
+    q.post_event("(:edit :target 5 :text \"ab\" :start 2 :end 2)");
+    assert_eq!(q.events.len(), 1);
+    assert!(q.events[0].contains("\"ab\""));
+    q.post_event("(:key :target 5 :key \"Enter\")");
+    q.post_event("(:edit :target 5 :text \"abc\" :start 3 :end 3)");
+    q.post_event("(:edit :target 6 :text \"x\" :start 1 :end 1)");
+    assert_eq!(q.events.len(), 4, "a key and another editor are kept apart");
+}
+
+/// Stop ends a thread that would run for ever (#195). In the environment
+/// it used to give up the form and leave the thread, so `run` answered
+/// "more to do" without end and the page worked at full speed with nothing
+/// to press that would end it.
+#[test]
+fn stop_ends_a_thread_that_never_would() {
+    let (mut q, first) = listener();
+    let editor = focused(&first);
+    let form = "(quokka-thread:make-thread (lambda () (do () (nil) (quokka-thread:thread-yield))))";
+    let n = form.chars().count();
+    q.post_event(&format!(
+        "(:edit :target {editor} :text {form:?} :start {n} :end {n})"
+    ));
+    q.post_event(&format!(
+        "(:key :target {editor} :key \"Enter\" :start {n} :end {n})"
+    ));
+    for _ in 0..300 {
+        q.run(20_000);
+    }
+    assert!(q.run(20_000), "the thread keeps the world from being idle");
+    q.interrupt();
+    let mut calls = 0;
+    while q.run(20_000) {
+        calls += 1;
+        assert!(calls < 2_000, "the thread went on after Stop");
+    }
+}

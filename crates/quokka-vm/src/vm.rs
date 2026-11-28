@@ -2584,6 +2584,24 @@ fn drive(
     Err(EvalError::BudgetExhausted)
 }
 
+/// Tell every process but the main one to end (#195): what a host's Stop
+/// does about threads. Each unwinds to its base, cleanups and all, at its
+/// next safe step, when the world next runs.
+pub fn end_background_processes(heap: &mut crate::heap::Heap) {
+    heap.mutate(|mc| {
+        crate::process::focus_main(mc);
+        for process in crate::process::ring(mc) {
+            if mc.slot(process, crate::process::MAIN) == Value::NIL
+                && crate::process::alive(mc, process)
+            {
+                mc.set_slot(process, crate::process::TERMINATE, Value::T);
+                let request = mc.slot(process, crate::process::REQUEST);
+                crate::host::withdraw(mc, request);
+            }
+        }
+    });
+}
+
 /// How many steps a computation that ran out of budget gets to run its
 /// cleanups in (`wind_down`).
 const WIND_DOWN: u64 = 1_000_000;
