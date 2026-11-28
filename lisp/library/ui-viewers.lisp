@@ -182,6 +182,13 @@
                   (mapcar (lambda (part) (list (car part) (%layout-node (cadr part) whole)))
                           (cddr layout))))))
 
+;;; Which display protocol this world speaks, said with every `:reset`
+;;; (`docs/display.md`). A page that knows an older one says so, where it
+;;; would otherwise draw what it understood and stay silent about the rest.
+;;; Raised when a message changes its meaning; a new kind of message or of
+;;; node does not need it, since a page draws what it does not know plainly.
+(defvar %display-protocol 1)
+
 ;;; Show LAYOUT, from nothing: what the page is told when the environment
 ;;; starts and after an interrupt, since a page that was reloaded or a
 ;;; command loop that was abandoned may have lost anything.
@@ -195,7 +202,7 @@
     (viewer-restarted viewer)
     (%mark-shown (viewer-record viewer) nil)
     (when (viewer-display-time viewer) (%redisplay-contents viewer)))
-  (%queue-message (lambda () (list :reset (%layout-node *surface* t))))
+  (%queue-message (lambda () (list :reset (%layout-node *surface* t) :protocol %display-protocol)))
   (when %focused-record
     (push (list :focus %focused-record) %display-queue))
   layout)

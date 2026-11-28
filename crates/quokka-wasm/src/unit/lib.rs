@@ -344,7 +344,7 @@ fn the_environment_shows_its_surface_and_redraws_what_changed() {
     let (mut q, first) = counter();
     assert_eq!(
         q_ids(&mut seen, &first),
-        "((:RESET (:VIEWER R1 (:TITLE \"Counter\") (:TEXT R2 NIL \"count 0\"))))"
+        "((:RESET (:VIEWER R1 (:TITLE \"Counter\") (:TEXT R2 NIL \"count 0\")) :PROTOCOL 1))"
     );
     assert!(q.busy(), "waiting for the person");
     q.post_event("(:key :key \"ArrowUp\" :code \"ArrowUp\")");

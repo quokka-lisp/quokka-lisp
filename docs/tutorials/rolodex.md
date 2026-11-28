@@ -71,13 +71,13 @@ world's journal the moment it happens, so a card you add survives a crash a
 second later, long before the next snapshot. Try it in the listener:
 
 ```
-rolodex 2 › (store-add *cards* (make-instance 'card :name "Ada Lovelace"
+ROLODEX> (store-add *cards* (make-instance 'card :name "Ada Lovelace"
                                                    :phone "020 7946 0018"))
 #<CARD Ada Lovelace>
-rolodex 3 › (store-add *cards* (make-instance 'card :name "John McCarthy"
+ROLODEX> (store-add *cards* (make-instance 'card :name "John McCarthy"
                                                    :phone "650 723 2273"))
 #<CARD John McCarthy>
-rolodex 4 › (store-items *cards*)
+ROLODEX> (store-items *cards*)
 (#<CARD Ada Lovelace> #<CARD John McCarthy>)
 ```
 
@@ -88,7 +88,7 @@ card*, *change that card's phone number and email*. So a card in a
 journalled store is changed inside a **transaction**:
 
 ```
-rolodex 5 › (with-transaction (*cards*)
+ROLODEX> (with-transaction (*cards*)
               (setf (email (first (store-items *cards*))) "ada@example.org"))
 "ada@example.org"
 ```
@@ -105,7 +105,7 @@ gives cards a class that notices when one of their slots is written. Try
 changing a card outside a transaction, as anyone would on their first day:
 
 ```
-rolodex 6 › (setf (email (first (store-items *cards*))) "ada@lovelace.org")
+ROLODEX> (setf (email (first (store-items *cards*))) "ada@lovelace.org")
 The card Ada Lovelace is in the journalled store *CARDS*,
 and was changed outside a transaction.
   1 · Make this change through the store
@@ -182,18 +182,18 @@ right-click any name to inspect it.
 ## 6. The commands of the list
 
 ```lisp
-(define-viewer-command (new-card :viewer card-list
+(define-command (new-card :applies-to card-list
                                  :label "New card" :bar t :keys (#\n)
                                  :when (not (editing-p)))
     (v)
   (open-editor nil))
 
-(define-viewer-command (edit-card :viewer card-list :label "Edit"
+(define-command (edit-card :applies-to card-list :label "Edit"
                                   :when (not (editing-p)))
     (v (card 'card))
   (open-editor card))
 
-(define-viewer-command (delete-card :viewer card-list :label "Delete"
+(define-command (delete-card :applies-to card-list :label "Delete"
                                     :confirm (format nil "Delete ~A?" (name card)))
     (v (card 'card))
   (store-remove *cards* card))
@@ -313,7 +313,7 @@ full version skips the card being edited.)
 Save and Cancel are the editor's commands, in its own command bar:
 
 ```lisp
-(define-viewer-command (save-card :viewer card-editor
+(define-command (save-card :applies-to card-editor
                                   :label "Save" :bar t :keys (#\Return)
                                   :when (viewer-fields-valid-p e))
     (e)
@@ -323,7 +323,7 @@ Save and Cancel are the editor's commands, in its own command bar:
         (store-add *cards* (apply #'make-instance 'card (draft e)))))
   (close-viewer e))
 
-(define-viewer-command (cancel-edit :viewer card-editor
+(define-command (cancel-edit :applies-to card-editor
                                     :label "Cancel" :bar t :keys (#\Escape))
     (e)
   (close-viewer e))

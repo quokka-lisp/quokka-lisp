@@ -169,6 +169,9 @@
 (defconstant +ink+ :ink)
 (defconstant +dim+ :dim)
 (defconstant +accent+ :accent)
+;;; What stands behind a picture's subject and is not it: a base, a peg, an
+;;; axis, a grid. Quieter than `+ink+`, and not a colour with a name.
+(defconstant +structure+ :structure)
 (defconstant +error+ :error)
 (defconstant +success+ :success)
 (defconstant +warning+ :warning)

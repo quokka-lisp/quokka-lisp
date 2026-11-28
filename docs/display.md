@@ -317,7 +317,7 @@ them, applied in order.
 
 | Message | Meaning |
 | --- | --- |
-| `(:reset layout)` | forget everything and show LAYOUT, whose viewers carry their contents |
+| `(:reset layout :protocol n)` | forget everything and show LAYOUT, whose viewers carry their contents; N is the protocol the world speaks, 1 today, and a page that knows an older one says so |
 | `(:layout layout)` | arrange the viewers again; their contents stay |
 | `(:append parent node)` | add NODE at the end of PARENT's children |
 | `(:insert parent before node)` | add NODE in front of PARENT's child BEFORE |

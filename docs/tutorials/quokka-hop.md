@@ -68,7 +68,7 @@ and you write what happens in one frame:
    (music :initform nil :accessor music))
   (:title "Quokka Hop")
   (:minimum-size 480 270)
-  (:redisplay :every-frame))
+  (:display-time :every-frame))
 
 (defmethod initialize-instance :after ((game hop-game) &key)
   (change-scene game (make-instance 'title-scene :game game)))
@@ -398,7 +398,7 @@ score is drawn after it, where it stays put:
     (dolist (thing (things s)) (draw-thing (kind thing) thing))
     (draw-quokka (quokka s)))
   (draw-text* (format nil "Leaves ~D   ~,1F s" (leaves s) (float (clock s)))
-              8 14 :ink +ink-text+))
+              8 14 :ink +ink+))
 ```
 
 A different `draw-thing` method for each kind, chosen by an `eql`
@@ -599,7 +599,7 @@ journalled and the player's keys are kept:
         for i from 0
         for y from 60 by 20
         do (draw-text* (format nil "~:(~A~)" action) 100 y
-                       :ink (if (= i (choice s)) +ink-accent+ +ink-text+))
+                       :ink (if (= i (choice s)) +accent+ +ink+))
            (draw-text* (if (and (waiting s) (= i (choice s)))
                            "press a key…"
                            (key-name (key-for action)))

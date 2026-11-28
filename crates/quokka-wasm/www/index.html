@@ -19,6 +19,7 @@
         --rule: #e8dcc8;
         --ink: #4c2311;       /* dark brown */
         --dim: #8a6a55;
+        --structure: #b8a58a;
         --accent: #105c55;    /* teal */
         --error: #a32d2d;
         --success: #3b6d11;
@@ -36,6 +37,7 @@
           --rule: #10534f;
           --ink: #fdf7ec;
           --dim: #7fa6a0;
+          --structure: #3f8a84;
           --accent: #a2d9c5;  /* mint */
           --error: #f09595;
           --success: #97c459;
@@ -96,6 +98,7 @@
       .q-bar { display: block; border-left: 2px solid var(--rule); padding-left: 8px; }
       .q-ink-ink { color: var(--ink); }
       .q-ink-dim { color: var(--dim); }
+      .q-ink-structure { color: var(--structure); }
       .q-ink-accent { color: var(--accent); }
       .q-ink-error { color: var(--error); }
       .q-ink-success { color: var(--success); }
@@ -113,9 +116,10 @@
       .q-drawing-stretch { width: 100%; height: 100%; }
       .q-stroke-ink, .q-stroke-dim, .q-stroke-accent, .q-stroke-error, .q-stroke-success,
       .q-stroke-warning, .q-stroke-coral, .q-stroke-amber, .q-stroke-teal, .q-stroke-blue,
-      .q-stroke-purple, .q-stroke-pink { fill: none; stroke-width: 1; }
+      .q-stroke-purple, .q-stroke-pink, .q-stroke-structure { fill: none; stroke-width: 1; }
       .q-fill-ink { fill: var(--ink); } .q-stroke-ink { stroke: var(--ink); }
       .q-fill-dim { fill: var(--dim); } .q-stroke-dim { stroke: var(--dim); }
+      .q-fill-structure { fill: var(--structure); } .q-stroke-structure { stroke: var(--structure); }
       .q-fill-accent { fill: var(--accent); } .q-stroke-accent { stroke: var(--accent); }
       .q-fill-error { fill: var(--error); } .q-stroke-error { stroke: var(--error); }
       .q-fill-success { fill: var(--success); } .q-stroke-success { stroke: var(--success); }

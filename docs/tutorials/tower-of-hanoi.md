@@ -40,7 +40,7 @@ say what the package uses and what it offers to others:
 ```
 
 Press Cmd-Enter. The definition is installed, the listener's prompt changes
-to `hanoi 1 ›`, and you are ready to write the first function.
+to `HANOI> `, and you are ready to write the first function.
 
 ## 2. Solving it in the listener
 
@@ -65,7 +65,7 @@ In the browser, choose *Function* under *Add a definition*, and write:
 Cmd-Enter installs it. Try it in the listener:
 
 ```
-hanoi 2 › (solve 3)
+HANOI> (solve 3)
 ((0 . 2) (0 . 1) (2 . 1) (0 . 2) (1 . 0) (1 . 2) (0 . 2))
 ```
 
@@ -108,7 +108,7 @@ in the result is its own and stepping back is just looking at an earlier
 one. Check the last position:
 
 ```
-hanoi 3 › (car (last (positions 3)))
+HANOI> (car (last (positions 3)))
 #(NIL NIL (1 2 3))
 ```
 
@@ -143,7 +143,7 @@ smaller than 320 by 220, so the pegs never get squashed.
 what it means:
 
 ```
-hanoi 5 › (macroexpand-1 '(define-viewer hanoi-viewer () ((disks :initform 4)) (:minimum-size 320 220)))
+HANOI> (macroexpand-1 '(define-viewer hanoi-viewer () ((disks :initform 4)) (:minimum-size 320 220)))
 (PROGN (DEFCLASS HANOI-VIEWER (VIEWER) ((DISKS :INITFORM 4)))
        (DEFMETHOD VIEWER-MINIMUM-SIZE ((V HANOI-VIEWER)) (VALUES 320 220)))
 ```
@@ -214,14 +214,14 @@ about it:
 ```lisp
 (defun last-step (v) (1- (length (all-positions v))))
 
-(define-viewer-command (step-forward :viewer hanoi-viewer
-                                     :label "Forward" :keys (#\Right) :bar t
+(define-command (step-forward :applies-to hanoi-viewer
+                                     :label "Forward" :keys (:arrow-right) :bar t
                                      :when (< (current-step v) (last-step v)))
     (v)
   (incf (current-step v)))
 
-(define-viewer-command (step-back :viewer hanoi-viewer
-                                  :label "Back" :keys (#\Left) :bar t
+(define-command (step-back :applies-to hanoi-viewer
+                                  :label "Back" :keys (:arrow-left) :bar t
                                   :when (plusp (current-step v)))
     (v)
   (decf (current-step v)))
@@ -248,7 +248,7 @@ its new place; making it travel there is in *Try next*.
 In the listener:
 
 ```
-hanoi 4 › (open-viewer 'hanoi-viewer :disks 4)
+HANOI> (open-viewer 'hanoi-viewer :disks 4)
 #<HANOI-VIEWER Tower of Hanoi · move 0 of 15>
 ```
 
@@ -311,7 +311,7 @@ Forward buttons, and nothing else of the environment.
 ## Try next
 
 - Make the disk travel: up its peg, across, and down the other. Declare the
-  viewer `(:redisplay :every-frame)`, so that `display-viewer` runs on every
+  viewer `(:display-time :every-frame)`, so that `display-viewer` runs on every
   frame the host announces, and keep the journey in a slot of its own, say
   `flight`, with the disk, the two pegs and how far it has got. Forward
   still sets the step at once and starts a flight; `display-viewer` draws

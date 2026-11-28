@@ -22,6 +22,9 @@ import { readAll, print, isSym, kw, Sym } from "./sexp.js";
 // A node: { kind, id, props, children, text, parent }. A split, which is
 // layout and not a record, has kind "split", a direction and parts of
 // { weight, node }.
+// The display protocol this page knows (`%display-protocol` in the world).
+const PROTOCOL = 1;
+
 export class Model {
   constructor(observer = null) {
     this.nodes = new Map();
@@ -63,6 +66,14 @@ export class Model {
     const [head, ...args] = message;
     switch (head.name) {
       case "reset": {
+        // A world says which protocol it speaks; one newer than this page
+        // knows may mean something else by a message the page thinks it
+        // understands, and the page says so.
+        const said = args.indexOf(args.find((a) => a instanceof Sym && a.name === "protocol"));
+        const protocol = said >= 0 ? args[said + 1] : 1;
+        if (typeof protocol === "number" && protocol > PROTOCOL) {
+          console.warn(`the world speaks display protocol ${protocol}; this page knows ${PROTOCOL}`);
+        }
         this.nodes.clear();
         this.root = this.build(args[0], null);
         this.focus = null;
@@ -325,7 +336,12 @@ export class View {
     switch (what) {
       case "reset":
       case "layout":
-        this.root.replaceChildren(this.element(node));
+        // Taken off the page first, so that a viewer the new layout keeps
+        // is found detached and gives back its own element: built while
+        // the old tree was still attached, every viewer was made again,
+        // and its scroll position, selection and undo history with it.
+        this.root.replaceChildren();
+        this.root.append(this.element(node));
         break;
       case "add": {
         const parent = this.contents(node.parent);
